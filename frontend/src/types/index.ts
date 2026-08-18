@@ -37,3 +37,21 @@ export interface Transaction {
   created_at: string;
   completed_at: string | null;
 }
+
+export type CardType = "DEBIT" | "CREDIT" | "ONE_TIME";
+export type CardStatus = "ACTIVE" | "FROZEN" | "EXPIRED" | "CANCELLED";
+
+export interface Card {
+  id: string;
+  user_id: string;
+  default_wallet_id: string | null;
+  type: CardType;
+  status: CardStatus;
+  masked_pan: string;
+  last_four: string;
+  expiration_month: number;
+  expiration_year: number;
+  one_time_remaining: number | null;
+  created_at: string;
+  updated_at: string;
+}
