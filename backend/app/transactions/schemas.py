@@ -13,6 +13,9 @@ class InternalTransferCreate(BaseModel):
     destination_wallet_id: uuid.UUID
     amount: Decimal
     description: str | None = None
+    # Required only when source_wallet.currency != destination_wallet.currency —
+    # obtain one first via POST /fx/quote.
+    fx_quote_id: uuid.UUID | None = None
 
 
 class TransactionPublic(BaseModel):
@@ -26,6 +29,9 @@ class TransactionPublic(BaseModel):
     status: TransactionStatus
     amount: Decimal
     currency: str
+    source_amount: Decimal | None
+    source_currency: str | None
+    exchange_rate: Decimal | None
     description: str | None
     created_at: datetime
     completed_at: datetime | None
