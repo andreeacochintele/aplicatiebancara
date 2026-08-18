@@ -146,7 +146,7 @@ class TransactionService:
         return self.repository.list_for_user(user_id)
 
     def get_for_user(self, user_id: uuid.UUID, transaction_id: uuid.UUID) -> Transaction:
-        transaction = self.repository.get_by_id(transaction_id)
-        if transaction is None or transaction.initiator_user_id != user_id:
+        transaction = self.repository.get_for_user(user_id, transaction_id)
+        if transaction is None:
             raise NotFoundError("Transaction not found")
         return transaction

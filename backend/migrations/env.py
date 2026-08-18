@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.credit import models as credit_models  # noqa: F401
 from app.database import Base
 from app.fx import models as fx_models  # noqa: F401
+from app.payments import models as payments_models  # noqa: F401
 from app.transactions import models as transactions_models  # noqa: F401
 from app.users import models as users_models  # noqa: F401
 from app.wallets import models as wallets_models  # noqa: F401
