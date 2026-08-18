@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.cards.models import Card, CardStatus, CardType
+from app.cards.models import Card, CardPaymentPreferences, CardStatus, CardType
 from app.cards.repository import CardRepository
-from app.cards.schemas import CardCreate
+from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate
 from app.core.exceptions import NotFoundError, ValidationError
 from app.wallets.models import WalletStatus
 from app.wallets.repository import WalletRepository
@@ -42,7 +42,11 @@ class CardService:
             expiration_year=now.year + 4,
             one_time_remaining=one_time_remaining,
         )
-        return self.repository.add(card)
+        card = self.repository.add(card)
+        self.repository.add_preferences(
+            CardPaymentPreferences(card_id=card.id, preferred_wallet_id=data.default_wallet_id)
+        )
+        return card
 
     def list_cards(self, user_id: uuid.UUID) -> list[Card]:
         return self.repository.list_for_user(user_id)
@@ -72,3 +76,33 @@ class CardService:
         card.status = CardStatus.ACTIVE
         self.db.flush()
         return card
+
+    def get_payment_preferences(self, user_id: uuid.UUID, card_id: uuid.UUID) -> CardPaymentPreferences:
+        card = self.get_for_user(user_id, card_id)
+        preferences = self.repository.get_preferences(card.id)
+        if preferences is None:
+            preferences = self.repository.add_preferences(CardPaymentPreferences(card_id=card.id))
+        return preferences
+
+    def update_payment_preferences(
+        self,
+        user_id: uuid.UUID,
+        card_id: uuid.UUID,
+        data: CardPaymentPreferencesUpdate,
+    ) -> CardPaymentPreferences:
+        card = self.get_for_user(user_id, card_id)
+        if data.preferred_wallet_id is not None:
+            wallet = self.wallets.get_by_id(data.preferred_wallet_id)
+            if wallet is None or wallet.user_id != user_id:
+                raise NotFoundError("Preferred wallet not found")
+            if wallet.status != WalletStatus.ACTIVE:
+                raise ValidationError("Preferred wallet must be active")
+
+        preferences = self.repository.get_preferences(card.id)
+        if preferences is None:
+            preferences = self.repository.add_preferences(CardPaymentPreferences(card_id=card.id))
+
+        preferences.preferred_wallet_id = data.preferred_wallet_id
+        preferences.allow_main_wallet_fx = data.allow_main_wallet_fx
+        self.db.flush()
+        return preferences

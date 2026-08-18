@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
-from app.cards.schemas import CardCreate, CardPublic
+from app.cards.schemas import CardCreate, CardPaymentPreferencesPublic, CardPaymentPreferencesUpdate, CardPublic
 from app.cards.service import CardService
 from app.database import get_db
 from app.users.models import User
@@ -61,3 +61,26 @@ def unfreeze_card(
     card = CardService(db).unfreeze_card(current_user.id, card_id)
     db.commit()
     return card
+
+
+@router.get("/{card_id}/payment-preferences", response_model=CardPaymentPreferencesPublic)
+def get_payment_preferences(
+    card_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CardPaymentPreferencesPublic:
+    preferences = CardService(db).get_payment_preferences(current_user.id, card_id)
+    db.commit()
+    return preferences
+
+
+@router.patch("/{card_id}/payment-preferences", response_model=CardPaymentPreferencesPublic)
+def update_payment_preferences(
+    card_id: uuid.UUID,
+    payload: CardPaymentPreferencesUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CardPaymentPreferencesPublic:
+    preferences = CardService(db).update_payment_preferences(current_user.id, card_id, payload)
+    db.commit()
+    return preferences

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
-import type { Card, CardType, Wallet } from "../types";
+import type { Card, CardPaymentPreferences, CardType, Wallet } from "../types";
 
 const CARD_TYPES: CardType[] = ["DEBIT", "CREDIT", "ONE_TIME"];
 
@@ -29,11 +29,14 @@ export function CardsPage() {
   const { accessToken, logout, user } = useAuth();
   const [cards, setCards] = useState<Card[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [preferences, setPreferences] = useState<Record<string, CardPaymentPreferences>>({});
+  const [draftPreferences, setDraftPreferences] = useState<Record<string, CardPaymentPreferences>>({});
   const [selectedType, setSelectedType] = useState<CardType>("DEBIT");
   const [selectedWalletId, setSelectedWalletId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [actionCardId, setActionCardId] = useState<string | null>(null);
+  const [preferencesCardId, setPreferencesCardId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const activeWallets = useMemo(() => wallets.filter((wallet) => wallet.status === "ACTIVE"), [wallets]);
@@ -47,8 +50,18 @@ export function CardsPage() {
         apiRequest<Card[]>("/cards", { token }),
         apiRequest<Wallet[]>("/wallets", { token }),
       ]);
+      const preferencesResponse = await Promise.all(
+        cardsResponse.map((card) =>
+          apiRequest<CardPaymentPreferences>(`/cards/${card.id}/payment-preferences`, { token }),
+        ),
+      );
+      const preferencesByCard = Object.fromEntries(
+        preferencesResponse.map((item) => [item.card_id, item]),
+      );
       setCards(cardsResponse);
       setWallets(walletsResponse);
+      setPreferences(preferencesByCard);
+      setDraftPreferences(preferencesByCard);
       const mainWallet = walletsResponse.find((wallet) => wallet.is_main && wallet.status === "ACTIVE");
       setSelectedWalletId((current) => current || mainWallet?.id || "");
     } catch (err) {
@@ -58,6 +71,8 @@ export function CardsPage() {
       }
       setCards([]);
       setWallets([]);
+      setPreferences({});
+      setDraftPreferences({});
       setError(err instanceof ApiError ? err.message : "Could not load cards.");
     } finally {
       setIsLoading(false);
@@ -83,6 +98,11 @@ export function CardsPage() {
         },
       });
       setCards((current) => [card, ...current]);
+      const cardPreferences = await apiRequest<CardPaymentPreferences>(`/cards/${card.id}/payment-preferences`, {
+        token: accessToken,
+      });
+      setPreferences((current) => ({ ...current, [card.id]: cardPreferences }));
+      setDraftPreferences((current) => ({ ...current, [card.id]: cardPreferences }));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -113,6 +133,48 @@ export function CardsPage() {
       setError(err instanceof ApiError ? err.message : "Could not update card.");
     } finally {
       setActionCardId(null);
+    }
+  }
+
+  function updatePreferenceDraft(cardId: string, updates: Partial<CardPaymentPreferences>) {
+    setDraftPreferences((current) => {
+      const currentDraft = current[cardId] ?? preferences[cardId];
+      if (!currentDraft) return current;
+      return {
+        ...current,
+        [cardId]: {
+          ...currentDraft,
+          ...updates,
+        },
+      };
+    });
+  }
+
+  async function savePaymentPreferences(cardId: string) {
+    if (!accessToken || preferencesCardId) return;
+    const draft = draftPreferences[cardId];
+    if (!draft) return;
+    setPreferencesCardId(cardId);
+    setError(null);
+    try {
+      const updated = await apiRequest<CardPaymentPreferences>(`/cards/${cardId}/payment-preferences`, {
+        method: "PATCH",
+        token: accessToken,
+        body: {
+          preferred_wallet_id: draft.preferred_wallet_id,
+          allow_main_wallet_fx: draft.allow_main_wallet_fx,
+        },
+      });
+      setPreferences((current) => ({ ...current, [cardId]: updated }));
+      setDraftPreferences((current) => ({ ...current, [cardId]: updated }));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : "Could not save card preferences.");
+    } finally {
+      setPreferencesCardId(null);
     }
   }
 
@@ -162,6 +224,7 @@ export function CardsPage() {
           <div className="card-gallery">
             {cards.map((card) => {
               const wallet = wallets.find((item) => item.id === card.default_wallet_id);
+              const draft = draftPreferences[card.id];
               return (
                 <article className="card-panel" key={card.id}>
                   <div className={cardToneClass(card.type)}>
@@ -196,6 +259,46 @@ export function CardsPage() {
                       {card.status === "FROZEN" ? "Unfreeze" : "Freeze"}
                     </button>
                   </div>
+                  {draft && (
+                    <div className="card-preferences">
+                      <label>
+                        Preferred wallet
+                        <select
+                          value={draft.preferred_wallet_id ?? ""}
+                          onChange={(event) =>
+                            updatePreferenceDraft(card.id, {
+                              preferred_wallet_id: event.target.value || null,
+                            })
+                          }
+                        >
+                          <option value="">No preferred wallet</option>
+                          {activeWallets.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.currency}
+                              {item.is_main ? " - Main" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={draft.allow_main_wallet_fx}
+                          onChange={(event) =>
+                            updatePreferenceDraft(card.id, { allow_main_wallet_fx: event.target.checked })
+                          }
+                        />
+                        Allow main-wallet FX fallback
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => savePaymentPreferences(card.id)}
+                        disabled={preferencesCardId === card.id}
+                      >
+                        {preferencesCardId === card.id ? "Saving..." : "Save preferences"}
+                      </button>
+                    </div>
+                  )}
                 </article>
               );
             })}

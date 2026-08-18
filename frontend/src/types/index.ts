@@ -55,3 +55,10 @@ export interface Card {
   created_at: string;
   updated_at: string;
 }
+
+export interface CardPaymentPreferences {
+  card_id: string;
+  preferred_wallet_id: string | null;
+  allow_main_wallet_fx: boolean;
+  updated_at: string;
+}

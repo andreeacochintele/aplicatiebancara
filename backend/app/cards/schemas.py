@@ -27,3 +27,17 @@ class CardPublic(BaseModel):
     one_time_remaining: int | None
     created_at: datetime
     updated_at: datetime
+
+
+class CardPaymentPreferencesUpdate(BaseModel):
+    preferred_wallet_id: uuid.UUID | None = None
+    allow_main_wallet_fx: bool = False
+
+
+class CardPaymentPreferencesPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    card_id: uuid.UUID
+    preferred_wallet_id: uuid.UUID | None
+    allow_main_wallet_fx: bool
+    updated_at: datetime

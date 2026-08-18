@@ -4,7 +4,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.cards.models import Card
+from app.cards.models import Card, CardPaymentPreferences
 
 
 class CardRepository:
@@ -22,3 +22,11 @@ class CardRepository:
         self.db.add(card)
         self.db.flush()
         return card
+
+    def get_preferences(self, card_id: uuid.UUID) -> CardPaymentPreferences | None:
+        return self.db.get(CardPaymentPreferences, card_id)
+
+    def add_preferences(self, preferences: CardPaymentPreferences) -> CardPaymentPreferences:
+        self.db.add(preferences)
+        self.db.flush()
+        return preferences

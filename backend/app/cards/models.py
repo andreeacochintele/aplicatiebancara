@@ -7,7 +7,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -52,3 +52,23 @@ class Card(Base):
 
     owner = relationship("User")
     default_wallet = relationship("Wallet")
+    payment_preferences = relationship(
+        "CardPaymentPreferences",
+        back_populates="card",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class CardPaymentPreferences(Base):
+    __tablename__ = "card_payment_preferences"
+
+    card_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cards.id"), primary_key=True)
+    preferred_wallet_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("wallets.id"), nullable=True
+    )
+    allow_main_wallet_fx: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    card = relationship("Card", back_populates="payment_preferences")
+    preferred_wallet = relationship("Wallet")
