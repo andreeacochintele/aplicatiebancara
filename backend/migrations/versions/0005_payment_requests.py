@@ -1,7 +1,7 @@
 """Payment requests for QR payments.
 
-Revision ID: 0004
-Revises: 0003
+Revision ID: 0005
+Revises: 0004
 Create Date: 2026-08-18
 """
 from typing import Sequence, Union
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0004"
-down_revision: Union[str, None] = "0003"
+revision: str = "0005"
+down_revision: Union[str, None] = "0004"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -47,4 +47,3 @@ def downgrade() -> None:
     op.drop_index("ix_payment_requests_creator_user_id", table_name="payment_requests")
     op.drop_table("payment_requests")
     sa.Enum(name="payment_request_status").drop(op.get_bind(), checkfirst=True)
-

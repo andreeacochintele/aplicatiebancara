@@ -13,6 +13,7 @@ const BANKING_ITEMS: NavItem[] = [
   { to: "/cards", label: "Cards" },
   { to: "/payments", label: "Payments" },
   { to: "/transactions", label: "Transactions" },
+  { to: "/statements", label: "Statements" },
 ];
 
 const INTELLIGENCE_ITEMS: NavItem[] = [
