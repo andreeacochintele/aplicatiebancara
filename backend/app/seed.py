@@ -18,6 +18,7 @@ from app.users.models import User
 from app.wallets.models import Wallet
 
 SEED_PASSWORD = "Password123!"
+ADMIN_SEED_PASSWORD = "admin"
 
 
 def run() -> None:
@@ -38,7 +39,7 @@ def run() -> None:
         admin = User(
             email="admin@example.com",
             phone="+40700000002",
-            password_hash=hash_password(SEED_PASSWORD),
+            password_hash=hash_password(ADMIN_SEED_PASSWORD),
             first_name="Admin",
             last_name="Bancar",
             role=UserRole.ADMIN,
@@ -100,7 +101,7 @@ def run() -> None:
         db.commit()
         print("Seed data created:")
         print(f"  user:  user@example.com / {SEED_PASSWORD}")
-        print(f"  admin: admin@example.com / {SEED_PASSWORD}")
+        print(f"  admin: admin@example.com / {ADMIN_SEED_PASSWORD}")
     finally:
         db.close()
 
