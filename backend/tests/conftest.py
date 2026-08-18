@@ -7,9 +7,11 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth import models as auth_models  # noqa: F401
+from app.budgets import models as budgets_models  # noqa: F401
 from app.database import Base, get_db
 from app.fx import models as fx_models  # noqa: F401
 from app.main import app
+from app.savings import models as savings_models  # noqa: F401
 from app.transactions import models as transactions_models  # noqa: F401
 from app.users import models as users_models  # noqa: F401
 from app.wallets import models as wallets_models  # noqa: F401
