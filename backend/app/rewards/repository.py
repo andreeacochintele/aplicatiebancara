@@ -1,10 +1,17 @@
-"""Data-access layer for RewardAccount and RewardTransaction."""
+"""Data-access layer for the rewards ledger, tiers and the benefits catalog."""
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.rewards.models import RewardAccount, RewardTransaction
+from app.rewards.models import (
+    BenefitRedemption,
+    BenefitStatus,
+    RewardAccount,
+    RewardBenefit,
+    RewardTier,
+    RewardTransaction,
+)
 
 
 class RewardsRepository:
@@ -30,5 +37,29 @@ class RewardsRepository:
             select(RewardTransaction)
             .where(RewardTransaction.reward_account_id == reward_account_id)
             .order_by(RewardTransaction.created_at.desc())
+        )
+        return list(self.db.scalars(stmt))
+
+    def list_tiers(self) -> list[RewardTier]:
+        stmt = select(RewardTier).order_by(RewardTier.sort_order)
+        return list(self.db.scalars(stmt))
+
+    def list_active_benefits(self) -> list[RewardBenefit]:
+        stmt = select(RewardBenefit).where(RewardBenefit.status == BenefitStatus.ACTIVE)
+        return list(self.db.scalars(stmt))
+
+    def get_benefit(self, benefit_id: uuid.UUID) -> RewardBenefit | None:
+        return self.db.get(RewardBenefit, benefit_id)
+
+    def add_redemption(self, redemption: BenefitRedemption) -> BenefitRedemption:
+        self.db.add(redemption)
+        self.db.flush()
+        return redemption
+
+    def list_redemptions(self, reward_account_id: uuid.UUID) -> list[BenefitRedemption]:
+        stmt = (
+            select(BenefitRedemption)
+            .where(BenefitRedemption.reward_account_id == reward_account_id)
+            .order_by(BenefitRedemption.redeemed_at.desc())
         )
         return list(self.db.scalars(stmt))
