@@ -5,9 +5,12 @@ Adds a Revolut-style layer on top of the 0004 rewards ledger: tiers
 benefits catalog (lounge access, retail discounts, travel perks, ...) can be
 redeemed with points, optionally gated by tier.
 
-Revision ID: 0005
-Revises: 0004
+Revision ID: 0005_reward_tiers_benefits
+Revises: 0004_merchants_rewards
 Create Date: 2026-08-18
+
+Renamed from the plain "0005" during a merge with master, following
+0004_merchants_rewards' rename — see that file for why.
 """
 import uuid
 from typing import Sequence, Union
@@ -16,8 +19,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0005"
-down_revision: Union[str, None] = "0004"
+revision: str = "0005_reward_tiers_benefits"
+down_revision: Union[str, None] = "0004_merchants_rewards"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

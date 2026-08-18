@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.core.exceptions import ConflictError, ValidationError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.fx.models import FXQuoteStatus
 from app.fx.schemas import FXQuoteRequest
 from app.fx.service import FXService
@@ -83,6 +83,63 @@ def test_transfer_rejects_non_positive_amount(db_session, two_ron_wallets):
                 amount=Decimal("0.00"),
             ),
         )
+
+
+def test_recipient_can_list_incoming_transfer(db_session, two_ron_wallets):
+    sender, sender_wallet, receiver_wallet = two_ron_wallets
+    service = TransactionService(db_session)
+
+    transaction = service.create_internal_transfer(
+        sender.id,
+        InternalTransferCreate(
+            source_wallet_id=sender_wallet.id,
+            destination_wallet_id=receiver_wallet.id,
+            amount=Decimal("75.00"),
+            description="Incoming visibility",
+        ),
+    )
+
+    transactions = service.list_for_user(receiver_wallet.user_id)
+
+    assert [item.id for item in transactions] == [transaction.id]
+
+
+def test_recipient_can_fetch_incoming_transfer(db_session, two_ron_wallets):
+    sender, sender_wallet, receiver_wallet = two_ron_wallets
+    service = TransactionService(db_session)
+
+    transaction = service.create_internal_transfer(
+        sender.id,
+        InternalTransferCreate(
+            source_wallet_id=sender_wallet.id,
+            destination_wallet_id=receiver_wallet.id,
+            amount=Decimal("75.00"),
+        ),
+    )
+
+    fetched = service.get_for_user(receiver_wallet.user_id, transaction.id)
+
+    assert fetched.id == transaction.id
+
+
+def test_unrelated_user_cannot_fetch_transfer(db_session, two_ron_wallets):
+    users = UserService(db_session)
+    unrelated = users.create_user(
+        UserCreate(email="unrelated@example.com", password="Sup3rSecret!", first_name="Un", last_name="Related")
+    )
+    sender, sender_wallet, receiver_wallet = two_ron_wallets
+    service = TransactionService(db_session)
+    transaction = service.create_internal_transfer(
+        sender.id,
+        InternalTransferCreate(
+            source_wallet_id=sender_wallet.id,
+            destination_wallet_id=receiver_wallet.id,
+            amount=Decimal("75.00"),
+        ),
+    )
+
+    with pytest.raises(NotFoundError):
+        service.get_for_user(unrelated.id, transaction.id)
 
 
 @pytest.fixture()

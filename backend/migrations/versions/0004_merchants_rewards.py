@@ -3,9 +3,15 @@
 Completes the rest of the "Migration 4" grouping from architecture.md §43 —
 budgets/savings_goals already landed separately in 0003.
 
-Revision ID: 0004
+Revision ID: 0004_merchants_rewards
 Revises: 0003
 Create Date: 2026-08-18
+
+Renamed from the plain "0004" during a merge with master: cards_core (also
+branching from 0003) had already claimed "0004" there, and the
+beneficiaries migration separately claimed it too — three branches off
+0003 all wanted "0004". Disambiguated the same way cards_core/credit did
+for themselves (descriptive suffix instead of the bare number).
 """
 from typing import Sequence, Union
 
@@ -13,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0004"
+revision: str = "0004_merchants_rewards"
 down_revision: Union[str, None] = "0003"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

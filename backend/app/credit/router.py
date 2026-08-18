@@ -1,17 +1,107 @@
-"""Placeholder router for the credit module.
+"""Credit endpoints, scoped to the authenticated user."""
+import uuid
 
-This module is structured (router/service/repository/models/schemas) but not
-yet implemented — see architecture.md for its target scope. Wired into
-/api/v1 now so the route table and dev split are stable across the team.
-"""
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.auth.dependencies import get_current_user
+from app.credit.schemas import (
+    CreditApplicationCreate,
+    CreditApplicationPublic,
+    CreditProfilePublic,
+    CreditScorePublic,
+    CreditScoreRecalculateRequest,
+    LoanCalculatorRequest,
+    LoanCalculatorResult,
+    LoanPublic,
+)
+from app.credit.service import CreditService
+from app.database import get_db
+from app.users.models import User
 
 router = APIRouter(prefix="/credit", tags=["credit"])
 
 
-@router.get("", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def not_implemented() -> dict:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="'credit' module is not implemented yet (Phase 1 skeleton only)",
-    )
+@router.get("/profile", response_model=CreditProfilePublic)
+def get_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CreditProfilePublic:
+    profile = CreditService(db).get_or_create_profile(current_user.id)
+    db.commit()
+    return profile
+
+
+@router.get("/score", response_model=CreditScorePublic)
+def get_score(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CreditScorePublic:
+    score = CreditService(db).get_score(current_user.id)
+    db.commit()
+    return score
+
+
+@router.post("/score/recalculate", response_model=CreditScorePublic)
+def recalculate_score(
+    payload: CreditScoreRecalculateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CreditScorePublic:
+    score = CreditService(db).recalculate_score(current_user.id, payload)
+    db.commit()
+    return score
+
+
+@router.post("/loan-calculator", response_model=LoanCalculatorResult)
+def calculate_loan(
+    payload: LoanCalculatorRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LoanCalculatorResult:
+    return CreditService(db).calculate_loan(payload)
+
+
+@router.get("/applications", response_model=list[CreditApplicationPublic])
+def list_applications(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[CreditApplicationPublic]:
+    return CreditService(db).list_applications(current_user.id)
+
+
+@router.post("/applications", response_model=CreditApplicationPublic, status_code=201)
+def create_application(
+    payload: CreditApplicationCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CreditApplicationPublic:
+    application = CreditService(db).create_application(current_user.id, payload)
+    db.commit()
+    return application
+
+
+@router.get("/loans", response_model=list[LoanPublic])
+def list_loans(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[LoanPublic]:
+    return CreditService(db).list_loans(current_user.id)
+
+
+@router.get("/loans/{loan_id}", response_model=LoanPublic)
+def get_loan(
+    loan_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LoanPublic:
+    return CreditService(db).get_loan_for_user(current_user.id, loan_id)
+
+
+@router.get("/applications/{application_id}", response_model=CreditApplicationPublic)
+def get_application(
+    application_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CreditApplicationPublic:
+    return CreditService(db).get_application_for_user(current_user.id, application_id)

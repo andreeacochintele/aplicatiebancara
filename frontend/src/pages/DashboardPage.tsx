@@ -12,8 +12,10 @@ const QUICK_ACTIONS = [
   { to: "/assistant", eyebrow: "Ask", label: "Assistant" },
 ];
 
-function formatAmount(transaction: Transaction): string {
-  const sign = transaction.destination_wallet_id && !transaction.source_wallet_id ? "+" : "-";
+function formatAmount(transaction: Transaction, userWalletIds: Set<string>): string {
+  const isIncoming = transaction.destination_wallet_id ? userWalletIds.has(transaction.destination_wallet_id) : false;
+  const isOutgoing = transaction.source_wallet_id ? userWalletIds.has(transaction.source_wallet_id) : false;
+  const sign = isIncoming && !isOutgoing ? "+" : "-";
   return `${sign}${transaction.amount} ${transaction.currency}`;
 }
 
@@ -35,6 +37,7 @@ export function DashboardPage() {
   }, [accessToken]);
 
   const mainWallet = wallets.find((wallet) => wallet.is_main) ?? wallets[0];
+  const userWalletIds = new Set(wallets.map((wallet) => wallet.id));
 
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -94,7 +97,7 @@ export function DashboardPage() {
                 <td>
                   <span className="tag tag--neutral">{transaction.status}</span>
                 </td>
-                <td style={{ textAlign: "right" }}>{formatAmount(transaction)}</td>
+                <td style={{ textAlign: "right" }}>{formatAmount(transaction, userWalletIds)}</td>
               </tr>
             ))}
             {transactions.length === 0 && (
