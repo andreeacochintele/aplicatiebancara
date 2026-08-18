@@ -88,3 +88,38 @@ export interface ForecastResponse {
   projected_month_end_balance: string;
   note: string;
 }
+
+export interface FXQuote {
+  id: string;
+  source_currency: string;
+  target_currency: string;
+  source_amount: string;
+  target_amount: string;
+  exchange_rate: string;
+  fee: string;
+  status: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface StatementTransaction {
+  id: string;
+  created_at: string;
+  type: string;
+  status: string;
+  description: string | null;
+  direction: "IN" | "OUT";
+  amount: string;
+}
+
+export interface Statement {
+  wallet_id: string;
+  currency: string;
+  date_from: string;
+  date_to: string;
+  opening_balance: string;
+  closing_balance: string;
+  total_incoming: string;
+  total_outgoing: string;
+  transactions: StatementTransaction[];
+}

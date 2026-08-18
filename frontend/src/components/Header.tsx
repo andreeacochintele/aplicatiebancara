@@ -8,6 +8,7 @@ const PAGE_INFO: Record<string, { title: string; subtitle: string }> = {
   "/cards": { title: "Cards", subtitle: "Debit, credit and one-time cards" },
   "/payments": { title: "Payments", subtitle: "Transfer, phone, QR and scheduled" },
   "/transactions": { title: "Transactions", subtitle: "Search, filter and group into folders" },
+  "/statements": { title: "Statements", subtitle: "Opening/closing balance and CSV/PDF export" },
   "/analytics": { title: "Analytics", subtitle: "Spending, budgets and goals" },
   "/rewards": { title: "Rewards", subtitle: "Cashback and merchant offers" },
   "/credit": { title: "Credit & Loans", subtitle: "Score, instalments and simulation" },

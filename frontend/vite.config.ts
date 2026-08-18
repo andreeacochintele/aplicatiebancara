@@ -5,10 +5,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    // Docker Desktop on Windows doesn't propagate native filesystem change
-    // events through the bind mount, so Vite's default watcher never fires
-    // and keeps serving stale modules. Polling works around that.
     watch: {
+      // Bind-mounted volumes under Docker Desktop on Windows don't reliably
+      // deliver native filesystem events, so HMR silently misses edits
+      // without polling.
       usePolling: true,
     },
   },
