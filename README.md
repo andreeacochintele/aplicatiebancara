@@ -33,14 +33,20 @@ frontend/src/
 
 Every implemented backend module follows: `router.py` (HTTP) → `service.py` (business rules) → `repository.py` (data access) → `models.py` / `schemas.py`.
 
+## Database
+
+The shared source of truth is **Supabase Postgres**. Copy `.env.example` to `.env` and fill in `DATABASE_URL` with your project's connection string from Supabase Dashboard → Project Settings → Database → Connection string → URI, tab **Session pooler** (not "Direct connection" — IPv6-only, unreachable from Docker Desktop; not "Transaction pooler" port 6543 — no prepared-statement support). Username format is `postgres.[project-ref]`, not plain `postgres`.
+
+If your network blocks the Supabase pooler (some corporate networks block outbound 5432/6543 entirely), `docker-compose.yml` also defines an optional local `postgres` service — point `DATABASE_URL` at it instead (`postgresql+psycopg://banking:banking@postgres:5432/banking`) for local dev while the network issue gets sorted separately.
+
 ## Running with Docker (recommended)
 
 ```bash
-cp .env.example .env
+cp .env.example .env   # then fill in DATABASE_URL (see Database section above)
 docker compose up --build
 ```
 
-This starts PostgreSQL, the backend (`http://localhost:8000`) and the frontend (`http://localhost:5173`). The app boots correctly even without Azure AI credentials set — AI functionality isn't part of Phase 1.
+This starts the backend (`http://localhost:8000`) and the frontend (`http://localhost:5173`), plus the optional local `postgres` service. Which database the backend actually talks to is controlled by `DATABASE_URL` (see Database section above). The app boots correctly even without Azure AI credentials set — AI functionality isn't part of Phase 1.
 
 Apply migrations and seed data once the containers are up:
 
@@ -58,7 +64,7 @@ cd backend
 python -m venv .venv
 source .venv/Scripts/activate   # Windows Git Bash; use .venv\Scripts\Activate.ps1 for PowerShell
 pip install -r requirements-dev.txt
-cp ../.env.example ../.env      # or create backend/.env with DATABASE_URL pointing at your local Postgres
+cp ../.env.example ../.env      # fill in DATABASE_URL with your Supabase connection string
 alembic upgrade head
 python -m app.seed
 uvicorn app.main:app --reload

@@ -1,4 +1,8 @@
 services:
+  # Optional local Postgres for dev when the shared Supabase DB isn't reachable
+  # (e.g. corporate network blocking port 5432/6543). Not wired as a hard
+  # dependency of backend — which DB is used is controlled entirely by
+  # DATABASE_URL in .env.
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -22,15 +26,11 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-banking}:${POSTGRES_PASSWORD:-banking}@postgres:5432/${POSTGRES_DB:-banking}
       FRONTEND_ORIGIN: http://localhost:5173
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   frontend:
     build: ./frontend
