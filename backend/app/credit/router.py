@@ -13,6 +13,7 @@ from app.credit.schemas import (
     CreditScoreRecalculateRequest,
     LoanCalculatorRequest,
     LoanCalculatorResult,
+    LoanPublic,
 )
 from app.credit.service import CreditService
 from app.database import get_db
@@ -78,6 +79,23 @@ def create_application(
     application = CreditService(db).create_application(current_user.id, payload)
     db.commit()
     return application
+
+
+@router.get("/loans", response_model=list[LoanPublic])
+def list_loans(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[LoanPublic]:
+    return CreditService(db).list_loans(current_user.id)
+
+
+@router.get("/loans/{loan_id}", response_model=LoanPublic)
+def get_loan(
+    loan_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LoanPublic:
+    return CreditService(db).get_loan_for_user(current_user.id, loan_id)
 
 
 @router.get("/applications/{application_id}", response_model=CreditApplicationPublic)

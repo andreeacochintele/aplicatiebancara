@@ -12,6 +12,7 @@ from app.credit.models import (
     CreditApplicationType,
     CreditProfile,
     CreditScoreHistory,
+    Loan,
 )
 from app.credit.repository import CreditRepository
 from app.credit.schemas import (
@@ -92,6 +93,49 @@ class CreditService:
 
     def calculate_loan(self, data: LoanCalculatorRequest) -> LoanCalculatorResult:
         return calculate_loan_schedule(data)
+
+    def create_loan_from_application(self, user_id: uuid.UUID, application_id: uuid.UUID) -> Loan:
+        application = self.get_application_for_user(user_id, application_id)
+        if application.type != CreditApplicationType.PERSONAL_LOAN:
+            raise ValidationError("Only personal loan applications can create loans")
+        if application.status != CreditApplicationStatus.APPROVED:
+            raise ValidationError("Only approved applications can create loans")
+        if application.requested_term_months is None or application.requested_term_months <= 0:
+            raise ValidationError("Approved loan applications require a positive term")
+        if application.offered_amount is None or application.offered_amount <= 0:
+            raise ValidationError("Approved loan applications require a positive offered amount")
+        if application.offered_interest_rate is None or application.offered_interest_rate < 0:
+            raise ValidationError("Approved loan applications require a non-negative offered interest rate")
+        if self.repository.get_loan_by_application(application.id) is not None:
+            raise ValidationError("Loan already exists for this application")
+
+        preview = calculate_loan_schedule(
+            LoanCalculatorRequest(
+                principal_amount=application.offered_amount,
+                annual_interest_rate=application.offered_interest_rate,
+                term_months=application.requested_term_months,
+            )
+        )
+        return self.repository.add_loan(
+            Loan(
+                user_id=user_id,
+                application_id=application.id,
+                principal_amount=preview.principal_amount,
+                interest_rate=preview.annual_interest_rate,
+                term_months=preview.term_months,
+                monthly_payment=preview.monthly_payment,
+                outstanding_principal=preview.principal_amount,
+            )
+        )
+
+    def list_loans(self, user_id: uuid.UUID) -> list[Loan]:
+        return self.repository.list_loans_for_user(user_id)
+
+    def get_loan_for_user(self, user_id: uuid.UUID, loan_id: uuid.UUID) -> Loan:
+        loan = self.repository.get_loan_by_id(loan_id)
+        if loan is None or loan.user_id != user_id:
+            raise NotFoundError("Loan not found")
+        return loan
 
     def list_applications(self, user_id: uuid.UUID) -> list[CreditApplication]:
         return self.repository.list_applications_for_user(user_id)

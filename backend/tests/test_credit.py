@@ -4,7 +4,7 @@ import pytest
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.credit.loan_calculator import calculate_loan_schedule
-from app.credit.models import CreditApplicationStatus, CreditApplicationType
+from app.credit.models import CreditApplicationStatus, CreditApplicationType, LoanStatus
 from app.credit.schemas import CreditApplicationCreate, CreditScoreRecalculateRequest, LoanCalculatorRequest
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.credit.service import CreditService
@@ -299,3 +299,156 @@ def test_create_credit_application_endpoint(client):
     assert body["type"] == "CREDIT_CARD"
     assert body["status"] == "PENDING"
     assert body["credit_score_at_application"] == 600
+
+
+def test_create_loan_from_approved_application(db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("25000.00"),
+            requested_term_months=36,
+        ),
+    )
+    application.status = CreditApplicationStatus.APPROVED
+    application.offered_amount = Decimal("20000.00")
+    application.offered_interest_rate = Decimal("9.50")
+
+    loan = service.create_loan_from_application(user.id, application.id)
+
+    assert loan.user_id == user.id
+    assert loan.application_id == application.id
+    assert loan.principal_amount == Decimal("20000.00")
+    assert loan.interest_rate == Decimal("9.50")
+    assert loan.term_months == 36
+    assert loan.monthly_payment == Decimal("640.66")
+    assert loan.outstanding_principal == Decimal("20000.00")
+    assert loan.status == LoanStatus.ACTIVE
+
+
+def test_create_loan_requires_approved_personal_loan_application(db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    pending = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("25000.00"),
+            requested_term_months=36,
+        ),
+    )
+    card_application = service.create_application(
+        user.id,
+        CreditApplicationCreate(type=CreditApplicationType.CREDIT_CARD, requested_amount=Decimal("5000.00")),
+    )
+    card_application.status = CreditApplicationStatus.APPROVED
+    card_application.offered_amount = Decimal("5000.00")
+    card_application.offered_interest_rate = Decimal("18.00")
+
+    with pytest.raises(ValidationError):
+        service.create_loan_from_application(user.id, pending.id)
+
+    with pytest.raises(ValidationError):
+        service.create_loan_from_application(user.id, card_application.id)
+
+
+def test_create_loan_rejects_duplicate_for_application(db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    application.status = CreditApplicationStatus.APPROVED
+    application.offered_amount = Decimal("10000.00")
+    application.offered_interest_rate = Decimal("12.00")
+    service.create_loan_from_application(user.id, application.id)
+
+    with pytest.raises(ValidationError):
+        service.create_loan_from_application(user.id, application.id)
+
+
+def test_list_and_get_loans_are_scoped_to_user(db_session):
+    user = _create_user(db_session)
+    other = UserService(db_session).create_user(
+        UserCreate(
+            email="loan-other@example.com",
+            password="Sup3rSecret!",
+            first_name="Loan",
+            last_name="Other",
+        )
+    )
+    service = CreditService(db_session)
+    own_application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    own_application.status = CreditApplicationStatus.APPROVED
+    own_application.offered_amount = Decimal("10000.00")
+    own_application.offered_interest_rate = Decimal("12.00")
+    own_loan = service.create_loan_from_application(user.id, own_application.id)
+    other_application = service.create_application(
+        other.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("12000.00"),
+            requested_term_months=24,
+        ),
+    )
+    other_application.status = CreditApplicationStatus.APPROVED
+    other_application.offered_amount = Decimal("12000.00")
+    other_application.offered_interest_rate = Decimal("10.00")
+    other_loan = service.create_loan_from_application(other.id, other_application.id)
+
+    assert service.list_loans(user.id) == [own_loan]
+    assert service.get_loan_for_user(user.id, own_loan.id) == own_loan
+    with pytest.raises(NotFoundError):
+        service.get_loan_for_user(user.id, other_loan.id)
+
+
+def test_loan_endpoints_require_auth(client):
+    list_response = client.get("/api/v1/credit/loans")
+    get_response = client.get("/api/v1/credit/loans/00000000-0000-0000-0000-000000000000")
+
+    assert list_response.status_code == 401
+    assert get_response.status_code == 401
+
+
+def test_list_loans_endpoint_returns_user_loans(client, db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    application.status = CreditApplicationStatus.APPROVED
+    application.offered_amount = Decimal("10000.00")
+    application.offered_interest_rate = Decimal("12.00")
+    loan = service.create_loan_from_application(user.id, application.id)
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "credit-owner@example.com", "password": "Sup3rSecret!"},
+    )
+    token = login.json()["tokens"]["access_token"]
+
+    list_response = client.get("/api/v1/credit/loans", headers={"Authorization": f"Bearer {token}"})
+    get_response = client.get(f"/api/v1/credit/loans/{loan.id}", headers={"Authorization": f"Bearer {token}"})
+
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["id"] == str(loan.id)
+    assert get_response.status_code == 200
+    assert get_response.json()["application_id"] == str(application.id)

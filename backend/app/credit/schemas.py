@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from app.credit.models import CreditApplicationStatus, CreditApplicationType
+from app.credit.models import CreditApplicationStatus, CreditApplicationType, LoanStatus
 
 
 class CreditProfilePublic(BaseModel):
@@ -60,6 +60,22 @@ class LoanCalculatorResult(BaseModel):
     total_payment: Decimal
     total_interest: Decimal
     schedule: list[LoanInstallmentPreview]
+
+
+class LoanPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    application_id: uuid.UUID
+    principal_amount: Decimal
+    interest_rate: Decimal
+    term_months: int
+    monthly_payment: Decimal
+    outstanding_principal: Decimal
+    status: LoanStatus
+    created_at: datetime
+    closed_at: datetime | None
 
 
 class CreditApplicationPublic(BaseModel):

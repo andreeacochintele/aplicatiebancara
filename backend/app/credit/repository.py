@@ -4,7 +4,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.credit.models import CreditApplication, CreditProfile, CreditScoreHistory
+from app.credit.models import CreditApplication, CreditProfile, CreditScoreHistory, Loan
 
 
 class CreditRepository:
@@ -46,4 +46,19 @@ class CreditRepository:
             .where(CreditApplication.user_id == user_id)
             .order_by(CreditApplication.created_at.desc())
         )
+        return list(self.db.scalars(stmt))
+
+    def add_loan(self, loan: Loan) -> Loan:
+        self.db.add(loan)
+        self.db.flush()
+        return loan
+
+    def get_loan_by_id(self, loan_id: uuid.UUID) -> Loan | None:
+        return self.db.get(Loan, loan_id)
+
+    def get_loan_by_application(self, application_id: uuid.UUID) -> Loan | None:
+        return self.db.scalar(select(Loan).where(Loan.application_id == application_id))
+
+    def list_loans_for_user(self, user_id: uuid.UUID) -> list[Loan]:
+        stmt = select(Loan).where(Loan.user_id == user_id).order_by(Loan.created_at.desc())
         return list(self.db.scalars(stmt))

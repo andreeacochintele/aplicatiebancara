@@ -28,6 +28,12 @@ class CreditApplicationStatus(str, enum.Enum):
     REJECTED = "REJECTED"
 
 
+class LoanStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    CLOSED = "CLOSED"
+    DEFAULTED = "DEFAULTED"
+
+
 class CreditProfile(Base):
     __tablename__ = "credit_profiles"
 
@@ -78,3 +84,29 @@ class CreditApplication(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     owner = relationship("User")
+    loan = relationship("Loan", back_populates="application", uselist=False)
+
+
+class Loan(Base):
+    __tablename__ = "loans"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    application_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("credit_applications.id"), unique=True, nullable=False
+    )
+    principal_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    interest_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    term_months: Mapped[int] = mapped_column(Integer, nullable=False)
+    monthly_payment: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    outstanding_principal: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    status: Mapped[LoanStatus] = mapped_column(
+        Enum(LoanStatus, name="loan_status"),
+        default=LoanStatus.ACTIVE,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    owner = relationship("User")
+    application = relationship("CreditApplication", back_populates="loan")
