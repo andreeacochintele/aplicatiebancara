@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from app.credit.models import CreditApplicationStatus, CreditApplicationType
+
 
 class CreditProfilePublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -28,3 +30,25 @@ class CreditScorePublic(BaseModel):
     band: str
     reason_data: dict[str, Any]
     calculated_at: datetime
+
+
+class CreditApplicationCreate(BaseModel):
+    type: CreditApplicationType
+    requested_amount: Decimal
+    requested_term_months: int | None = None
+
+
+class CreditApplicationPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    type: CreditApplicationType
+    requested_amount: Decimal
+    requested_term_months: int | None
+    offered_interest_rate: Decimal | None
+    offered_amount: Decimal | None
+    credit_score_at_application: int
+    status: CreditApplicationStatus
+    created_at: datetime
+    resolved_at: datetime | None

@@ -4,9 +4,10 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.credit.models import CreditProfile, CreditScoreHistory
+from app.core.exceptions import NotFoundError, ValidationError
+from app.credit.models import CreditApplication, CreditApplicationStatus, CreditApplicationType, CreditProfile, CreditScoreHistory
 from app.credit.repository import CreditRepository
-from app.credit.schemas import CreditScorePublic, CreditScoreRecalculateRequest
+from app.credit.schemas import CreditApplicationCreate, CreditScorePublic, CreditScoreRecalculateRequest
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.wallets.repository import WalletRepository
 
@@ -55,6 +56,35 @@ class CreditService:
             reason_data=history.reason_data,
             calculated_at=history.created_at,
         )
+
+    def create_application(self, user_id: uuid.UUID, data: CreditApplicationCreate) -> CreditApplication:
+        if data.requested_amount <= 0:
+            raise ValidationError("Requested amount must be positive")
+        if data.type == CreditApplicationType.PERSONAL_LOAN:
+            if data.requested_term_months is None or data.requested_term_months <= 0:
+                raise ValidationError("Personal loan applications require a positive term")
+        elif data.requested_term_months is not None and data.requested_term_months <= 0:
+            raise ValidationError("Requested term must be positive")
+
+        score = self.get_score(user_id)
+        application = CreditApplication(
+            user_id=user_id,
+            type=data.type,
+            requested_amount=data.requested_amount,
+            requested_term_months=data.requested_term_months,
+            credit_score_at_application=score.score,
+            status=CreditApplicationStatus.PENDING,
+        )
+        return self.repository.add_application(application)
+
+    def list_applications(self, user_id: uuid.UUID) -> list[CreditApplication]:
+        return self.repository.list_applications_for_user(user_id)
+
+    def get_application_for_user(self, user_id: uuid.UUID, application_id: uuid.UUID) -> CreditApplication:
+        application = self.repository.get_application_by_id(application_id)
+        if application is None or application.user_id != user_id:
+            raise NotFoundError("Credit application not found")
+        return application
 
     def _wallet_balance(self, user_id: uuid.UUID) -> Decimal:
         return sum((wallet.available_balance for wallet in self.wallets.list_for_user(user_id)), Decimal("0"))

@@ -78,3 +78,20 @@ export interface CreditScore {
   reason_data: Record<string, string | number>;
   calculated_at: string;
 }
+
+export type CreditApplicationType = "PERSONAL_LOAN" | "CREDIT_CARD";
+export type CreditApplicationStatus = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
+
+export interface CreditApplication {
+  id: string;
+  user_id: string;
+  type: CreditApplicationType;
+  requested_amount: string;
+  requested_term_months: number | null;
+  offered_interest_rate: string | null;
+  offered_amount: string | null;
+  credit_score_at_application: number;
+  status: CreditApplicationStatus;
+  created_at: string;
+  resolved_at: string | null;
+}

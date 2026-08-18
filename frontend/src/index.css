@@ -632,6 +632,13 @@ th {
   gap: 0.75rem;
 }
 
+.credit-application-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+  gap: 0.75rem;
+}
+
 .credit-profile-meta {
   display: flex;
   align-items: baseline;

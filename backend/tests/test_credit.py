@@ -1,6 +1,10 @@
 from decimal import Decimal
 
-from app.credit.schemas import CreditScoreRecalculateRequest
+import pytest
+
+from app.core.exceptions import NotFoundError, ValidationError
+from app.credit.models import CreditApplicationStatus, CreditApplicationType
+from app.credit.schemas import CreditApplicationCreate, CreditScoreRecalculateRequest
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.credit.service import CreditService
 from app.users.schemas import UserCreate
@@ -91,3 +95,111 @@ def test_credit_score_endpoint_returns_score(client):
     body = response.json()
     assert body["score"] == 600
     assert body["band"] == "FAIR"
+
+
+def test_create_personal_loan_application_captures_current_score(db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    service.recalculate_score(
+        user.id,
+        CreditScoreRecalculateRequest(income=Decimal("12000.00"), existing_debt=Decimal("2000.00")),
+    )
+
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("50000.00"),
+            requested_term_months=48,
+        ),
+    )
+
+    assert application.user_id == user.id
+    assert application.status == CreditApplicationStatus.PENDING
+    assert application.credit_score_at_application == 644
+
+
+def test_create_credit_card_application_allows_missing_term(db_session):
+    user = _create_user(db_session)
+
+    application = CreditService(db_session).create_application(
+        user.id,
+        CreditApplicationCreate(type=CreditApplicationType.CREDIT_CARD, requested_amount=Decimal("10000.00")),
+    )
+
+    assert application.type == CreditApplicationType.CREDIT_CARD
+    assert application.requested_term_months is None
+
+
+def test_create_application_rejects_invalid_amount(db_session):
+    user = _create_user(db_session)
+
+    with pytest.raises(ValidationError):
+        CreditService(db_session).create_application(
+            user.id,
+            CreditApplicationCreate(type=CreditApplicationType.CREDIT_CARD, requested_amount=Decimal("0.00")),
+        )
+
+
+def test_create_personal_loan_application_requires_term(db_session):
+    user = _create_user(db_session)
+
+    with pytest.raises(ValidationError):
+        CreditService(db_session).create_application(
+            user.id,
+            CreditApplicationCreate(
+                type=CreditApplicationType.PERSONAL_LOAN,
+                requested_amount=Decimal("50000.00"),
+            ),
+        )
+
+
+def test_list_and_get_applications_are_scoped_to_user(db_session):
+    user = _create_user(db_session)
+    other = UserService(db_session).create_user(
+        UserCreate(
+            email="credit-other@example.com",
+            password="Sup3rSecret!",
+            first_name="Credit",
+            last_name="Other",
+        )
+    )
+    service = CreditService(db_session)
+    own = service.create_application(
+        user.id,
+        CreditApplicationCreate(type=CreditApplicationType.CREDIT_CARD, requested_amount=Decimal("10000.00")),
+    )
+    other_application = service.create_application(
+        other.id,
+        CreditApplicationCreate(type=CreditApplicationType.CREDIT_CARD, requested_amount=Decimal("15000.00")),
+    )
+
+    assert service.list_applications(user.id) == [own]
+    assert service.get_application_for_user(user.id, own.id) == own
+    with pytest.raises(NotFoundError):
+        service.get_application_for_user(user.id, other_application.id)
+
+
+def test_create_credit_application_endpoint(client):
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "credit-application-endpoint@example.com",
+            "password": "Sup3rSecret!",
+            "first_name": "Credit",
+            "last_name": "Application",
+        },
+    )
+    token = register.json()["tokens"]["access_token"]
+
+    response = client.post(
+        "/api/v1/credit/applications",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"type": "CREDIT_CARD", "requested_amount": "12000.00"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["type"] == "CREDIT_CARD"
+    assert body["status"] == "PENDING"
+    assert body["credit_score_at_application"] == 600
