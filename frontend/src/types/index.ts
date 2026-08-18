@@ -62,3 +62,19 @@ export interface CardPaymentPreferences {
   allow_main_wallet_fx: boolean;
   updated_at: string;
 }
+
+export interface CreditProfile {
+  id: string;
+  user_id: string;
+  current_score: number;
+  income: string;
+  existing_debt: string;
+  updated_at: string;
+}
+
+export interface CreditScore {
+  score: number;
+  band: string;
+  reason_data: Record<string, string | number>;
+  calculated_at: string;
+}

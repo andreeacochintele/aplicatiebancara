@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.auth import models as auth_models  # noqa: F401
 from app.cards import models as cards_models  # noqa: F401
+from app.credit import models as credit_models  # noqa: F401
 from app.database import Base, get_db
 from app.fx import models as fx_models  # noqa: F401
 from app.main import app

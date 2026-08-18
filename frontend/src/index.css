@@ -574,3 +574,79 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- Credit ---- */
+
+.credit-score-layout {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 1.25rem;
+  align-items: center;
+}
+
+.credit-score-ring {
+  --score-percent: 0%;
+  width: 156px;
+  height: 156px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at center, var(--color-surface) 0 58%, transparent 59%),
+    conic-gradient(var(--color-accent) var(--score-percent), var(--color-divider) 0);
+}
+
+.credit-score-ring div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.credit-score-ring span {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.credit-score-ring small {
+  color: var(--color-text-muted);
+}
+
+.credit-factor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.credit-factor {
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  background: var(--color-surface-raised);
+}
+
+.credit-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.credit-profile-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.credit-profile-meta strong {
+  color: var(--color-text);
+}
+
+@media (max-width: 680px) {
+  .credit-score-layout {
+    grid-template-columns: 1fr;
+  }
+}
