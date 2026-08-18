@@ -93,6 +93,82 @@ export interface ScheduledPayment {
   updated_at: string;
 }
 
+export type CardType = "DEBIT" | "CREDIT" | "ONE_TIME";
+export type CardStatus = "ACTIVE" | "FROZEN" | "EXPIRED" | "CANCELLED";
+
+export interface Card {
+  id: string;
+  user_id: string;
+  default_wallet_id: string | null;
+  type: CardType;
+  status: CardStatus;
+  masked_pan: string;
+  last_four: string;
+  expiration_month: number;
+  expiration_year: number;
+  one_time_remaining: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardPaymentPreferences {
+  card_id: string;
+  preferred_wallet_id: string | null;
+  allow_main_wallet_fx: boolean;
+  updated_at: string;
+}
+
+export interface CreditProfile {
+  id: string;
+  user_id: string;
+  current_score: number;
+  income: string;
+  existing_debt: string;
+  updated_at: string;
+}
+
+export interface CreditScore {
+  score: number;
+  band: string;
+  reason_data: Record<string, string | number>;
+  calculated_at: string;
+}
+
+export interface LoanInstallmentPreview {
+  installment_number: number;
+  payment_amount: string;
+  principal_amount: string;
+  interest_amount: string;
+  remaining_principal: string;
+}
+
+export interface LoanCalculatorResult {
+  principal_amount: string;
+  annual_interest_rate: string;
+  term_months: number;
+  monthly_payment: string;
+  total_payment: string;
+  total_interest: string;
+  schedule: LoanInstallmentPreview[];
+}
+
+export type CreditApplicationType = "PERSONAL_LOAN" | "CREDIT_CARD";
+export type CreditApplicationStatus = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
+
+export interface CreditApplication {
+  id: string;
+  user_id: string;
+  type: CreditApplicationType;
+  requested_amount: string;
+  requested_term_months: number | null;
+  offered_interest_rate: string | null;
+  offered_amount: string | null;
+  credit_score_at_application: number;
+  status: CreditApplicationStatus;
+  created_at: string;
+  resolved_at: string | null;
+}
+
 export interface SpendingByTypeItem {
   type: string;
   total_amount: string;
