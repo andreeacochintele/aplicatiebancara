@@ -72,3 +72,30 @@ export interface Statement {
   total_outgoing: string;
   transactions: StatementTransaction[];
 }
+
+export interface Budget {
+  id: string;
+  name: string;
+  category_id: string | null;
+  limit_amount: string;
+  currency: string;
+  period: "WEEKLY" | "MONTHLY";
+  spent_amount: string;
+  percent_used: number;
+  remaining_amount: string;
+  period_end: string;
+  days_remaining: number;
+  created_at: string;
+}
+
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  target_amount: string;
+  current_amount: string;
+  currency: string;
+  target_date: string | null;
+  percent_complete: number;
+  monthly_amount_needed: string | null;
+  created_at: string;
+}
