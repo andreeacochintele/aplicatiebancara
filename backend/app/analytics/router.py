@@ -1,17 +1,30 @@
-"""Placeholder router for the analytics module.
+"""Analytics endpoints, scoped to the authenticated user."""
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
-This module is structured (router/service/repository/models/schemas) but not
-yet implemented — see architecture.md for its target scope. Wired into
-/api/v1 now so the route table and dev split are stable across the team.
-"""
-from fastapi import APIRouter, HTTPException, status
+from app.analytics.schemas import MonthlyTrendResponse, SpendingByTypeResponse
+from app.analytics.service import AnalyticsService
+from app.auth.dependencies import get_current_user
+from app.database import get_db
+from app.users.models import User
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
-@router.get("", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def not_implemented() -> dict:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="'analytics' module is not implemented yet (Phase 1 skeleton only)",
-    )
+@router.get("/spending-by-type", response_model=SpendingByTypeResponse)
+def get_spending_by_type(
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SpendingByTypeResponse:
+    return AnalyticsService(db).spending_by_type(current_user.id, year, month)
+
+
+@router.get("/monthly-trend", response_model=MonthlyTrendResponse)
+def get_monthly_trend(
+    months: int = Query(default=6),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MonthlyTrendResponse:
+    return AnalyticsService(db).monthly_trend(current_user.id, months)
