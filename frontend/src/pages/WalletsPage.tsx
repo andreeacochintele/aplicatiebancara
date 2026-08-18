@@ -14,8 +14,7 @@ export function WalletsPage() {
   }, [accessToken]);
 
   return (
-    <section>
-      <h2>Wallets</h2>
+    <section className="tile">
       <table>
         <thead>
           <tr>
@@ -29,13 +28,20 @@ export function WalletsPage() {
           {wallets.map((wallet) => (
             <tr key={wallet.id}>
               <td>
-                {wallet.currency} {wallet.is_main && "(main)"}
+                {wallet.currency} {wallet.is_main && <span className="tag tag--accent">MAIN</span>}
               </td>
               <td>{wallet.available_balance}</td>
               <td>{wallet.reserved_balance}</td>
-              <td>{wallet.status}</td>
+              <td>
+                <span className="tag tag--neutral">{wallet.status}</span>
+              </td>
             </tr>
           ))}
+          {wallets.length === 0 && (
+            <tr>
+              <td colSpan={4}>No wallets yet.</td>
+            </tr>
+          )}
         </tbody>
       </table>
     </section>
