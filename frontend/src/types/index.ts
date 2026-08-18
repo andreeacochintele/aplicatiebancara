@@ -150,3 +150,46 @@ export interface SavingsGoal {
   monthly_amount_needed: string | null;
   created_at: string;
 }
+
+export interface CashbackOffer {
+  id: string;
+  cashback_percent: string;
+  maximum_cashback: string | null;
+  minimum_spend: string | null;
+  start_date: string;
+  end_date: string;
+  status: "ACTIVE" | "EXPIRED";
+}
+
+export interface Merchant {
+  id: string;
+  name: string;
+  category: string;
+  logo_url: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  active_offer: CashbackOffer | null;
+  created_at: string;
+}
+
+export interface PurchaseResult {
+  merchant_id: string;
+  amount: string;
+  currency: string;
+  cashback_percent: string | null;
+  cashback_amount: string;
+  points_earned: number;
+  reward_points_balance: number;
+}
+
+export interface RewardTransaction {
+  id: string;
+  type: "EARN" | "SPEND" | "ADJUSTMENT";
+  points: number;
+  description: string | null;
+  created_at: string;
+}
+
+export interface RewardAccount {
+  points_balance: number;
+  transactions: RewardTransaction[];
+}
