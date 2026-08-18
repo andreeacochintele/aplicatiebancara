@@ -19,8 +19,14 @@ function statusClass(status: Card["status"]): string {
   return "tag tag--neutral";
 }
 
+function cardToneClass(type: CardType): string {
+  if (type === "CREDIT") return "bank-card bank-card--credit";
+  if (type === "ONE_TIME") return "bank-card bank-card--one-time";
+  return "bank-card bank-card--debit";
+}
+
 export function CardsPage() {
-  const { accessToken } = useAuth();
+  const { accessToken, logout, user } = useAuth();
   const [cards, setCards] = useState<Card[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [selectedType, setSelectedType] = useState<CardType>("DEBIT");
@@ -31,6 +37,7 @@ export function CardsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const activeWallets = useMemo(() => wallets.filter((wallet) => wallet.status === "ACTIVE"), [wallets]);
+  const cardholderName = user ? `${user.first_name} ${user.last_name}`.trim() : "Card holder";
 
   async function loadCardsData(token: string) {
     setIsLoading(true);
@@ -45,6 +52,10 @@ export function CardsPage() {
       const mainWallet = walletsResponse.find((wallet) => wallet.is_main && wallet.status === "ACTIVE");
       setSelectedWalletId((current) => current || mainWallet?.id || "");
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
       setCards([]);
       setWallets([]);
       setError(err instanceof ApiError ? err.message : "Could not load cards.");
@@ -56,7 +67,7 @@ export function CardsPage() {
   useEffect(() => {
     if (!accessToken) return;
     void loadCardsData(accessToken);
-  }, [accessToken]);
+  }, [accessToken, logout]);
 
   async function createCard() {
     if (!accessToken || isSaving) return;
@@ -73,6 +84,10 @@ export function CardsPage() {
       });
       setCards((current) => [card, ...current]);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
       setError(err instanceof ApiError ? err.message : "Could not create card.");
     } finally {
       setIsSaving(false);
@@ -91,6 +106,10 @@ export function CardsPage() {
       });
       setCards((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
       setError(err instanceof ApiError ? err.message : "Could not update card.");
     } finally {
       setActionCardId(null);
@@ -137,32 +156,38 @@ export function CardsPage() {
         <div className="tile__header">
           <span className="eyebrow">My cards</span>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Card</th>
-              <th>Type</th>
-              <th>Default wallet</th>
-              <th>Status</th>
-              <th>Expires</th>
-              <th style={{ textAlign: "right" }}>Action</th>
-            </tr>
-          </thead>
-          <tbody>
+        {isLoading && <div className="card-empty">Loading cards...</div>}
+        {!isLoading && cards.length === 0 && <div className="card-empty">No cards yet.</div>}
+        {!isLoading && cards.length > 0 && (
+          <div className="card-gallery">
             {cards.map((card) => {
               const wallet = wallets.find((item) => item.id === card.default_wallet_id);
               return (
-                <tr key={card.id}>
-                  <td style={{ fontVariantNumeric: "tabular-nums" }}>{card.masked_pan}</td>
-                  <td>{formatCardType(card.type)}</td>
-                  <td>{wallet ? wallet.currency : "None"}</td>
-                  <td>
-                    <span className={statusClass(card.status)}>{card.status}</span>
-                  </td>
-                  <td>
-                    {String(card.expiration_month).padStart(2, "0")}/{card.expiration_year}
-                  </td>
-                  <td style={{ textAlign: "right" }}>
+                <article className="card-panel" key={card.id}>
+                  <div className={cardToneClass(card.type)}>
+                    <div className="bank-card__top">
+                      <span className="bank-card__brand">BANKING</span>
+                      <span className={statusClass(card.status)}>{card.status}</span>
+                    </div>
+                    <div className="bank-card__chip" aria-hidden="true" />
+                    <div className="bank-card__number">{card.masked_pan}</div>
+                    <div className="bank-card__holder">
+                      <span>Card holder</span>
+                      <strong>{cardholderName}</strong>
+                    </div>
+                    <div className="bank-card__footer">
+                      <span>{formatCardType(card.type)}</span>
+                      <span>
+                        {String(card.expiration_month).padStart(2, "0")}/{card.expiration_year}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="card-panel__meta">
+                    <div>
+                      <div className="eyebrow">Default wallet</div>
+                      <div className="card-panel__value">{wallet ? wallet.currency : "None"}</div>
+                    </div>
                     <button
                       type="button"
                       onClick={() => updateCardStatus(card)}
@@ -170,22 +195,12 @@ export function CardsPage() {
                     >
                       {card.status === "FROZEN" ? "Unfreeze" : "Freeze"}
                     </button>
-                  </td>
-                </tr>
+                  </div>
+                </article>
               );
             })}
-            {!isLoading && cards.length === 0 && (
-              <tr>
-                <td colSpan={6}>No cards yet.</td>
-              </tr>
-            )}
-            {isLoading && (
-              <tr>
-                <td colSpan={6}>Loading cards...</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+          </div>
+        )}
       </div>
     </section>
   );
