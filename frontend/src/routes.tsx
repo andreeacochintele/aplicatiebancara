@@ -13,6 +13,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { PaymentsPage } from "./pages/PaymentsPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { RewardsPage } from "./pages/RewardsPage";
+import { StatementsPage } from "./pages/StatementsPage";
 import { TransactionsPage } from "./pages/TransactionsPage";
 import { WalletsPage } from "./pages/WalletsPage";
 
@@ -33,6 +34,7 @@ export const routes: RouteObject[] = [
       { path: "/cards", element: <CardsPage /> },
       { path: "/payments", element: <PaymentsPage /> },
       { path: "/transactions", element: <TransactionsPage /> },
+      { path: "/statements", element: <StatementsPage /> },
       { path: "/analytics", element: <AnalyticsPage /> },
       { path: "/rewards", element: <RewardsPage /> },
       { path: "/credit", element: <CreditPage /> },

@@ -1,7 +1,7 @@
 """Credit score core.
 
-Revision ID: 0005
-Revises: 0004
+Revision ID: 0006_credit_score_core
+Revises: 0005_card_payment_preferences
 Create Date: 2026-08-18
 """
 from typing import Sequence, Union
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0005"
-down_revision: Union[str, None] = "0004"
+revision: str = "0006_credit_score_core"
+down_revision: Union[str, None] = "0005_card_payment_preferences"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

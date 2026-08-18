@@ -1,7 +1,7 @@
 """Cards core.
 
-Revision ID: 0003
-Revises: 0002
+Revision ID: 0004_cards_core
+Revises: 0003
 Create Date: 2026-08-18
 """
 from typing import Sequence, Union
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0003"
-down_revision: Union[str, None] = "0002"
+revision: str = "0004_cards_core"
+down_revision: Union[str, None] = "0003"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

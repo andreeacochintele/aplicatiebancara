@@ -236,6 +236,11 @@ select {
   color: var(--color-text);
 }
 
+select option {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
 button {
   cursor: pointer;
   border: 1px solid var(--color-accent);
@@ -710,4 +715,39 @@ th {
   .loan-result-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---- Analytics bar rows ---- */
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+}
+
+.bar-row__label {
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.bar-row__track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-surface-raised);
+  overflow: hidden;
+}
+
+.bar-row__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-accent);
+}
+
+.bar-row__value {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }

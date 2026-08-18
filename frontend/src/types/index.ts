@@ -113,3 +113,116 @@ export interface CreditApplication {
   created_at: string;
   resolved_at: string | null;
 }
+
+export interface SpendingByTypeItem {
+  type: string;
+  total_amount: string;
+  currency: string;
+  transaction_count: number;
+}
+
+export interface SpendingByTypeResponse {
+  period_start: string;
+  period_end: string;
+  items: SpendingByTypeItem[];
+}
+
+export interface MonthlyTrendItem {
+  year: number;
+  month: number;
+  currency: string;
+  total_amount: string;
+  transaction_count: number;
+}
+
+export interface MonthlyTrendResponse {
+  items: MonthlyTrendItem[];
+}
+
+export interface WalletBalanceItem {
+  wallet_id: string;
+  currency: string;
+  available_balance: string;
+  reserved_balance: string;
+  is_main: boolean;
+  converted_available_balance: string;
+}
+
+export interface NetWorthResponse {
+  base_currency: string;
+  total_available_balance: string;
+  wallets: WalletBalanceItem[];
+}
+
+export interface ForecastResponse {
+  wallet_id: string;
+  currency: string;
+  current_balance: string;
+  days_elapsed: number;
+  days_remaining: number;
+  average_daily_net_change: string;
+  projected_month_end_balance: string;
+  note: string;
+}
+
+export interface FXQuote {
+  id: string;
+  source_currency: string;
+  target_currency: string;
+  source_amount: string;
+  target_amount: string;
+  exchange_rate: string;
+  fee: string;
+  status: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface StatementTransaction {
+  id: string;
+  created_at: string;
+  type: string;
+  status: string;
+  description: string | null;
+  direction: "IN" | "OUT";
+  amount: string;
+}
+
+export interface Statement {
+  wallet_id: string;
+  currency: string;
+  date_from: string;
+  date_to: string;
+  opening_balance: string;
+  closing_balance: string;
+  total_incoming: string;
+  total_outgoing: string;
+  transactions: StatementTransaction[];
+}
+
+export interface Budget {
+  id: string;
+  name: string;
+  category_id: string | null;
+  limit_amount: string;
+  currency: string;
+  period: "WEEKLY" | "MONTHLY";
+  spent_amount: string;
+  percent_used: number;
+  remaining_amount: string;
+  period_end: string;
+  days_remaining: number;
+  created_at: string;
+}
+
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  target_amount: string;
+  current_amount: string;
+  currency: string;
+  target_date: string | null;
+  percent_complete: number;
+  monthly_amount_needed: string | null;
+  created_at: string;
+}

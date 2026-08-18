@@ -1,17 +1,30 @@
-"""Placeholder router for the budgets module.
+"""Budget endpoints, scoped to the authenticated user."""
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
-This module is structured (router/service/repository/models/schemas) but not
-yet implemented — see architecture.md for its target scope. Wired into
-/api/v1 now so the route table and dev split are stable across the team.
-"""
-from fastapi import APIRouter, HTTPException, status
+from app.auth.dependencies import get_current_user
+from app.budgets.schemas import BudgetCreate, BudgetPublic
+from app.budgets.service import BudgetService
+from app.database import get_db
+from app.users.models import User
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
 
-@router.get("", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def not_implemented() -> dict:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="'budgets' module is not implemented yet (Phase 1 skeleton only)",
-    )
+@router.get("", response_model=list[BudgetPublic])
+def list_my_budgets(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[BudgetPublic]:
+    return BudgetService(db).list_budgets(current_user.id)
+
+
+@router.post("", response_model=BudgetPublic, status_code=201)
+def create_budget(
+    payload: BudgetCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BudgetPublic:
+    budget = BudgetService(db).create_budget(current_user.id, payload)
+    db.commit()
+    return budget
