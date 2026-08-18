@@ -189,7 +189,41 @@ export interface RewardTransaction {
   created_at: string;
 }
 
+export interface RewardTier {
+  id: string;
+  name: string;
+  min_lifetime_points: number;
+  perks: string[];
+}
+
+export type BenefitCategory = "LOUNGE_ACCESS" | "RETAIL_DISCOUNT" | "TRAVEL" | "INSURANCE" | "OTHER";
+
+export interface RewardBenefit {
+  id: string;
+  name: string;
+  category: BenefitCategory;
+  description: string;
+  points_cost: number | null;
+  min_tier: RewardTier | null;
+  partner_name: string | null;
+  can_redeem: boolean;
+  reason_if_locked: string | null;
+}
+
+export interface BenefitRedemption {
+  id: string;
+  benefit_id: string;
+  benefit_name: string;
+  points_spent: number;
+  redeemed_at: string;
+}
+
 export interface RewardAccount {
   points_balance: number;
+  lifetime_points_earned: number;
+  tier: RewardTier;
+  next_tier: RewardTier | null;
+  points_to_next_tier: number | null;
   transactions: RewardTransaction[];
+  redemptions: BenefitRedemption[];
 }
