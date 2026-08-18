@@ -639,6 +639,55 @@ th {
   gap: 0.75rem;
 }
 
+.loan-calculator-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(320px, 1.2fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.loan-calculator-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.loan-result {
+  min-width: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.loan-result-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.loan-result-grid div {
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  background: var(--color-surface-raised);
+}
+
+.loan-result-grid strong {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--color-text);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.loan-schedule-table {
+  table-layout: fixed;
+}
+
+.loan-schedule-table th,
+.loan-schedule-table td {
+  font-variant-numeric: tabular-nums;
+}
+
 .credit-profile-meta {
   display: flex;
   align-items: baseline;
@@ -654,6 +703,11 @@ th {
 
 @media (max-width: 680px) {
   .credit-score-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .loan-calculator-layout,
+  .loan-result-grid {
     grid-template-columns: 1fr;
   }
 }

@@ -79,6 +79,24 @@ export interface CreditScore {
   calculated_at: string;
 }
 
+export interface LoanInstallmentPreview {
+  installment_number: number;
+  payment_amount: string;
+  principal_amount: string;
+  interest_amount: string;
+  remaining_principal: string;
+}
+
+export interface LoanCalculatorResult {
+  principal_amount: string;
+  annual_interest_rate: string;
+  term_months: number;
+  monthly_payment: string;
+  total_payment: string;
+  total_interest: string;
+  schedule: LoanInstallmentPreview[];
+}
+
 export type CreditApplicationType = "PERSONAL_LOAN" | "CREDIT_CARD";
 export type CreditApplicationStatus = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
 

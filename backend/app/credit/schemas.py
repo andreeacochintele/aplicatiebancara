@@ -38,6 +38,30 @@ class CreditApplicationCreate(BaseModel):
     requested_term_months: int | None = None
 
 
+class LoanCalculatorRequest(BaseModel):
+    principal_amount: Decimal
+    annual_interest_rate: Decimal
+    term_months: int
+
+
+class LoanInstallmentPreview(BaseModel):
+    installment_number: int
+    payment_amount: Decimal
+    principal_amount: Decimal
+    interest_amount: Decimal
+    remaining_principal: Decimal
+
+
+class LoanCalculatorResult(BaseModel):
+    principal_amount: Decimal
+    annual_interest_rate: Decimal
+    term_months: int
+    monthly_payment: Decimal
+    total_payment: Decimal
+    total_interest: Decimal
+    schedule: list[LoanInstallmentPreview]
+
+
 class CreditApplicationPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

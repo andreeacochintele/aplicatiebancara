@@ -11,6 +11,8 @@ from app.credit.schemas import (
     CreditProfilePublic,
     CreditScorePublic,
     CreditScoreRecalculateRequest,
+    LoanCalculatorRequest,
+    LoanCalculatorResult,
 )
 from app.credit.service import CreditService
 from app.database import get_db
@@ -48,6 +50,15 @@ def recalculate_score(
     score = CreditService(db).recalculate_score(current_user.id, payload)
     db.commit()
     return score
+
+
+@router.post("/loan-calculator", response_model=LoanCalculatorResult)
+def calculate_loan(
+    payload: LoanCalculatorRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LoanCalculatorResult:
+    return CreditService(db).calculate_loan(payload)
 
 
 @router.get("/applications", response_model=list[CreditApplicationPublic])

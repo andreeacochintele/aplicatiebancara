@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
-import type { CreditApplication, CreditApplicationType, CreditProfile, CreditScore } from "../types";
+import type {
+  CreditApplication,
+  CreditApplicationType,
+  CreditProfile,
+  CreditScore,
+  LoanCalculatorResult,
+} from "../types";
 
 const APPLICATION_TYPES: CreditApplicationType[] = ["PERSONAL_LOAN", "CREDIT_CARD"];
 
@@ -26,6 +32,10 @@ function formatApplicationType(type: CreditApplicationType): string {
     .join(" ");
 }
 
+function formatMoney(value: string): string {
+  return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function CreditPage() {
   const { accessToken, logout } = useAuth();
   const [profile, setProfile] = useState<CreditProfile | null>(null);
@@ -36,9 +46,14 @@ export function CreditPage() {
   const [applicationType, setApplicationType] = useState<CreditApplicationType>("PERSONAL_LOAN");
   const [requestedAmount, setRequestedAmount] = useState("");
   const [requestedTermMonths, setRequestedTermMonths] = useState("48");
+  const [loanPrincipal, setLoanPrincipal] = useState("50000");
+  const [loanRate, setLoanRate] = useState("8.5");
+  const [loanTerm, setLoanTerm] = useState("60");
+  const [loanResult, setLoanResult] = useState<LoanCalculatorResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
+  const [isCalculatingLoan, setIsCalculatingLoan] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const scorePercent = useMemo(() => {
@@ -132,6 +147,32 @@ export function CreditPage() {
     }
   }
 
+  async function calculateLoan() {
+    if (!accessToken || isCalculatingLoan) return;
+    setIsCalculatingLoan(true);
+    setError(null);
+    try {
+      const result = await apiRequest<LoanCalculatorResult>("/credit/loan-calculator", {
+        method: "POST",
+        token: accessToken,
+        body: {
+          principal_amount: loanPrincipal,
+          annual_interest_rate: loanRate,
+          term_months: Number(loanTerm),
+        },
+      });
+      setLoanResult(result);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : "Could not calculate loan preview.");
+    } finally {
+      setIsCalculatingLoan(false);
+    }
+  }
+
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       <div className="tile">
@@ -162,6 +203,76 @@ export function CreditPage() {
           </div>
         )}
         {error && <p style={{ color: "var(--color-warning)", margin: "0.85rem 0 0" }}>{error}</p>}
+      </div>
+
+      <div className="tile">
+        <div className="tile__header">
+          <span className="eyebrow">Loan calculator</span>
+        </div>
+        <div className="loan-calculator-layout">
+          <div className="loan-calculator-form">
+            <label>
+              Principal amount
+              <input
+                value={loanPrincipal}
+                onChange={(event) => setLoanPrincipal(event.target.value)}
+                inputMode="decimal"
+              />
+            </label>
+            <label>
+              Annual interest rate
+              <input value={loanRate} onChange={(event) => setLoanRate(event.target.value)} inputMode="decimal" />
+            </label>
+            <label>
+              Term months
+              <input value={loanTerm} onChange={(event) => setLoanTerm(event.target.value)} inputMode="numeric" />
+            </label>
+            <button type="button" onClick={calculateLoan} disabled={isCalculatingLoan}>
+              {isCalculatingLoan ? "Calculating..." : "Calculate"}
+            </button>
+          </div>
+
+          {loanResult && (
+            <div className="loan-result">
+              <div className="loan-result-grid">
+                <div>
+                  <span className="eyebrow">Monthly payment</span>
+                  <strong>{formatMoney(loanResult.monthly_payment)}</strong>
+                </div>
+                <div>
+                  <span className="eyebrow">Total interest</span>
+                  <strong>{formatMoney(loanResult.total_interest)}</strong>
+                </div>
+                <div>
+                  <span className="eyebrow">Total payment</span>
+                  <strong>{formatMoney(loanResult.total_payment)}</strong>
+                </div>
+              </div>
+              <table className="loan-schedule-table">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>Payment</th>
+                    <th>Principal</th>
+                    <th>Interest</th>
+                    <th>Remaining</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loanResult.schedule.slice(0, 6).map((item) => (
+                    <tr key={item.installment_number}>
+                      <td>{item.installment_number}</td>
+                      <td>{formatMoney(item.payment_amount)}</td>
+                      <td>{formatMoney(item.principal_amount)}</td>
+                      <td>{formatMoney(item.interest_amount)}</td>
+                      <td>{formatMoney(item.remaining_principal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="tile">

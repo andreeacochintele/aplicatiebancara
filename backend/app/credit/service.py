@@ -5,9 +5,22 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ValidationError
-from app.credit.models import CreditApplication, CreditApplicationStatus, CreditApplicationType, CreditProfile, CreditScoreHistory
+from app.credit.loan_calculator import calculate_loan_schedule
+from app.credit.models import (
+    CreditApplication,
+    CreditApplicationStatus,
+    CreditApplicationType,
+    CreditProfile,
+    CreditScoreHistory,
+)
 from app.credit.repository import CreditRepository
-from app.credit.schemas import CreditApplicationCreate, CreditScorePublic, CreditScoreRecalculateRequest
+from app.credit.schemas import (
+    CreditApplicationCreate,
+    CreditScorePublic,
+    CreditScoreRecalculateRequest,
+    LoanCalculatorRequest,
+    LoanCalculatorResult,
+)
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.wallets.repository import WalletRepository
 
@@ -76,6 +89,9 @@ class CreditService:
             status=CreditApplicationStatus.PENDING,
         )
         return self.repository.add_application(application)
+
+    def calculate_loan(self, data: LoanCalculatorRequest) -> LoanCalculatorResult:
+        return calculate_loan_schedule(data)
 
     def list_applications(self, user_id: uuid.UUID) -> list[CreditApplication]:
         return self.repository.list_applications_for_user(user_id)

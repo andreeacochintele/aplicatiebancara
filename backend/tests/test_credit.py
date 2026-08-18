@@ -3,8 +3,9 @@ from decimal import Decimal
 import pytest
 
 from app.core.exceptions import NotFoundError, ValidationError
+from app.credit.loan_calculator import calculate_loan_schedule
 from app.credit.models import CreditApplicationStatus, CreditApplicationType
-from app.credit.schemas import CreditApplicationCreate, CreditScoreRecalculateRequest
+from app.credit.schemas import CreditApplicationCreate, CreditScoreRecalculateRequest, LoanCalculatorRequest
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.credit.service import CreditService
 from app.users.schemas import UserCreate
@@ -95,6 +96,101 @@ def test_credit_score_endpoint_returns_score(client):
     body = response.json()
     assert body["score"] == 600
     assert body["band"] == "FAIR"
+
+
+def test_loan_calculator_builds_deterministic_amortization_schedule():
+    result = calculate_loan_schedule(
+        LoanCalculatorRequest(
+            principal_amount=Decimal("10000.00"),
+            annual_interest_rate=Decimal("12.00"),
+            term_months=12,
+        )
+    )
+
+    assert result.monthly_payment == Decimal("888.49")
+    assert result.total_payment == sum((item.payment_amount for item in result.schedule), Decimal("0.00"))
+    assert result.total_interest == sum((item.interest_amount for item in result.schedule), Decimal("0.00"))
+    assert len(result.schedule) == 12
+    assert result.schedule[0].interest_amount == Decimal("100.00")
+    assert result.schedule[0].principal_amount == Decimal("788.49")
+    assert result.schedule[-1].remaining_principal == Decimal("0.00")
+
+
+def test_loan_calculator_supports_zero_interest():
+    result = calculate_loan_schedule(
+        LoanCalculatorRequest(
+            principal_amount=Decimal("1200.00"),
+            annual_interest_rate=Decimal("0.00"),
+            term_months=12,
+        )
+    )
+
+    assert result.monthly_payment == Decimal("100.00")
+    assert result.total_payment == Decimal("1200.00")
+    assert result.total_interest == Decimal("0.00")
+
+
+def test_loan_calculator_rejects_invalid_inputs():
+    with pytest.raises(ValidationError):
+        calculate_loan_schedule(
+            LoanCalculatorRequest(
+                principal_amount=Decimal("0.00"),
+                annual_interest_rate=Decimal("12.00"),
+                term_months=12,
+            )
+        )
+
+    with pytest.raises(ValidationError):
+        calculate_loan_schedule(
+            LoanCalculatorRequest(
+                principal_amount=Decimal("1000.00"),
+                annual_interest_rate=Decimal("-1.00"),
+                term_months=12,
+            )
+        )
+
+    with pytest.raises(ValidationError):
+        calculate_loan_schedule(
+            LoanCalculatorRequest(
+                principal_amount=Decimal("1000.00"),
+                annual_interest_rate=Decimal("12.00"),
+                term_months=0,
+            )
+        )
+
+
+def test_loan_calculator_endpoint_requires_auth(client):
+    response = client.post(
+        "/api/v1/credit/loan-calculator",
+        json={"principal_amount": "10000.00", "annual_interest_rate": "12.00", "term_months": 12},
+    )
+
+    assert response.status_code == 401
+
+
+def test_loan_calculator_endpoint_returns_schedule(client):
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "credit-calculator-endpoint@example.com",
+            "password": "Sup3rSecret!",
+            "first_name": "Credit",
+            "last_name": "Calculator",
+        },
+    )
+    token = register.json()["tokens"]["access_token"]
+
+    response = client.post(
+        "/api/v1/credit/loan-calculator",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"principal_amount": "10000.00", "annual_interest_rate": "12.00", "term_months": 12},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["monthly_payment"] == "888.49"
+    assert len(body["schedule"]) == 12
+    assert body["schedule"][-1]["remaining_principal"] == "0.00"
 
 
 def test_create_personal_loan_application_captures_current_score(db_session):
