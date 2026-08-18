@@ -1,8 +1,10 @@
 """Analytics endpoints, scoped to the authenticated user."""
+import uuid
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.analytics.schemas import MonthlyTrendResponse, SpendingByTypeResponse
+from app.analytics.schemas import ForecastResponse, MonthlyTrendResponse, NetWorthResponse, SpendingByTypeResponse
 from app.analytics.service import AnalyticsService
 from app.auth.dependencies import get_current_user
 from app.database import get_db
@@ -28,3 +30,21 @@ def get_monthly_trend(
     db: Session = Depends(get_db),
 ) -> MonthlyTrendResponse:
     return AnalyticsService(db).monthly_trend(current_user.id, months)
+
+
+@router.get("/net-worth", response_model=NetWorthResponse)
+def get_net_worth(
+    base_currency: str | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> NetWorthResponse:
+    return AnalyticsService(db).net_worth(current_user.id, base_currency)
+
+
+@router.get("/forecast", response_model=ForecastResponse)
+def get_forecast(
+    wallet_id: uuid.UUID | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ForecastResponse:
+    return AnalyticsService(db).forecast_month_end_balance(current_user.id, wallet_id)
