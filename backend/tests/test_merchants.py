@@ -117,7 +117,7 @@ def test_sync_scales_points_by_card_tier(db_session, seeded_user):
 
     results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
 
-    assert results[0].points_earned == 300  # 200 RON * 1.5x (GOLD)
+    assert results[0].points_earned == 400  # 200 RON * 2x (GOLD)
 
 
 def test_sync_platinum_card_doubles_points(db_session, seeded_user):
@@ -128,7 +128,7 @@ def test_sync_platinum_card_doubles_points(db_session, seeded_user):
 
     results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
 
-    assert results[0].points_earned == 400  # 200 RON * 2x (PLATINUM)
+    assert results[0].points_earned == 600  # 200 RON * 3x (PLATINUM)
 
 
 def test_sync_without_a_known_card_uses_base_rate(db_session, seeded_user):

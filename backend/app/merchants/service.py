@@ -49,8 +49,8 @@ from app.transactions.repository import TransactionRepository
 
 CARD_TIER_POINT_MULTIPLIER: dict[CardTier, Decimal] = {
     CardTier.REGULAR: Decimal("1"),
-    CardTier.GOLD: Decimal("1.5"),
-    CardTier.PLATINUM: Decimal("2"),
+    CardTier.GOLD: Decimal("2"),
+    CardTier.PLATINUM: Decimal("3"),
 }
 DEFAULT_POINT_MULTIPLIER = Decimal("1")
 
