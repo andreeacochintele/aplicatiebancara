@@ -15,11 +15,15 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.cards.models import CardStatus, CardType
+from app.cards.repository import CardRepository
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.fx.service import FXService
+from app.merchants.models import MerchantStatus
+from app.merchants.repository import MerchantRepository
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
-from app.transactions.schemas import InternalTransferCreate
+from app.transactions.schemas import CardPaymentCreate, InternalTransferCreate
 from app.wallets.models import Wallet
 from app.wallets.repository import WalletRepository
 
@@ -30,6 +34,8 @@ class TransactionService:
         self.repository = TransactionRepository(db)
         self.wallets = WalletRepository(db)
         self.fx = FXService(db)
+        self.cards = CardRepository(db)
+        self.merchants = MerchantRepository(db)
 
     def create_internal_transfer(self, initiator_user_id: uuid.UUID, data: InternalTransferCreate) -> Transaction:
         if data.amount <= 0:
@@ -141,6 +147,76 @@ class TransactionService:
         transaction.status = TransactionStatus.COMPLETED
         transaction.completed_at = datetime.now(timezone.utc)
         self.db.flush()
+
+    def create_card_payment(self, initiator_user_id: uuid.UUID, data: CardPaymentCreate) -> Transaction:
+        """A card payment to a merchant — unlike a transfer, money leaves the
+        system to an external counterparty, so only one (DEBIT) ledger entry
+        is written, and `merchant_id` is set on the Transaction: it's the
+        only signal the rewards module (app/merchants) uses to decide
+        whether to credit points, via its own read-only sync — this method
+        never calls into rewards/merchants itself."""
+        if data.amount <= 0:
+            raise ValidationError("Payment amount must be positive")
+
+        card = self.cards.get_by_id(data.card_id)
+        if card is None or card.user_id != initiator_user_id:
+            raise NotFoundError("Card not found")
+        if card.status != CardStatus.ACTIVE:
+            raise ValidationError(f"Card is {card.status.value}, payments require an ACTIVE card")
+
+        merchant = self.merchants.get_by_id(data.merchant_id)
+        if merchant is None or merchant.status != MerchantStatus.ACTIVE:
+            raise NotFoundError("Merchant not found")
+
+        preferences = self.cards.get_preferences(card.id)
+        wallet_id = (preferences.preferred_wallet_id if preferences is not None else None) or card.default_wallet_id
+        if wallet_id is None:
+            raise ValidationError("Card has no wallet to pay from — set a default or preferred wallet first")
+
+        wallet = self.wallets.get_by_id(wallet_id)
+        if wallet is None or wallet.user_id != initiator_user_id:
+            raise NotFoundError("Card's wallet not found")
+        if wallet.available_balance < data.amount:
+            raise ConflictError("Insufficient available balance")
+
+        transaction = self.repository.add(
+            Transaction(
+                initiator_user_id=initiator_user_id,
+                source_wallet_id=wallet.id,
+                merchant_id=merchant.id,
+                type=TransactionType.CARD_PAYMENT,
+                status=TransactionStatus.PROCESSING,
+                amount=data.amount,
+                currency=wallet.currency,
+                description=data.description or f"Card payment to {merchant.name}",
+                processed_at=datetime.now(timezone.utc),
+            )
+        )
+
+        wallet.available_balance -= data.amount
+        self.repository.add_ledger_entry(
+            WalletLedgerEntry(
+                wallet_id=wallet.id,
+                transaction_id=transaction.id,
+                entry_type=LedgerEntryType.DEBIT,
+                amount=data.amount,
+                currency=wallet.currency,
+                balance_after=wallet.available_balance,
+            )
+        )
+
+        # ONE_TIME cards are meant for exactly one purchase — consuming the
+        # single use here (rather than adding a method to app/cards, which
+        # isn't this module's) keeps the diff to this one seam.
+        if card.type == CardType.ONE_TIME:
+            card.one_time_remaining = max(0, (card.one_time_remaining or 1) - 1)
+            if card.one_time_remaining == 0:
+                card.status = CardStatus.CANCELLED
+
+        transaction.status = TransactionStatus.COMPLETED
+        transaction.completed_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return transaction
 
     def list_for_user(self, user_id: uuid.UUID) -> list[Transaction]:
         return self.repository.list_for_user(user_id)

@@ -2,12 +2,17 @@ from decimal import Decimal
 
 import pytest
 
+from app.cards.models import CardStatus, CardType
+from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate
+from app.cards.service import CardService
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.fx.models import FXQuoteStatus
 from app.fx.schemas import FXQuoteRequest
 from app.fx.service import FXService
-from app.transactions.models import TransactionStatus
-from app.transactions.schemas import InternalTransferCreate
+from app.merchants.schemas import MerchantCreate
+from app.merchants.service import MerchantService
+from app.transactions.models import TransactionStatus, TransactionType
+from app.transactions.schemas import CardPaymentCreate, InternalTransferCreate
 from app.transactions.service import TransactionService
 from app.users.schemas import UserCreate
 from app.users.service import UserService
@@ -221,3 +226,103 @@ def test_cross_currency_transfer_rejects_amount_quote_mismatch(db_session, eur_t
                 fx_quote_id=quote.id,
             ),
         )
+
+
+@pytest.fixture()
+def payer_with_wallet_and_merchant(db_session):
+    payer = UserService(db_session).create_user(
+        UserCreate(email="payer@example.com", password="Sup3rSecret!", first_name="Pay", last_name="Er")
+    )
+    wallet = WalletService(db_session).create_wallet(payer.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("500.00")
+    db_session.flush()
+    merchant = MerchantService(db_session).create_merchant(MerchantCreate(name="Nike", category="Retail"))
+    return payer, wallet, merchant
+
+
+def test_card_payment_debits_wallet_and_tags_merchant(db_session, payer_with_wallet_and_merchant):
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+
+    transaction = TransactionService(db_session).create_card_payment(
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("120.00"))
+    )
+
+    assert transaction.status == TransactionStatus.COMPLETED
+    assert transaction.type == TransactionType.CARD_PAYMENT
+    assert transaction.merchant_id == merchant.id
+    assert wallet.available_balance == Decimal("380.00")
+    assert len(transaction.ledger_entries) == 1
+    assert transaction.ledger_entries[0].entry_type.value == "DEBIT"
+
+
+def test_card_payment_rejects_frozen_card(db_session, payer_with_wallet_and_merchant):
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card_service = CardService(db_session)
+    card = card_service.create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+    card_service.freeze_card(payer.id, card.id)
+
+    with pytest.raises(ValidationError):
+        TransactionService(db_session).create_card_payment(
+            payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"))
+        )
+    assert wallet.available_balance == Decimal("500.00")
+
+
+def test_card_payment_rejects_insufficient_balance(db_session, payer_with_wallet_and_merchant):
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+
+    with pytest.raises(ConflictError):
+        TransactionService(db_session).create_card_payment(
+            payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("999999.00"))
+        )
+
+
+def test_card_payment_rejects_unknown_merchant(db_session, payer_with_wallet_and_merchant):
+    import uuid
+
+    payer, wallet, _merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+
+    with pytest.raises(NotFoundError):
+        TransactionService(db_session).create_card_payment(
+            payer.id, CardPaymentCreate(card_id=card.id, merchant_id=uuid.uuid4(), amount=Decimal("10.00"))
+        )
+
+
+def test_one_time_card_is_cancelled_after_its_single_payment(db_session, payer_with_wallet_and_merchant):
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(
+        payer.id, CardCreate(type=CardType.ONE_TIME, default_wallet_id=wallet.id)
+    )
+    assert card.one_time_remaining == 1
+
+    TransactionService(db_session).create_card_payment(
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("30.00"))
+    )
+
+    assert card.one_time_remaining == 0
+    assert card.status == CardStatus.CANCELLED
+
+
+def test_card_payment_uses_preferred_wallet_over_default(db_session, payer_with_wallet_and_merchant):
+    payer, default_wallet, merchant = payer_with_wallet_and_merchant
+    wallets = WalletService(db_session)
+    preferred_wallet = wallets.create_wallet(payer.id, WalletCreate(currency="EUR"))
+    preferred_wallet.available_balance = Decimal("200.00")
+    db_session.flush()
+
+    card_service = CardService(db_session)
+    card = card_service.create_card(payer.id, CardCreate(default_wallet_id=default_wallet.id))
+    card_service.update_payment_preferences(
+        payer.id, card.id, CardPaymentPreferencesUpdate(preferred_wallet_id=preferred_wallet.id)
+    )
+
+    transaction = TransactionService(db_session).create_card_payment(
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("40.00"))
+    )
+
+    assert transaction.source_wallet_id == preferred_wallet.id
+    assert preferred_wallet.available_balance == Decimal("160.00")
+    assert default_wallet.available_balance == Decimal("500.00")

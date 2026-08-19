@@ -2,17 +2,18 @@ import { useEffect, useState } from "react";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
-import type { Merchant, PurchaseResult, RewardAccount, RewardBenefit } from "../types";
+import type { Card, Merchant, PurchaseResult, RewardAccount, RewardBenefit } from "../types";
 
 export function RewardsPage() {
   const { accessToken } = useAuth();
   const [rewards, setRewards] = useState<RewardAccount | null>(null);
   const [benefits, setBenefits] = useState<RewardBenefit[]>([]);
   const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [payCardId, setPayCardId] = useState("");
+  const [payAmount, setPayAmount] = useState("50");
   const [redeemPoints, setRedeemPoints] = useState("100");
-  const [purchaseMerchantId, setPurchaseMerchantId] = useState("");
-  const [purchaseAmount, setPurchaseAmount] = useState("100");
-  const [lastPurchase, setLastPurchase] = useState<PurchaseResult | null>(null);
+  const [newlyEarned, setNewlyEarned] = useState<PurchaseResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -28,19 +29,56 @@ export function RewardsPage() {
 
   function loadMerchants() {
     if (!accessToken) return;
-    apiRequest<Merchant[]>("/merchants", { token: accessToken }).then((list) => {
-      setMerchants(list);
-      if (list.length > 0) setPurchaseMerchantId((current) => current || list[0].id);
-    }).catch(() => setMerchants([]));
+    apiRequest<Merchant[]>("/merchants", { token: accessToken }).then(setMerchants).catch(() => setMerchants([]));
+  }
+
+  function loadCards() {
+    if (!accessToken) return;
+    apiRequest<Card[]>("/cards", { token: accessToken }).then((list) => {
+      setCards(list);
+      if (list.length > 0) setPayCardId((current) => current || list[0].id);
+    }).catch(() => setCards([]));
+  }
+
+  function refreshAfterChange() {
+    loadRewards();
+    loadBenefits();
+  }
+
+  function syncRewardsFromTransactions() {
+    if (!accessToken) return;
+    // Revolut-style: points are earned from the user's own real card payments,
+    // matched to a merchant automatically — never a manually typed amount.
+    apiRequest<PurchaseResult[]>("/merchants/sync-rewards", { method: "POST", token: accessToken })
+      .then((earned) => {
+        setNewlyEarned(earned);
+        if (earned.length > 0) refreshAfterChange();
+      })
+      .catch(() => undefined);
   }
 
   useEffect(loadRewards, [accessToken]);
   useEffect(loadBenefits, [accessToken]);
   useEffect(loadMerchants, [accessToken]);
+  useEffect(loadCards, [accessToken]);
+  useEffect(syncRewardsFromTransactions, [accessToken]);
 
-  function refreshAfterChange() {
-    loadRewards();
-    loadBenefits();
+  async function handlePay(merchantId: string) {
+    if (!accessToken || !payCardId) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await apiRequest("/transactions/card-payment", {
+        method: "POST",
+        token: accessToken,
+        body: { card_id: payCardId, merchant_id: merchantId, amount: payAmount },
+      });
+      syncRewardsFromTransactions();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Payment failed");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleRedeem() {
@@ -75,25 +113,6 @@ export function RewardsPage() {
       loadBenefits();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Redeem failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handlePurchase() {
-    if (!accessToken || !purchaseMerchantId) return;
-    setError(null);
-    setBusy(true);
-    try {
-      const result = await apiRequest<PurchaseResult>(`/merchants/${purchaseMerchantId}/purchases`, {
-        method: "POST",
-        token: accessToken,
-        body: { amount: purchaseAmount, currency: "RON" },
-      });
-      setLastPurchase(result);
-      refreshAfterChange();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Purchase failed");
     } finally {
       setBusy(false);
     }
@@ -257,6 +276,26 @@ export function RewardsPage() {
         <div className="tile__header">
           <span className="eyebrow">Merchants & cashback offers</span>
         </div>
+
+        {cards.length > 0 && (
+          <div style={{ marginBottom: "0.75rem", display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
+            <label>
+              Pay with card
+              <select value={payCardId} onChange={(e) => setPayCardId(e.target.value)}>
+                {cards.map((card) => (
+                  <option key={card.id} value={card.id}>
+                    {card.type} •••• {card.last_four}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Amount (RON)
+              <input value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+            </label>
+          </div>
+        )}
+
         {merchants.length > 0 ? (
           <table>
             <thead>
@@ -264,18 +303,33 @@ export function RewardsPage() {
                 <th>Merchant</th>
                 <th>Category</th>
                 <th>Cashback</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {merchants.map((merchant) => (
                 <tr key={merchant.id}>
-                  <td>{merchant.name}</td>
+                  <td>
+                    {merchant.name}
+                    {!merchant.verified && (
+                      <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
+                        Not verified — card payments here don't earn points yet
+                      </div>
+                    )}
+                  </td>
                   <td>{merchant.category}</td>
                   <td>
                     {merchant.active_offer ? (
                       <span className="tag tag--accent">{merchant.active_offer.cashback_percent}%</span>
                     ) : (
                       <span className="eyebrow">No active offer</span>
+                    )}
+                  </td>
+                  <td>
+                    {cards.length > 0 && (
+                      <button onClick={() => handlePay(merchant.id)} disabled={busy || !payCardId}>
+                        Pay
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -286,34 +340,16 @@ export function RewardsPage() {
           <p className="eyebrow">No merchants yet.</p>
         )}
 
-        {merchants.length > 0 && (
-          <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
-            <label>
-              Merchant
-              <select value={purchaseMerchantId} onChange={(e) => setPurchaseMerchantId(e.target.value)}>
-                {merchants.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Amount (RON)
-              <input value={purchaseAmount} onChange={(e) => setPurchaseAmount(e.target.value)} />
-            </label>
-            <button onClick={handlePurchase} disabled={busy}>
-              Record purchase
-            </button>
-          </div>
-        )}
-
-        {lastPurchase && (
+        {newlyEarned.length > 0 && (
           <div className="eyebrow" style={{ marginTop: "0.75rem" }}>
-            Earned {lastPurchase.points_earned} points
-            {lastPurchase.cashback_percent
-              ? ` · ~${lastPurchase.cashback_amount} ${lastPurchase.currency} cashback (informational, not credited to a wallet yet)`
-              : ""}
+            {newlyEarned.map((purchase) => (
+              <div key={purchase.merchant_id}>
+                Earned {purchase.points_earned} points from a real card payment
+                {purchase.cashback_percent
+                  ? ` · ~${purchase.cashback_amount} ${purchase.currency} cashback (informational, not credited to a wallet yet)`
+                  : ""}
+              </div>
+            ))}
           </div>
         )}
       </div>

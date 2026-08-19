@@ -52,6 +52,10 @@ class RewardsRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def has_transaction_for_source(self, source_transaction_id: uuid.UUID) -> bool:
+        stmt = select(RewardTransaction.id).where(RewardTransaction.source_transaction_id == source_transaction_id)
+        return self.db.scalar(stmt) is not None
+
     def list_tiers(self) -> list[RewardTier]:
         if is_supabase_session(self.db):
             return self.db.fetch_many(RewardTier, {"order": "sort_order.asc"})

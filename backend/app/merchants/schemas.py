@@ -12,6 +12,7 @@ class MerchantCreate(BaseModel):
     name: str
     category: str
     logo_url: str | None = None
+    verified: bool = False
 
 
 class CashbackOfferCreate(BaseModel):
@@ -38,13 +39,9 @@ class MerchantPublic(BaseModel):
     category: str
     logo_url: str | None
     status: MerchantStatus
+    verified: bool
     active_offer: CashbackOfferPublic | None
     created_at: datetime
-
-
-class PurchaseCreate(BaseModel):
-    amount: Decimal
-    currency: str = "RON"
 
 
 class PurchaseResult(BaseModel):

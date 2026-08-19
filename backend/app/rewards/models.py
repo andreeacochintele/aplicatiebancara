@@ -60,7 +60,7 @@ class RewardTransaction(Base):
         UUID(as_uuid=True), ForeignKey("reward_accounts.id"), nullable=False
     )
     source_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("transactions.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("transactions.id"), nullable=True, unique=True
     )
     type: Mapped[RewardTransactionType] = mapped_column(
         Enum(RewardTransactionType, name="reward_transaction_type"), nullable=False

@@ -10,7 +10,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,6 +37,11 @@ class Merchant(Base):
     status: Mapped[MerchantStatus] = mapped_column(
         Enum(MerchantStatus, name="merchant_status"), default=MerchantStatus.ACTIVE, nullable=False
     )
+    # Gates reward-point eligibility (MerchantService._match_merchant) so an
+    # unverified/self-registered "merchant" can't be paired with a lookalike
+    # counterparty to farm points off fake purchases. Manual for MVP — no
+    # approval workflow yet.
+    verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
