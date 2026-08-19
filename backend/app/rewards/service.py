@@ -79,6 +79,9 @@ class RewardsService:
     def has_earned_for_transaction(self, source_transaction_id: uuid.UUID) -> bool:
         return self.repository.has_transaction_for_source(source_transaction_id)
 
+    def list_tiers(self) -> list[RewardTierPublic]:
+        return [self._tier_to_public(tier) for tier in self.repository.list_tiers()]
+
     def redeem_points(self, user_id: uuid.UUID, points: int) -> RewardAccountPublic:
         if points <= 0:
             raise ValidationError("points must be positive")

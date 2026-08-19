@@ -3,6 +3,9 @@ from decimal import Decimal
 
 import pytest
 
+from app.cards.models import CardTier
+from app.cards.schemas import CardCreate
+from app.cards.service import CardService
 from app.core.exceptions import NotFoundError, ValidationError
 from app.merchants.schemas import CashbackOfferCreate, MerchantCreate
 from app.merchants.service import MerchantService
@@ -24,7 +27,9 @@ def _active_offer_window() -> tuple[date, date]:
     return today - timedelta(days=1), today + timedelta(days=30)
 
 
-def _card_payment(db_session, user_id, amount, description, status=TransactionStatus.COMPLETED) -> Transaction:
+def _card_payment(
+    db_session, user_id, amount, description, status=TransactionStatus.COMPLETED, card_id=None
+) -> Transaction:
     transaction = Transaction(
         initiator_user_id=user_id,
         type=TransactionType.CARD_PAYMENT,
@@ -32,6 +37,7 @@ def _card_payment(db_session, user_id, amount, description, status=TransactionSt
         amount=amount,
         currency="RON",
         description=description,
+        card_id=card_id,
         created_at=datetime.now(timezone.utc),
     )
     db_session.add(transaction)
@@ -101,6 +107,38 @@ def test_sync_awards_points_and_computes_cashback_from_real_transaction(db_sessi
 
     rewards_account = RewardsService(db_session).get_account(seeded_user.id)
     assert rewards_account.points_balance == 400
+
+
+def test_sync_scales_points_by_card_tier(db_session, seeded_user):
+    merchant_service = MerchantService(db_session)
+    merchant = merchant_service.create_merchant(MerchantCreate(name="Nike", category="Retail", verified=True))
+    card = CardService(db_session).create_card(seeded_user.id, CardCreate(tier=CardTier.GOLD))
+    _card_payment(db_session, seeded_user.id, Decimal("200.00"), "Nike - Shopping", card_id=card.id)
+
+    results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
+
+    assert results[0].points_earned == 300  # 200 RON * 1.5x (GOLD)
+
+
+def test_sync_platinum_card_doubles_points(db_session, seeded_user):
+    merchant_service = MerchantService(db_session)
+    merchant = merchant_service.create_merchant(MerchantCreate(name="Nike", category="Retail", verified=True))
+    card = CardService(db_session).create_card(seeded_user.id, CardCreate(tier=CardTier.PLATINUM))
+    _card_payment(db_session, seeded_user.id, Decimal("200.00"), "Nike - Shopping", card_id=card.id)
+
+    results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
+
+    assert results[0].points_earned == 400  # 200 RON * 2x (PLATINUM)
+
+
+def test_sync_without_a_known_card_uses_base_rate(db_session, seeded_user):
+    merchant_service = MerchantService(db_session)
+    merchant_service.create_merchant(MerchantCreate(name="Nike", category="Retail", verified=True))
+    _card_payment(db_session, seeded_user.id, Decimal("200.00"), "Nike - Shopping")  # no card_id, e.g. seed data
+
+    results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
+
+    assert results[0].points_earned == 200
 
 
 def test_sync_caps_cashback_at_maximum(db_session, seeded_user):

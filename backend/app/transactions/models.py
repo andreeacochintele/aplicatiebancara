@@ -59,6 +59,7 @@ class Transaction(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     merchant_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    card_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     type: Mapped[TransactionType] = mapped_column(Enum(TransactionType, name="transaction_type"), nullable=False)
     status: Mapped[TransactionStatus] = mapped_column(

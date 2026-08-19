@@ -25,6 +25,15 @@ def test_new_user_has_zero_balance_and_empty_history(db_session, seeded_user):
     assert account.transactions == []
 
 
+def test_list_tiers_returns_the_full_ladder_in_order(db_session, seeded_reward_tiers):
+    tiers = RewardsService(db_session).list_tiers()
+
+    assert [tier.name for tier in tiers] == ["STANDARD", "PREMIUM", "METAL"]
+    assert tiers[0].min_lifetime_points == 0
+    assert tiers[1].min_lifetime_points > tiers[0].min_lifetime_points
+    assert tiers[2].min_lifetime_points > tiers[1].min_lifetime_points
+
+
 def test_earn_points_increases_balance_and_records_ledger_entry(db_session, seeded_user):
     service = RewardsService(db_session)
     service.earn_points(seeded_user.id, 120, description="Purchase at Nike")
