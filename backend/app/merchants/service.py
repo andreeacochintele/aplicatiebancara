@@ -7,12 +7,13 @@ there's no purchase-creation path into that engine yet.
 
 `sync_purchases_from_transactions` awards bank reward points off the user's
 *real* completed CARD_PAYMENT transactions instead of a client-supplied
-amount — dev4 doesn't own app/transactions or app/cards (no payment-creation
-endpoint exists there yet), so this only ever reads that table, the same
-read-only cross-module pattern app/analytics and app/budgets already use.
-Since nothing populates Transaction.merchant_id yet either, the merchant is
-matched by name against the transaction's free-text description (e.g. "Nike
-- Shopping"); each transaction earns points at most once via
+amount — dev4 doesn't own app/transactions or app/cards, so this only ever
+reads that table, the same read-only cross-module pattern app/analytics and
+app/budgets already use. The merchant is resolved from Transaction.merchant_id
+when it's set (populated by TransactionService.create_card_payment); older
+transactions that predate that endpoint (e.g. seed data) fall back to a
+name match against the free-text description (e.g. "Nike - Shopping"). Each
+transaction earns points at most once via
 RewardsService.has_earned_for_transaction (keyed on
 RewardTransaction.source_transaction_id).
 """
@@ -94,7 +95,7 @@ class MerchantService:
                 continue
             if self.rewards.has_earned_for_transaction(transaction.id):
                 continue
-            merchant = self._match_merchant(transaction.description, merchants)
+            merchant = self._merchant_for(transaction.merchant_id, transaction.description, merchants)
             if merchant is None:
                 continue
 
@@ -157,7 +158,11 @@ class MerchantService:
         )
 
     @staticmethod
-    def _match_merchant(description: str | None, merchants: list[Merchant]) -> Merchant | None:
+    def _merchant_for(
+        merchant_id: uuid.UUID | None, description: str | None, merchants: list[Merchant]
+    ) -> Merchant | None:
+        if merchant_id is not None:
+            return next((m for m in merchants if m.id == merchant_id), None)
         if not description:
             return None
         text = description.lower()

@@ -18,6 +18,13 @@ class InternalTransferCreate(BaseModel):
     fx_quote_id: uuid.UUID | None = None
 
 
+class CardPaymentCreate(BaseModel):
+    card_id: uuid.UUID
+    merchant_id: uuid.UUID
+    amount: Decimal
+    description: str | None = None
+
+
 class TransactionPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

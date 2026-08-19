@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db
-from app.transactions.schemas import InternalTransferCreate, TransactionPublic
+from app.transactions.schemas import CardPaymentCreate, InternalTransferCreate, TransactionPublic
 from app.transactions.service import TransactionService
 from app.users.models import User
 
@@ -38,5 +38,16 @@ def create_transfer(
     db: Session = Depends(get_db),
 ) -> TransactionPublic:
     transaction = TransactionService(db).create_internal_transfer(current_user.id, payload)
+    db.commit()
+    return transaction
+
+
+@router.post("/card-payment", response_model=TransactionPublic, status_code=201)
+def create_card_payment(
+    payload: CardPaymentCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TransactionPublic:
+    transaction = TransactionService(db).create_card_payment(current_user.id, payload)
     db.commit()
     return transaction
