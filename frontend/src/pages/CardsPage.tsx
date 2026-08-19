@@ -1,10 +1,56 @@
 import { useEffect, useMemo, useState } from "react";
+import { Eye, EyeOff, Lock, Unlock } from "lucide-react";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
-import type { Card, CardPaymentPreferences, CardType, Wallet } from "../types";
+import type { Card, CardPaymentPreferences, CardTier, CardType, Wallet } from "../types";
 
 const CARD_TYPES: CardType[] = ["DEBIT", "CREDIT", "ONE_TIME"];
+const CARD_TIERS: CardTier[] = ["REGULAR", "GOLD", "PLATINUM"];
+const CARD_TIER_DETAILS: Record<CardTier, string> = {
+  REGULAR: "Standard everyday card controls.",
+  GOLD: "Higher comfort for frequent card users.",
+  PLATINUM: "Premium level for larger spending and travel needs.",
+};
+const CARD_TIER_LABELS: Record<CardTier, string> = {
+  REGULAR: "Regular",
+  GOLD: "Gold",
+  PLATINUM: "Platinum",
+};
+const CARD_TIER_PRODUCTS: Record<CardTier, { debit: string; credit: string }> = {
+  REGULAR: {
+    debit: "Regular debit",
+    credit: "Regular credit",
+  },
+  GOLD: {
+    debit: "Gold debit",
+    credit: "Gold credit",
+  },
+  PLATINUM: {
+    debit: "Platinum debit",
+    credit: "Platinum credit",
+  },
+};
+const CARD_TIER_PRODUCT_LIST = [
+  {
+    name: "Regular",
+    description: "Everyday debit or credit card with standard limits and core banking controls.",
+    debit: "Standard debit",
+    credit: "Standard credit",
+  },
+  {
+    name: "Gold",
+    description: "Higher daily comfort for frequent card users, with priority card support.",
+    debit: "Gold debit",
+    credit: "Gold credit",
+  },
+  {
+    name: "Platinum",
+    description: "Premium card level for larger spending needs and travel-oriented benefits.",
+    debit: "Platinum debit",
+    credit: "Platinum credit",
+  },
+];
 
 function formatCardType(type: CardType): string {
   return type
@@ -19,10 +65,14 @@ function statusClass(status: Card["status"]): string {
   return "tag tag--neutral";
 }
 
-function cardToneClass(type: CardType): string {
-  if (type === "CREDIT") return "bank-card bank-card--credit";
-  if (type === "ONE_TIME") return "bank-card bank-card--one-time";
-  return "bank-card bank-card--debit";
+function formatCardTier(tier: CardTier | null): string {
+  return tier ? CARD_TIER_LABELS[tier] : "No tier";
+}
+
+function cardToneClass(card: Card): string {
+  if (card.type === "ONE_TIME") return "bank-card bank-card--one-time";
+  const tier = (card.tier ?? "REGULAR").toLowerCase();
+  return `bank-card bank-card--${card.type.toLowerCase()} bank-card--${tier}`;
 }
 
 export function CardsPage() {
@@ -32,15 +82,20 @@ export function CardsPage() {
   const [preferences, setPreferences] = useState<Record<string, CardPaymentPreferences>>({});
   const [draftPreferences, setDraftPreferences] = useState<Record<string, CardPaymentPreferences>>({});
   const [selectedType, setSelectedType] = useState<CardType>("DEBIT");
+  const [selectedTier, setSelectedTier] = useState<CardTier>("REGULAR");
   const [selectedWalletId, setSelectedWalletId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [actionCardId, setActionCardId] = useState<string | null>(null);
+  const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
   const [preferencesCardId, setPreferencesCardId] = useState<string | null>(null);
+  const [areTiersExpanded, setAreTiersExpanded] = useState(true);
+  const [revealedCardIds, setRevealedCardIds] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
 
   const activeWallets = useMemo(() => wallets.filter((wallet) => wallet.status === "ACTIVE"), [wallets]);
   const cardholderName = user ? `${user.first_name} ${user.last_name}`.trim() : "Card holder";
+  const selectedReusableCardType = selectedType === "DEBIT" || selectedType === "CREDIT";
 
   async function loadCardsData(token: string) {
     setIsLoading(true);
@@ -94,6 +149,7 @@ export function CardsPage() {
         token: accessToken,
         body: {
           type: selectedType,
+          tier: selectedReusableCardType ? selectedTier : null,
           default_wallet_id: selectedWalletId || null,
         },
       });
@@ -134,6 +190,57 @@ export function CardsPage() {
     } finally {
       setActionCardId(null);
     }
+  }
+
+  async function deleteCard(card: Card) {
+    if (!accessToken || deletingCardId) return;
+    const confirmed = window.confirm(`Delete card ending in ${card.last_four}?`);
+    if (!confirmed) return;
+
+    setDeletingCardId(card.id);
+    setError(null);
+    try {
+      await apiRequest<void>(`/cards/${card.id}`, {
+        method: "DELETE",
+        token: accessToken,
+      });
+      setCards((current) => current.filter((item) => item.id !== card.id));
+      setPreferences((current) => {
+        const next = { ...current };
+        delete next[card.id];
+        return next;
+      });
+      setDraftPreferences((current) => {
+        const next = { ...current };
+        delete next[card.id];
+        return next;
+      });
+      setRevealedCardIds((current) => {
+        const next = new Set(current);
+        next.delete(card.id);
+        return next;
+      });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : "Could not delete card.");
+    } finally {
+      setDeletingCardId(null);
+    }
+  }
+
+  function toggleCardReveal(cardId: string) {
+    setRevealedCardIds((current) => {
+      const next = new Set(current);
+      if (next.has(cardId)) {
+        next.delete(cardId);
+      } else {
+        next.add(cardId);
+      }
+      return next;
+    });
   }
 
   function updatePreferenceDraft(cardId: string, updates: Partial<CardPaymentPreferences>) {
@@ -187,7 +294,16 @@ export function CardsPage() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "0.75rem" }}>
           <label>
             Card type
-            <select value={selectedType} onChange={(event) => setSelectedType(event.target.value as CardType)}>
+            <select
+              value={selectedType}
+              onChange={(event) => {
+                const nextType = event.target.value as CardType;
+                setSelectedType(nextType);
+                if (nextType === "ONE_TIME") {
+                  setSelectedTier("REGULAR");
+                }
+              }}
+            >
               {CARD_TYPES.map((type) => (
                 <option key={type} value={type}>
                   {formatCardType(type)}
@@ -195,6 +311,18 @@ export function CardsPage() {
               ))}
             </select>
           </label>
+          {selectedReusableCardType && (
+            <label>
+              Tier
+              <select value={selectedTier} onChange={(event) => setSelectedTier(event.target.value as CardTier)}>
+                {CARD_TIERS.map((tier) => (
+                  <option key={tier} value={tier}>
+                    {CARD_TIER_LABELS[tier]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             Default wallet
             <select value={selectedWalletId} onChange={(event) => setSelectedWalletId(event.target.value)}>
@@ -208,10 +336,73 @@ export function CardsPage() {
             </select>
           </label>
           <button type="button" onClick={createCard} disabled={isSaving} style={{ alignSelf: "end" }}>
-            {isSaving ? "Creating..." : "Create card"}
+            {isSaving
+              ? "Creating..."
+              : selectedReusableCardType
+                ? `Create ${CARD_TIER_LABELS[selectedTier]} ${formatCardType(selectedType)}`
+                : "Create one-time card"}
           </button>
         </div>
+        <div className="card-tier-summary" style={{ marginTop: "0.85rem" }}>
+          {selectedReusableCardType ? (
+            <>
+              <span>{CARD_TIER_DETAILS[selectedTier]}</span>
+              <span className="tag tag--outline">
+                {selectedType === "DEBIT"
+                  ? CARD_TIER_PRODUCTS[selectedTier].debit
+                  : CARD_TIER_PRODUCTS[selectedTier].credit}
+              </span>
+            </>
+          ) : (
+            <>
+              <span>Single-use cards are created without Regular, Gold or Platinum tiers.</span>
+              <span className="tag tag--outline">No tier</span>
+            </>
+          )}
+        </div>
         {error && <p style={{ color: "var(--color-warning)", margin: "0.85rem 0 0" }}>{error}</p>}
+      </div>
+
+      <div className="tile">
+        <div className="tile__header">
+          <span className="eyebrow">Card tier levels</span>
+          <button
+            type="button"
+            className="button--ghost"
+            onClick={() => setAreTiersExpanded((current) => !current)}
+            aria-expanded={areTiersExpanded}
+          >
+            {areTiersExpanded ? "Retract" : "Expand"}
+          </button>
+        </div>
+        {areTiersExpanded ? (
+          <>
+            <div className="card-tier-grid">
+              {CARD_TIER_PRODUCT_LIST.map((tier) => (
+                <article className={`card-tier card-tier--${tier.name.toLowerCase()}`} key={tier.name}>
+                  <div className="card-tier__header">
+                    <span className="card-tier__name">{tier.name}</span>
+                    <span className="tag tag--neutral">Debit + Credit</span>
+                  </div>
+                  <p>{tier.description}</p>
+                  <div className="card-tier__products">
+                    <span>{tier.debit}</span>
+                    <span>{tier.credit}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="card-tier-note">
+              <span className="tag tag--outline">One-time card</span>
+              <span>Single-use cards do not have Regular, Gold or Platinum tiers.</span>
+            </div>
+          </>
+        ) : (
+          <div className="card-tier-summary">
+            <span>Regular, Gold and Platinum apply only to debit and credit cards.</span>
+            <span className="tag tag--outline">One-time cards excluded</span>
+          </div>
+        )}
       </div>
 
       <div className="tile">
@@ -225,23 +416,64 @@ export function CardsPage() {
             {cards.map((card) => {
               const wallet = wallets.find((item) => item.id === card.default_wallet_id);
               const draft = draftPreferences[card.id];
+              const isRevealed = revealedCardIds.has(card.id);
               return (
                 <article className="card-panel" key={card.id}>
-                  <div className={cardToneClass(card.type)}>
+                  <div className={cardToneClass(card)}>
                     <div className="bank-card__top">
-                      <span className="bank-card__brand">BANKING</span>
-                      <span className={statusClass(card.status)}>{card.status}</span>
+                      <div className="bank-card__identity">
+                        <span className="bank-card__brand">AURORA</span>
+                        <span className="bank-card__product">
+                          {card.tier ? `${formatCardTier(card.tier)} ${formatCardType(card.type)}` : "One-time"}
+                        </span>
+                      </div>
+                      <div className="bank-card__top-actions">
+                        <span className={statusClass(card.status)}>{card.status}</span>
+                        <button
+                          type="button"
+                          className="bank-card__lock"
+                          onClick={() => updateCardStatus(card)}
+                          disabled={actionCardId === card.id || (card.status !== "ACTIVE" && card.status !== "FROZEN")}
+                          aria-label={card.status === "FROZEN" ? "Unfreeze card" : "Freeze card"}
+                          title={card.status === "FROZEN" ? "Unfreeze card" : "Freeze card"}
+                        >
+                          {card.status === "FROZEN" ? (
+                            <Unlock size={15} strokeWidth={2.2} />
+                          ) : (
+                            <Lock size={15} strokeWidth={2.2} />
+                          )}
+                        </button>
+                      </div>
                     </div>
-                    <div className="bank-card__chip" aria-hidden="true" />
-                    <div className="bank-card__number">{card.masked_pan}</div>
+                    <div className="bank-card__middle">
+                      <div className="bank-card__chip" aria-hidden="true" />
+                      <span className="bank-card__mark">{card.type === "ONE_TIME" ? "1x" : card.type}</span>
+                    </div>
+                    <div className="bank-card__number-row">
+                      <div className="bank-card__number">{isRevealed ? card.mock_pan : card.masked_pan}</div>
+                      <button
+                        type="button"
+                        className="bank-card__reveal"
+                        onClick={() => toggleCardReveal(card.id)}
+                        aria-label={isRevealed ? "Hide card details" : "Reveal card details"}
+                        title={isRevealed ? "Hide card details" : "Reveal card details"}
+                      >
+                        {isRevealed ? <Eye size={16} strokeWidth={2.2} /> : <EyeOff size={16} strokeWidth={2.2} />}
+                      </button>
+                    </div>
                     <div className="bank-card__holder">
                       <span>Card holder</span>
                       <strong>{cardholderName}</strong>
                     </div>
                     <div className="bank-card__footer">
-                      <span>{formatCardType(card.type)}</span>
                       <span>
-                        {String(card.expiration_month).padStart(2, "0")}/{card.expiration_year}
+                        {card.tier ? `${formatCardTier(card.tier)} ${formatCardType(card.type)}` : formatCardType(card.type)}
+                      </span>
+                      <span className="bank-card__security">
+                        <span>
+                          EXP {String(card.expiration_month).padStart(2, "0")}/{card.expiration_year}
+                        </span>
+                        <span>Mock CVV {isRevealed ? card.mock_cvv : "***"}</span>
                       </span>
                     </div>
                   </div>
@@ -251,13 +483,16 @@ export function CardsPage() {
                       <div className="eyebrow">Default wallet</div>
                       <div className="card-panel__value">{wallet ? wallet.currency : "None"}</div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => updateCardStatus(card)}
-                      disabled={actionCardId === card.id || (card.status !== "ACTIVE" && card.status !== "FROZEN")}
-                    >
-                      {card.status === "FROZEN" ? "Unfreeze" : "Freeze"}
-                    </button>
+                    <div className="card-panel__actions">
+                      <button
+                        type="button"
+                        className="button--danger"
+                        onClick={() => deleteCard(card)}
+                        disabled={deletingCardId === card.id}
+                      >
+                        {deletingCardId === card.id ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
                   </div>
                   {draft && (
                     <div className="card-preferences">
