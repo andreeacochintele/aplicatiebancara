@@ -3,6 +3,7 @@ import uuid
 import pytest
 
 from app.cards.models import CardStatus, CardTier, CardType
+from app.cards.repository import CardRepository
 from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate
 from app.cards.service import CardService
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
@@ -166,6 +167,7 @@ def test_delete_card_removes_owned_card(db_session, user_with_wallet):
     service.delete_card(user.id, card.id)
 
     assert service.list_cards(user.id) == []
+    assert CardRepository(db_session).get_preferences(card.id) is None
 
 
 def test_user_cannot_delete_another_users_card(db_session, user_with_wallet):

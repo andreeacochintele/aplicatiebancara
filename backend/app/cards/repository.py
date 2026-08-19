@@ -31,6 +31,10 @@ class CardRepository:
         return card
 
     def delete(self, card: Card) -> None:
+        if is_supabase_session(self.db):
+            preferences = self.get_preferences(card.id)
+            if preferences is not None:
+                self.db.delete(preferences)
         self.db.delete(card)
         self.db.flush()
 
