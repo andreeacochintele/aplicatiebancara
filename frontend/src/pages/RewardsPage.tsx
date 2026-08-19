@@ -271,6 +271,10 @@ export function RewardsPage() {
                 Your cards & rewards
               </span>
             </div>
+            <p className="eyebrow" style={{ marginTop: "-0.4rem", marginBottom: "0.75rem" }}>
+              Card tier sets how many points you earn per RON — separate from your reward tier below, which is based
+              on lifetime points and unlocks the redeemable catalog.
+            </p>
             {cards.length > 0 ? (
               <div className="card-tier-grid">
                 {cards.map((card) => (
@@ -348,9 +352,12 @@ export function RewardsPage() {
             <div className="tile__header">
               <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <Trophy size={14} strokeWidth={2.2} />
-                Tier ladder
+                Reward tier (Standard / Premium / Metal)
               </span>
             </div>
+            <p className="eyebrow" style={{ marginTop: "-0.4rem", marginBottom: "0.75rem" }}>
+              Based on lifetime points earned, not which card you own — this is what gates the redeem catalog above.
+            </p>
             {rewards && rewards.next_tier && (
               <div className="bar-row" style={{ marginBottom: tiers.length > 0 ? "1rem" : 0 }}>
                 <span className="bar-row__label">
