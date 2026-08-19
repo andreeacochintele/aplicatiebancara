@@ -1,7 +1,7 @@
 """Card endpoints, scoped to the authenticated user."""
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -39,6 +39,17 @@ def get_card(
     db: Session = Depends(get_db),
 ) -> CardPublic:
     return CardService(db).get_for_user(current_user.id, card_id)
+
+
+@router.delete("/{card_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_card(
+    card_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    CardService(db).delete_card(current_user.id, card_id)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/{card_id}/freeze", response_model=CardPublic)

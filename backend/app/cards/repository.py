@@ -23,6 +23,10 @@ class CardRepository:
         self.db.flush()
         return card
 
+    def delete(self, card: Card) -> None:
+        self.db.delete(card)
+        self.db.flush()
+
     def get_preferences(self, card_id: uuid.UUID) -> CardPaymentPreferences | None:
         return self.db.get(CardPaymentPreferences, card_id)
 

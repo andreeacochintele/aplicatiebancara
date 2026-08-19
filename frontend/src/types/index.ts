@@ -94,6 +94,7 @@ export interface ScheduledPayment {
 }
 
 export type CardType = "DEBIT" | "CREDIT" | "ONE_TIME";
+export type CardTier = "REGULAR" | "GOLD" | "PLATINUM";
 export type CardStatus = "ACTIVE" | "FROZEN" | "EXPIRED" | "CANCELLED";
 
 export interface Card {
@@ -101,9 +102,12 @@ export interface Card {
   user_id: string;
   default_wallet_id: string | null;
   type: CardType;
+  tier: CardTier | null;
   status: CardStatus;
   masked_pan: string;
   last_four: string;
+  mock_pan: string;
+  mock_cvv: string;
   expiration_month: number;
   expiration_year: number;
   one_time_remaining: number | null;
