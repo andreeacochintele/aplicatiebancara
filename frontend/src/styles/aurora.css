@@ -825,6 +825,14 @@
   color: var(--aurora-accent-dark);
 }
 
+.aurora-shell .card-panel__icon-action {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
 .aurora-shell .button--danger {
   color: var(--aurora-red);
   border-color: var(--aurora-red-soft);
@@ -919,9 +927,79 @@
   background: linear-gradient(135deg, #8a4fe0 0%, #e86fa8 100%);
 }
 
+.aurora-shell .bank-card--debit.bank-card--regular {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(125, 211, 252, 0.3), transparent 32%),
+    linear-gradient(135deg, rgba(24, 128, 118, 0.98), rgba(23, 53, 70, 0.97) 58%, rgba(16, 24, 36, 0.96));
+}
+
+.aurora-shell .bank-card--credit.bank-card--regular {
+  background:
+    radial-gradient(circle at 88% 4%, rgba(196, 181, 253, 0.28), transparent 34%),
+    linear-gradient(135deg, rgba(86, 75, 178, 0.98), rgba(35, 56, 92, 0.97) 58%, rgba(16, 24, 36, 0.96));
+}
+
+.aurora-shell .bank-card--debit.bank-card--gold,
+.aurora-shell .bank-card--credit.bank-card--gold {
+  background:
+    linear-gradient(110deg, rgba(255, 244, 194, 0.18), transparent 24%),
+    linear-gradient(145deg, #20170b 0%, #604015 24%, #c89a3d 52%, #6f4916 78%, #1f180f 100%);
+  border-color: rgba(231, 197, 111, 0.5);
+  box-shadow:
+    0 18px 34px -22px rgba(198, 151, 55, 0.76),
+    inset 0 1px 0 rgba(255, 237, 183, 0.28),
+    inset 0 -1px 0 rgba(34, 24, 11, 0.78);
+}
+
+.aurora-shell .bank-card--debit.bank-card--platinum,
+.aurora-shell .bank-card--credit.bank-card--platinum {
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.13), transparent 24%),
+    linear-gradient(145deg, #0f141b 0%, #2d3440 28%, #6d7683 52%, #2a3038 78%, #0d1117 100%);
+  border-color: rgba(195, 205, 217, 0.4);
+  box-shadow:
+    0 18px 34px -22px rgba(88, 98, 112, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(8, 12, 18, 0.82);
+}
+
 .aurora-shell .bank-card--one-time {
   background: linear-gradient(135deg, #9598ac 0%, #c3c6d6 100%);
   opacity: 0.85;
+}
+
+.aurora-shell .bank-card__reveal {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.aurora-shell .bank-card__reveal:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.34);
+}
+
+.aurora-shell .bank-card__lock {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.aurora-shell .bank-card__lock:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.34);
 }
 
 .aurora-shell .card-preferences {
