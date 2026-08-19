@@ -246,19 +246,26 @@ def run_supabase_rest() -> None:
 
 def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
     existing_merchants = client.request("GET", "merchants", params={"select": "id", "limit": "1"})
+    # First 5 are architecture.md §11's example line-up; the rest round out
+    # the catalog with more categories (e.g. a first Entertainment merchant).
     merchants = [
         ("merchant-nike", "Nike", "Retail"),
         ("merchant-starbucks", "Starbucks", "Food"),
         ("merchant-emag", "eMAG", "Retail"),
         ("merchant-omv", "OMV", "Fuel"),
         ("merchant-booking", "Booking.com", "Travel"),
+        ("merchant-zara", "Zara", "Retail"),
+        ("merchant-kfc", "KFC", "Food"),
+        ("merchant-petrom", "Petrom", "Fuel"),
+        ("merchant-emirates", "Emirates", "Travel"),
+        ("merchant-cinema-city", "Cinema City", "Entertainment"),
     ]
     if not existing_merchants:
         client.request(
             "POST",
             "merchants",
             body=[
-                {"id": _seed_uuid(key), "name": name, "category": category, "status": "ACTIVE"}
+                {"id": _seed_uuid(key), "name": name, "category": category, "status": "ACTIVE", "verified": True}
                 for key, name, category in merchants
             ],
             prefer="return=minimal",
@@ -286,6 +293,11 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                     ("merchant-emag", "eMAG", "Retail", "5.00"),
                     ("merchant-omv", "OMV", "Fuel", "3.00"),
                     ("merchant-booking", "Booking.com", "Travel", "4.00"),
+                    ("merchant-zara", "Zara", "Retail", "6.00"),
+                    ("merchant-kfc", "KFC", "Food", "8.00"),
+                    ("merchant-petrom", "Petrom", "Fuel", "4.00"),
+                    ("merchant-emirates", "Emirates", "Travel", "5.00"),
+                    ("merchant-cinema-city", "Cinema City", "Entertainment", "12.00"),
                 ]
             ],
             prefer="return=minimal",
@@ -494,14 +506,21 @@ def run() -> None:
         credit(ron, TransactionType.CASHBACK, Decimal("28.00"), "Cashback - Nike")
         transfer(ron, business_ron, business.id, Decimal("500.00"), "Invoice payment - Aurora Tech SRL")
 
-        # Merchants + cashback offers (architecture.md §11 example line-up).
+        # Merchants + cashback offers. First 5 are architecture.md §11's example
+        # line-up; the rest just round out the catalog with more categories
+        # (e.g. a first Entertainment merchant) for the Rewards demo.
         offer_window = {"start_date": date.today() - timedelta(days=30), "end_date": date.today() + timedelta(days=335)}
         nike = Merchant(name="Nike", category="Retail", verified=True)
         starbucks = Merchant(name="Starbucks", category="Food", verified=True)
         emag = Merchant(name="eMAG", category="Retail", verified=True)
         omv = Merchant(name="OMV", category="Fuel", verified=True)
         booking = Merchant(name="Booking.com", category="Travel", verified=True)
-        db.add_all([nike, starbucks, emag, omv, booking])
+        zara = Merchant(name="Zara", category="Retail", verified=True)
+        kfc = Merchant(name="KFC", category="Food", verified=True)
+        petrom = Merchant(name="Petrom", category="Fuel", verified=True)
+        emirates = Merchant(name="Emirates", category="Travel", verified=True)
+        cinema_city = Merchant(name="Cinema City", category="Entertainment", verified=True)
+        db.add_all([nike, starbucks, emag, omv, booking, zara, kfc, petrom, emirates, cinema_city])
         db.flush()
 
         db.add_all(
@@ -511,6 +530,11 @@ def run() -> None:
                 CashbackOffer(merchant_id=emag.id, cashback_percent=Decimal("5"), **offer_window),
                 CashbackOffer(merchant_id=omv.id, cashback_percent=Decimal("3"), **offer_window),
                 CashbackOffer(merchant_id=booking.id, cashback_percent=Decimal("4"), **offer_window),
+                CashbackOffer(merchant_id=zara.id, cashback_percent=Decimal("6"), **offer_window),
+                CashbackOffer(merchant_id=kfc.id, cashback_percent=Decimal("8"), **offer_window),
+                CashbackOffer(merchant_id=petrom.id, cashback_percent=Decimal("4"), **offer_window),
+                CashbackOffer(merchant_id=emirates.id, cashback_percent=Decimal("5"), **offer_window),
+                CashbackOffer(merchant_id=cinema_city.id, cashback_percent=Decimal("12"), **offer_window),
             ]
         )
 
