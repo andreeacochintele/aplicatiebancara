@@ -1,7 +1,7 @@
 """Cards domain models.
 
-Cards are mock payment instruments only. They store safe display data such as
-masked PAN/last four, never real PAN or CVV values.
+Cards are mock payment instruments only. They store safe display data and
+sandbox-only mock PAN/CVV values, never real card credentials.
 """
 import enum
 import uuid
@@ -18,6 +18,12 @@ class CardType(str, enum.Enum):
     DEBIT = "DEBIT"
     CREDIT = "CREDIT"
     ONE_TIME = "ONE_TIME"
+
+
+class CardTier(str, enum.Enum):
+    REGULAR = "REGULAR"
+    GOLD = "GOLD"
+    PLATINUM = "PLATINUM"
 
 
 class CardStatus(str, enum.Enum):
@@ -37,12 +43,15 @@ class Card(Base):
     )
 
     type: Mapped[CardType] = mapped_column(Enum(CardType, name="card_type"), nullable=False)
+    tier: Mapped[CardTier | None] = mapped_column(Enum(CardTier, name="card_tier"), nullable=True)
     status: Mapped[CardStatus] = mapped_column(
         Enum(CardStatus, name="card_status"), default=CardStatus.ACTIVE, nullable=False
     )
 
     masked_pan: Mapped[str] = mapped_column(String(19), nullable=False)
     last_four: Mapped[str] = mapped_column(String(4), nullable=False)
+    mock_pan: Mapped[str] = mapped_column(String(19), nullable=False)
+    mock_cvv: Mapped[str] = mapped_column(String(3), nullable=False)
     expiration_month: Mapped[int] = mapped_column(Integer, nullable=False)
     expiration_year: Mapped[int] = mapped_column(Integer, nullable=False)
     one_time_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -464,13 +464,96 @@ th {
 
 .card-gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 320px));
+  justify-content: center;
   gap: 1rem;
+}
+
+.card-tier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 0.75rem;
+}
+
+.card-tier {
+  display: grid;
+  gap: 0.7rem;
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.card-tier--regular {
+  border-color: rgba(148, 163, 184, 0.34);
+}
+
+.card-tier--gold {
+  border-color: rgba(216, 182, 106, 0.54);
+}
+
+.card-tier--platinum {
+  border-color: rgba(160, 174, 192, 0.58);
+}
+
+.card-tier__header,
+.card-tier__products,
+.card-tier-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-tier__header {
+  justify-content: space-between;
+}
+
+.card-tier__name {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.card-tier p {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.45;
+}
+
+.card-tier__products {
+  flex-wrap: wrap;
+}
+
+.card-tier__products span {
+  padding: 0.3rem 0.5rem;
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.card-tier-note {
+  flex-wrap: wrap;
+  margin-top: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.card-tier-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--color-text-muted);
 }
 
 .card-panel {
   display: grid;
   gap: 0.7rem;
+  width: 100%;
+  max-width: 320px;
   min-width: 0;
   padding: 0.75rem;
   border: 1px solid var(--color-divider);
@@ -481,43 +564,155 @@ th {
 .bank-card {
   position: relative;
   overflow: hidden;
-  min-height: 132px;
+  width: 100%;
+  min-height: 190px;
   aspect-ratio: 1.586;
   border-radius: var(--radius-md);
-  padding: 0.8rem;
+  padding: 0.9rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  isolation: isolate;
 }
 
 .bank-card--debit {
   background:
-    linear-gradient(135deg, rgba(24, 117, 111, 0.98), rgba(20, 26, 41, 0.96)),
+    radial-gradient(circle at 12% 0%, rgba(125, 211, 252, 0.28), transparent 32%),
+    linear-gradient(135deg, rgba(20, 126, 116, 0.98), rgba(15, 33, 47, 0.96)),
     var(--color-surface-raised);
 }
 
 .bank-card--credit {
   background:
-    linear-gradient(135deg, rgba(92, 83, 167, 0.98), rgba(31, 50, 84, 0.96)),
+    radial-gradient(circle at 88% 4%, rgba(244, 114, 182, 0.24), transparent 34%),
+    linear-gradient(135deg, rgba(83, 70, 168, 0.98), rgba(19, 38, 71, 0.96)),
     var(--color-surface-raised);
+}
+
+.bank-card--regular {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(148, 163, 184, 0.28), transparent 34%),
+    linear-gradient(135deg, rgba(43, 60, 83, 0.98), rgba(17, 24, 39, 0.96)),
+    var(--color-surface-raised);
+}
+
+.bank-card--debit.bank-card--regular {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(125, 211, 252, 0.3), transparent 32%),
+    linear-gradient(135deg, rgba(24, 128, 118, 0.98), rgba(23, 53, 70, 0.97) 58%, rgba(16, 24, 36, 0.96));
+}
+
+.bank-card--credit.bank-card--regular {
+  background:
+    radial-gradient(circle at 88% 4%, rgba(196, 181, 253, 0.28), transparent 34%),
+    linear-gradient(135deg, rgba(86, 75, 178, 0.98), rgba(35, 56, 92, 0.97) 58%, rgba(16, 24, 36, 0.96));
+}
+
+.bank-card--gold {
+  background:
+    linear-gradient(110deg, rgba(255, 244, 194, 0.18), transparent 24%),
+    linear-gradient(145deg, #20170b 0%, #604015 24%, #c89a3d 52%, #6f4916 78%, #1f180f 100%),
+    var(--color-surface-raised);
+  border-color: rgba(231, 197, 111, 0.5);
+  box-shadow:
+    0 18px 34px -22px rgba(198, 151, 55, 0.76),
+    inset 0 1px 0 rgba(255, 237, 183, 0.28),
+    inset 0 -1px 0 rgba(34, 24, 11, 0.78);
+}
+
+.bank-card--platinum {
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.13), transparent 24%),
+    linear-gradient(145deg, #0f141b 0%, #2d3440 28%, #6d7683 52%, #2a3038 78%, #0d1117 100%),
+    var(--color-surface-raised);
+  border-color: rgba(195, 205, 217, 0.4);
+  box-shadow:
+    0 18px 34px -22px rgba(88, 98, 112, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(8, 12, 18, 0.82);
+}
+
+.bank-card--debit.bank-card--gold {
+  background:
+    linear-gradient(110deg, rgba(255, 244, 194, 0.18), transparent 24%),
+    linear-gradient(145deg, #20170b 0%, #604015 24%, #c89a3d 52%, #6f4916 78%, #1f180f 100%);
+  border-color: rgba(231, 197, 111, 0.5);
+  box-shadow:
+    0 18px 34px -22px rgba(198, 151, 55, 0.76),
+    inset 0 1px 0 rgba(255, 237, 183, 0.28),
+    inset 0 -1px 0 rgba(34, 24, 11, 0.78);
+}
+
+.bank-card--credit.bank-card--gold {
+  background:
+    linear-gradient(110deg, rgba(255, 244, 194, 0.18), transparent 24%),
+    linear-gradient(145deg, #20170b 0%, #604015 24%, #c89a3d 52%, #6f4916 78%, #1f180f 100%);
+  border-color: rgba(231, 197, 111, 0.5);
+  box-shadow:
+    0 18px 34px -22px rgba(198, 151, 55, 0.76),
+    inset 0 1px 0 rgba(255, 237, 183, 0.28),
+    inset 0 -1px 0 rgba(34, 24, 11, 0.78);
+}
+
+.bank-card--debit.bank-card--platinum {
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.13), transparent 24%),
+    linear-gradient(145deg, #0f141b 0%, #2d3440 28%, #6d7683 52%, #2a3038 78%, #0d1117 100%);
+  border-color: rgba(195, 205, 217, 0.4);
+  box-shadow:
+    0 18px 34px -22px rgba(88, 98, 112, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(8, 12, 18, 0.82);
+}
+
+.bank-card--credit.bank-card--platinum {
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.13), transparent 24%),
+    linear-gradient(145deg, #0f141b 0%, #2d3440 28%, #6d7683 52%, #2a3038 78%, #0d1117 100%);
+  border-color: rgba(195, 205, 217, 0.4);
+  box-shadow:
+    0 18px 34px -22px rgba(88, 98, 112, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(8, 12, 18, 0.82);
 }
 
 .bank-card--one-time {
   background:
-    linear-gradient(135deg, rgba(137, 91, 42, 0.98), rgba(37, 55, 61, 0.96)),
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.1) 0,
+      rgba(255, 255, 255, 0.1) 1px,
+      transparent 1px,
+      transparent 12px
+    ),
+    radial-gradient(circle at 90% 8%, rgba(251, 146, 60, 0.32), transparent 30%),
+    linear-gradient(135deg, rgba(125, 55, 98, 0.98), rgba(36, 50, 58, 0.96)),
     var(--color-surface-raised);
 }
 
 .bank-card::after {
   content: "";
   position: absolute;
-  inset: auto -24px -46px auto;
-  width: 96px;
-  height: 96px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  z-index: -1;
+  inset: auto -42px -58px auto;
+  width: 138px;
+  height: 138px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.bank-card::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    linear-gradient(112deg, transparent 0 44%, rgba(255, 255, 255, 0.08) 45%, transparent 56%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 42%);
+  pointer-events: none;
 }
 
 .bank-card__top,
@@ -536,6 +731,36 @@ th {
   color: rgba(255, 255, 255, 0.82);
 }
 
+.bank-card__identity {
+  display: grid;
+  gap: 0.16rem;
+  min-width: 0;
+}
+
+.bank-card__top-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.bank-card__product {
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.bank-card__middle {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .bank-card__chip {
   position: relative;
   z-index: 1;
@@ -546,13 +771,89 @@ th {
   border: 1px solid rgba(16, 18, 26, 0.35);
 }
 
+.bank-card__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  height: 26px;
+  padding: 0 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.58rem;
+  font-weight: 800;
+}
+
+.bank-card--debit .bank-card__mark {
+  border-color: rgba(45, 212, 191, 0.44);
+  background: rgba(20, 184, 166, 0.18);
+  color: rgba(204, 251, 241, 0.94);
+}
+
+.bank-card--credit .bank-card__mark {
+  border-color: rgba(167, 139, 250, 0.46);
+  background: rgba(124, 58, 237, 0.18);
+  color: rgba(237, 233, 254, 0.94);
+}
+
+.bank-card .tag {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.88);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
 .bank-card__number {
   position: relative;
   z-index: 1;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: #ffffff;
+}
+
+.bank-card__number-row {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.bank-card__reveal {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.bank-card__reveal:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.34);
+}
+
+.bank-card__lock {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.bank-card__lock:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.34);
 }
 
 .bank-card__holder {
@@ -582,11 +883,33 @@ th {
   color: rgba(255, 255, 255, 0.78);
 }
 
+.bank-card__security {
+  display: grid;
+  gap: 0.12rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .card-panel__meta {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: end;
   gap: 0.75rem;
+}
+
+.card-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.card-panel__icon-action {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
 }
 
 .card-panel__value {

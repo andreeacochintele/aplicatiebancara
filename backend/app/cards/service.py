@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.cards.models import Card, CardPaymentPreferences, CardStatus, CardType
+from app.cards.models import Card, CardPaymentPreferences, CardStatus, CardTier, CardType
 from app.cards.repository import CardRepository
 from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate
 from app.core.exceptions import NotFoundError, ValidationError
@@ -20,6 +20,9 @@ class CardService:
         self.wallets = WalletRepository(db)
 
     def create_card(self, user_id: uuid.UUID, data: CardCreate) -> Card:
+        if data.type == CardType.ONE_TIME and data.tier is not None:
+            raise ValidationError("One-time cards do not have tiers")
+
         if data.default_wallet_id is not None:
             wallet = self.wallets.get_by_id(data.default_wallet_id)
             if wallet is None or wallet.user_id != user_id:
@@ -28,16 +31,22 @@ class CardService:
                 raise ValidationError("Default wallet must be active")
 
         last_four = f"{secrets.randbelow(10000):04d}"
+        mock_pan = f"4000 {secrets.randbelow(10000):04d} {secrets.randbelow(10000):04d} {last_four}"
+        mock_cvv = f"{secrets.randbelow(1000):03d}"
         now = datetime.now(timezone.utc)
         one_time_remaining = 1 if data.type == CardType.ONE_TIME else None
+        tier = None if data.type == CardType.ONE_TIME else data.tier or CardTier.REGULAR
 
         card = Card(
             user_id=user_id,
             default_wallet_id=data.default_wallet_id,
             type=data.type,
+            tier=tier,
             status=CardStatus.ACTIVE,
             masked_pan=f"**** **** **** {last_four}",
             last_four=last_four,
+            mock_pan=mock_pan,
+            mock_cvv=mock_cvv,
             expiration_month=now.month,
             expiration_year=now.year + 4,
             one_time_remaining=one_time_remaining,
@@ -56,6 +65,10 @@ class CardService:
         if card is None or card.user_id != user_id:
             raise NotFoundError("Card not found")
         return card
+
+    def delete_card(self, user_id: uuid.UUID, card_id: uuid.UUID) -> None:
+        card = self.get_for_user(user_id, card_id)
+        self.repository.delete(card)
 
     def freeze_card(self, user_id: uuid.UUID, card_id: uuid.UUID) -> Card:
         card = self.get_for_user(user_id, card_id)
