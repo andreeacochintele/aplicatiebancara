@@ -171,11 +171,11 @@ def run() -> None:
 
         # Merchants + cashback offers (architecture.md §11 example line-up).
         offer_window = {"start_date": date.today() - timedelta(days=30), "end_date": date.today() + timedelta(days=335)}
-        nike = Merchant(name="Nike", category="Retail")
-        starbucks = Merchant(name="Starbucks", category="Food")
-        emag = Merchant(name="eMAG", category="Retail")
-        omv = Merchant(name="OMV", category="Fuel")
-        booking = Merchant(name="Booking.com", category="Travel")
+        nike = Merchant(name="Nike", category="Retail", verified=True)
+        starbucks = Merchant(name="Starbucks", category="Food", verified=True)
+        emag = Merchant(name="eMAG", category="Retail", verified=True)
+        omv = Merchant(name="OMV", category="Fuel", verified=True)
+        booking = Merchant(name="Booking.com", category="Travel", verified=True)
         db.add_all([nike, starbucks, emag, omv, booking])
         db.flush()
 

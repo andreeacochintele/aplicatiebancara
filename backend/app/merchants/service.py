@@ -46,7 +46,7 @@ class MerchantService:
         self.transactions = TransactionRepository(db)
 
     def create_merchant(self, data: MerchantCreate) -> MerchantPublic:
-        merchant = Merchant(name=data.name, category=data.category, logo_url=data.logo_url)
+        merchant = Merchant(name=data.name, category=data.category, logo_url=data.logo_url, verified=data.verified)
         self.repository.add(merchant)
         return self._to_public(merchant)
 
@@ -80,7 +80,10 @@ class MerchantService:
         return self._to_public(merchant)
 
     def sync_purchases_from_transactions(self, user_id: uuid.UUID) -> list[PurchaseResult]:
-        merchants = self.repository.list_active()
+        # Only verified merchants are eligible for reward points — an
+        # unverified one could otherwise be paired with a lookalike
+        # counterparty to farm points off fake purchases.
+        merchants = [m for m in self.repository.list_active() if m.verified]
         if not merchants:
             return []
 
@@ -171,6 +174,7 @@ class MerchantService:
             category=merchant.category,
             logo_url=merchant.logo_url,
             status=merchant.status,
+            verified=merchant.verified,
             active_offer=self._offer_to_public(offer) if offer is not None else None,
             created_at=merchant.created_at,
         )

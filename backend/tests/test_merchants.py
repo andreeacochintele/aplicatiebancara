@@ -82,7 +82,7 @@ def test_create_cashback_offer_for_unknown_merchant_raises_not_found(db_session)
 
 def test_sync_awards_points_and_computes_cashback_from_real_transaction(db_session, seeded_user):
     service = MerchantService(db_session)
-    merchant = service.create_merchant(MerchantCreate(name="Nike", category="Retail"))
+    merchant = service.create_merchant(MerchantCreate(name="Nike", category="Retail", verified=True))
     start, end = _active_offer_window()
     service.create_cashback_offer(
         merchant.id,
@@ -105,7 +105,7 @@ def test_sync_awards_points_and_computes_cashback_from_real_transaction(db_sessi
 
 def test_sync_caps_cashback_at_maximum(db_session, seeded_user):
     service = MerchantService(db_session)
-    merchant = service.create_merchant(MerchantCreate(name="Starbucks", category="Food"))
+    merchant = service.create_merchant(MerchantCreate(name="Starbucks", category="Food", verified=True))
     start, end = _active_offer_window()
     service.create_cashback_offer(
         merchant.id,
@@ -122,7 +122,7 @@ def test_sync_caps_cashback_at_maximum(db_session, seeded_user):
 
 def test_sync_below_minimum_spend_earns_no_cashback(db_session, seeded_user):
     service = MerchantService(db_session)
-    merchant = service.create_merchant(MerchantCreate(name="eMAG", category="Retail"))
+    merchant = service.create_merchant(MerchantCreate(name="eMAG", category="Retail", verified=True))
     start, end = _active_offer_window()
     service.create_cashback_offer(
         merchant.id,
@@ -135,6 +135,17 @@ def test_sync_below_minimum_spend_earns_no_cashback(db_session, seeded_user):
     assert results[0].cashback_percent is None
     assert results[0].cashback_amount == Decimal("0")
     assert results[0].points_earned == 50
+
+
+def test_sync_ignores_unverified_merchants(db_session, seeded_user):
+    service = MerchantService(db_session)
+    service.create_merchant(MerchantCreate(name="OMV", category="Fuel"))  # verified defaults to False
+    _card_payment(db_session, seeded_user.id, Decimal("120.00"), "OMV - Fuel")
+
+    results = service.sync_purchases_from_transactions(seeded_user.id)
+
+    assert results == []
+    assert RewardsService(db_session).get_account(seeded_user.id).points_balance == 0
 
 
 def test_sync_ignores_transactions_at_unknown_merchants(db_session, seeded_user):
@@ -169,7 +180,7 @@ def test_sync_ignores_non_completed_or_non_card_transactions(db_session, seeded_
 
 def test_sync_does_not_double_award_the_same_transaction(db_session, seeded_user):
     service = MerchantService(db_session)
-    service.create_merchant(MerchantCreate(name="OMV", category="Fuel"))
+    service.create_merchant(MerchantCreate(name="OMV", category="Fuel", verified=True))
     _card_payment(db_session, seeded_user.id, Decimal("100.00"), "OMV - Fuel")
 
     first = service.sync_purchases_from_transactions(seeded_user.id)
@@ -186,7 +197,7 @@ def test_sync_survives_a_concurrent_award_race(db_session, seeded_user, monkeypa
     per-row savepoint should make the loser skip that transaction instead of
     crashing the whole sync call or double-crediting points."""
     service = MerchantService(db_session)
-    service.create_merchant(MerchantCreate(name="OMV", category="Fuel"))
+    service.create_merchant(MerchantCreate(name="OMV", category="Fuel", verified=True))
     payment = _card_payment(db_session, seeded_user.id, Decimal("100.00"), "OMV - Fuel")
 
     # A "concurrent" request already committed its award for this transaction...

@@ -258,7 +258,14 @@ export function RewardsPage() {
             <tbody>
               {merchants.map((merchant) => (
                 <tr key={merchant.id}>
-                  <td>{merchant.name}</td>
+                  <td>
+                    {merchant.name}
+                    {!merchant.verified && (
+                      <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
+                        Not verified — card payments here don't earn points yet
+                      </div>
+                    )}
+                  </td>
                   <td>{merchant.category}</td>
                   <td>
                     {merchant.active_offer ? (

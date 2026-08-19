@@ -285,6 +285,7 @@ export interface Merchant {
   category: string;
   logo_url: string | null;
   status: "ACTIVE" | "INACTIVE";
+  verified: boolean;
   active_offer: CashbackOffer | null;
   created_at: string;
 }
