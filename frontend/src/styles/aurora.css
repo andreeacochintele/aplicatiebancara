@@ -1006,8 +1006,34 @@
   border-top: 1px solid var(--aurora-border);
 }
 
+.aurora-shell .card-tier__rewards span,
+.aurora-shell .card-tier-summary__rewards span {
+  border-color: var(--aurora-border);
+  color: var(--aurora-text-soft);
+  background: var(--aurora-surface-alt);
+}
+
 .aurora-shell .checkbox-row input {
   accent-color: var(--aurora-accent);
+}
+
+.aurora-shell .card-preference-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--aurora-radius-sm);
+  border: 1px solid var(--aurora-border);
+  background: var(--aurora-surface);
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .card-preference-toggle:hover,
+.aurora-shell .card-preference-toggle.active {
+  border-color: var(--aurora-accent);
+  background: var(--aurora-accent-soft);
+  color: var(--aurora-accent-dark);
 }
 
 /* ---- Credit ---- */
