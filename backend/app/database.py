@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import get_settings
+from app.supabase import SupabaseRestSession
 
 settings = get_settings()
 
@@ -25,7 +26,15 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db() -> Generator[Session | SupabaseRestSession, None, None]:
+    if settings.DATABASE_BACKEND == "supabase_rest":
+        db = SupabaseRestSession()
+        try:
+            yield db
+        finally:
+            db.close()
+        return
+
     db = SessionLocal()
     try:
         yield db
