@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # Database
+    DATABASE_BACKEND: str = "sqlalchemy"
     DATABASE_URL: str = "postgresql+psycopg://banking:banking@localhost:5432/banking"
 
     # Auth
@@ -30,6 +31,10 @@ class Settings(BaseSettings):
     AZURE_OPENAI_API_KEY: str | None = None
     AZURE_OPENAI_API_VERSION: str | None = None
     AZURE_OPENAI_DEPLOYMENT_NAME: str | None = None
+
+    # Supabase REST (optional tooling path when direct Postgres ports are blocked)
+    SUPABASE_URL: str | None = None
+    SUPABASE_KEY: str | None = None
 
 
 @lru_cache
