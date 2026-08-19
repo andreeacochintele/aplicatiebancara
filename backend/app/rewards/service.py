@@ -14,6 +14,7 @@ the same kind of informational simplification cashback offers already use.
 import uuid
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.rewards.models import (
@@ -167,6 +168,8 @@ class RewardsService:
 
     def _tier_for(self, lifetime_points: int) -> RewardTier:
         tiers = self.repository.list_tiers()
+        if not tiers:
+            raise NotFoundError("Reward tiers are not seeded")
         eligible = [tier for tier in tiers if tier.min_lifetime_points <= lifetime_points]
         return eligible[-1] if eligible else tiers[0]
 
@@ -203,10 +206,17 @@ class RewardsService:
         )
 
     def _redemption_to_public(self, redemption: BenefitRedemption) -> BenefitRedemptionPublic:
+        benefit = None
+        try:
+            benefit = redemption.benefit
+        except DetachedInstanceError:
+            benefit = None
+        if benefit is None:
+            benefit = self.repository.get_benefit(redemption.benefit_id)
         return BenefitRedemptionPublic(
             id=redemption.id,
             benefit_id=redemption.benefit_id,
-            benefit_name=redemption.benefit.name,
+            benefit_name=benefit.name if benefit is not None else "Unknown benefit",
             points_spent=redemption.points_spent,
             redeemed_at=redemption.redeemed_at,
         )
