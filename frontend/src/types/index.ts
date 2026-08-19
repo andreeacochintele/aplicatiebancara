@@ -268,3 +268,80 @@ export interface SavingsGoal {
   monthly_amount_needed: string | null;
   created_at: string;
 }
+
+export interface CashbackOffer {
+  id: string;
+  cashback_percent: string;
+  maximum_cashback: string | null;
+  minimum_spend: string | null;
+  start_date: string;
+  end_date: string;
+  status: "ACTIVE" | "EXPIRED";
+}
+
+export interface Merchant {
+  id: string;
+  name: string;
+  category: string;
+  logo_url: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  active_offer: CashbackOffer | null;
+  created_at: string;
+}
+
+export interface PurchaseResult {
+  merchant_id: string;
+  amount: string;
+  currency: string;
+  cashback_percent: string | null;
+  cashback_amount: string;
+  points_earned: number;
+  reward_points_balance: number;
+}
+
+export interface RewardTransaction {
+  id: string;
+  type: "EARN" | "SPEND" | "ADJUSTMENT";
+  points: number;
+  description: string | null;
+  created_at: string;
+}
+
+export interface RewardTier {
+  id: string;
+  name: string;
+  min_lifetime_points: number;
+  perks: string[];
+}
+
+export type BenefitCategory = "LOUNGE_ACCESS" | "RETAIL_DISCOUNT" | "TRAVEL" | "INSURANCE" | "OTHER";
+
+export interface RewardBenefit {
+  id: string;
+  name: string;
+  category: BenefitCategory;
+  description: string;
+  points_cost: number | null;
+  min_tier: RewardTier | null;
+  partner_name: string | null;
+  can_redeem: boolean;
+  reason_if_locked: string | null;
+}
+
+export interface BenefitRedemption {
+  id: string;
+  benefit_id: string;
+  benefit_name: string;
+  points_spent: number;
+  redeemed_at: string;
+}
+
+export interface RewardAccount {
+  points_balance: number;
+  lifetime_points_earned: number;
+  tier: RewardTier;
+  next_tier: RewardTier | null;
+  points_to_next_tier: number | null;
+  transactions: RewardTransaction[];
+  redemptions: BenefitRedemption[];
+}

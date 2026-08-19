@@ -1,3 +1,4 @@
+import { Bell } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../hooks/useAuth";
@@ -33,10 +34,13 @@ export function Header() {
   }
 
   return (
-    <header className="header">
+    <header className="header aurora-header">
       <span className="header__title">{page?.title ?? "Banking App"}</span>
       {page && <span className="header__subtitle">{page.subtitle}</span>}
       <div className="header__meta">
+        <span className="aurora-bell">
+          <Bell size={16} />
+        </span>
         {user && (
           <div className="header__user">
             {user.role === "ADMIN" && <span className="tag tag--accent">ADMIN</span>}

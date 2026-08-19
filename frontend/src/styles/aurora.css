@@ -1,0 +1,980 @@
+/*
+ * Aurora theme — experimental pilot restyle (branch: experiment/aurora-ui-dashboard).
+ * Scoped entirely under .aurora-shell / .aurora-* classes so the existing dark
+ * design system in index.css (used by every other page) is left untouched.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap");
+
+.aurora-shell {
+  --aurora-bg: #f6f6fb;
+  --aurora-surface: #ffffff;
+  --aurora-surface-alt: #fbfbfe;
+  --aurora-border: #ebebf3;
+  --aurora-text: #15151f;
+  --aurora-text-soft: #6c6c82;
+  --aurora-text-faint: #a5a5b8;
+  --aurora-accent: #5b5fef;
+  --aurora-accent-dark: #4548c9;
+  --aurora-accent-soft: #eef0ff;
+  --aurora-gradient: linear-gradient(135deg, #5b5fef 0%, #9b5de5 55%, #ff6fa5 100%);
+  --aurora-green: #1ca063;
+  --aurora-green-soft: #e5f6ec;
+  --aurora-red: #d8514f;
+  --aurora-red-soft: #fceaea;
+  --aurora-violet: #7a4fe0;
+  --aurora-violet-soft: #f1ecfd;
+  --aurora-pink: #d6488f;
+  --aurora-pink-soft: #fdebf3;
+  --aurora-amber: #a97a00;
+  --aurora-amber-soft: #fff3d6;
+  --aurora-radius-lg: 20px;
+  --aurora-radius-md: 14px;
+  --aurora-radius-sm: 10px;
+  --aurora-shadow: 0 1px 2px rgba(20, 20, 31, 0.04), 0 12px 28px -10px rgba(20, 20, 31, 0.12);
+}
+
+.aurora-shell h1,
+.aurora-shell h2 {
+  font-family: "Manrope", sans-serif;
+  margin: 0;
+}
+
+/* ---- Sidebar ---- */
+
+.aurora-shell .aurora-sidebar {
+  background: var(--aurora-surface);
+  border-right: 1px solid var(--aurora-border);
+  color: var(--aurora-text-soft);
+  padding: 22px 14px;
+}
+
+.aurora-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px 22px;
+}
+
+.aurora-brand-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--aurora-gradient);
+  flex-shrink: 0;
+}
+
+.aurora-brand-name {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  color: var(--aurora-text);
+}
+
+.aurora-shell .aurora-sidebar .sidebar__group-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--aurora-text-faint);
+  padding: 0 10px 8px;
+}
+
+.aurora-shell .aurora-sidebar .sidebar__nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--aurora-radius-sm);
+  color: var(--aurora-text-soft);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.aurora-shell .aurora-sidebar .sidebar__nav a:hover {
+  background: var(--aurora-surface-alt);
+  color: var(--aurora-text);
+}
+
+.aurora-shell .aurora-sidebar .sidebar__nav a.active {
+  background: var(--aurora-accent-soft);
+  color: var(--aurora-accent-dark);
+  font-weight: 700;
+}
+
+.aurora-shell .aurora-sidebar .sidebar__nav a::before {
+  display: none;
+}
+
+/* ---- Header ---- */
+
+.aurora-shell .aurora-header {
+  background: var(--aurora-surface);
+  border-bottom: 1px solid var(--aurora-border);
+  padding: 18px 32px;
+  align-items: center;
+}
+
+.aurora-shell .aurora-header .header__title {
+  font-family: "Manrope", sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--aurora-text);
+}
+
+.aurora-shell .aurora-header .header__subtitle {
+  color: var(--aurora-text-soft);
+  font-size: 13px;
+}
+
+.aurora-bell {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--aurora-surface-alt);
+  border: 1px solid var(--aurora-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--aurora-text-soft);
+  flex-shrink: 0;
+}
+
+.aurora-shell .aurora-header .avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--aurora-gradient);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.aurora-shell .aurora-header button {
+  background: var(--aurora-surface-alt);
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-sm);
+  color: var(--aurora-text);
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 8px 14px;
+}
+
+.aurora-shell .aurora-header button:hover {
+  border-color: var(--aurora-accent);
+  color: var(--aurora-accent-dark);
+  background: var(--aurora-accent-soft);
+}
+
+/* ---- Content area ---- */
+
+.aurora-shell .app-shell__content {
+  background: var(--aurora-bg);
+  font-family: "Inter", sans-serif;
+}
+
+.aurora-page {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.aurora-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+@media (max-width: 980px) {
+  .aurora-page {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Card ---- */
+
+.aurora-card {
+  background: var(--aurora-surface);
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-lg);
+  box-shadow: var(--aurora-shadow);
+  padding: 20px 22px;
+  color: var(--aurora-text);
+}
+
+.aurora-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.aurora-section-header h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--aurora-text);
+}
+
+.aurora-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--aurora-text-faint);
+  margin-bottom: 2px;
+}
+
+.aurora-eyebrow.light {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.aurora-link-btn {
+  background: none;
+  border: none;
+  color: var(--aurora-accent-dark);
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  text-decoration: none;
+}
+
+/* ---- Hero balance card ---- */
+
+.aurora-hero {
+  position: relative;
+  background: linear-gradient(160deg, #17172a 0%, #23234a 55%, #2c2560 100%);
+  color: #fff;
+  overflow: hidden;
+  padding: 26px 26px 22px;
+  border: none;
+}
+
+.aurora-hero-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.55;
+}
+
+.aurora-blob-1 {
+  width: 260px;
+  height: 260px;
+  background: #7c5cf0;
+  top: -110px;
+  right: -60px;
+}
+
+.aurora-blob-2 {
+  width: 220px;
+  height: 220px;
+  background: #ff6fa5;
+  bottom: -100px;
+  left: 20%;
+  opacity: 0.35;
+}
+
+.aurora-hero-top {
+  position: relative;
+  z-index: 1;
+}
+
+.aurora-hero-amount {
+  font-family: "Manrope", sans-serif;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.aurora-hero-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+  margin-top: 8px;
+}
+
+.aurora-icon-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  color: #fff;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.aurora-hero-wallets {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+  flex-wrap: wrap;
+}
+
+.aurora-hero-wallet {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.aurora-hero-wallet-code {
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+}
+
+/* ---- Quick actions ---- */
+
+.aurora-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .aurora-quick-actions {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.aurora-quick-action {
+  background: var(--aurora-surface);
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-md);
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  box-shadow: var(--aurora-shadow);
+  text-align: left;
+  transition: transform 0.15s;
+  text-decoration: none;
+  color: inherit;
+}
+
+.aurora-quick-action:hover {
+  transform: translateY(-2px);
+}
+
+.aurora-quick-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--aurora-accent-soft);
+  color: var(--aurora-accent-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.aurora-quick-label {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--aurora-text);
+}
+
+.aurora-quick-sub {
+  font-size: 12px;
+  color: var(--aurora-text-soft);
+}
+
+/* ---- Transaction rows ---- */
+
+.aurora-tx-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.aurora-tx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--aurora-border);
+  gap: 12px;
+}
+
+.aurora-tx-row:last-child {
+  border-bottom: none;
+}
+
+.aurora-tx-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.aurora-cat-dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.aurora-tx-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--aurora-text);
+}
+
+.aurora-tx-meta {
+  font-size: 12.5px;
+  color: var(--aurora-text-soft);
+}
+
+.aurora-tx-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.aurora-tx-amount {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--aurora-text);
+  white-space: nowrap;
+}
+
+.aurora-tx-amount.up {
+  color: var(--aurora-green);
+}
+
+/* ---- Chips ---- */
+
+.aurora-chip {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.aurora-chip-neutral {
+  background: var(--aurora-surface-alt);
+  color: var(--aurora-text-soft);
+  border: 1px solid var(--aurora-border);
+}
+
+.aurora-chip-violet {
+  background: var(--aurora-violet-soft);
+  color: var(--aurora-violet);
+}
+
+.aurora-chip-red {
+  background: var(--aurora-red-soft);
+  color: var(--aurora-red);
+}
+
+.aurora-chip-green {
+  background: var(--aurora-green-soft);
+  color: var(--aurora-green);
+}
+
+/* ---- Donut ---- */
+
+.aurora-donut-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.aurora-donut-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.aurora-donut-total {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 18px;
+  color: var(--aurora-text);
+}
+
+.aurora-donut-label {
+  font-size: 11px;
+  color: var(--aurora-text-soft);
+}
+
+.aurora-legend {
+  margin-top: 10px;
+}
+
+.aurora-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.aurora-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.aurora-legend-name {
+  flex: 1;
+  color: var(--aurora-text-soft);
+  text-transform: capitalize;
+}
+
+.aurora-legend-pct {
+  font-weight: 700;
+  color: var(--aurora-text);
+}
+
+/* ---- Ring / score ---- */
+
+.aurora-ring {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.aurora-ring-hole {
+  position: absolute;
+  inset: 12px;
+  background: var(--aurora-surface);
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.aurora-score-num {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 24px;
+  color: var(--aurora-text);
+}
+
+.aurora-score-tag {
+  font-size: 11px;
+  color: var(--aurora-green);
+  font-weight: 700;
+}
+
+.aurora-score-wrap {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.aurora-score-side {
+  flex: 1;
+}
+
+.aurora-score-line {
+  font-size: 13px;
+  margin-bottom: 4px;
+  color: var(--aurora-text-soft);
+}
+
+/* ---- Attention list ---- */
+
+.aurora-attn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.aurora-attn-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.aurora-attn-text {
+  font-size: 13px;
+  color: var(--aurora-text-soft);
+  line-height: 1.4;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reskin: every other page keeps its existing markup/classNames and  */
+/* data logic untouched — these overrides just re-theme the shared    */
+/* component vocabulary (.tile, .tag, forms, tables, etc. from        */
+/* index.css) to Aurora tokens whenever it renders under .aurora-shell.*/
+/* ------------------------------------------------------------------ */
+
+.aurora-shell .app-shell__content,
+.aurora-shell .app-shell__content section,
+.aurora-shell .app-shell__content h2 {
+  color: var(--aurora-text);
+}
+
+.aurora-shell form {
+  gap: 0.85rem;
+}
+
+.aurora-shell label {
+  color: var(--aurora-text-soft);
+  font-family: "Inter", sans-serif;
+}
+
+.aurora-shell input,
+.aurora-shell select {
+  background: var(--aurora-surface-alt);
+  color: var(--aurora-text);
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-sm);
+  font-family: "Inter", sans-serif;
+}
+
+.aurora-shell input:focus,
+.aurora-shell select:focus {
+  outline: none;
+  border-color: var(--aurora-accent);
+}
+
+.aurora-shell select option {
+  background: var(--aurora-surface);
+  color: var(--aurora-text);
+}
+
+.aurora-shell button {
+  background: var(--aurora-gradient);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+  border-radius: var(--aurora-radius-sm);
+  font-family: "Inter", sans-serif;
+}
+
+.aurora-shell button:hover {
+  filter: brightness(1.05);
+}
+
+.aurora-shell button:disabled {
+  opacity: 0.55;
+}
+
+.aurora-shell table {
+  color: var(--aurora-text);
+}
+
+.aurora-shell th,
+.aurora-shell td {
+  border-bottom: 1px solid var(--aurora-border);
+}
+
+.aurora-shell th {
+  color: var(--aurora-text-faint);
+}
+
+/* ---- Tiles / cards / tags ---- */
+
+.aurora-shell .tile {
+  background: var(--aurora-surface);
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-lg);
+  box-shadow: var(--aurora-shadow);
+}
+
+.aurora-shell .tile__header a {
+  color: var(--aurora-accent-dark);
+}
+
+.aurora-shell .eyebrow {
+  color: var(--aurora-text-faint);
+}
+
+.aurora-shell .balance-hero__amount {
+  color: var(--aurora-text);
+  font-family: "Manrope", sans-serif;
+}
+
+.aurora-shell .wallet-chip {
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-md);
+  background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .wallet-chip__amount,
+.aurora-shell .card-panel__value,
+.aurora-shell .stat-big,
+.aurora-shell .loan-result-grid strong {
+  color: var(--aurora-text);
+}
+
+.aurora-shell .tag {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.aurora-shell .tag--accent {
+  background: var(--aurora-accent-soft);
+  color: var(--aurora-accent-dark);
+}
+
+.aurora-shell .tag--neutral {
+  background: var(--aurora-surface-alt);
+  color: var(--aurora-text-soft);
+  border: 1px solid var(--aurora-border);
+}
+
+.aurora-shell .tag--outline {
+  background: transparent;
+  color: var(--aurora-text-soft);
+  border: 1px solid var(--aurora-border);
+}
+
+.aurora-shell .tag--warning {
+  background: var(--aurora-amber-soft);
+  color: var(--aurora-amber);
+}
+
+.aurora-shell .avatar,
+.aurora-shell .beneficiary-avatar {
+  background: var(--aurora-gradient);
+  color: #fff;
+}
+
+.aurora-shell .empty-state,
+.aurora-shell .card-empty {
+  color: var(--aurora-text-soft);
+  border-color: var(--aurora-border);
+}
+
+.aurora-shell .status-line {
+  border-left-color: var(--aurora-accent);
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .status-line--error {
+  border-left-color: var(--aurora-red);
+  color: var(--aurora-red);
+}
+
+/* ---- Payments ---- */
+
+.aurora-shell .payment-tabs {
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-sm);
+  overflow: hidden;
+}
+
+.aurora-shell .payment-tabs__button {
+  background: var(--aurora-surface);
+  color: var(--aurora-text-soft);
+  border-right: 1px solid var(--aurora-border);
+  border-radius: 0;
+}
+
+.aurora-shell .payment-tabs__button.active,
+.aurora-shell .payment-tabs__button:hover {
+  background: var(--aurora-accent-soft);
+  color: var(--aurora-accent-dark);
+}
+
+.aurora-shell .button--ghost,
+.aurora-shell .button--danger {
+  background: transparent;
+  border: 1px solid var(--aurora-border);
+  font-weight: 700;
+}
+
+.aurora-shell .button--ghost {
+  color: var(--aurora-accent-dark);
+  border-color: var(--aurora-accent-soft);
+}
+
+.aurora-shell .button--ghost:hover {
+  background: var(--aurora-accent-soft);
+}
+
+.aurora-shell .button--favorite {
+  background: var(--aurora-accent-soft);
+  color: var(--aurora-accent-dark);
+}
+
+.aurora-shell .button--danger {
+  color: var(--aurora-red);
+  border-color: var(--aurora-red-soft);
+}
+
+.aurora-shell .button--danger:hover {
+  background: var(--aurora-red-soft);
+}
+
+.aurora-shell .beneficiary-row {
+  border-radius: var(--aurora-radius-sm);
+}
+
+.aurora-shell .beneficiary-row--favorite {
+  background: var(--aurora-accent-soft);
+  border-color: var(--aurora-accent);
+}
+
+.aurora-shell .beneficiary-meta span,
+.aurora-shell .quote-row,
+.aurora-shell .quote-expiry,
+.aurora-shell .qr-result__details span,
+.aurora-shell .request-summary span {
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .quote-row strong,
+.aurora-shell .qr-result__details code {
+  color: var(--aurora-text);
+}
+
+.aurora-shell .fx-quote-card,
+.aurora-shell .match-card,
+.aurora-shell .request-summary {
+  background: var(--aurora-accent-soft);
+  border-color: var(--aurora-accent);
+  border-radius: var(--aurora-radius-sm);
+}
+
+.aurora-shell .qr-result {
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-sm);
+  background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .qr-code {
+  border-color: var(--aurora-surface);
+  background-color: var(--aurora-text);
+}
+
+.aurora-shell .scheduled-row {
+  border-bottom: 1px solid var(--aurora-border);
+}
+
+.aurora-shell .scheduled-row--head {
+  color: var(--aurora-text-faint);
+}
+
+.aurora-shell .scheduled-status--active {
+  color: var(--aurora-green);
+  border-color: var(--aurora-green);
+}
+
+.aurora-shell .scheduled-status--paused {
+  color: var(--aurora-amber);
+  border-color: var(--aurora-amber);
+}
+
+.aurora-shell .scheduled-status--cancelled {
+  color: var(--aurora-red);
+  border-color: var(--aurora-red);
+}
+
+/* ---- Cards ---- */
+
+.aurora-shell .card-panel {
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-md);
+  background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .bank-card {
+  border-radius: var(--aurora-radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.aurora-shell .bank-card--debit {
+  background: linear-gradient(135deg, #4a4fe0 0%, #7b84f5 100%);
+}
+
+.aurora-shell .bank-card--credit {
+  background: linear-gradient(135deg, #8a4fe0 0%, #e86fa8 100%);
+}
+
+.aurora-shell .bank-card--one-time {
+  background: linear-gradient(135deg, #9598ac 0%, #c3c6d6 100%);
+  opacity: 0.85;
+}
+
+.aurora-shell .card-preferences {
+  border-top: 1px solid var(--aurora-border);
+}
+
+.aurora-shell .checkbox-row input {
+  accent-color: var(--aurora-accent);
+}
+
+/* ---- Credit ---- */
+
+.aurora-shell .credit-score-ring {
+  background:
+    radial-gradient(circle at center, var(--aurora-surface) 0 58%, transparent 59%),
+    conic-gradient(var(--aurora-accent) var(--score-percent), var(--aurora-border) 0);
+}
+
+.aurora-shell .credit-score-ring span {
+  color: var(--aurora-text);
+  font-family: "Manrope", sans-serif;
+}
+
+.aurora-shell .credit-score-ring small,
+.aurora-shell .credit-profile-meta {
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .credit-profile-meta strong {
+  color: var(--aurora-text);
+}
+
+.aurora-shell .credit-factor,
+.aurora-shell .loan-result-grid div {
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-md);
+  background: var(--aurora-surface-alt);
+}
+
+/* ---- Analytics bar rows ---- */
+
+.aurora-shell .bar-row__label {
+  color: var(--aurora-text);
+}
+
+.aurora-shell .bar-row__track {
+  background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .bar-row__fill {
+  background: var(--aurora-accent);
+}
+
+.aurora-shell .bar-row__value {
+  color: var(--aurora-text-soft);
+}

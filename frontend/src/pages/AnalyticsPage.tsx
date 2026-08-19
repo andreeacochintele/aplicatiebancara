@@ -88,7 +88,7 @@ export function AnalyticsPage() {
         </div>
         {spendingByType && spendingByType.items.length > 0 ? (
           spendingByType.items.map((item) => (
-            <div className="bar-row" key={item.type}>
+            <div className="bar-row" key={`${item.type}-${item.currency}`}>
               <span className="bar-row__label">{item.type}</span>
               <div className="bar-row__track">
                 <div

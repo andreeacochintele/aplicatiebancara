@@ -1,113 +1,257 @@
+import {
+  ArrowDownRight, ArrowUpRight, ChevronRight, Eye, EyeOff,
+  Receipt, RefreshCcw, Send, Sparkles, type LucideIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { apiRequest } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
-import type { Transaction, Wallet } from "../types";
+import type { CreditScore, NetWorthResponse, SpendingByTypeResponse, Transaction } from "../types";
 
-const QUICK_ACTIONS = [
-  { to: "/payments", eyebrow: "Send", label: "New transfer" },
-  { to: "/wallets", eyebrow: "Exchange", label: "Convert FX" },
-  { to: "/transactions", eyebrow: "Review", label: "All transactions" },
-  { to: "/assistant", eyebrow: "Ask", label: "Assistant" },
+const QUICK_ACTIONS: { to: string; label: string; sub: string; icon: LucideIcon }[] = [
+  { to: "/payments", label: "Send", sub: "New transfer", icon: Send },
+  { to: "/wallets", label: "Convert", sub: "Exchange FX", icon: RefreshCcw },
+  { to: "/transactions", label: "Review", sub: "All transactions", icon: Receipt },
+  { to: "/assistant", label: "Ask", sub: "Assistant", icon: Sparkles },
 ];
 
-function formatAmount(transaction: Transaction, userWalletIds: Set<string>): string {
+const STATUS_CHIP: Record<string, string> = {
+  COMPLETED: "aurora-chip-green",
+  PENDING_REVIEW: "aurora-chip-violet",
+  PROCESSING: "aurora-chip-violet",
+  CREATED: "aurora-chip-neutral",
+  FAILED: "aurora-chip-red",
+  REJECTED: "aurora-chip-red",
+  CANCELLED: "aurora-chip-red",
+};
+
+function hueFromString(value: string): number {
+  return Math.abs([...value].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % 360;
+}
+
+function colorForType(type: string): string {
+  return `hsl(${hueFromString(type)} 62% 55%)`;
+}
+
+function formatAmount(transaction: Transaction, userWalletIds: Set<string>): { sign: string; text: string } {
   const isIncoming = transaction.destination_wallet_id ? userWalletIds.has(transaction.destination_wallet_id) : false;
   const isOutgoing = transaction.source_wallet_id ? userWalletIds.has(transaction.source_wallet_id) : false;
   const sign = isIncoming && !isOutgoing ? "+" : "-";
-  return `${sign}${transaction.amount} ${transaction.currency}`;
+  return { sign, text: `${transaction.amount} ${transaction.currency}` };
 }
 
 export function DashboardPage() {
   const { user, accessToken } = useAuth();
-  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [hidden, setHidden] = useState(false);
+  const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [spending, setSpending] = useState<SpendingByTypeResponse | null>(null);
+  const [creditScore, setCreditScore] = useState<CreditScore | null>(null);
 
   useEffect(() => {
     if (!accessToken) return;
-    apiRequest<Wallet[]>("/wallets", { token: accessToken }).then(setWallets).catch(() => setWallets([]));
+    apiRequest<NetWorthResponse>("/analytics/net-worth", { token: accessToken })
+      .then(setNetWorth)
+      .catch(() => setNetWorth(null));
     apiRequest<Transaction[]>("/transactions", { token: accessToken })
-      .then((list) =>
-        setTransactions(
-          [...list].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5),
-        ),
-      )
+      .then((list) => setTransactions([...list].sort((a, b) => b.created_at.localeCompare(a.created_at))))
       .catch(() => setTransactions([]));
+    apiRequest<SpendingByTypeResponse>("/analytics/spending-by-type", { token: accessToken })
+      .then(setSpending)
+      .catch(() => setSpending(null));
+    apiRequest<CreditScore>("/credit/score", { token: accessToken })
+      .then(setCreditScore)
+      .catch(() => setCreditScore(null));
   }, [accessToken]);
 
-  const mainWallet = wallets.find((wallet) => wallet.is_main) ?? wallets[0];
-  const userWalletIds = new Set(wallets.map((wallet) => wallet.id));
+  const userWalletIds = new Set(netWorth?.wallets.map((wallet) => wallet.wallet_id) ?? []);
+  const recentTransactions = transactions.slice(0, 5);
+  const needsAttention = transactions.filter((transaction) => transaction.status === "PENDING_REVIEW").slice(0, 3);
+
+  // spending-by-type is grouped by (type, currency) server-side; only chart one
+  // currency at a time so percentages aren't summed across mismatched units.
+  const spendingCurrency = netWorth?.base_currency ?? spending?.items[0]?.currency;
+  const spendingItems = spending?.items.filter((item) => item.currency === spendingCurrency) ?? [];
+  const spendingTotal = spendingItems.reduce((sum, item) => sum + Number(item.total_amount), 0);
+  const donutData = spendingItems.map((item) => ({
+    key: `${item.type}-${item.currency}`,
+    name: item.type,
+    value: Number(item.total_amount),
+    color: colorForType(item.type),
+  }));
+
+  const scorePercent = creditScore ? Math.min(100, Math.max(0, ((creditScore.score - 300) / 550) * 100)) : 0;
 
   return (
-    <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-      <div className="tile">
-        <div className="eyebrow">
-          {mainWallet ? `Main wallet · ${mainWallet.currency}` : `Welcome, ${user?.first_name}`}
-        </div>
-        {mainWallet && <div className="balance-hero__amount">{mainWallet.available_balance}</div>}
-        <div className="wallet-grid">
-          {wallets.map((wallet) => (
-            <div className="wallet-chip" key={wallet.id}>
-              <div className="wallet-chip__ccy">
-                {wallet.currency}
-                {wallet.is_main && <span className="tag tag--accent">MAIN</span>}
-              </div>
-              <div className="wallet-chip__amount">{wallet.available_balance}</div>
+    <div className="aurora-page">
+      <div className="aurora-col">
+        <div className="aurora-card aurora-hero">
+          <div className="aurora-hero-blob aurora-blob-1" />
+          <div className="aurora-hero-blob aurora-blob-2" />
+          <div className="aurora-hero-top">
+            <div className="aurora-eyebrow light">
+              {netWorth ? `Total balance · all wallets (${netWorth.base_currency})` : `Welcome, ${user?.first_name}`}
             </div>
-          ))}
+            <div className="aurora-hero-amount">
+              {hidden ? "•••••• " + (netWorth?.base_currency ?? "") : (netWorth?.total_available_balance ?? "—")}
+              <button className="aurora-icon-btn" onClick={() => setHidden((h) => !h)} aria-label="Toggle balance visibility">
+                {hidden ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+          </div>
+          <div className="aurora-hero-wallets">
+            {netWorth?.wallets.map((wallet) => (
+              <div className="aurora-hero-wallet" key={wallet.wallet_id}>
+                <span className="aurora-hero-wallet-code">
+                  {wallet.currency}
+                  {wallet.is_main ? " · main" : ""}
+                </span>
+                <span>{hidden ? "••••" : wallet.available_balance}</span>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div>
-        <div className="eyebrow" style={{ marginBottom: "0.6rem" }}>
-          Quick actions
-        </div>
-        <div className="quick-actions">
+        <div className="aurora-quick-actions">
           {QUICK_ACTIONS.map((action) => (
-            <Link className="quick-action" to={action.to} key={action.to}>
-              <span className="eyebrow">{action.eyebrow}</span>
-              {action.label}
+            <Link className="aurora-quick-action" to={action.to} key={action.to}>
+              <span className="aurora-quick-icon">
+                <action.icon size={18} />
+              </span>
+              <span className="aurora-quick-label">{action.label}</span>
+              <span className="aurora-quick-sub">{action.sub}</span>
             </Link>
           ))}
         </div>
+
+        <div className="aurora-card">
+          <div className="aurora-section-header">
+            <h2>Recent transactions</h2>
+            <Link className="aurora-link-btn" to="/transactions">
+              View all <ChevronRight size={15} />
+            </Link>
+          </div>
+          <div className="aurora-tx-list">
+            {recentTransactions.map((transaction) => {
+              const { sign, text } = formatAmount(transaction, userWalletIds);
+              return (
+                <div className="aurora-tx-row" key={transaction.id}>
+                  <div className="aurora-tx-left">
+                    <span className="aurora-cat-dot" style={{ background: colorForType(transaction.type) }}>
+                      {sign === "+" ? <ArrowDownRight size={15} /> : <ArrowUpRight size={15} />}
+                    </span>
+                    <div>
+                      <div className="aurora-tx-name">{transaction.description ?? transaction.type}</div>
+                      <div className="aurora-tx-meta">
+                        {new Date(transaction.created_at).toLocaleDateString()} · {transaction.type}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="aurora-tx-right">
+                    <span className={`aurora-chip ${STATUS_CHIP[transaction.status] ?? "aurora-chip-neutral"}`}>
+                      {transaction.status}
+                    </span>
+                    <span className={`aurora-tx-amount ${sign === "+" ? "up" : ""}`}>
+                      {sign}
+                      {text}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+            {recentTransactions.length === 0 && <p className="aurora-tx-meta">No transactions yet.</p>}
+          </div>
+        </div>
       </div>
 
-      <div className="tile">
-        <div className="tile__header">
-          <span className="eyebrow">Recent transactions</span>
-          <Link to="/transactions">View all</Link>
+      <div className="aurora-col">
+        <div className="aurora-card">
+          <div className="aurora-section-header">
+            <div>
+              <div className="aurora-eyebrow">This period</div>
+              <h2>Spending by type</h2>
+            </div>
+          </div>
+          {donutData.length > 0 ? (
+            <>
+              <div className="aurora-donut-wrap">
+                <ResponsiveContainer width="100%" height={150}>
+                  <PieChart>
+                    <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={68} paddingAngle={2} stroke="none">
+                      {donutData.map((item) => (
+                        <Cell key={item.key} fill={item.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]} contentStyle={{ borderRadius: 10, border: "1px solid var(--aurora-border)", fontSize: 12 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="aurora-donut-center">
+                  <div className="aurora-donut-total">{spendingTotal.toFixed(0)}</div>
+                  <div className="aurora-donut-label">{spendingCurrency ?? ""}</div>
+                </div>
+              </div>
+              <div className="aurora-legend">
+                {donutData.map((item) => (
+                  <div className="aurora-legend-row" key={item.key}>
+                    <span className="aurora-legend-dot" style={{ background: item.color }} />
+                    <span className="aurora-legend-name">{item.name.toLowerCase().replaceAll("_", " ")}</span>
+                    <span className="aurora-legend-pct">
+                      {spendingTotal > 0 ? Math.round((item.value / spendingTotal) * 100) : 0}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="aurora-tx-meta">No completed transactions this period yet.</p>
+          )}
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Description</th>
-              <th>Type</th>
-              <th>Status</th>
-              <th style={{ textAlign: "right" }}>Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {transactions.map((transaction) => (
-              <tr key={transaction.id}>
-                <td>{new Date(transaction.created_at).toLocaleDateString()}</td>
-                <td>{transaction.description ?? "—"}</td>
-                <td>{transaction.type}</td>
-                <td>
-                  <span className="tag tag--neutral">{transaction.status}</span>
-                </td>
-                <td style={{ textAlign: "right" }}>{formatAmount(transaction, userWalletIds)}</td>
-              </tr>
-            ))}
-            {transactions.length === 0 && (
-              <tr>
-                <td colSpan={5}>No transactions yet.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+
+        {creditScore && (
+          <div className="aurora-card">
+            <div className="aurora-section-header">
+              <h2>Credit score</h2>
+            </div>
+            <div className="aurora-score-wrap">
+              <div className="aurora-ring" style={{ background: `conic-gradient(var(--aurora-accent) ${scorePercent * 3.6}deg, var(--aurora-border) 0deg)` }}>
+                <div className="aurora-ring-hole">
+                  <div className="aurora-score-num">{creditScore.score}</div>
+                  <div className="aurora-score-tag">{creditScore.band.replaceAll("_", " ")}</div>
+                </div>
+              </div>
+              <div className="aurora-score-side">
+                <div className="aurora-score-line">/ 850</div>
+                <Link className="aurora-link-btn" to="/credit">
+                  View details <ChevronRight size={14} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="aurora-card">
+          <div className="aurora-section-header">
+            <h2>Needs your attention</h2>
+          </div>
+          {needsAttention.length > 0 ? (
+            <div className="aurora-attn-list">
+              {needsAttention.map((transaction) => (
+                <div className="aurora-attn-row" key={transaction.id}>
+                  <span className="aurora-chip aurora-chip-violet">Review</span>
+                  <span className="aurora-attn-text">
+                    {transaction.description ?? transaction.type} · {transaction.amount} {transaction.currency} is on
+                    hold pending verification.
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="aurora-tx-meta">Nothing needs your attention right now.</p>
+          )}
+        </div>
       </div>
-    </section>
+    </div>
   );
 }

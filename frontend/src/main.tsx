@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 
 import { App } from "./App";
 import "./index.css";
+import "./styles/aurora.css";
 import { AuthProvider } from "./store/AuthContext";
 
 createRoot(document.getElementById("root")!).render(
