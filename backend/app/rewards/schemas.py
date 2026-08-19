@@ -46,6 +46,7 @@ class RewardAccountPublic(BaseModel):
     points_balance: int
     lifetime_points_earned: int
     tier: RewardTierPublic
+    tier_boosted_by_card: bool
     next_tier: RewardTierPublic | None
     points_to_next_tier: int | None
     transactions: list[RewardTransactionPublic]

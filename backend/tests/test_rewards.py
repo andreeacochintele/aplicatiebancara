@@ -2,6 +2,9 @@ import uuid
 
 import pytest
 
+from app.cards.models import CardTier
+from app.cards.schemas import CardCreate
+from app.cards.service import CardService
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.rewards.models import BenefitCategory, RewardBenefit
 from app.rewards.service import RewardsService
@@ -23,6 +26,46 @@ def test_new_user_has_zero_balance_and_empty_history(db_session, seeded_user):
     assert account.lifetime_points_earned == 0
     assert account.tier.name == "STANDARD"
     assert account.transactions == []
+
+
+def test_platinum_card_grants_metal_tier_floor_even_with_zero_points(db_session, seeded_user):
+    CardService(db_session).create_card(seeded_user.id, CardCreate(tier=CardTier.PLATINUM))
+
+    account = RewardsService(db_session).get_account(seeded_user.id)
+
+    assert account.lifetime_points_earned == 0
+    assert account.tier.name == "METAL"
+    assert account.tier_boosted_by_card is True
+    assert account.next_tier is None
+
+
+def test_gold_card_grants_premium_floor(db_session, seeded_user):
+    CardService(db_session).create_card(seeded_user.id, CardCreate(tier=CardTier.GOLD))
+
+    account = RewardsService(db_session).get_account(seeded_user.id)
+
+    assert account.tier.name == "PREMIUM"
+    assert account.tier_boosted_by_card is True
+
+
+def test_regular_card_does_not_boost_tier(db_session, seeded_user):
+    CardService(db_session).create_card(seeded_user.id, CardCreate(tier=CardTier.REGULAR))
+
+    account = RewardsService(db_session).get_account(seeded_user.id)
+
+    assert account.tier.name == "STANDARD"
+    assert account.tier_boosted_by_card is False
+
+
+def test_points_earned_tier_wins_when_higher_than_card_floor(db_session, seeded_user):
+    service = RewardsService(db_session)
+    CardService(db_session).create_card(seeded_user.id, CardCreate(tier=CardTier.GOLD))  # floor: PREMIUM
+    service.earn_points(seeded_user.id, 9000, description="test")  # well past METAL's 8000 threshold
+
+    account = service.get_account(seeded_user.id)
+
+    assert account.tier.name == "METAL"
+    assert account.tier_boosted_by_card is False  # points alone already got here
 
 
 def test_list_tiers_returns_the_full_ladder_in_order(db_session, seeded_reward_tiers):

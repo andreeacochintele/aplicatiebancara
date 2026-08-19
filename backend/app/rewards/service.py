@@ -10,12 +10,23 @@ tier is derived from it on read rather than stored, so it's always
 consistent with the ledger. Tier perks are descriptive only for now — e.g.
 a "10% bonus points" perk isn't wired into MerchantService's point math yet,
 the same kind of informational simplification cashback offers already use.
+
+Card tier (app/cards/models.py CardTier — a card attribute chosen at
+creation) and reward tier (this module — a status earned via lifetime
+points) are separate systems built independently. CARD_TIER_REWARD_TIER_FLOOR
+is the one deliberate link between them: owning a GOLD/PLATINUM card grants
+an immediate reward-tier *floor* (at least PREMIUM/METAL) on top of whatever
+points alone would give — a Platinum card's perks don't have to be earned
+twice through spend. It's a floor, not an override: points-earned tier can
+still exceed it, and it never lowers what points already unlocked.
 """
 import uuid
 
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import DetachedInstanceError
 
+from app.cards.models import CardTier
+from app.cards.repository import CardRepository
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.rewards.models import (
     BenefitRedemption,
@@ -35,11 +46,17 @@ from app.rewards.schemas import (
     RewardTransactionPublic,
 )
 
+CARD_TIER_REWARD_TIER_FLOOR: dict[CardTier, str] = {
+    CardTier.GOLD: "PREMIUM",
+    CardTier.PLATINUM: "METAL",
+}
+
 
 class RewardsService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repository = RewardsRepository(db)
+        self.cards = CardRepository(db)
 
     def get_or_create_account(self, user_id: uuid.UUID) -> RewardAccount:
         account = self.repository.get_account_for_user(user_id)
@@ -105,7 +122,7 @@ class RewardsService:
     def list_benefits(self, user_id: uuid.UUID) -> list[RewardBenefitPublic]:
         account = self.get_or_create_account(user_id)
         tiers_by_id = {tier.id: tier for tier in self.repository.list_tiers()}
-        current_tier = self._tier_for(account.lifetime_points_earned)
+        current_tier, _boosted = self._tier_for(user_id, account.lifetime_points_earned)
 
         result = []
         for benefit in self.repository.list_active_benefits():
@@ -138,7 +155,7 @@ class RewardsService:
             raise NotFoundError("Benefit not found")
 
         tiers_by_id = {tier.id: tier for tier in self.repository.list_tiers()}
-        current_tier = self._tier_for(account.lifetime_points_earned)
+        current_tier, _boosted = self._tier_for(user_id, account.lifetime_points_earned)
         min_tier = tiers_by_id.get(benefit.min_tier_id) if benefit.min_tier_id else None
         if min_tier is not None and min_tier.sort_order > current_tier.sort_order:
             raise ValidationError(f"Requires {min_tier.name} tier")
@@ -169,19 +186,37 @@ class RewardsService:
         self.db.flush()
         return self.get_account(user_id)
 
-    def _tier_for(self, lifetime_points: int) -> RewardTier:
+    def _tier_for(self, user_id: uuid.UUID, lifetime_points: int) -> tuple[RewardTier, bool]:
+        """Returns (effective tier, boosted_by_card) — see the module
+        docstring for the card-tier-floor rule."""
         tiers = self.repository.list_tiers()
         if not tiers:
             raise NotFoundError("Reward tiers are not seeded")
+
         eligible = [tier for tier in tiers if tier.min_lifetime_points <= lifetime_points]
-        return eligible[-1] if eligible else tiers[0]
+        points_tier = eligible[-1] if eligible else tiers[0]
+
+        card_floor = self._card_tier_floor(user_id, tiers)
+        if card_floor is not None and card_floor.sort_order > points_tier.sort_order:
+            return card_floor, True
+        return points_tier, False
+
+    def _card_tier_floor(self, user_id: uuid.UUID, tiers: list[RewardTier]) -> RewardTier | None:
+        tiers_by_name = {tier.name: tier for tier in tiers}
+        best: RewardTier | None = None
+        for card in self.cards.list_for_user(user_id):
+            floor_name = CARD_TIER_REWARD_TIER_FLOOR.get(card.tier) if card.tier is not None else None
+            floor_tier = tiers_by_name.get(floor_name) if floor_name is not None else None
+            if floor_tier is not None and (best is None or floor_tier.sort_order > best.sort_order):
+                best = floor_tier
+        return best
 
     def _next_tier(self, current: RewardTier) -> RewardTier | None:
         higher = [tier for tier in self.repository.list_tiers() if tier.sort_order > current.sort_order]
         return higher[0] if higher else None
 
     def _account_to_public(self, account: RewardAccount) -> RewardAccountPublic:
-        tier = self._tier_for(account.lifetime_points_earned)
+        tier, boosted = self._tier_for(account.user_id, account.lifetime_points_earned)
         next_tier = self._next_tier(tier)
         transactions = self.repository.list_transactions(account.id)
         redemptions = self.repository.list_redemptions(account.id)
@@ -190,6 +225,7 @@ class RewardsService:
             points_balance=account.points_balance,
             lifetime_points_earned=account.lifetime_points_earned,
             tier=self._tier_to_public(tier),
+            tier_boosted_by_card=boosted,
             next_tier=self._tier_to_public(next_tier) if next_tier is not None else None,
             points_to_next_tier=(
                 next_tier.min_lifetime_points - account.lifetime_points_earned if next_tier is not None else None

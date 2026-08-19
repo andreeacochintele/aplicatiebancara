@@ -345,6 +345,7 @@ export interface RewardAccount {
   points_balance: number;
   lifetime_points_earned: number;
   tier: RewardTier;
+  tier_boosted_by_card: boolean;
   next_tier: RewardTier | null;
   points_to_next_tier: number | null;
   transactions: RewardTransaction[];

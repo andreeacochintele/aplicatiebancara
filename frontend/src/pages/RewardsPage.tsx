@@ -272,8 +272,8 @@ export function RewardsPage() {
               </span>
             </div>
             <p className="eyebrow" style={{ marginTop: "-0.4rem", marginBottom: "0.75rem" }}>
-              Card tier sets how many points you earn per RON — separate from your reward tier below, which is based
-              on lifetime points and unlocks the redeemable catalog.
+              Card tier sets how many points you earn per RON, and a Gold or Platinum card also grants you at least
+              Premium or Metal reward tier right away — see below.
             </p>
             {cards.length > 0 ? (
               <div className="card-tier-grid">
@@ -356,8 +356,14 @@ export function RewardsPage() {
               </span>
             </div>
             <p className="eyebrow" style={{ marginTop: "-0.4rem", marginBottom: "0.75rem" }}>
-              Based on lifetime points earned, not which card you own — this is what gates the redeem catalog above.
+              Earned through lifetime points — a Gold/Platinum card also grants an immediate floor (at least
+              Premium/Metal), so it can start higher than your points alone would.
             </p>
+            {rewards && rewards.tier_boosted_by_card && (
+              <p className="tag tag--accent" style={{ width: "fit-content", marginBottom: "0.75rem" }}>
+                Currently boosted by your card, not (only) by points
+              </p>
+            )}
             {rewards && rewards.next_tier && (
               <div className="bar-row" style={{ marginBottom: tiers.length > 0 ? "1rem" : 0 }}>
                 <span className="bar-row__label">
@@ -371,9 +377,10 @@ export function RewardsPage() {
             )}
             {tiers.length > 0 ? (
               <div className="card-tier-grid">
-                {tiers.map((tier) => {
+                {tiers.map((tier, index) => {
+                  const currentIndex = rewards ? tiers.findIndex((t) => t.id === rewards.tier.id) : -1;
                   const isCurrent = rewards?.tier.id === tier.id;
-                  const unlocked = rewards ? rewards.lifetime_points_earned >= tier.min_lifetime_points : false;
+                  const unlocked = currentIndex >= 0 && index <= currentIndex;
                   return (
                     <article className={`card-tier card-tier--${tier.name.toLowerCase()}`} key={tier.id}>
                       <div className="card-tier__header">
