@@ -165,7 +165,7 @@ def run() -> None:
         debit(ron, TransactionType.CARD_PAYMENT, Decimal("120.50"), "Groceries - Mega Image")
         debit(ron, TransactionType.CARD_PAYMENT, Decimal("45.00"), "Restaurant - Trattoria")
         debit(ron, TransactionType.CARD_PAYMENT, Decimal("312.00"), "OMV - Fuel")
-        debit(ron, TransactionType.CARD_PAYMENT, Decimal("400.00"), "Nike - Shopping")
+        nike_purchase = debit(ron, TransactionType.CARD_PAYMENT, Decimal("400.00"), "Nike - Shopping")
         credit(ron, TransactionType.CASHBACK, Decimal("28.00"), "Cashback - Nike")
         transfer(ron, business_ron, business.id, Decimal("500.00"), "Invoice payment - Aurora Tech SRL")
 
@@ -190,15 +190,18 @@ def run() -> None:
         )
 
         # Reward points for the Nike purchase above (1 point per RON spent, architecture.md §11).
+        # Linked via source_transaction_id so MerchantService.sync_purchases_from_transactions
+        # doesn't re-award points for a card payment that's already been credited.
         reward_account = RewardAccount(user_id=user.id, points_balance=400, lifetime_points_earned=400)
         db.add(reward_account)
         db.flush()
         db.add(
             RewardTransaction(
                 reward_account_id=reward_account.id,
+                source_transaction_id=nike_purchase.id,
                 type=RewardTransactionType.EARN,
                 points=400,
-                description="Purchase at Nike",
+                description="Card payment at Nike",
             )
         )
 

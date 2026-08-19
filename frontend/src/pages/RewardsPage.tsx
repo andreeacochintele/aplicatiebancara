@@ -10,9 +10,7 @@ export function RewardsPage() {
   const [benefits, setBenefits] = useState<RewardBenefit[]>([]);
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [redeemPoints, setRedeemPoints] = useState("100");
-  const [purchaseMerchantId, setPurchaseMerchantId] = useState("");
-  const [purchaseAmount, setPurchaseAmount] = useState("100");
-  const [lastPurchase, setLastPurchase] = useState<PurchaseResult | null>(null);
+  const [newlyEarned, setNewlyEarned] = useState<PurchaseResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -28,20 +26,30 @@ export function RewardsPage() {
 
   function loadMerchants() {
     if (!accessToken) return;
-    apiRequest<Merchant[]>("/merchants", { token: accessToken }).then((list) => {
-      setMerchants(list);
-      if (list.length > 0) setPurchaseMerchantId((current) => current || list[0].id);
-    }).catch(() => setMerchants([]));
+    apiRequest<Merchant[]>("/merchants", { token: accessToken }).then(setMerchants).catch(() => setMerchants([]));
   }
-
-  useEffect(loadRewards, [accessToken]);
-  useEffect(loadBenefits, [accessToken]);
-  useEffect(loadMerchants, [accessToken]);
 
   function refreshAfterChange() {
     loadRewards();
     loadBenefits();
   }
+
+  function syncRewardsFromTransactions() {
+    if (!accessToken) return;
+    // Revolut-style: points are earned from the user's own real card payments,
+    // matched to a merchant automatically — never a manually typed amount.
+    apiRequest<PurchaseResult[]>("/merchants/sync-rewards", { method: "POST", token: accessToken })
+      .then((earned) => {
+        setNewlyEarned(earned);
+        if (earned.length > 0) refreshAfterChange();
+      })
+      .catch(() => undefined);
+  }
+
+  useEffect(loadRewards, [accessToken]);
+  useEffect(loadBenefits, [accessToken]);
+  useEffect(loadMerchants, [accessToken]);
+  useEffect(syncRewardsFromTransactions, [accessToken]);
 
   async function handleRedeem() {
     if (!accessToken) return;
@@ -75,25 +83,6 @@ export function RewardsPage() {
       loadBenefits();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Redeem failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handlePurchase() {
-    if (!accessToken || !purchaseMerchantId) return;
-    setError(null);
-    setBusy(true);
-    try {
-      const result = await apiRequest<PurchaseResult>(`/merchants/${purchaseMerchantId}/purchases`, {
-        method: "POST",
-        token: accessToken,
-        body: { amount: purchaseAmount, currency: "RON" },
-      });
-      setLastPurchase(result);
-      refreshAfterChange();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Purchase failed");
     } finally {
       setBusy(false);
     }
@@ -286,34 +275,16 @@ export function RewardsPage() {
           <p className="eyebrow">No merchants yet.</p>
         )}
 
-        {merchants.length > 0 && (
-          <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
-            <label>
-              Merchant
-              <select value={purchaseMerchantId} onChange={(e) => setPurchaseMerchantId(e.target.value)}>
-                {merchants.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Amount (RON)
-              <input value={purchaseAmount} onChange={(e) => setPurchaseAmount(e.target.value)} />
-            </label>
-            <button onClick={handlePurchase} disabled={busy}>
-              Record purchase
-            </button>
-          </div>
-        )}
-
-        {lastPurchase && (
+        {newlyEarned.length > 0 && (
           <div className="eyebrow" style={{ marginTop: "0.75rem" }}>
-            Earned {lastPurchase.points_earned} points
-            {lastPurchase.cashback_percent
-              ? ` · ~${lastPurchase.cashback_amount} ${lastPurchase.currency} cashback (informational, not credited to a wallet yet)`
-              : ""}
+            {newlyEarned.map((purchase) => (
+              <div key={purchase.merchant_id}>
+                Earned {purchase.points_earned} points from a real card payment
+                {purchase.cashback_percent
+                  ? ` · ~${purchase.cashback_amount} ${purchase.currency} cashback (informational, not credited to a wallet yet)`
+                  : ""}
+              </div>
+            ))}
           </div>
         )}
       </div>

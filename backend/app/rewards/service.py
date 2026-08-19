@@ -75,6 +75,9 @@ class RewardsService:
         self.db.flush()
         return account
 
+    def has_earned_for_transaction(self, source_transaction_id: uuid.UUID) -> bool:
+        return self.repository.has_transaction_for_source(source_transaction_id)
+
     def redeem_points(self, user_id: uuid.UUID, points: int) -> RewardAccountPublic:
         if points <= 0:
             raise ValidationError("points must be positive")

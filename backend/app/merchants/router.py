@@ -11,7 +11,6 @@ from app.merchants.schemas import (
     CashbackOfferPublic,
     MerchantCreate,
     MerchantPublic,
-    PurchaseCreate,
     PurchaseResult,
 )
 from app.merchants.service import MerchantService
@@ -60,13 +59,14 @@ def create_cashback_offer(
     return offer
 
 
-@router.post("/{merchant_id}/purchases", response_model=PurchaseResult, status_code=201)
-def record_purchase(
-    merchant_id: uuid.UUID,
-    payload: PurchaseCreate,
+@router.post("/sync-rewards", response_model=list[PurchaseResult])
+def sync_rewards(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> PurchaseResult:
-    result = MerchantService(db).record_purchase(current_user.id, merchant_id, payload)
+) -> list[PurchaseResult]:
+    """Scan the caller's own completed card payments and award reward points
+    for any merchant-matched ones not yet credited. No client-supplied
+    amount — points are derived only from real transactions."""
+    results = MerchantService(db).sync_purchases_from_transactions(current_user.id)
     db.commit()
-    return result
+    return results

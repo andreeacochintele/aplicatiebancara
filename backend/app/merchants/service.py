@@ -3,15 +3,24 @@
 Cashback amount computed here is informational math only: crediting money
 into a wallet requires the transaction engine (app/transactions/service.py,
 owned by the payments module) to post an actual CASHBACK transaction, and
-there's no purchase-creation path into that engine yet. `record_purchase`
-instead awards bank reward points 1:1 with the spent amount through
-RewardsService — the same simplification budgets/savings already use for
-numbers that aren't reconciled against the wallet ledger.
+there's no purchase-creation path into that engine yet.
+
+`sync_purchases_from_transactions` awards bank reward points off the user's
+*real* completed CARD_PAYMENT transactions instead of a client-supplied
+amount — dev4 doesn't own app/transactions or app/cards (no payment-creation
+endpoint exists there yet), so this only ever reads that table, the same
+read-only cross-module pattern app/analytics and app/budgets already use.
+Since nothing populates Transaction.merchant_id yet either, the merchant is
+matched by name against the transaction's free-text description (e.g. "Nike
+- Shopping"); each transaction earns points at most once via
+RewardsService.has_earned_for_transaction (keyed on
+RewardTransaction.source_transaction_id).
 """
 import uuid
 from datetime import datetime, timezone
 from decimal import ROUND_DOWN, Decimal
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ValidationError
@@ -22,10 +31,11 @@ from app.merchants.schemas import (
     CashbackOfferPublic,
     MerchantCreate,
     MerchantPublic,
-    PurchaseCreate,
     PurchaseResult,
 )
 from app.rewards.service import RewardsService
+from app.transactions.models import TransactionStatus, TransactionType
+from app.transactions.repository import TransactionRepository
 
 
 class MerchantService:
@@ -33,6 +43,7 @@ class MerchantService:
         self.db = db
         self.repository = MerchantRepository(db)
         self.rewards = RewardsService(db)
+        self.transactions = TransactionRepository(db)
 
     def create_merchant(self, data: MerchantCreate) -> MerchantPublic:
         merchant = Merchant(name=data.name, category=data.category, logo_url=data.logo_url)
@@ -68,41 +79,89 @@ class MerchantService:
             raise NotFoundError("Merchant not found")
         return self._to_public(merchant)
 
-    def record_purchase(self, user_id: uuid.UUID, merchant_id: uuid.UUID, data: PurchaseCreate) -> PurchaseResult:
-        if data.amount <= 0:
-            raise ValidationError("amount must be positive")
+    def sync_purchases_from_transactions(self, user_id: uuid.UUID) -> list[PurchaseResult]:
+        merchants = self.repository.list_active()
+        if not merchants:
+            return []
 
-        merchant = self.repository.get_by_id(merchant_id)
-        if merchant is None or merchant.status != MerchantStatus.ACTIVE:
-            raise NotFoundError("Merchant not found")
+        today = datetime.now(timezone.utc).date()
+        results: list[PurchaseResult] = []
+        for transaction in self.transactions.list_for_user(user_id):
+            if transaction.type != TransactionType.CARD_PAYMENT or transaction.status != TransactionStatus.COMPLETED:
+                continue
+            if self.rewards.has_earned_for_transaction(transaction.id):
+                continue
+            merchant = self._match_merchant(transaction.description, merchants)
+            if merchant is None:
+                continue
 
-        offer = self.repository.active_offer_for_merchant(merchant_id, datetime.now(timezone.utc).date())
+            # The has_earned_for_transaction check above plus this insert isn't
+            # atomic, so a concurrent sync for the same user/transaction (e.g. a
+            # duplicate effect firing client-side) can race past both checks. The
+            # unique constraint on source_transaction_id (migration 0011) is the
+            # real guard; a savepoint here means the loser just skips this
+            # transaction instead of the whole sync call failing.
+            try:
+                with self.db.begin_nested():
+                    result = self._earn_from_transaction(
+                        user_id, merchant, transaction.id, transaction.amount, transaction.currency, today
+                    )
+            except IntegrityError:
+                continue
+            results.append(result)
+        return results
+
+    def _earn_from_transaction(
+        self,
+        user_id: uuid.UUID,
+        merchant: Merchant,
+        source_transaction_id: uuid.UUID,
+        amount: Decimal,
+        currency: str,
+        today,
+    ) -> PurchaseResult:
+        offer = self.repository.active_offer_for_merchant(merchant.id, today)
         cashback_percent = None
         cashback_amount = Decimal("0")
-        if offer is not None and (offer.minimum_spend is None or data.amount >= offer.minimum_spend):
+        if offer is not None and (offer.minimum_spend is None or amount >= offer.minimum_spend):
             cashback_percent = offer.cashback_percent
-            cashback_amount = (data.amount * offer.cashback_percent / Decimal("100")).quantize(
+            cashback_amount = (amount * offer.cashback_percent / Decimal("100")).quantize(
                 Decimal("0.01"), rounding=ROUND_DOWN
             )
             if offer.maximum_cashback is not None:
                 cashback_amount = min(cashback_amount, offer.maximum_cashback)
 
-        points_earned = int(data.amount)  # 100 RON spent -> 100 points (architecture.md §11)
+        points_earned = int(amount)  # 100 RON spent -> 100 points (architecture.md §11)
         account = (
-            self.rewards.earn_points(user_id, points_earned, description=f"Purchase at {merchant.name}")
+            self.rewards.earn_points(
+                user_id,
+                points_earned,
+                description=f"Card payment at {merchant.name}",
+                source_transaction_id=source_transaction_id,
+            )
             if points_earned > 0
             else self.rewards.get_or_create_account(user_id)
         )
 
         return PurchaseResult(
             merchant_id=merchant.id,
-            amount=data.amount,
-            currency=data.currency.upper(),
+            amount=amount,
+            currency=currency,
             cashback_percent=cashback_percent,
             cashback_amount=cashback_amount,
             points_earned=points_earned,
             reward_points_balance=account.points_balance,
         )
+
+    @staticmethod
+    def _match_merchant(description: str | None, merchants: list[Merchant]) -> Merchant | None:
+        if not description:
+            return None
+        text = description.lower()
+        for merchant in merchants:
+            if merchant.name.lower() in text:
+                return merchant
+        return None
 
     def _to_public(self, merchant: Merchant) -> MerchantPublic:
         offer = self.repository.active_offer_for_merchant(merchant.id, datetime.now(timezone.utc).date())

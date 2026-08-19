@@ -42,11 +42,6 @@ class MerchantPublic(BaseModel):
     created_at: datetime
 
 
-class PurchaseCreate(BaseModel):
-    amount: Decimal
-    currency: str = "RON"
-
-
 class PurchaseResult(BaseModel):
     merchant_id: uuid.UUID
     amount: Decimal
