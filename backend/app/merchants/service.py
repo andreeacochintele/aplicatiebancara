@@ -23,6 +23,13 @@ already flagged as advertised-but-not-implemented: a higher card tier (Dev
 Looked up via Transaction.card_id; missing/unknown card or no tier (e.g. a
 ONE_TIME card, or a legacy transaction with no card_id) earns at the 1x
 base rate.
+
+These values must match frontend/src/config/rewardPolicy.ts's
+CARD_TIER_POINTS_PER_RON exactly — that file is the display-side copy of
+this same rule (CardsPage.tsx and RewardsPage.tsx both read from it instead
+of each hardcoding their own numbers, which is what caused Cards and
+Rewards to disagree before). There's no automated check tying the two
+together, so change both together by hand.
 """
 import uuid
 from datetime import datetime, timezone
@@ -49,8 +56,8 @@ from app.transactions.repository import TransactionRepository
 
 CARD_TIER_POINT_MULTIPLIER: dict[CardTier, Decimal] = {
     CardTier.REGULAR: Decimal("1"),
-    CardTier.GOLD: Decimal("2"),
-    CardTier.PLATINUM: Decimal("3"),
+    CardTier.GOLD: Decimal("1.5"),
+    CardTier.PLATINUM: Decimal("2"),
 }
 DEFAULT_POINT_MULTIPLIER = Decimal("1")
 

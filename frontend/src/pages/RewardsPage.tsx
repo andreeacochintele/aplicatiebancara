@@ -5,14 +5,42 @@ import { useEffect, useState } from "react";
 import { apiRequest, ApiError } from "../api/apiClient";
 import { bestCardTierBenefits, pointsPerRonForCard, pointsPerRonLabel } from "../config/rewardPolicy";
 import { useAuth } from "../hooks/useAuth";
-import type { Card, CardTier, Merchant, PurchaseResult, RewardAccount, RewardBenefit } from "../types";
+import type {
+  Card,
+  CardPaymentPreferences,
+  CardTier,
+  Merchant,
+  PurchaseResult,
+  RewardAccount,
+  RewardBenefit,
+  Wallet,
+} from "../types";
 
 function formatCardTierLabel(tier: CardTier | null): string {
   return tier ? tier[0] + tier.slice(1).toLowerCase() : "One-time";
 }
 
+function formatCardTypeLabel(type: Card["type"]): string {
+  return type
+    .split("_")
+    .map((part) => part[0] + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
 function formatCardLabel(card: Card): string {
   return `${formatCardTierLabel(card.tier)} ${card.type[0]}${card.type.slice(1).toLowerCase()} •••• ${card.last_four}`;
+}
+
+function cardToneClass(card: Card): string {
+  if (card.type === "ONE_TIME") return "bank-card bank-card--one-time";
+  const tier = (card.tier ?? "REGULAR").toLowerCase();
+  return `bank-card bank-card--${card.type.toLowerCase()} bank-card--${tier}`;
+}
+
+function cardStatusClass(status: Card["status"]): string {
+  if (status === "ACTIVE") return "tag tag--accent";
+  if (status === "FROZEN") return "tag tag--warning";
+  return "tag tag--neutral";
 }
 
 function scrollToId(id: string) {
@@ -84,11 +112,14 @@ function ConfirmModal({
 }
 
 export function RewardsPage() {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
+  const cardholderName = user ? `${user.first_name} ${user.last_name}`.trim() : "Card holder";
   const [rewards, setRewards] = useState<RewardAccount | null>(null);
   const [benefits, setBenefits] = useState<RewardBenefit[]>([]);
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [preferencesByCard, setPreferencesByCard] = useState<Record<string, CardPaymentPreferences>>({});
   const [payCardId, setPayCardId] = useState("");
   const [payAmount, setPayAmount] = useState("50");
   const [newlyEarned, setNewlyEarned] = useState<PurchaseResult[]>([]);
@@ -121,7 +152,31 @@ export function RewardsPage() {
     apiRequest<Card[]>("/cards", { token: accessToken }).then((list) => {
       setCards(list);
       if (list.length > 0) setPayCardId((current) => current || list[0].id);
+      // Fetched per-card so the pay form can show which wallet/currency a
+      // card will actually charge — preferred_wallet_id (set on the Cards
+      // page) silently overrides default_wallet_id, which was the source
+      // of the "money left the wrong wallet" surprise.
+      Promise.all(
+        list.map((card) =>
+          apiRequest<CardPaymentPreferences>(`/cards/${card.id}/payment-preferences`, { token: accessToken }).then(
+            (prefs) => [card.id, prefs] as const,
+          ),
+        ),
+      )
+        .then((entries) => setPreferencesByCard(Object.fromEntries(entries)))
+        .catch(() => undefined);
     }).catch(() => setCards([]));
+  }
+
+  function loadWallets() {
+    if (!accessToken) return;
+    apiRequest<Wallet[]>("/wallets", { token: accessToken }).then(setWallets).catch(() => setWallets([]));
+  }
+
+  function effectiveWallet(card: Card | undefined): Wallet | undefined {
+    if (!card) return undefined;
+    const walletId = preferencesByCard[card.id]?.preferred_wallet_id ?? card.default_wallet_id;
+    return wallets.find((w) => w.id === walletId);
   }
 
   function refreshAfterChange() {
@@ -129,22 +184,32 @@ export function RewardsPage() {
     loadBenefits();
   }
 
+  // Revolut-style: points are earned from the user's own real card payments,
+  // matched to a merchant automatically — never a manually typed amount.
+  async function syncRewards(): Promise<PurchaseResult[]> {
+    if (!accessToken) return [];
+    try {
+      const earned = await apiRequest<PurchaseResult[]>("/merchants/sync-rewards", {
+        method: "POST",
+        token: accessToken,
+      });
+      setNewlyEarned(earned);
+      if (earned.length > 0) refreshAfterChange();
+      return earned;
+    } catch {
+      return [];
+    }
+  }
+
   function syncRewardsFromTransactions() {
-    if (!accessToken) return;
-    // Revolut-style: points are earned from the user's own real card payments,
-    // matched to a merchant automatically — never a manually typed amount.
-    apiRequest<PurchaseResult[]>("/merchants/sync-rewards", { method: "POST", token: accessToken })
-      .then((earned) => {
-        setNewlyEarned(earned);
-        if (earned.length > 0) refreshAfterChange();
-      })
-      .catch(() => undefined);
+    syncRewards();
   }
 
   useEffect(loadRewards, [accessToken]);
   useEffect(loadBenefits, [accessToken]);
   useEffect(loadMerchants, [accessToken]);
   useEffect(loadCards, [accessToken]);
+  useEffect(loadWallets, [accessToken]);
   useEffect(syncRewardsFromTransactions, [accessToken]);
 
   useEffect(() => {
@@ -165,17 +230,26 @@ export function RewardsPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [confirmBenefit, selectedMerchant]);
 
-  async function handlePay(merchantId: string) {
+  async function handlePay(merchant: Merchant) {
     if (!accessToken || !payCardId) return;
     setError(null);
     setBusy(true);
     try {
-      await apiRequest("/transactions/card-payment", {
+      const transaction = await apiRequest<{ id: string }>("/transactions/card-payment", {
         method: "POST",
         token: accessToken,
-        body: { card_id: payCardId, merchant_id: merchantId, amount: payAmount },
+        body: { card_id: payCardId, merchant_id: merchant.id, amount: payAmount },
       });
-      syncRewardsFromTransactions();
+      const receipt = `Receipt #${transaction.id.slice(0, 8).toUpperCase()}`;
+      const earned = await syncRewards();
+      const match = earned.find((p) => p.merchant_id === merchant.id);
+      if (match) {
+        setToast(`Payment confirmed — ${receipt} · Earned ${match.points_earned} points`);
+      } else if (!merchant.verified) {
+        setToast(`Payment confirmed — ${receipt} · 0 points earned (merchant not verified yet)`);
+      } else {
+        setToast(`Payment confirmed — ${receipt}`);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Payment failed");
     } finally {
@@ -265,19 +339,51 @@ export function RewardsPage() {
               — some require owning at least a Gold or Platinum card.
             </p>
             {cards.length > 0 ? (
-              <div className="card-tier-grid">
+              <div className="card-gallery">
                 {cards.map((card) => (
-                  <article
-                    className={`card-tier card-tier--${(card.tier ?? "regular").toLowerCase()}`}
-                    key={card.id}
-                  >
-                    <div className="card-tier__header">
-                      <span className="card-tier__name">{formatCardLabel(card)}</span>
-                      <span className={card.status === "ACTIVE" ? "tag tag--accent" : "tag tag--neutral"}>
-                        {card.status}
-                      </span>
+                  <article className="card-panel" key={card.id}>
+                    <div className={cardToneClass(card)}>
+                      <div className="bank-card__top">
+                        <div className="bank-card__identity">
+                          <span className="bank-card__brand">AURORA</span>
+                          <span className="bank-card__product">
+                            {card.tier
+                              ? `${formatCardTierLabel(card.tier)} ${formatCardTypeLabel(card.type)}`
+                              : "One-time"}
+                          </span>
+                        </div>
+                        <span className={cardStatusClass(card.status)}>{card.status}</span>
+                      </div>
+                      <div className="bank-card__middle">
+                        <div className="bank-card__chip" aria-hidden="true" />
+                        <span className="bank-card__mark">{card.type === "ONE_TIME" ? "1x" : card.type}</span>
+                      </div>
+                      <div className="bank-card__number-row">
+                        <div className="bank-card__number">{card.masked_pan}</div>
+                      </div>
+                      <div className="bank-card__holder">
+                        <span>Card holder</span>
+                        <strong>{cardholderName}</strong>
+                      </div>
+                      <div className="bank-card__footer">
+                        <span>
+                          {card.tier
+                            ? `${formatCardTierLabel(card.tier)} ${formatCardTypeLabel(card.type)}`
+                            : formatCardTypeLabel(card.type)}
+                        </span>
+                        <span className="bank-card__security">
+                          <span>
+                            EXP {String(card.expiration_month).padStart(2, "0")}/{card.expiration_year}
+                          </span>
+                        </span>
+                      </div>
                     </div>
-                    <p>{pointsPerRonLabel(card)} on card payments</p>
+                    <div className="card-panel__meta">
+                      <div>
+                        <div className="eyebrow">Earning rate</div>
+                        <div className="card-panel__value">{pointsPerRonLabel(card)}</div>
+                      </div>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -368,7 +474,7 @@ export function RewardsPage() {
             )}
 
             {cards.length > 0 && (
-              <article className="card-panel" style={{ maxWidth: "420px", marginBottom: "1rem" }}>
+              <article className="card-panel" style={{ maxWidth: "420px", margin: "0 auto 1rem" }}>
                 <div className="card-panel__meta">
                   <div style={{ flex: 1 }}>
                     <div className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
@@ -382,19 +488,19 @@ export function RewardsPage() {
                     >
                       {cards.map((card) => (
                         <option key={card.id} value={card.id}>
-                          {formatCardLabel(card)}
+                          {formatCardLabel(card)} — {effectiveWallet(card)?.currency ?? "…"} wallet
                         </option>
                       ))}
                     </select>
                   </div>
                   <label>
-                    Amount (RON)
+                    Amount ({effectiveWallet(selectedCard)?.currency ?? "RON"})
                     <input value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "6rem" }} />
                   </label>
                 </div>
                 {selectedCard && (
                   <div className="tag tag--accent" style={{ width: "fit-content" }}>
-                    {pointsPerRonLabel(selectedCard)} with this card
+                    {pointsPerRonLabel(selectedCard)} · pays from {effectiveWallet(selectedCard)?.currency ?? "unknown"} wallet
                   </div>
                 )}
               </article>
@@ -438,8 +544,8 @@ export function RewardsPage() {
                       )}
                     </button>
                     <div className="card-panel__actions">
-                      <button onClick={() => handlePay(merchant.id)} disabled={busy || !payCardId}>
-                        Pay {payAmount || 0} RON
+                      <button onClick={() => handlePay(merchant)} disabled={busy || !payCardId}>
+                        Pay {payAmount || 0} {effectiveWallet(selectedCard)?.currency ?? "RON"}
                       </button>
                     </div>
                   </article>
@@ -605,9 +711,9 @@ export function RewardsPage() {
           onCancel={() => setSelectedMerchant(null)}
           onConfirm={() => {
             setSelectedMerchant(null);
-            handlePay(selectedMerchant.id);
+            handlePay(selectedMerchant);
           }}
-          confirmLabel={`Pay ${payAmount || 0} RON`}
+          confirmLabel={`Pay ${payAmount || 0} ${effectiveWallet(selectedCard)?.currency ?? "RON"}`}
           busy={busy || !payCardId}
         >
           <p className="eyebrow">{selectedMerchant.category}</p>

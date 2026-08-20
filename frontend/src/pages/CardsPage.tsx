@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeftRight, Eye, EyeOff, Lock, Trash2, Unlock } from "lucide-react";
 
 import { ApiError, apiRequest } from "../api/apiClient";
+import { cardTierRewardBullets } from "../config/rewardPolicy";
 import { useAuth } from "../hooks/useAuth";
 import type { Card, CardPaymentPreferences, CardTier, CardType, Wallet } from "../types";
 
@@ -13,10 +14,12 @@ const CARD_TIER_DETAILS: Record<CardTier, string> = {
   GOLD: "Cashback boosts and stronger everyday card support.",
   PLATINUM: "Premium travel, insurance and concierge-style card benefits.",
 };
+// Single source of truth for the reward numbers lives in config/rewardPolicy.ts
+// (shared with RewardsPage.tsx) — this just maps it into the shape this page renders.
 const CARD_TIER_REWARDS: Record<CardTier, string[]> = {
-  REGULAR: ["1x reward points", "Standard card controls", "Basic spending notifications"],
-  GOLD: ["1.5x reward points", "2% partner cashback", "Priority card support", "Higher daily card limits"],
-  PLATINUM: ["2x reward points", "4% partner cashback", "Travel insurance", "Airport lounge access"],
+  REGULAR: cardTierRewardBullets("REGULAR"),
+  GOLD: cardTierRewardBullets("GOLD"),
+  PLATINUM: cardTierRewardBullets("PLATINUM"),
 };
 const CARD_TIER_LABELS: Record<CardTier, string> = {
   REGULAR: "Regular",
