@@ -379,10 +379,11 @@ export interface PurchaseResult {
   merchant_id: string;
   amount: string;
   currency: string;
+  // Total cashback (card-tier percent + this merchant's own offer percent),
+  // already credited as real money into the wallet that was debited — not
+  // points. points_earned below is entirely independent of these two.
   cashback_percent: string | null;
   cashback_amount: string;
-  base_points: number;
-  cashback_points: number;
   points_earned: number;
   reward_points_balance: number;
   proof_code: string | null;

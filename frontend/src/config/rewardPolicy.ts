@@ -53,15 +53,16 @@ export function pointsToRon(points: number): number {
   return Math.round(points * POINT_VALUE_IN_RON);
 }
 
-/** "2 pts/RON + 6% cashback (4% tier + 2% partner)" — combined rate for a
- * card paying at a specific merchant, so the payer sees the real total
- * before confirming, not just the card's own base rate. */
+/** "1 pt/RON · 6% cashback to wallet (4% tier + 2% partner)" — points and
+ * cashback are independent (cashback never adds points, it's money credited
+ * back to the wallet that paid), so this is deliberately a "·" separator,
+ * not "+", for a card paying at a specific merchant. */
 export function combinedRateLabel(card: Pick<Card, "tier">, partnerCashbackPercent: number): string {
   const tierCashback = cardTierCashbackPercent(card);
   const total = tierCashback + partnerCashbackPercent;
   const base = pointsPerRonLabel(card);
   if (total <= 0) return base;
-  return `${base} + ${total}% cashback (${tierCashback}% tier + ${partnerCashbackPercent}% partner)`;
+  return `${base} · ${total}% cashback to wallet (${tierCashback}% tier + ${partnerCashbackPercent}% partner)`;
 }
 
 /** "1.5x reward points" etc., always derived from CARD_TIER_POINTS_PER_RON

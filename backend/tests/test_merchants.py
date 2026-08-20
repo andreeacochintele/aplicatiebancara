@@ -11,8 +11,12 @@ from app.merchants.schemas import CashbackOfferCreate, MerchantCreate
 from app.merchants.service import MerchantService
 from app.rewards.service import RewardsService
 from app.transactions.models import Transaction, TransactionStatus, TransactionType
+from app.transactions.schemas import CardPaymentCreate
+from app.transactions.service import TransactionService
 from app.users.schemas import UserCreate
 from app.users.service import UserService
+from app.wallets.schemas import WalletCreate
+from app.wallets.service import WalletService
 
 
 @pytest.fixture()
@@ -100,20 +104,19 @@ def test_sync_awards_points_and_computes_cashback_from_real_transaction(db_sessi
 
     assert len(results) == 1
     result = results[0]
-    # No card_id -> REGULAR/default tier (0% tier cashback), so the only
-    # cashback here is the merchant's own 7% offer: 400 RON * 7% = 28 RON
-    # -> 28 / 0.05 = 560 bonus points, on top of 400 base points (1x).
-    assert result.base_points == 400
+    # Points depend only on the card multiplier — no card_id here -> REGULAR/
+    # default 1x, so points_earned is exactly the RON amount: 400. Cashback
+    # (7% partner offer, no tier since there's no card) is a fully separate
+    # number: 400 RON * 7% = 28 RON — money, not points.
+    assert result.points_earned == 400
     assert result.cashback_percent == Decimal("7")
     assert result.cashback_amount == Decimal("28.00")
-    assert result.cashback_points == 560
-    assert result.points_earned == 960
-    assert result.reward_points_balance == 960
+    assert result.reward_points_balance == 400
     assert result.proof_code is not None
     assert result.proof_code.startswith("PUR-")
 
     rewards_account = RewardsService(db_session).get_account(seeded_user.id)
-    assert rewards_account.points_balance == 960
+    assert rewards_account.points_balance == 400
     assert rewards_account.transactions[0].proof_code == result.proof_code
 
 
@@ -125,11 +128,11 @@ def test_sync_scales_points_by_card_tier(db_session, seeded_user):
 
     results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
 
-    # 200 RON * 1.5x (GOLD) = 300 base points, plus GOLD's 2% tier cashback
-    # with no active offer: 200 * 2% = 4 RON -> 4 / 0.05 = 80 bonus points.
-    assert results[0].base_points == 300
-    assert results[0].cashback_points == 80
-    assert results[0].points_earned == 380
+    # 200 RON * 1.5x (GOLD) = 300 points. Cashback is separate: GOLD's 2%
+    # tier cashback with no active offer = 200 * 2% = 4 RON, money only.
+    assert results[0].points_earned == 300
+    assert results[0].cashback_percent == Decimal("2")
+    assert results[0].cashback_amount == Decimal("4.00")
 
 
 def test_sync_platinum_card_doubles_points(db_session, seeded_user):
@@ -140,14 +143,14 @@ def test_sync_platinum_card_doubles_points(db_session, seeded_user):
 
     results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
 
-    # 200 RON * 2x (PLATINUM) = 400 base points, plus PLATINUM's 4% tier
-    # cashback with no active offer: 200 * 4% = 8 RON -> 8 / 0.05 = 160.
-    assert results[0].base_points == 400
-    assert results[0].cashback_points == 160
-    assert results[0].points_earned == 560
+    # 200 RON * 2x (PLATINUM) = 400 points. Cashback: PLATINUM's 4% tier
+    # cashback with no active offer = 200 * 4% = 8 RON, money only.
+    assert results[0].points_earned == 400
+    assert results[0].cashback_percent == Decimal("4")
+    assert results[0].cashback_amount == Decimal("8.00")
 
 
-def test_sync_combines_tier_and_partner_cashback_into_points(db_session, seeded_user):
+def test_sync_combines_tier_and_partner_cashback_amounts(db_session, seeded_user):
     merchant_service = MerchantService(db_session)
     merchant = merchant_service.create_merchant(MerchantCreate(name="Nike", category="Retail", verified=True))
     start, end = _active_offer_window()
@@ -160,13 +163,33 @@ def test_sync_combines_tier_and_partner_cashback_into_points(db_session, seeded_
     results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
     result = results[0]
 
-    # base: 200 * 1.5x = 300. cashback: (2% tier + 5% partner) * 200 RON =
-    # 14 RON -> 14 / 0.05 = 280 bonus points. Total: 580.
-    assert result.base_points == 300
-    assert result.cashback_percent == Decimal("5")
-    assert result.cashback_amount == Decimal("10.00")
-    assert result.cashback_points == 280
-    assert result.points_earned == 580
+    # Points: 200 * 1.5x = 300, completely unaffected by cashback. Cashback:
+    # (2% tier + 5% partner) * 200 RON = 14 RON, credited as money.
+    assert result.points_earned == 300
+    assert result.cashback_percent == Decimal("7")
+    assert result.cashback_amount == Decimal("14.00")
+
+
+def test_sync_matches_the_hand_worked_example_50_ron_regular_card_8pct_offer(db_session, seeded_user):
+    """Pins the exact worked example from the points-formula spec: 50 RON on
+    a REGULAR card (1x multiplier) at a merchant with an 8% partner offer
+    should give exactly 50 points (cashback has zero effect on this number)
+    and 4 RON of cashback money — not 130, 260, or any figure that mixes the
+    two together."""
+    merchant_service = MerchantService(db_session)
+    merchant = merchant_service.create_merchant(MerchantCreate(name="Nike", category="Retail", verified=True))
+    start, end = _active_offer_window()
+    merchant_service.create_cashback_offer(
+        merchant.id, CashbackOfferCreate(cashback_percent=Decimal("8"), start_date=start, end_date=end)
+    )
+    card = CardService(db_session).create_card(seeded_user.id, CardCreate(tier=CardTier.REGULAR))
+    _card_payment(db_session, seeded_user.id, Decimal("50.00"), "Nike - Shopping", card_id=card.id)
+
+    result = merchant_service.sync_purchases_from_transactions(seeded_user.id)[0]
+
+    assert result.points_earned == 50
+    assert result.cashback_percent == Decimal("8")
+    assert result.cashback_amount == Decimal("4.00")
 
 
 def test_sync_awards_tier_cashback_even_without_a_partner_offer(db_session, seeded_user):
@@ -178,10 +201,41 @@ def test_sync_awards_tier_cashback_even_without_a_partner_offer(db_session, seed
     results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
     result = results[0]
 
-    assert result.cashback_percent is None  # no CashbackOffer exists at all
-    assert result.cashback_amount == Decimal("0")
-    assert result.cashback_points == 80  # 100 RON * 4% tier cashback = 4 RON -> 80 pts
-    assert result.points_earned == 280  # 200 base (2x) + 80 cashback
+    assert result.points_earned == 200  # 100 RON * 2x (PLATINUM), no partner offer needed
+    assert result.cashback_percent == Decimal("4")  # tier cashback alone still applies
+    assert result.cashback_amount == Decimal("4.00")  # 100 RON * 4%
+
+
+def test_sync_credits_cashback_to_the_debited_wallet_as_real_money(db_session, seeded_user):
+    """End-to-end with the real payment flow (TransactionService.create_card_payment,
+    which actually debits a wallet and sets source_wallet_id) — the exact
+    scenario from the spec: 50 RON, REGULAR card, 10% total cashback should
+    leave the wallet net -45 RON (debited 50, credited back 5) and award
+    exactly 50 points, with cashback never touching the points number."""
+    wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("500.00")
+    db_session.flush()
+
+    merchant_service = MerchantService(db_session)
+    merchant = merchant_service.create_merchant(MerchantCreate(name="Nike", category="Retail", verified=True))
+    start, end = _active_offer_window()
+    merchant_service.create_cashback_offer(
+        merchant.id, CashbackOfferCreate(cashback_percent=Decimal("10"), start_date=start, end_date=end)
+    )
+    card = CardService(db_session).create_card(seeded_user.id, CardCreate(default_wallet_id=wallet.id))
+
+    TransactionService(db_session).create_card_payment(
+        seeded_user.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"))
+    )
+    assert wallet.available_balance == Decimal("450.00")  # debited at payment time
+
+    result = merchant_service.sync_purchases_from_transactions(seeded_user.id)[0]
+
+    assert result.points_earned == 50
+    assert result.cashback_amount == Decimal("5.00")
+    assert wallet.available_balance == Decimal("455.00")  # 450 + 5 cashback credited back
+    # Net effect vs. the original 500: -45, matching the worked example exactly.
+    assert Decimal("500.00") - wallet.available_balance == Decimal("45.00")
 
 
 def test_sync_without_a_known_card_uses_base_rate(db_session, seeded_user):

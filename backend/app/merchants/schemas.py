@@ -48,10 +48,11 @@ class PurchaseResult(BaseModel):
     merchant_id: uuid.UUID
     amount: Decimal
     currency: str
+    # Total cashback (card-tier percent + this merchant's own offer percent),
+    # already credited as real money into the wallet that was debited — not
+    # points. points_earned below is entirely independent of these two.
     cashback_percent: Decimal | None
     cashback_amount: Decimal
-    base_points: int
-    cashback_points: int
     points_earned: int
     reward_points_balance: int
     proof_code: str | None

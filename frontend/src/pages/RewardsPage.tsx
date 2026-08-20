@@ -256,16 +256,17 @@ export function RewardsPage() {
       const receipt = `Receipt #${transaction.id.slice(0, 8).toUpperCase()}`;
       const earned = await syncRewards();
       const match = earned.find((p) => p.merchant_id === merchant.id);
-      if (match && match.proof_code) {
-        const breakdown =
-          match.cashback_points > 0 ? ` (${match.base_points} base + ${match.cashback_points} cashback)` : "";
-        setCodeReveal({
-          title: `Earned ${match.points_earned} points${breakdown}`,
-          subtitle: `${receipt} at ${merchant.name} — this is your permanent proof of purchase, also saved in Points history.`,
-          code: match.proof_code,
-        });
-      } else if (match) {
-        setToast(`Payment confirmed — ${receipt} · Earned ${match.points_earned} points`);
+      if (match) {
+        // Partner Offers is a pure earning flow (simulated real purchase) —
+        // informational confirmation only, no code/voucher. Redeem codes
+        // belong to the "Redeem your points" catalog below instead. Points
+        // and cashback are independent: cashback is real money credited
+        // back to the wallet, never extra points, so they're shown as two
+        // separate numbers rather than a combined total.
+        const cashback = Number(match.cashback_amount) > 0 ? ` · ${match.cashback_amount} ${match.currency} cashback credited to your wallet` : "";
+        setToast(
+          `Payment confirmed — ${receipt} · Earned ${match.points_earned} points${cashback}`,
+        );
       } else if (!merchant.verified) {
         setToast(`Payment confirmed — ${receipt} · 0 points earned (merchant not verified yet)`);
       } else {
@@ -634,7 +635,7 @@ export function RewardsPage() {
                     <Sparkles size={12} strokeWidth={2.4} />
                     {pointsPerRonLabel(selectedCard)}
                     {cardTierCashbackPercent(selectedCard) > 0
-                      ? ` + ${cardTierCashbackPercent(selectedCard)}% tier cashback at partners`
+                      ? ` · ${cardTierCashbackPercent(selectedCard)}% tier cashback to wallet at partners`
                       : ""}
                   </div>
                 )}
@@ -698,8 +699,8 @@ export function RewardsPage() {
                 {newlyEarned.map((purchase) => (
                   <div key={purchase.merchant_id}>
                     Earned {purchase.points_earned} points from a real card payment
-                    {purchase.cashback_points > 0
-                      ? ` (${purchase.base_points} base + ${purchase.cashback_points} cashback)`
+                    {Number(purchase.cashback_amount) > 0
+                      ? ` · ${purchase.cashback_amount} ${purchase.currency} cashback credited to your wallet`
                       : ""}
                   </div>
                 ))}

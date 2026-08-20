@@ -1,12 +1,14 @@
 """Merchant catalog and cashback-offer business rules (architecture.md §11).
 
-Cashback is never money back into a wallet — the transaction engine
-(app/transactions/service.py, owned by the payments module) has no
-purchase-refund path, and this module doesn't mutate wallet balances.
-Instead, cashback (card-tier percent + this merchant's own offer percent,
-if any — see CARD_TIER_CASHBACK_PERCENT / _earn_from_transaction) is
-converted into bonus reward points at POINT_VALUE_IN_RON and credited to
-the points balance alongside the base points-per-RON earned on the payment.
+Points and cashback are two independent calculations that never interact:
+
+- Points = amount_in_RON * the paying card's tier multiplier
+  (CARD_TIER_POINT_MULTIPLIER). Cashback has zero effect on this number.
+- Cashback = (card-tier percent + this merchant's own offer percent, if
+  any — CARD_TIER_CASHBACK_PERCENT / _earn_from_transaction) applied to the
+  payment amount, credited as real money back into the same wallet that was
+  debited (via a WalletLedgerEntry CREDIT, mirroring the DEBIT entry
+  TransactionService.create_card_payment already writes) — not points.
 
 `sync_purchases_from_transactions` awards bank reward points off the user's
 *real* completed CARD_PAYMENT transactions instead of a client-supplied
@@ -57,8 +59,9 @@ from app.merchants.schemas import (
 )
 from app.rewards.service import RewardsService
 from app.supabase import is_supabase_session
-from app.transactions.models import TransactionStatus, TransactionType
+from app.transactions.models import LedgerEntryType, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
+from app.wallets.repository import WalletRepository
 
 CARD_TIER_POINT_MULTIPLIER: dict[CardTier, Decimal] = {
     CardTier.REGULAR: Decimal("1"),
@@ -78,11 +81,6 @@ CARD_TIER_CASHBACK_PERCENT: dict[CardTier, Decimal] = {
     CardTier.PLATINUM: Decimal("4"),
 }
 
-# 1 RON = 20 points, i.e. how cashback (tier + partner, converted to a RON
-# amount) turns into bonus points instead of money back into a wallet. Must
-# match frontend/src/config/rewardPolicy.ts's POINT_VALUE_IN_RON.
-POINT_VALUE_IN_RON = Decimal("0.05")
-
 
 class MerchantService:
     def __init__(self, db: Session) -> None:
@@ -91,6 +89,7 @@ class MerchantService:
         self.rewards = RewardsService(db)
         self.transactions = TransactionRepository(db)
         self.cards = CardRepository(db)
+        self.wallets = WalletRepository(db)
         self.fx = FXService(db)
 
     def create_merchant(self, data: MerchantCreate) -> MerchantPublic:
@@ -159,7 +158,14 @@ class MerchantService:
             if is_supabase_session(self.db):
                 try:
                     result = self._earn_from_transaction(
-                        user_id, merchant, transaction.id, transaction.amount, transaction.currency, today, tier
+                        user_id,
+                        merchant,
+                        transaction.id,
+                        transaction.amount,
+                        transaction.currency,
+                        today,
+                        tier,
+                        transaction.source_wallet_id,
                     )
                 except RuntimeError:
                     continue
@@ -167,7 +173,14 @@ class MerchantService:
                 try:
                     with self.db.begin_nested():
                         result = self._earn_from_transaction(
-                            user_id, merchant, transaction.id, transaction.amount, transaction.currency, today, tier
+                            user_id,
+                            merchant,
+                            transaction.id,
+                            transaction.amount,
+                            transaction.currency,
+                            today,
+                            tier,
+                            transaction.source_wallet_id,
                         )
                 except IntegrityError:
                     continue
@@ -189,41 +202,47 @@ class MerchantService:
         currency: str,
         today,
         tier: CardTier | None = None,
+        wallet_id: uuid.UUID | None = None,
     ) -> PurchaseResult:
+        # Partner-offer cashback: the merchant's own CashbackOffer percent,
+        # gated by minimum_spend and capped at maximum_cashback — both in the
+        # transaction's own currency (no FX needed: the wallet being
+        # credited is always the same currency as the payment).
         offer = self.repository.active_offer_for_merchant(merchant.id, today)
-        cashback_percent = None
-        cashback_amount = Decimal("0")
+        partner_cashback_percent = Decimal("0")
+        partner_cashback_amount = Decimal("0")
         if offer is not None and (offer.minimum_spend is None or amount >= offer.minimum_spend):
-            cashback_percent = offer.cashback_percent
-            cashback_amount = (amount * offer.cashback_percent / Decimal("100")).quantize(
+            partner_cashback_percent = offer.cashback_percent
+            partner_cashback_amount = (amount * offer.cashback_percent / Decimal("100")).quantize(
                 Decimal("0.01"), rounding=ROUND_DOWN
             )
             if offer.maximum_cashback is not None:
-                cashback_amount = min(cashback_amount, offer.maximum_cashback)
+                partner_cashback_amount = min(partner_cashback_amount, offer.maximum_cashback)
 
-        # 100 RON spent -> 100 points at the 1x base rate (architecture.md §11),
-        # scaled by the paying card's tier multiplier. The rule is "points
-        # per RON", so a payment from a non-RON wallet must be converted to
-        # its RON equivalent first (via FXService, the same deterministic
-        # rate table the rest of the app uses for cross-currency math) —
-        # otherwise 1 EUR would earn the same points as 1 RON, off by ~5x.
+        # Points depend ONLY on the paying card's tier multiplier — cashback
+        # has zero effect on this number (a previous version incorrectly
+        # folded cashback into points; that coupling has been removed).
+        # 100 RON spent -> 100 points at the 1x base rate (architecture.md
+        # §11). A payment from a non-RON wallet is converted to its RON
+        # equivalent first (via FXService) so 1 EUR doesn't earn the same
+        # points as 1 RON.
         fx_rate = self.fx.get_rate(currency, "RON")
         amount_in_ron = amount * fx_rate
         multiplier = CARD_TIER_POINT_MULTIPLIER.get(tier, DEFAULT_POINT_MULTIPLIER)
-        base_points = int(amount_in_ron * multiplier)
+        points_earned = int(amount_in_ron * multiplier)
 
-        # Cashback is no longer informational-only: it's two stacking
-        # percentages (card-tier perk + this merchant's own offer, if any)
-        # converted into bonus points at POINT_VALUE_IN_RON, credited to the
-        # points balance the same as base points — never money back into a
-        # wallet, and never awarded at all for an unverified merchant (that
-        # gate happens one level up, before this method is ever called).
+        # Cashback is real money, credited back into the same wallet that
+        # was debited for this payment — never points. Two stacking
+        # percentages: a card-tier perk (uncapped) plus this merchant's own
+        # offer (already capped above).
         tier_cashback_percent = CARD_TIER_CASHBACK_PERCENT.get(tier, Decimal("0"))
-        tier_cashback_ron = amount_in_ron * tier_cashback_percent / Decimal("100")
-        partner_cashback_ron = cashback_amount * fx_rate
-        cashback_points = int((tier_cashback_ron + partner_cashback_ron) / POINT_VALUE_IN_RON)
+        tier_cashback_amount = (amount * tier_cashback_percent / Decimal("100")).quantize(
+            Decimal("0.01"), rounding=ROUND_DOWN
+        )
+        cashback_amount = tier_cashback_amount + partner_cashback_amount
+        total_cashback_percent = tier_cashback_percent + partner_cashback_percent
+        cashback_percent = total_cashback_percent if cashback_amount > 0 else None
 
-        points_earned = base_points + cashback_points
         proof_code = self._generate_proof_code() if points_earned > 0 else None
         account = (
             self.rewards.earn_points(
@@ -237,6 +256,15 @@ class MerchantService:
             else self.rewards.get_or_create_account(user_id)
         )
 
+        # Only credit cashback once points have been durably recorded for
+        # this transaction — has_earned_for_transaction's unique constraint
+        # is the real race guard (see sync_purchases_from_transactions), so
+        # tying the wallet credit to a successful points award means a lost
+        # race skips both instead of crediting money without a matching
+        # points record.
+        if cashback_amount > 0 and wallet_id is not None:
+            self._credit_cashback_to_wallet(wallet_id, cashback_amount, source_transaction_id)
+
         return PurchaseResult(
             merchant_id=merchant.id,
             proof_code=proof_code,
@@ -244,11 +272,26 @@ class MerchantService:
             currency=currency,
             cashback_percent=cashback_percent,
             cashback_amount=cashback_amount,
-            base_points=base_points,
-            cashback_points=cashback_points,
             points_earned=points_earned,
             reward_points_balance=account.points_balance,
         )
+
+    def _credit_cashback_to_wallet(self, wallet_id: uuid.UUID, cashback_amount: Decimal, transaction_id: uuid.UUID) -> None:
+        wallet = self.wallets.get_by_id(wallet_id)
+        if wallet is None:
+            return
+        wallet.available_balance += cashback_amount
+        self.transactions.add_ledger_entry(
+            WalletLedgerEntry(
+                wallet_id=wallet.id,
+                transaction_id=transaction_id,
+                entry_type=LedgerEntryType.CREDIT,
+                amount=cashback_amount,
+                currency=wallet.currency,
+                balance_after=wallet.available_balance,
+            )
+        )
+        self.db.flush()
 
     @staticmethod
     def _generate_proof_code() -> str:
