@@ -3,8 +3,8 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError
-from app.wallets.models import Wallet
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.wallets.models import Wallet, WalletStatus
 from app.wallets.repository import WalletRepository
 from app.wallets.schemas import WalletCreate
 
@@ -32,3 +32,16 @@ class WalletService:
 
     def list_wallets(self, user_id: uuid.UUID) -> list[Wallet]:
         return self.repository.list_for_user(user_id)
+
+    def set_main_wallet(self, user_id: uuid.UUID, wallet_id: uuid.UUID) -> Wallet:
+        wallets = self.repository.list_for_user(user_id)
+        target = next((wallet for wallet in wallets if wallet.id == wallet_id), None)
+        if target is None:
+            raise NotFoundError("Wallet not found")
+        if target.status != WalletStatus.ACTIVE:
+            raise ValidationError("Only an active wallet can be set as main")
+
+        for wallet in wallets:
+            wallet.is_main = wallet.id == wallet_id
+        self.db.flush()
+        return target
