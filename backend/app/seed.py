@@ -20,12 +20,12 @@ from app.config import get_settings
 from app.core.enums import UserRole, UserType
 from app.core.security import hash_password
 from app.database import SessionLocal
+from app.cards.models import CardTier
 from app.merchants.models import CashbackOffer, Merchant
 from app.rewards.models import (
     BenefitCategory,
     RewardAccount,
     RewardBenefit,
-    RewardTier,
     RewardTransaction,
     RewardTransactionType,
 )
@@ -307,8 +307,6 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
     if existing_benefits:
         return
 
-    tiers = client.request("GET", "reward_tiers", params={"select": "id,name"}) or []
-    tier_ids = {tier["name"]: tier["id"] for tier in tiers}
     client.request(
         "POST",
         "reward_benefits",
@@ -319,7 +317,7 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                 "category": "LOUNGE_ACCESS",
                 "description": "One complimentary visit to a Priority Pass airport lounge.",
                 "points_cost": 1500,
-                "min_tier_id": tier_ids.get("PREMIUM"),
+                "min_card_tier": "GOLD",
                 "partner_name": "Priority Pass",
                 "status": "ACTIVE",
             },
@@ -329,7 +327,7 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                 "category": "RETAIL_DISCOUNT",
                 "description": "10% discount voucher for your next eMAG order.",
                 "points_cost": 300,
-                "min_tier_id": None,
+                "min_card_tier": None,
                 "partner_name": "eMAG",
                 "status": "ACTIVE",
             },
@@ -339,7 +337,7 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                 "category": "RETAIL_DISCOUNT",
                 "description": "5% discount voucher for Starbucks.",
                 "points_cost": 150,
-                "min_tier_id": None,
+                "min_card_tier": None,
                 "partner_name": "Starbucks",
                 "status": "ACTIVE",
             },
@@ -349,7 +347,7 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                 "category": "TRAVEL",
                 "description": "One free airport transfer booked through Booking.com.",
                 "points_cost": 800,
-                "min_tier_id": tier_ids.get("PREMIUM"),
+                "min_card_tier": "GOLD",
                 "partner_name": "Booking.com",
                 "status": "ACTIVE",
             },
@@ -359,7 +357,7 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                 "category": "INSURANCE",
                 "description": "7 days of travel insurance coverage for a trip abroad.",
                 "points_cost": 1000,
-                "min_tier_id": tier_ids.get("METAL"),
+                "min_card_tier": "PLATINUM",
                 "partner_name": "Allianz",
                 "status": "ACTIVE",
             },
@@ -554,10 +552,6 @@ def run() -> None:
             )
         )
 
-        # Tiers are seeded by migration 0005; look them up rather than re-creating them.
-        premium_tier = db.query(RewardTier).filter(RewardTier.name == "PREMIUM").first()
-        metal_tier = db.query(RewardTier).filter(RewardTier.name == "METAL").first()
-
         db.add_all(
             [
                 RewardBenefit(
@@ -565,7 +559,7 @@ def run() -> None:
                     category=BenefitCategory.LOUNGE_ACCESS,
                     description="One complimentary visit to a Priority Pass airport lounge.",
                     points_cost=1500,
-                    min_tier_id=premium_tier.id if premium_tier else None,
+                    min_card_tier=CardTier.GOLD,
                     partner_name="Priority Pass",
                 ),
                 RewardBenefit(
@@ -587,7 +581,7 @@ def run() -> None:
                     category=BenefitCategory.TRAVEL,
                     description="One free airport transfer booked through Booking.com.",
                     points_cost=800,
-                    min_tier_id=premium_tier.id if premium_tier else None,
+                    min_card_tier=CardTier.GOLD,
                     partner_name="Booking.com",
                 ),
                 RewardBenefit(
@@ -595,7 +589,7 @@ def run() -> None:
                     category=BenefitCategory.INSURANCE,
                     description="7 days of travel insurance coverage for a trip abroad.",
                     points_cost=1000,
-                    min_tier_id=metal_tier.id if metal_tier else None,
+                    min_card_tier=CardTier.PLATINUM,
                     partner_name="Allianz",
                 ),
             ]

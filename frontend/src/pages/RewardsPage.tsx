@@ -1,15 +1,18 @@
-import { CreditCard, Gift, ShieldCheck, Sparkles, Store, Trophy, Users, X } from "lucide-react";
+import { CreditCard, Gift, ShieldCheck, Sparkles, Store, Users, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { bestCardTierBenefits, pointsPerRonForCard, pointsPerRonLabel } from "../config/rewardPolicy";
 import { useAuth } from "../hooks/useAuth";
-import type { Card, Merchant, PurchaseResult, RewardAccount, RewardBenefit, RewardTier } from "../types";
+import type { Card, CardTier, Merchant, PurchaseResult, RewardAccount, RewardBenefit } from "../types";
+
+function formatCardTierLabel(tier: CardTier | null): string {
+  return tier ? tier[0] + tier.slice(1).toLowerCase() : "One-time";
+}
 
 function formatCardLabel(card: Card): string {
-  const tier = card.tier ? card.tier[0] + card.tier.slice(1).toLowerCase() : "One-time";
-  return `${tier} ${card.type[0]}${card.type.slice(1).toLowerCase()} •••• ${card.last_four}`;
+  return `${formatCardTierLabel(card.tier)} ${card.type[0]}${card.type.slice(1).toLowerCase()} •••• ${card.last_four}`;
 }
 
 function scrollToId(id: string) {
@@ -83,7 +86,6 @@ function ConfirmModal({
 export function RewardsPage() {
   const { accessToken } = useAuth();
   const [rewards, setRewards] = useState<RewardAccount | null>(null);
-  const [tiers, setTiers] = useState<RewardTier[]>([]);
   const [benefits, setBenefits] = useState<RewardBenefit[]>([]);
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
@@ -94,6 +96,7 @@ export function RewardsPage() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmBenefit, setConfirmBenefit] = useState<RewardBenefit | null>(null);
+  const [redeemCardId, setRedeemCardId] = useState("");
   const [selectedMerchant, setSelectedMerchant] = useState<Merchant | null>(null);
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [showFullHistory, setShowFullHistory] = useState(false);
@@ -101,11 +104,6 @@ export function RewardsPage() {
   function loadRewards() {
     if (!accessToken) return;
     apiRequest<RewardAccount>("/rewards", { token: accessToken }).then(setRewards).catch(() => setRewards(null));
-  }
-
-  function loadTiers() {
-    if (!accessToken) return;
-    apiRequest<RewardTier[]>("/rewards/tiers", { token: accessToken }).then(setTiers).catch(() => setTiers([]));
   }
 
   function loadBenefits() {
@@ -144,7 +142,6 @@ export function RewardsPage() {
   }
 
   useEffect(loadRewards, [accessToken]);
-  useEffect(loadTiers, [accessToken]);
   useEffect(loadBenefits, [accessToken]);
   useEffect(loadMerchants, [accessToken]);
   useEffect(loadCards, [accessToken]);
@@ -187,7 +184,7 @@ export function RewardsPage() {
   }
 
   async function confirmRedeemBenefit() {
-    if (!accessToken || !confirmBenefit) return;
+    if (!accessToken || !confirmBenefit || !redeemCardId) return;
     const benefit = confirmBenefit;
     setError(null);
     setBusy(true);
@@ -195,11 +192,13 @@ export function RewardsPage() {
       const updated = await apiRequest<RewardAccount>(`/rewards/benefits/${benefit.id}/redeem`, {
         method: "POST",
         token: accessToken,
+        body: { card_id: redeemCardId },
       });
       setRewards(updated);
       loadBenefits();
       setConfirmBenefit(null);
-      setToast(`Redeemed "${benefit.name}" for ${benefit.points_cost ?? 0} points.`);
+      const code = updated.redemptions[0]?.redemption_code;
+      setToast(`Redeemed "${benefit.name}" for ${benefit.points_cost ?? 0} points.${code ? ` Code: ${code}` : ""}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Redeem failed");
       setConfirmBenefit(null);
@@ -214,16 +213,6 @@ export function RewardsPage() {
     // only" pattern already used for cashback amounts.
     setToast("Referral link copied — demo only, not wired to a real invite flow yet.");
   }
-
-  const tierProgressPercent =
-    rewards && rewards.next_tier
-      ? Math.min(
-          100,
-          ((rewards.lifetime_points_earned - (rewards.tier.min_lifetime_points ?? 0)) /
-            (rewards.next_tier.min_lifetime_points - rewards.tier.min_lifetime_points)) *
-            100,
-        )
-      : 100;
 
   const selectedCard = cards.find((card) => card.id === payCardId);
   const cardBenefits = bestCardTierBenefits(cards);
@@ -244,7 +233,7 @@ export function RewardsPage() {
         </div>
         {rewards && (
           <div style={{ color: "rgba(255,255,255,0.75)", fontSize: "0.85rem" }}>
-            ≈ {rewards.points_balance} RON value · {rewards.tier.name}
+            ≈ {rewards.points_balance} RON value · {rewards.lifetime_points_earned} lifetime points
           </div>
         )}
         <div style={{ marginTop: "1rem", display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
@@ -272,8 +261,8 @@ export function RewardsPage() {
               </span>
             </div>
             <p className="eyebrow" style={{ marginTop: "-0.4rem", marginBottom: "0.75rem" }}>
-              Card tier sets how many points you earn per RON, and a Gold or Platinum card also grants you at least
-              Premium or Metal reward tier right away — see below.
+              Card tier sets how many points you earn per RON, and which rewards in the catalog below you can redeem
+              — some require owning at least a Gold or Platinum card.
             </p>
             {cards.length > 0 ? (
               <div className="card-tier-grid">
@@ -319,17 +308,23 @@ export function RewardsPage() {
                           {benefit.partner_name && (
                             <div className="eyebrow" style={{ marginTop: "0.15rem" }}>
                               {benefit.partner_name}
-                              {benefit.min_tier ? ` · ${benefit.min_tier.name}+` : ""}
+                              {benefit.min_card_tier ? ` · ${formatCardTierLabel(benefit.min_card_tier)}+ card` : ""}
                             </div>
                           )}
                         </div>
                         <span className="tag tag--outline">
-                          {benefit.points_cost !== null ? `${benefit.points_cost} pts` : "Free with tier"}
+                          {benefit.points_cost !== null ? `${benefit.points_cost} pts` : "Free"}
                         </span>
                       </div>
                       <div className="card-panel__actions">
                         {benefit.can_redeem ? (
-                          <button onClick={() => setConfirmBenefit(benefit)} disabled={busy}>
+                          <button
+                            onClick={() => {
+                              setConfirmBenefit(benefit);
+                              setRedeemCardId(payCardId || cards[0]?.id || "");
+                            }}
+                            disabled={busy || cards.length === 0}
+                          >
                             Redeem
                           </button>
                         ) : (
@@ -347,67 +342,7 @@ export function RewardsPage() {
             )}
           </div>
 
-          {/* 4. Progress toward next reward tier */}
-          <div className="tile">
-            <div className="tile__header">
-              <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                <Trophy size={14} strokeWidth={2.2} />
-                Reward tier (Standard / Premium / Metal)
-              </span>
-            </div>
-            <p className="eyebrow" style={{ marginTop: "-0.4rem", marginBottom: "0.75rem" }}>
-              Earned through lifetime points — a Gold/Platinum card also grants an immediate floor (at least
-              Premium/Metal), so it can start higher than your points alone would.
-            </p>
-            {rewards && rewards.tier_boosted_by_card && (
-              <p className="tag tag--accent" style={{ width: "fit-content", marginBottom: "0.75rem" }}>
-                Currently boosted by your card, not (only) by points
-              </p>
-            )}
-            {rewards && rewards.next_tier && (
-              <div className="bar-row" style={{ marginBottom: tiers.length > 0 ? "1rem" : 0 }}>
-                <span className="bar-row__label">
-                  {rewards.tier.name} → {rewards.next_tier.name}
-                </span>
-                <div className="bar-row__track">
-                  <div className="bar-row__fill" style={{ width: `${tierProgressPercent}%` }} />
-                </div>
-                <span className="bar-row__value">{rewards.points_to_next_tier} points to go</span>
-              </div>
-            )}
-            {tiers.length > 0 ? (
-              <div className="card-tier-grid">
-                {tiers.map((tier, index) => {
-                  const currentIndex = rewards ? tiers.findIndex((t) => t.id === rewards.tier.id) : -1;
-                  const isCurrent = rewards?.tier.id === tier.id;
-                  const unlocked = currentIndex >= 0 && index <= currentIndex;
-                  return (
-                    <article className={`card-tier card-tier--${tier.name.toLowerCase()}`} key={tier.id}>
-                      <div className="card-tier__header">
-                        <span className="card-tier__name">{tier.name}</span>
-                        {isCurrent ? (
-                          <span className="tag tag--accent">Current</span>
-                        ) : unlocked ? (
-                          <span className="tag tag--outline">Unlocked</span>
-                        ) : (
-                          <span className="tag tag--neutral">{tier.min_lifetime_points} pts</span>
-                        )}
-                      </div>
-                      <div className="card-tier__products">
-                        {tier.perks.map((perk) => (
-                          <span key={perk}>{perk}</span>
-                        ))}
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="eyebrow">Tiers aren't set up yet.</p>
-            )}
-          </div>
-
-          {/* 5. Partner merchants and cashback */}
+          {/* 4. Partner merchants and cashback */}
           <div className="tile" id="rewards-pay">
             <div className="tile__header">
               <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
@@ -532,7 +467,7 @@ export function RewardsPage() {
 
         {/* Side section */}
         <div style={{ flex: "1 1 300px", display: "flex", flexDirection: "column", gap: "1.25rem", minWidth: "280px" }}>
-          {/* 6. Card-dependent benefits */}
+          {/* 5. Card-dependent benefits */}
           <div className="tile">
             <div className="tile__header">
               <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
@@ -556,7 +491,7 @@ export function RewardsPage() {
             )}
           </div>
 
-          {/* 7. Referral / earn more points */}
+          {/* 6. Referral / earn more points */}
           <div className="tile" style={{ background: "var(--aurora-gradient, #5b5fef)", color: "#fff", border: "none" }}>
             <div className="eyebrow" style={{ color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
               <Users size={14} strokeWidth={2.2} />
@@ -570,7 +505,7 @@ export function RewardsPage() {
             </button>
           </div>
 
-          {/* 8. Rewards points history */}
+          {/* 7. Rewards points history */}
           <div className="tile">
             <div className="tile__header">
               <span className="eyebrow">Points history</span>
@@ -618,7 +553,14 @@ export function RewardsPage() {
                 <tbody>
                   {rewards.redemptions.map((redemption) => (
                     <tr key={redemption.id}>
-                      <td>{redemption.benefit_name}</td>
+                      <td>
+                        {redemption.benefit_name}
+                        {redemption.redemption_code && (
+                          <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
+                            Code: {redemption.redemption_code}
+                          </div>
+                        )}
+                      </td>
                       <td>{redemption.points_spent} pts</td>
                       <td>{new Date(redemption.redeemed_at).toLocaleDateString()}</td>
                     </tr>
@@ -636,7 +578,7 @@ export function RewardsPage() {
           onCancel={() => setConfirmBenefit(null)}
           onConfirm={confirmRedeemBenefit}
           confirmLabel={busy ? "Redeeming…" : `Redeem ${confirmBenefit.points_cost ?? 0} pts`}
-          busy={busy}
+          busy={busy || !redeemCardId}
         >
           <p style={{ fontWeight: 700, fontSize: "1.05rem", margin: "0.5rem 0" }}>{confirmBenefit.name}</p>
           <p className="eyebrow">Cost: {confirmBenefit.points_cost ?? 0} points</p>
@@ -644,6 +586,16 @@ export function RewardsPage() {
           <p className="eyebrow">
             Balance after redemption: {rewards.points_balance - (confirmBenefit.points_cost ?? 0)} points
           </p>
+          <label style={{ display: "block", marginTop: "0.75rem" }}>
+            Pay with card
+            <select value={redeemCardId} onChange={(e) => setRedeemCardId(e.target.value)} style={{ width: "100%" }}>
+              {cards.map((card) => (
+                <option key={card.id} value={card.id}>
+                  {formatCardLabel(card)}
+                </option>
+              ))}
+            </select>
+          </label>
         </ConfirmModal>
       )}
 
