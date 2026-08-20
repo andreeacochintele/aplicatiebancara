@@ -29,6 +29,14 @@ function moneyFromPercent(total: string, percent: string): string {
   return ((toNumber(total) * toNumber(percent)) / 100).toFixed(2);
 }
 
+function percentInput(value: string): string {
+  if (value.trim() === "") return "";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "";
+  const clamped = Math.min(100, Math.max(0, parsed));
+  return String(clamped);
+}
+
 export function TransactionsPage() {
   const { accessToken, user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -345,7 +353,9 @@ export function TransactionsPage() {
                   <input
                     min="0"
                     max="100"
-                    onChange={(event) => updateSplitParticipant(participant.key, { percent: event.target.value })}
+                    onChange={(event) =>
+                      updateSplitParticipant(participant.key, { percent: percentInput(event.target.value) })
+                    }
                     step="0.01"
                     type="number"
                     value={participant.percent}
