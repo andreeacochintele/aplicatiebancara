@@ -1,12 +1,12 @@
 """Pydantic schemas for the credit module."""
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from app.credit.models import CreditApplicationStatus, CreditApplicationType, LoanStatus
+from app.credit.models import CreditApplicationStatus, CreditApplicationType, LoanInstallmentStatus, LoanStatus
 
 
 class CreditProfilePublic(BaseModel):
@@ -35,11 +35,19 @@ class CreditScorePublic(BaseModel):
 class CreditApplicationCreate(BaseModel):
     type: CreditApplicationType
     requested_amount: Decimal
+    currency: str = "RON"
     requested_term_months: int | None = None
+
+
+class CreditApplicationDecision(BaseModel):
+    status: CreditApplicationStatus
+    offered_amount: Decimal | None = None
+    offered_interest_rate: Decimal | None = None
 
 
 class LoanCalculatorRequest(BaseModel):
     principal_amount: Decimal
+    currency: str = "RON"
     annual_interest_rate: Decimal
     term_months: int
 
@@ -54,6 +62,7 @@ class LoanInstallmentPreview(BaseModel):
 
 class LoanCalculatorResult(BaseModel):
     principal_amount: Decimal
+    currency: str
     annual_interest_rate: Decimal
     term_months: int
     monthly_payment: Decimal
@@ -69,13 +78,32 @@ class LoanPublic(BaseModel):
     user_id: uuid.UUID
     application_id: uuid.UUID
     principal_amount: Decimal
+    currency: str
     interest_rate: Decimal
     term_months: int
     monthly_payment: Decimal
     outstanding_principal: Decimal
+    start_date: date
+    maturity_date: date
+    next_payment_date: date
     status: LoanStatus
     created_at: datetime
     closed_at: datetime | None
+
+
+class LoanInstallmentPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    loan_id: uuid.UUID
+    installment_number: int
+    due_date: date
+    payment_amount: Decimal
+    principal_amount: Decimal
+    interest_amount: Decimal
+    fees_amount: Decimal
+    remaining_principal: Decimal
+    status: LoanInstallmentStatus
 
 
 class CreditApplicationPublic(BaseModel):
@@ -85,6 +113,7 @@ class CreditApplicationPublic(BaseModel):
     user_id: uuid.UUID
     type: CreditApplicationType
     requested_amount: Decimal
+    currency: str
     requested_term_months: int | None
     offered_interest_rate: Decimal | None
     offered_amount: Decimal | None

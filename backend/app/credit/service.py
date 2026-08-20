@@ -1,10 +1,12 @@
 """Credit profile and score business rules."""
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ValidationError
+from app.database import utcnow
 from app.credit.loan_calculator import calculate_loan_schedule
 from app.credit.models import (
     CreditApplication,
@@ -13,10 +15,12 @@ from app.credit.models import (
     CreditProfile,
     CreditScoreHistory,
     Loan,
+    LoanInstallment,
 )
 from app.credit.repository import CreditRepository
 from app.credit.schemas import (
     CreditApplicationCreate,
+    CreditApplicationDecision,
     CreditScorePublic,
     CreditScoreRecalculateRequest,
     LoanCalculatorRequest,
@@ -74,6 +78,7 @@ class CreditService:
     def create_application(self, user_id: uuid.UUID, data: CreditApplicationCreate) -> CreditApplication:
         if data.requested_amount <= 0:
             raise ValidationError("Requested amount must be positive")
+        currency = _normalize_currency(data.currency)
         if data.type == CreditApplicationType.PERSONAL_LOAN:
             if data.requested_term_months is None or data.requested_term_months <= 0:
                 raise ValidationError("Personal loan applications require a positive term")
@@ -85,6 +90,7 @@ class CreditService:
             user_id=user_id,
             type=data.type,
             requested_amount=data.requested_amount,
+            currency=currency,
             requested_term_months=data.requested_term_months,
             credit_score_at_application=score.score,
             status=CreditApplicationStatus.PENDING,
@@ -109,24 +115,48 @@ class CreditService:
         if self.repository.get_loan_by_application(application.id) is not None:
             raise ValidationError("Loan already exists for this application")
 
+        start_date = utcnow().date()
+        maturity_date = _add_months(start_date, application.requested_term_months)
+        next_payment_date = _add_months(start_date, 1)
         preview = calculate_loan_schedule(
             LoanCalculatorRequest(
                 principal_amount=application.offered_amount,
+                currency=application.currency,
                 annual_interest_rate=application.offered_interest_rate,
                 term_months=application.requested_term_months,
             )
         )
-        return self.repository.add_loan(
+        loan = self.repository.add_loan(
             Loan(
                 user_id=user_id,
                 application_id=application.id,
                 principal_amount=preview.principal_amount,
+                currency=preview.currency,
                 interest_rate=preview.annual_interest_rate,
                 term_months=preview.term_months,
                 monthly_payment=preview.monthly_payment,
                 outstanding_principal=preview.principal_amount,
+                start_date=start_date,
+                maturity_date=maturity_date,
+                next_payment_date=next_payment_date,
             )
         )
+        self.repository.add_installments(
+            [
+                LoanInstallment(
+                    loan_id=loan.id,
+                    installment_number=item.installment_number,
+                    due_date=_add_months(start_date, item.installment_number),
+                    payment_amount=item.payment_amount,
+                    principal_amount=item.principal_amount,
+                    interest_amount=item.interest_amount,
+                    fees_amount=Decimal("0.00"),
+                    remaining_principal=item.remaining_principal,
+                )
+                for item in preview.schedule
+            ]
+        )
+        return loan
 
     def list_loans(self, user_id: uuid.UUID) -> list[Loan]:
         return self.repository.list_loans_for_user(user_id)
@@ -137,13 +167,45 @@ class CreditService:
             raise NotFoundError("Loan not found")
         return loan
 
+    def list_installments_for_loan(self, user_id: uuid.UUID, loan_id: uuid.UUID) -> list[LoanInstallment]:
+        loan = self.get_loan_for_user(user_id, loan_id)
+        return self.repository.list_installments_for_loan(loan.id)
+
     def list_applications(self, user_id: uuid.UUID) -> list[CreditApplication]:
         return self.repository.list_applications_for_user(user_id)
+
+    def list_all_applications(self) -> list[CreditApplication]:
+        return self.repository.list_applications()
 
     def get_application_for_user(self, user_id: uuid.UUID, application_id: uuid.UUID) -> CreditApplication:
         application = self.repository.get_application_by_id(application_id)
         if application is None or application.user_id != user_id:
             raise NotFoundError("Credit application not found")
+        return application
+
+    def decide_application(self, application_id: uuid.UUID, data: CreditApplicationDecision) -> CreditApplication:
+        application = self.repository.get_application_by_id(application_id)
+        if application is None:
+            raise NotFoundError("Credit application not found")
+        if application.status not in {CreditApplicationStatus.PENDING, CreditApplicationStatus.DRAFT}:
+            raise ValidationError("Only draft or pending applications can be decided")
+        if data.status not in {CreditApplicationStatus.APPROVED, CreditApplicationStatus.REJECTED}:
+            raise ValidationError("Credit applications can only be approved or rejected")
+
+        if data.status == CreditApplicationStatus.APPROVED:
+            if data.offered_amount is None or data.offered_amount <= 0:
+                raise ValidationError("Approved applications require a positive offered amount")
+            if data.offered_interest_rate is None or data.offered_interest_rate < 0:
+                raise ValidationError("Approved applications require a non-negative offered interest rate")
+            application.offered_amount = data.offered_amount
+            application.offered_interest_rate = data.offered_interest_rate
+        else:
+            application.offered_amount = None
+            application.offered_interest_rate = None
+
+        application.status = data.status
+        application.resolved_at = utcnow()
+        self.db.flush()
         return application
 
     def _wallet_balance(self, user_id: uuid.UUID) -> Decimal:
@@ -163,3 +225,27 @@ class CreditService:
             },
         )
         return self.repository.add_history(history)
+
+
+def _add_months(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, _days_in_month(year, month))
+    return date(year, month, day)
+
+
+def _days_in_month(year: int, month: int) -> int:
+    if month == 2:
+        is_leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+        return 29 if is_leap else 28
+    if month in {4, 6, 9, 11}:
+        return 30
+    return 31
+
+
+def _normalize_currency(value: str) -> str:
+    currency = value.strip().upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise ValidationError("Currency must be a 3-letter ISO code")
+    return currency

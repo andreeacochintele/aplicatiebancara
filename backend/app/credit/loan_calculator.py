@@ -14,6 +14,9 @@ def calculate_loan_schedule(data: LoanCalculatorRequest) -> LoanCalculatorResult
         raise ValidationError("Annual interest rate cannot be negative")
     if data.term_months <= 0:
         raise ValidationError("Term months must be positive")
+    currency = data.currency.strip().upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise ValidationError("Currency must be a 3-letter ISO code")
 
     principal = _money(data.principal_amount)
     monthly_rate = data.annual_interest_rate / Decimal("100") / Decimal("12")
@@ -52,6 +55,7 @@ def calculate_loan_schedule(data: LoanCalculatorRequest) -> LoanCalculatorResult
 
     return LoanCalculatorResult(
         principal_amount=principal,
+        currency=currency,
         annual_interest_rate=data.annual_interest_rate,
         term_months=data.term_months,
         monthly_payment=monthly_payment,

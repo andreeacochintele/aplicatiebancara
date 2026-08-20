@@ -196,12 +196,44 @@ export interface LoanInstallmentPreview {
 
 export interface LoanCalculatorResult {
   principal_amount: string;
+  currency: string;
   annual_interest_rate: string;
   term_months: number;
   monthly_payment: string;
   total_payment: string;
   total_interest: string;
   schedule: LoanInstallmentPreview[];
+}
+
+export interface Loan {
+  id: string;
+  user_id: string;
+  application_id: string;
+  principal_amount: string;
+  currency: string;
+  interest_rate: string;
+  term_months: number;
+  monthly_payment: string;
+  outstanding_principal: string;
+  start_date: string;
+  maturity_date: string;
+  next_payment_date: string;
+  status: "ACTIVE" | "PAID" | "CLOSED" | "DEFAULTED";
+  created_at: string;
+  closed_at: string | null;
+}
+
+export interface LoanInstallment {
+  id: string;
+  loan_id: string;
+  installment_number: number;
+  due_date: string;
+  payment_amount: string;
+  principal_amount: string;
+  interest_amount: string;
+  fees_amount: string;
+  remaining_principal: string;
+  status: "PENDING" | "PAID" | "PARTIAL" | "OVERDUE";
 }
 
 export type CreditApplicationType = "PERSONAL_LOAN" | "CREDIT_CARD";
@@ -212,6 +244,7 @@ export interface CreditApplication {
   user_id: string;
   type: CreditApplicationType;
   requested_amount: string;
+  currency: string;
   requested_term_months: number | null;
   offered_interest_rate: string | null;
   offered_amount: string | null;

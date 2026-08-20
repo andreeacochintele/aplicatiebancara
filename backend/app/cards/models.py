@@ -72,7 +72,11 @@ class Card(Base):
 class CardPaymentPreferences(Base):
     __tablename__ = "card_payment_preferences"
 
-    card_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cards.id"), primary_key=True)
+    card_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cards.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     preferred_wallet_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("wallets.id"), nullable=True
     )
