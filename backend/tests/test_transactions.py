@@ -251,6 +251,7 @@ def test_card_payment_debits_wallet_and_tags_merchant(db_session, payer_with_wal
     assert transaction.status == TransactionStatus.COMPLETED
     assert transaction.type == TransactionType.CARD_PAYMENT
     assert transaction.merchant_id == merchant.id
+    assert transaction.card_id == card.id
     assert wallet.available_balance == Decimal("380.00")
     assert len(transaction.ledger_entries) == 1
     assert transaction.ledger_entries[0].entry_type.value == "DEBIT"

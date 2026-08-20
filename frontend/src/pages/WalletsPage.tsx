@@ -14,6 +14,7 @@ export function WalletsPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [settingMainId, setSettingMainId] = useState<string | null>(null);
 
   function loadWallets() {
     if (!accessToken) return;
@@ -21,6 +22,20 @@ export function WalletsPage() {
   }
 
   useEffect(loadWallets, [accessToken]);
+
+  async function setMainWallet(walletId: string) {
+    if (!accessToken || settingMainId) return;
+    setSettingMainId(walletId);
+    setError(null);
+    try {
+      await apiRequest(`/wallets/${walletId}/set-main`, { method: "PATCH", token: accessToken });
+      loadWallets();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not set main wallet");
+    } finally {
+      setSettingMainId(null);
+    }
+  }
 
   useEffect(() => {
     if (wallets.length < 2) return;
@@ -89,6 +104,7 @@ export function WalletsPage() {
               <th>Available</th>
               <th>Reserved</th>
               <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -102,15 +118,23 @@ export function WalletsPage() {
                 <td>
                   <span className="tag tag--neutral">{wallet.status}</span>
                 </td>
+                <td>
+                  {!wallet.is_main && wallet.status === "ACTIVE" && (
+                    <button onClick={() => setMainWallet(wallet.id)} disabled={settingMainId === wallet.id}>
+                      Set as main
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
             {wallets.length === 0 && (
               <tr>
-                <td colSpan={4}>No wallets yet.</td>
+                <td colSpan={5}>No wallets yet.</td>
               </tr>
             )}
           </tbody>
         </table>
+        {error && <p role="alert">{error}</p>}
       </div>
 
       {wallets.length >= 2 && (

@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db
-from app.rewards.schemas import RewardAccountPublic, RewardBenefitPublic, RewardRedeemRequest
+from app.rewards.schemas import (
+    BenefitRedeemRequest,
+    RewardAccountPublic,
+    RewardBenefitPublic,
+    RewardRedeemRequest,
+)
 from app.rewards.service import RewardsService
 from app.users.models import User
 
@@ -44,9 +49,21 @@ def list_benefits(
 @router.post("/benefits/{benefit_id}/redeem", response_model=RewardAccountPublic)
 def redeem_benefit(
     benefit_id: uuid.UUID,
+    payload: BenefitRedeemRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> RewardAccountPublic:
-    result = RewardsService(db).redeem_benefit(current_user.id, benefit_id)
+    result = RewardsService(db).redeem_benefit(current_user.id, benefit_id, payload.card_id)
+    db.commit()
+    return result
+
+
+@router.post("/redemptions/{redemption_id}/use", response_model=RewardAccountPublic)
+def mark_redemption_used(
+    redemption_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RewardAccountPublic:
+    result = RewardsService(db).mark_redemption_used(current_user.id, redemption_id)
     db.commit()
     return result

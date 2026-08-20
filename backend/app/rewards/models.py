@@ -5,10 +5,13 @@ simplification `savings_goals.current_amount` already uses (see
 app/savings/models.py): nothing here moves real wallet balance, which stays
 owned by the transaction engine in app/transactions/service.py.
 
-RewardTier/RewardBenefit add a Revolut-style layer on top: tiers auto-unlock
-from lifetime points earned (never decreases on redeem, unlike
-points_balance), and benefits are a points-redeemable perks catalog gated by
-tier and/or points cost.
+RewardBenefit is a points-redeemable perks catalog. There is deliberately no
+separate "membership plan"/reward-tier layer above the cards a user owns —
+that concept (formerly RewardTier: STANDARD/PREMIUM/METAL, auto-unlocked
+from lifetime points) was removed because it duplicated app/cards'
+CardTier (REGULAR/GOLD/PLATINUM) without a clear relationship between the
+two. A benefit's gate, if any, is `min_card_tier` — owning at least one card
+of that tier, checked against app/cards' CardTier directly.
 """
 import enum
 import uuid
@@ -18,6 +21,7 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.cards.models import CardTier
 from app.database import Base, utcnow
 
 
@@ -40,6 +44,15 @@ class BenefitStatus(str, enum.Enum):
     INACTIVE = "INACTIVE"
 
 
+class RedemptionStatus(str, enum.Enum):
+    """Derived (not stored) from BenefitRedemption.expires_at/used_at — see
+    RewardsService._redemption_to_public."""
+
+    VALID = "VALID"
+    USED = "USED"
+    EXPIRED = "EXPIRED"
+
+
 class RewardAccount(Base):
     __tablename__ = "reward_accounts"
 
@@ -49,6 +62,11 @@ class RewardAccount(Base):
     )
     points_balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     lifetime_points_earned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Generated lazily (see RewardsService.get_or_create_account) and reused
+    # forever after — real and unique, but the invite flow it's shown in is
+    # still a demo: nothing verifies a friend actually signed up with it or
+    # grants the advertised 500 pts yet.
+    referral_code: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -67,19 +85,11 @@ class RewardTransaction(Base):
     )
     points: Mapped[int] = mapped_column(Integer, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class RewardTier(Base):
-    """Reference/config data — rows are seeded by migration 0005, not user-created."""
-
-    __tablename__ = "reward_tiers"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    min_lifetime_points: Mapped[int] = mapped_column(Integer, nullable=False)
-    perks: Mapped[str] = mapped_column(String(1000), nullable=False)  # "|"-delimited list
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Set only for EARN transactions from a real merchant purchase
+    # (MerchantService._earn_from_transaction) — a demo "proof of purchase"
+    # code shown to the user, same idea as BenefitRedemption.redemption_code
+    # but for the earning side instead of the spending side.
+    proof_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -91,9 +101,7 @@ class RewardBenefit(Base):
     category: Mapped[BenefitCategory] = mapped_column(Enum(BenefitCategory, name="benefit_category"), nullable=False)
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     points_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    min_tier_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("reward_tiers.id"), nullable=True
-    )
+    min_card_tier: Mapped[CardTier | None] = mapped_column(Enum(CardTier, name="card_tier"), nullable=True)
     partner_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     status: Mapped[BenefitStatus] = mapped_column(
         Enum(BenefitStatus, name="benefit_status"), default=BenefitStatus.ACTIVE, nullable=False
@@ -112,7 +120,17 @@ class BenefitRedemption(Base):
     reward_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("reward_transactions.id"), nullable=True
     )
+    # Which card the user chose to "pay" with at redemption — receipt/audit
+    # only, same bare-UUID no-FK pattern as transactions.card_id. Doesn't
+    # change how future points are earned.
+    card_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    redemption_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     points_spent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     redeemed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Set 30 days out at redemption time; used_at is set later (from the "My
+    # vouchers" panel) once the user has actually used the voucher. Status
+    # (VALID/USED/EXPIRED) is derived from these two, not stored directly.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     benefit = relationship("RewardBenefit")

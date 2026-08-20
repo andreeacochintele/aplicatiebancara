@@ -220,6 +220,12 @@ label {
   color: var(--color-text-muted);
 }
 
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
 input,
 select,
 button {
@@ -371,6 +377,196 @@ th {
   flex-direction: column;
   gap: 0.7rem;
   margin-bottom: 1rem;
+}
+
+.transactions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.transactions-header h2 {
+  margin: 0;
+}
+
+.transactions-table-card {
+  overflow-x: auto;
+}
+
+.transaction-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.folder-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(8, 10, 18, 0.45);
+}
+
+.folder-modal {
+  width: min(760px, 100%);
+  max-height: min(720px, calc(100vh - 2rem));
+  overflow: auto;
+}
+
+.folder-modal .tile__header {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.folder-modal h2 {
+  margin: 0.25rem 0 0;
+  font-size: 1rem;
+}
+
+.folder-modal__create {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: end;
+  margin-bottom: 0.9rem;
+}
+
+.folder-modal__list,
+.folder-readonly-list,
+.folder-readonly-card__items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.folder-choice {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--color-divider);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  text-align: left;
+}
+
+.folder-choice span:first-child,
+.folder-readonly-card__meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.folder-choice small,
+.folder-readonly-card__header span,
+.folder-transaction-row span {
+  color: var(--color-text-muted);
+}
+
+.folder-choice--active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.folder-choice__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.folder-view-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.folder-readonly-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.folder-readonly-card--active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.folder-readonly-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.folder-readonly-card__title {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.folder-readonly-card__actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.folder-readonly-card__actions button {
+  width: auto;
+}
+
+.folder-split-participant {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 1fr) 110px auto auto;
+  gap: 0.65rem;
+  align-items: end;
+  padding: 0.75rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.folder-split-participant__amount {
+  display: flex;
+  min-width: 110px;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.folder-split-participant__amount span {
+  color: var(--color-text-muted);
+}
+
+.folder-transaction-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--color-divider);
+}
+
+.folder-transaction-row > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .transaction-split-request {
@@ -2142,6 +2338,21 @@ th {
 
   .bill-split-row__participants,
   .bill-split-row__actions {
+    justify-content: flex-start;
+  }
+
+  .folder-modal__create,
+  .folder-choice__actions,
+  .folder-readonly-card__header,
+  .folder-split-participant,
+  .folder-transaction-row {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .folder-readonly-card__actions {
+    flex-direction: row;
     justify-content: flex-start;
   }
 

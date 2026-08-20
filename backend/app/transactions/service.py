@@ -184,6 +184,7 @@ class TransactionService:
                 initiator_user_id=initiator_user_id,
                 source_wallet_id=wallet.id,
                 merchant_id=merchant.id,
+                card_id=card.id,
                 type=TransactionType.CARD_PAYMENT,
                 status=TransactionStatus.PROCESSING,
                 amount=data.amount,

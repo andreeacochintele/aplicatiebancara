@@ -911,6 +911,64 @@
   color: var(--aurora-text-soft);
 }
 
+.aurora-shell .folder-modal-backdrop {
+  background: rgba(17, 24, 39, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.aurora-shell .folder-modal {
+  box-shadow: var(--aurora-shadow);
+}
+
+.aurora-shell .folder-modal__create {
+  padding: 12px;
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-md);
+  background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .folder-choice {
+  border-color: var(--aurora-border);
+  background: var(--aurora-surface-alt);
+  color: var(--aurora-text);
+}
+
+.aurora-shell .folder-choice:hover,
+.aurora-shell .folder-choice--active {
+  border-color: var(--aurora-accent);
+  background: var(--aurora-accent-soft);
+  filter: none;
+}
+
+.aurora-shell .folder-choice small,
+.aurora-shell .folder-readonly-card__header span,
+.aurora-shell .folder-transaction-row span {
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .folder-readonly-card {
+  border-color: var(--aurora-border);
+  background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .folder-readonly-card--active {
+  border-color: var(--aurora-accent);
+  background: var(--aurora-accent-soft);
+}
+
+.aurora-shell .folder-split-participant {
+  border-color: var(--aurora-border);
+  background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .folder-split-participant__amount span {
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .folder-transaction-row {
+  border-top-color: var(--aurora-border);
+}
+
 .aurora-shell .button--favorite {
   background: var(--aurora-accent-soft);
   color: var(--aurora-accent-dark);
