@@ -5,7 +5,13 @@ import pytest
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.enums import UserRole
 from app.credit.loan_calculator import calculate_loan_schedule
-from app.credit.models import CreditApplicationStatus, CreditApplicationType, LoanInstallmentStatus, LoanStatus
+from app.credit.models import (
+    CreditApplicationStatus,
+    CreditApplicationType,
+    LoanInstallmentStatus,
+    LoanProductType,
+    LoanStatus,
+)
 from app.credit.schemas import (
     CreditApplicationCreate,
     CreditApplicationDecision,
@@ -54,6 +60,7 @@ def test_get_or_create_profile_persists_initial_score_history(db_session):
 
     assert profile.user_id == user.id
     assert profile.current_score == 620
+    assert profile.currency == "RON"
     assert score.score == 620
     assert score.band == "FAIR"
     assert score.reason_data["wallet_balance"] == "5000.00"
@@ -67,7 +74,7 @@ def test_recalculate_score_updates_mock_profile_inputs_and_history(db_session):
 
     score = service.recalculate_score(
         user.id,
-        CreditScoreRecalculateRequest(income=Decimal("12000.00"), existing_debt=Decimal("2000.00")),
+        CreditScoreRecalculateRequest(income=Decimal("12000.00"), existing_debt=Decimal("2000.00"), currency="eur"),
     )
     profile = service.get_or_create_profile(user.id)
 
@@ -75,7 +82,19 @@ def test_recalculate_score_updates_mock_profile_inputs_and_history(db_session):
     assert score.band == "GOOD"
     assert profile.income == Decimal("12000.00")
     assert profile.existing_debt == Decimal("2000.00")
+    assert profile.currency == "EUR"
+    assert score.reason_data["profile_currency"] == "EUR"
     assert len(profile.score_history) == 1
+
+
+def test_recalculate_score_rejects_invalid_currency(db_session):
+    user = _create_user(db_session)
+
+    with pytest.raises(ValidationError):
+        CreditService(db_session).recalculate_score(
+            user.id,
+            CreditScoreRecalculateRequest(income=Decimal("12000.00"), existing_debt=Decimal("2000.00"), currency="EURO"),
+        )
 
 
 def test_credit_score_endpoint_requires_auth(client):
@@ -102,6 +121,24 @@ def test_credit_score_endpoint_returns_score(client):
     body = response.json()
     assert body["score"] == 600
     assert body["band"] == "FAIR"
+
+
+def test_credit_profile_endpoint_returns_currency(client):
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "credit-profile-endpoint@example.com",
+            "password": "Sup3rSecret!",
+            "first_name": "Credit",
+            "last_name": "Profile",
+        },
+    )
+    token = register.json()["tokens"]["access_token"]
+
+    response = client.get("/api/v1/credit/profile", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert response.json()["currency"] == "RON"
 
 
 def test_loan_calculator_builds_deterministic_amortization_schedule():
@@ -229,9 +266,33 @@ def test_create_personal_loan_application_captures_current_score(db_session):
     )
 
     assert application.user_id == user.id
-    assert application.status == CreditApplicationStatus.PENDING
+    assert application.status == CreditApplicationStatus.APPROVED
+    assert application.offered_amount == Decimal("50000.00")
+    assert application.offered_interest_rate == Decimal("9.90")
+    assert application.resolved_at is not None
+    assert application.loan_product_type == LoanProductType.PERSONAL_LOAN
     assert application.credit_score_at_application == 644
     assert application.currency == "RON"
+
+
+def test_create_personal_loan_application_accepts_loan_product_type(db_session):
+    user = _create_user(db_session)
+
+    application = CreditService(db_session).create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            loan_product_type=LoanProductType.MORTGAGE,
+            requested_amount=Decimal("500000.00"),
+            requested_term_months=240,
+        ),
+    )
+
+    assert application.type == CreditApplicationType.PERSONAL_LOAN
+    assert application.loan_product_type == LoanProductType.MORTGAGE
+    assert application.status == CreditApplicationStatus.APPROVED
+    assert application.offered_amount == Decimal("500000.00")
+    assert application.offered_interest_rate == Decimal("6.80")
 
 
 def test_create_application_accepts_currency(db_session):
@@ -274,6 +335,7 @@ def test_create_credit_card_application_allows_missing_term(db_session):
     )
 
     assert application.type == CreditApplicationType.CREDIT_CARD
+    assert application.loan_product_type is None
     assert application.requested_term_months is None
 
 
@@ -347,9 +409,42 @@ def test_create_credit_application_endpoint(client):
     assert response.status_code == 201
     body = response.json()
     assert body["type"] == "CREDIT_CARD"
+    assert body["loan_product_type"] is None
     assert body["status"] == "PENDING"
     assert body["currency"] == "RON"
     assert body["credit_score_at_application"] == 600
+
+
+def test_create_loan_application_endpoint_accepts_product_type(client):
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "loan-product-application-endpoint@example.com",
+            "password": "Sup3rSecret!",
+            "first_name": "Loan",
+            "last_name": "Product",
+        },
+    )
+    token = register.json()["tokens"]["access_token"]
+
+    response = client.post(
+        "/api/v1/credit/applications",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "type": "PERSONAL_LOAN",
+            "loan_product_type": "AUTO_LOAN",
+            "requested_amount": "45000.00",
+            "requested_term_months": 60,
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["type"] == "PERSONAL_LOAN"
+    assert body["loan_product_type"] == "AUTO_LOAN"
+    assert body["status"] == "APPROVED"
+    assert body["offered_amount"] == "45000.00"
+    assert body["offered_interest_rate"] == "8.40"
 
 
 def test_create_loan_from_approved_application(db_session):
@@ -395,11 +490,7 @@ def test_admin_decides_credit_application(db_session):
     service = CreditService(db_session)
     application = service.create_application(
         user.id,
-        CreditApplicationCreate(
-            type=CreditApplicationType.PERSONAL_LOAN,
-            requested_amount=Decimal("25000.00"),
-            requested_term_months=36,
-        ),
+        CreditApplicationCreate(type=CreditApplicationType.CREDIT_CARD, requested_amount=Decimal("25000.00")),
     )
 
     decided = service.decide_application(
@@ -441,14 +532,6 @@ def test_admin_decision_rejects_invalid_status_and_offer(db_session):
 def test_create_loan_requires_approved_personal_loan_application(db_session):
     user = _create_user(db_session)
     service = CreditService(db_session)
-    pending = service.create_application(
-        user.id,
-        CreditApplicationCreate(
-            type=CreditApplicationType.PERSONAL_LOAN,
-            requested_amount=Decimal("25000.00"),
-            requested_term_months=36,
-        ),
-    )
     card_application = service.create_application(
         user.id,
         CreditApplicationCreate(type=CreditApplicationType.CREDIT_CARD, requested_amount=Decimal("5000.00")),
@@ -456,9 +539,6 @@ def test_create_loan_requires_approved_personal_loan_application(db_session):
     card_application.status = CreditApplicationStatus.APPROVED
     card_application.offered_amount = Decimal("5000.00")
     card_application.offered_interest_rate = Decimal("18.00")
-
-    with pytest.raises(ValidationError):
-        service.create_loan_from_application(user.id, pending.id)
 
     with pytest.raises(ValidationError):
         service.create_loan_from_application(user.id, card_application.id)
@@ -579,14 +659,6 @@ def test_create_loan_endpoint_creates_installments(client, db_session):
             requested_term_months=12,
         ),
     )
-    service.decide_application(
-        application.id,
-        CreditApplicationDecision(
-            status=CreditApplicationStatus.APPROVED,
-            offered_amount=Decimal("10000.00"),
-            offered_interest_rate=Decimal("12.00"),
-        ),
-    )
     login = client.post(
         "/api/v1/auth/login",
         json={"email": "credit-owner@example.com", "password": "Sup3rSecret!"},
@@ -607,7 +679,7 @@ def test_create_loan_endpoint_creates_installments(client, db_session):
     assert installments_response.status_code == 200
     installments = installments_response.json()
     assert len(installments) == 12
-    assert installments[0]["payment_amount"] == "888.49"
+    assert installments[0]["payment_amount"] == "878.69"
     assert installments[-1]["remaining_principal"] == "0.00"
 
 
@@ -642,11 +714,7 @@ def test_admin_credit_application_endpoint_decides_application(client, db_sessio
     service = CreditService(db_session)
     application = service.create_application(
         user.id,
-        CreditApplicationCreate(
-            type=CreditApplicationType.PERSONAL_LOAN,
-            requested_amount=Decimal("10000.00"),
-            requested_term_months=12,
-        ),
+        CreditApplicationCreate(type=CreditApplicationType.CREDIT_CARD, requested_amount=Decimal("10000.00")),
     )
     login = client.post(
         "/api/v1/auth/login",
@@ -667,3 +735,35 @@ def test_admin_credit_application_endpoint_decides_application(client, db_sessio
     assert body["currency"] == "RON"
     assert body["offered_interest_rate"] == "10.00"
     assert body["resolved_at"] is not None
+
+
+def test_loan_products_endpoint_returns_disclosures(client):
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "credit-products-endpoint@example.com",
+            "password": "Sup3rSecret!",
+            "first_name": "Credit",
+            "last_name": "Products",
+        },
+    )
+    token = register.json()["tokens"]["access_token"]
+
+    response = client.get("/api/v1/credit/loan-products", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    products = response.json()
+    product_types = {product["product_type"] for product in products}
+    assert product_types == {
+        "PERSONAL_LOAN",
+        "MORTGAGE",
+        "AUTO_LOAN",
+        "STUDENT_LOAN",
+        "HOME_IMPROVEMENT",
+        "DEBT_CONSOLIDATION",
+    }
+    mortgage = next(product for product in products if product["product_type"] == "MORTGAGE")
+    assert mortgage["collateral_required"] is True
+    assert mortgage["representative_apr"] == "6.80"
+    assert mortgage["obligations"]
+    assert mortgage["liabilities"]

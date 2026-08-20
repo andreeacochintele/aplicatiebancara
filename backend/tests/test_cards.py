@@ -59,25 +59,65 @@ def test_one_time_card_starts_with_one_remaining_use(db_session, user_with_walle
     assert card.one_time_remaining == 1
 
 
+def test_one_time_card_is_limited_to_one_per_user(db_session, user_with_wallet):
+    user, wallet = user_with_wallet
+    service = CardService(db_session)
+    service.create_card(user.id, CardCreate(type=CardType.ONE_TIME, default_wallet_id=wallet.id))
+
+    with pytest.raises(ConflictError):
+        service.create_card(user.id, CardCreate(type=CardType.ONE_TIME, default_wallet_id=wallet.id))
+
+
 def test_create_gold_credit_card(db_session, user_with_wallet):
+    user, _wallet = user_with_wallet
+    card = CardService(db_session).create_card(
+        user.id,
+        CardCreate(type=CardType.CREDIT, tier=CardTier.GOLD),
+    )
+
+    assert card.type == CardType.CREDIT
+    assert card.tier == CardTier.GOLD
+    assert card.default_wallet_id is None
+
+
+def test_credit_card_does_not_keep_wallet_link(db_session, user_with_wallet):
     user, wallet = user_with_wallet
     card = CardService(db_session).create_card(
         user.id,
         CardCreate(type=CardType.CREDIT, tier=CardTier.GOLD, default_wallet_id=wallet.id),
     )
 
-    assert card.type == CardType.CREDIT
-    assert card.tier == CardTier.GOLD
+    assert card.default_wallet_id is None
 
 
-def test_create_card_rejects_more_than_five_cards(db_session, user_with_wallet):
+def test_debit_card_rejects_duplicate_account(db_session, user_with_wallet):
     user, wallet = user_with_wallet
     service = CardService(db_session)
-    for _ in range(5):
-        service.create_card(user.id, CardCreate(default_wallet_id=wallet.id))
+    service.create_card(user.id, CardCreate(default_wallet_id=wallet.id))
 
     with pytest.raises(ConflictError):
         service.create_card(user.id, CardCreate(default_wallet_id=wallet.id))
+
+
+def test_debit_and_one_time_cards_require_account(db_session, user_with_wallet):
+    user, _wallet = user_with_wallet
+    service = CardService(db_session)
+
+    with pytest.raises(ValidationError):
+        service.create_card(user.id, CardCreate())
+
+    with pytest.raises(ValidationError):
+        service.create_card(user.id, CardCreate(type=CardType.ONE_TIME))
+
+
+def test_create_card_rejects_more_than_five_cards(db_session, user_with_wallet):
+    user, _wallet = user_with_wallet
+    service = CardService(db_session)
+    for _ in range(5):
+        service.create_card(user.id, CardCreate(type=CardType.CREDIT))
+
+    with pytest.raises(ConflictError):
+        service.create_card(user.id, CardCreate(type=CardType.CREDIT))
 
 
 def test_one_time_card_rejects_tier(db_session, user_with_wallet):
@@ -126,7 +166,7 @@ def test_list_cards_is_scoped_to_user(db_session, user_with_wallet):
             last_name="Other",
         )
     )
-    service.create_card(other.id, CardCreate())
+    service.create_card(other.id, CardCreate(type=CardType.CREDIT))
 
     assert service.list_cards(user.id) == [own_card]
 
@@ -153,7 +193,7 @@ def test_user_cannot_modify_another_users_card(db_session, user_with_wallet):
             last_name="Other",
         )
     )
-    card = CardService(db_session).create_card(other.id, CardCreate())
+    card = CardService(db_session).create_card(other.id, CardCreate(type=CardType.CREDIT))
 
     with pytest.raises(NotFoundError):
         CardService(db_session).freeze_card(user.id, card.id)
@@ -180,7 +220,7 @@ def test_user_cannot_delete_another_users_card(db_session, user_with_wallet):
             last_name="Other",
         )
     )
-    card = CardService(db_session).create_card(other.id, CardCreate())
+    card = CardService(db_session).create_card(other.id, CardCreate(type=CardType.CREDIT))
 
     with pytest.raises(NotFoundError):
         CardService(db_session).delete_card(user.id, card.id)
@@ -208,7 +248,7 @@ def test_create_card_creates_default_payment_preferences(db_session, user_with_w
 def test_update_payment_preferences(db_session, user_with_wallet):
     user, wallet = user_with_wallet
     service = CardService(db_session)
-    card = service.create_card(user.id, CardCreate())
+    card = service.create_card(user.id, CardCreate(type=CardType.CREDIT))
 
     preferences = service.update_payment_preferences(
         user.id,
@@ -232,7 +272,7 @@ def test_update_payment_preferences_rejects_other_users_wallet(db_session, user_
         )
     )
     other_wallet = WalletService(db_session).create_wallet(other.id, WalletCreate(currency="EUR"))
-    card = CardService(db_session).create_card(user.id, CardCreate())
+    card = CardService(db_session).create_card(user.id, CardCreate(type=CardType.CREDIT))
 
     with pytest.raises(NotFoundError):
         CardService(db_session).update_payment_preferences(
@@ -244,7 +284,7 @@ def test_update_payment_preferences_rejects_other_users_wallet(db_session, user_
 
 def test_update_payment_preferences_rejects_frozen_wallet(db_session, user_with_wallet):
     user, wallet = user_with_wallet
-    card = CardService(db_session).create_card(user.id, CardCreate())
+    card = CardService(db_session).create_card(user.id, CardCreate(type=CardType.CREDIT))
     wallet.status = WalletStatus.FROZEN
 
     with pytest.raises(ValidationError):
@@ -265,7 +305,7 @@ def test_user_cannot_read_another_users_payment_preferences(db_session, user_wit
             last_name="Security",
         )
     )
-    card = CardService(db_session).create_card(other.id, CardCreate())
+    card = CardService(db_session).create_card(other.id, CardCreate(type=CardType.CREDIT))
 
     with pytest.raises(NotFoundError):
         CardService(db_session).get_payment_preferences(user.id, card.id)

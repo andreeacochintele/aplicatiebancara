@@ -176,6 +176,7 @@ export interface CreditProfile {
   current_score: number;
   income: string;
   existing_debt: string;
+  currency: string;
   updated_at: string;
 }
 
@@ -237,12 +238,20 @@ export interface LoanInstallment {
 }
 
 export type CreditApplicationType = "PERSONAL_LOAN" | "CREDIT_CARD";
+export type LoanProductType =
+  | "PERSONAL_LOAN"
+  | "MORTGAGE"
+  | "AUTO_LOAN"
+  | "STUDENT_LOAN"
+  | "HOME_IMPROVEMENT"
+  | "DEBT_CONSOLIDATION";
 export type CreditApplicationStatus = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
 
 export interface CreditApplication {
   id: string;
   user_id: string;
   type: CreditApplicationType;
+  loan_product_type: LoanProductType | null;
   requested_amount: string;
   currency: string;
   requested_term_months: number | null;
@@ -252,6 +261,21 @@ export interface CreditApplication {
   status: CreditApplicationStatus;
   created_at: string;
   resolved_at: string | null;
+}
+
+export interface LoanProduct {
+  product_type: LoanProductType;
+  name: string;
+  description: string;
+  representative_apr: string;
+  borrowing_rate_note: string;
+  typical_term_months: string;
+  fees: string[];
+  obligations: string[];
+  liabilities: string[];
+  required_documents: string[];
+  collateral_required: boolean;
+  insurance_required: boolean;
 }
 
 export interface SpendingByTypeItem {

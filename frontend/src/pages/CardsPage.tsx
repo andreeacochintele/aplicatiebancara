@@ -1,21 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftRight, Eye, EyeOff, Lock, Trash2, Unlock } from "lucide-react";
+import { Eye, EyeOff, Lock, Trash2, Unlock } from "lucide-react";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { cardTierRewardBullets } from "../config/rewardPolicy";
 import { useAuth } from "../hooks/useAuth";
-import type { Card, CardPaymentPreferences, CardTier, CardType, Wallet } from "../types";
+import type { Card, CardTier, CardType, Wallet } from "../types";
 
 const CARD_TYPES: CardType[] = ["DEBIT", "CREDIT", "ONE_TIME"];
-const CARD_TIERS: CardTier[] = ["REGULAR", "GOLD", "PLATINUM"];
 const MAX_CARDS = 5;
-const CARD_TIER_DETAILS: Record<CardTier, string> = {
-  REGULAR: "Standard everyday card controls.",
-  GOLD: "Cashback boosts and stronger everyday card support.",
-  PLATINUM: "Premium travel, insurance and concierge-style card benefits.",
-};
 // Single source of truth for the reward numbers lives in config/rewardPolicy.ts
-// (shared with RewardsPage.tsx) — this just maps it into the shape this page renders.
+// (shared with RewardsPage.tsx) - this just maps it into the shape this page renders.
 const CARD_TIER_REWARDS: Record<CardTier, string[]> = {
   REGULAR: cardTierRewardBullets("REGULAR"),
   GOLD: cardTierRewardBullets("GOLD"),
@@ -39,6 +33,11 @@ const CARD_TIER_PRODUCTS: Record<CardTier, { debit: string; credit: string }> = 
     debit: "Platinum debit",
     credit: "Platinum credit",
   },
+};
+const CREDIT_CARD_LIMITS: Record<CardTier, number> = {
+  REGULAR: 5000,
+  GOLD: 15000,
+  PLATINUM: 30000,
 };
 const CARD_TIER_PRODUCT_LIST = [
   {
@@ -87,28 +86,81 @@ function cardToneClass(card: Card): string {
   return `bank-card bank-card--${card.type.toLowerCase()} bank-card--${tier}`;
 }
 
+function formatCurrencyAmount(value: number, currency = "RON"): string {
+  return `${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+}
+
+function formatWalletBalance(wallet: Wallet): string {
+  return `${Number(wallet.available_balance).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} ${wallet.currency}`;
+}
+
+function creditAvailableAmount(card: Card): string {
+  return formatCurrencyAmount(CREDIT_CARD_LIMITS[card.tier ?? "REGULAR"]);
+}
+
+function walletDisplayName(wallet: Wallet): string {
+  return `${wallet.currency}${wallet.is_main ? " - Main" : ""}`;
+}
+
+function walletOptionLabel(wallet: Wallet, debitAlreadyExists: boolean): string {
+  const balance = Number(wallet.available_balance).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return debitAlreadyExists
+    ? `${walletDisplayName(wallet)} - debit exists`
+    : `${walletDisplayName(wallet)} - ${balance}`;
+}
+
+function selectedTierDetails(type: CardType | "", tier: CardTier): string {
+  if (type === "DEBIT") return CARD_TIER_PRODUCT_LIST.find((item) => item.name.toUpperCase() === tier)?.description ?? "";
+  if (type === "CREDIT") return "Credit card tier controls available credit, rewards and service level.";
+  return "";
+}
+
 export function CardsPage() {
   const { accessToken, logout, user } = useAuth();
   const [cards, setCards] = useState<Card[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [preferences, setPreferences] = useState<Record<string, CardPaymentPreferences>>({});
-  const [draftPreferences, setDraftPreferences] = useState<Record<string, CardPaymentPreferences>>({});
-  const [selectedType, setSelectedType] = useState<CardType>("DEBIT");
+  const [selectedType, setSelectedType] = useState<CardType | "">("");
   const [selectedTier, setSelectedTier] = useState<CardTier>("REGULAR");
   const [selectedWalletId, setSelectedWalletId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [actionCardId, setActionCardId] = useState<string | null>(null);
   const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
-  const [preferencesCardId, setPreferencesCardId] = useState<string | null>(null);
-  const [areTiersExpanded, setAreTiersExpanded] = useState(true);
   const [revealedCardIds, setRevealedCardIds] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
 
   const activeWallets = useMemo(() => wallets.filter((wallet) => wallet.status === "ACTIVE"), [wallets]);
   const cardholderName = user ? `${user.first_name} ${user.last_name}`.trim() : "Card holder";
   const selectedReusableCardType = selectedType === "DEBIT" || selectedType === "CREDIT";
+  const selectedAccountLinkedCard = selectedType === "DEBIT" || selectedType === "ONE_TIME";
+  const debitWalletIds = useMemo(
+    () =>
+      new Set(
+        cards
+          .filter((card) => card.type === "DEBIT" && card.default_wallet_id)
+          .map((card) => card.default_wallet_id as string),
+      ),
+    [cards],
+  );
+  const hasOneTimePaymentCard = useMemo(
+    () => cards.some((card) => card.type === "ONE_TIME" && (card.status === "ACTIVE" || card.status === "FROZEN")),
+    [cards],
+  );
+  const selectedAccountAlreadyHasDebit = selectedType === "DEBIT" && selectedWalletId !== "" && debitWalletIds.has(selectedWalletId);
+  const selectedOneTimeAlreadyExists = selectedType === "ONE_TIME" && hasOneTimePaymentCard;
   const cardLimitReached = cards.length >= MAX_CARDS;
+  const canCreateCard =
+    selectedType !== "" &&
+    !cardLimitReached &&
+    (!selectedAccountLinkedCard || selectedWalletId !== "") &&
+    !selectedAccountAlreadyHasDebit &&
+    !selectedOneTimeAlreadyExists;
 
   async function loadCardsData(token: string) {
     setIsLoading(true);
@@ -118,18 +170,8 @@ export function CardsPage() {
         apiRequest<Card[]>("/cards", { token }),
         apiRequest<Wallet[]>("/wallets", { token }),
       ]);
-      const preferencesResponse = await Promise.all(
-        cardsResponse.map((card) =>
-          apiRequest<CardPaymentPreferences>(`/cards/${card.id}/payment-preferences`, { token }),
-        ),
-      );
-      const preferencesByCard = Object.fromEntries(
-        preferencesResponse.map((item) => [item.card_id, item]),
-      );
       setCards(cardsResponse);
       setWallets(walletsResponse);
-      setPreferences(preferencesByCard);
-      setDraftPreferences(preferencesByCard);
       const mainWallet = walletsResponse.find((wallet) => wallet.is_main && wallet.status === "ACTIVE");
       setSelectedWalletId((current) => current || mainWallet?.id || "");
     } catch (err) {
@@ -139,8 +181,6 @@ export function CardsPage() {
       }
       setCards([]);
       setWallets([]);
-      setPreferences({});
-      setDraftPreferences({});
       setError(err instanceof ApiError ? err.message : "Could not load cards.");
     } finally {
       setIsLoading(false);
@@ -153,7 +193,7 @@ export function CardsPage() {
   }, [accessToken, logout]);
 
   async function createCard() {
-    if (!accessToken || isSaving || cardLimitReached) return;
+    if (!accessToken || isSaving || !canCreateCard || selectedType === "") return;
     setIsSaving(true);
     setError(null);
     try {
@@ -163,15 +203,10 @@ export function CardsPage() {
         body: {
           type: selectedType,
           tier: selectedReusableCardType ? selectedTier : null,
-          default_wallet_id: selectedWalletId || null,
+          default_wallet_id: selectedAccountLinkedCard ? selectedWalletId || null : null,
         },
       });
       setCards((current) => [card, ...current]);
-      const cardPreferences = await apiRequest<CardPaymentPreferences>(`/cards/${card.id}/payment-preferences`, {
-        token: accessToken,
-      });
-      setPreferences((current) => ({ ...current, [card.id]: cardPreferences }));
-      setDraftPreferences((current) => ({ ...current, [card.id]: cardPreferences }));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -218,16 +253,6 @@ export function CardsPage() {
         token: accessToken,
       });
       setCards((current) => current.filter((item) => item.id !== card.id));
-      setPreferences((current) => {
-        const next = { ...current };
-        delete next[card.id];
-        return next;
-      });
-      setDraftPreferences((current) => {
-        const next = { ...current };
-        delete next[card.id];
-        return next;
-      });
       setRevealedCardIds((current) => {
         const next = new Set(current);
         next.delete(card.id);
@@ -256,181 +281,134 @@ export function CardsPage() {
     });
   }
 
-  function updatePreferenceDraft(cardId: string, updates: Partial<CardPaymentPreferences>) {
-    const currentDraft = draftPreferences[cardId] ?? preferences[cardId];
-    if (!currentDraft) return;
-    const nextDraft = {
-      ...currentDraft,
-      ...updates,
-    };
-    setDraftPreferences((current) => ({
-      ...current,
-      [cardId]: nextDraft,
-    }));
-    void savePaymentPreferences(cardId, nextDraft);
-  }
-
-  async function savePaymentPreferences(cardId: string, draft: CardPaymentPreferences) {
-    if (!accessToken) return;
-    setPreferencesCardId(cardId);
-    setError(null);
-    try {
-      const updated = await apiRequest<CardPaymentPreferences>(`/cards/${cardId}/payment-preferences`, {
-        method: "PATCH",
-        token: accessToken,
-        body: {
-          preferred_wallet_id: draft.preferred_wallet_id,
-          allow_main_wallet_fx: draft.allow_main_wallet_fx,
-        },
-      });
-      setPreferences((current) => ({ ...current, [cardId]: updated }));
-      setDraftPreferences((current) => ({ ...current, [cardId]: updated }));
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        logout();
-        return;
-      }
-      setError(err instanceof ApiError ? err.message : "Could not save card preferences.");
-    } finally {
-      setPreferencesCardId((current) => (current === cardId ? null : current));
-    }
-  }
-
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       <div className="tile">
         <div className="tile__header">
           <span className="eyebrow">Card controls</span>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "0.75rem" }}>
-          <label>
-            Card type
-            <select
-              value={selectedType}
-              onChange={(event) => {
-                const nextType = event.target.value as CardType;
-                setSelectedType(nextType);
-                if (nextType === "ONE_TIME") {
-                  setSelectedTier("REGULAR");
-                }
-              }}
-            >
-              {CARD_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {formatCardType(type)}
-                </option>
-              ))}
-            </select>
-          </label>
-          {selectedReusableCardType && (
+        <div className="card-control-layout">
+          <div className="card-control-form">
             <label>
-              Tier
-              <select value={selectedTier} onChange={(event) => setSelectedTier(event.target.value as CardTier)}>
-                {CARD_TIERS.map((tier) => (
-                  <option key={tier} value={tier}>
-                    {CARD_TIER_LABELS[tier]}
+              Card type
+              <select
+                value={selectedType}
+                onChange={(event) => {
+                  const nextType = event.target.value as CardType | "";
+                  setSelectedType(nextType);
+                  if (nextType === "ONE_TIME") {
+                    setSelectedTier("REGULAR");
+                  }
+                }}
+              >
+                <option value="">Select card type</option>
+                {CARD_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {formatCardType(type)}
                   </option>
                 ))}
               </select>
             </label>
+            {selectedAccountLinkedCard && (
+              <label>
+                Account
+                <select value={selectedWalletId} onChange={(event) => setSelectedWalletId(event.target.value)}>
+                  <option value="">Select account</option>
+                  {activeWallets.map((wallet) => {
+                    const debitAlreadyExists = selectedType === "DEBIT" && debitWalletIds.has(wallet.id);
+                    return (
+                      <option key={wallet.id} value={wallet.id} disabled={debitAlreadyExists}>
+                        {walletOptionLabel(wallet, debitAlreadyExists)}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            )}
+            {selectedReusableCardType && (
+              <div className="compact-tier-picker" aria-label="Card tier">
+                <span className="eyebrow">Tier</span>
+                <div className="compact-tier-picker__options">
+                  {CARD_TIER_PRODUCT_LIST.map((tier) => {
+                    const tierValue = tier.name.toUpperCase() as CardTier;
+                    const isSelected = tierValue === selectedTier;
+                    return (
+                      <button
+                        type="button"
+                        className={`compact-tier-option${isSelected ? " active" : ""}`}
+                        key={tier.name}
+                        onClick={() => setSelectedTier(tierValue)}
+                        aria-pressed={isSelected}
+                      >
+                        <strong>{tier.name}</strong>
+                        <span>{selectedType === "DEBIT" ? tier.debit : tier.credit}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {selectedType === "" && (
+              <div className="selected-tier-overview">
+                <span className="eyebrow">Card setup</span>
+                <strong>Select a card type</strong>
+                <span>Account selection appears only for debit and one-time payment cards.</span>
+              </div>
+            )}
+            <button type="button" onClick={createCard} disabled={isSaving || !canCreateCard}>
+              {isSaving
+                ? "Creating..."
+                : cardLimitReached
+                  ? "Card limit reached"
+                : selectedType === ""
+                  ? "Select card type"
+                : selectedAccountAlreadyHasDebit
+                  ? "Account already has debit"
+                : selectedOneTimeAlreadyExists
+                  ? "One-time card already exists"
+                : selectedAccountLinkedCard && !selectedWalletId
+                  ? "Select account"
+                : selectedReusableCardType
+                  ? `Create ${CARD_TIER_LABELS[selectedTier]} ${formatCardType(selectedType)}`
+                  : "Create one-time card"}
+            </button>
+          </div>
+
+          {selectedReusableCardType ? (
+            <aside className="card-choice-explainer">
+              <span className="eyebrow">Selection details</span>
+              <strong>
+                {CARD_TIER_LABELS[selectedTier]} {formatCardType(selectedType)}
+              </strong>
+              <p>{selectedTierDetails(selectedType, selectedTier)}</p>
+              <div className="card-choice-explainer__chips">
+                {CARD_TIER_REWARDS[selectedTier].slice(0, 3).map((reward) => (
+                  <span key={reward}>{reward}</span>
+                ))}
+              </div>
+              <small>
+                {selectedType === "DEBIT"
+                  ? "Debit cards spend from the selected linked account."
+                  : `Available credit preview: ${formatCurrencyAmount(CREDIT_CARD_LIMITS[selectedTier])}`}
+              </small>
+            </aside>
+          ) : selectedType === "ONE_TIME" ? (
+            <aside className="card-choice-explainer">
+              <span className="eyebrow">Selection details</span>
+              <strong>One-time payment card</strong>
+              <p>Single-use payment card linked to the selected account. It is intended for temporary or one-off payments.</p>
+              <small>One-time cards do not use tier levels.</small>
+            </aside>
+          ) : (
+            <div />
           )}
-          <label>
-            Default wallet
-            <select value={selectedWalletId} onChange={(event) => setSelectedWalletId(event.target.value)}>
-              <option value="">No default wallet</option>
-              {activeWallets.map((wallet) => (
-                <option key={wallet.id} value={wallet.id}>
-                  {wallet.currency}
-                  {wallet.is_main ? " - Main" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="button" onClick={createCard} disabled={isSaving || cardLimitReached} style={{ alignSelf: "end" }}>
-            {isSaving
-              ? "Creating..."
-              : cardLimitReached
-                ? "Card limit reached"
-              : selectedReusableCardType
-                ? `Create ${CARD_TIER_LABELS[selectedTier]} ${formatCardType(selectedType)}`
-                : "Create one-time card"}
-          </button>
         </div>
         {cardLimitReached && (
           <p className="eyebrow" style={{ margin: "0.85rem 0 0" }}>
             You can have up to {MAX_CARDS} cards.
           </p>
         )}
-        <div className="card-tier-summary" style={{ marginTop: "0.85rem" }}>
-          {selectedReusableCardType ? (
-            <>
-              <span>{CARD_TIER_DETAILS[selectedTier]}</span>
-              <span className="tag tag--outline">
-                {selectedType === "DEBIT"
-                  ? CARD_TIER_PRODUCTS[selectedTier].debit
-                  : CARD_TIER_PRODUCTS[selectedTier].credit}
-              </span>
-              <span className="card-tier-summary__rewards">
-                {CARD_TIER_REWARDS[selectedTier].map((reward) => (
-                  <span key={reward}>{reward}</span>
-                ))}
-              </span>
-            </>
-          ) : (
-            <>
-              <span>Single-use cards are created without Regular, Gold or Platinum tiers.</span>
-              <span className="tag tag--outline">No tier</span>
-            </>
-          )}
-        </div>
         {error && <p style={{ color: "var(--color-warning)", margin: "0.85rem 0 0" }}>{error}</p>}
-      </div>
-
-      <div className="tile">
-        <div className="tile__header">
-          <span className="eyebrow">Card tier levels</span>
-          <button
-            type="button"
-            className="button--ghost"
-            onClick={() => setAreTiersExpanded((current) => !current)}
-            aria-expanded={areTiersExpanded}
-          >
-            {areTiersExpanded ? "Retract" : "Expand"}
-          </button>
-        </div>
-        {areTiersExpanded ? (
-          <>
-            <div className="card-tier-grid">
-              {CARD_TIER_PRODUCT_LIST.map((tier) => (
-                <article className={`card-tier card-tier--${tier.name.toLowerCase()}`} key={tier.name}>
-                  <div className="card-tier__header">
-                    <span className="card-tier__name">{tier.name}</span>
-                    <span className="tag tag--neutral">Debit + Credit</span>
-                  </div>
-                  <p>{tier.description}</p>
-                  <div className="card-tier__rewards">
-                    {tier.rewards.map((reward) => (
-                      <span key={reward}>{reward}</span>
-                    ))}
-                  </div>
-                  <div className="card-tier__products">
-                    <span>{tier.debit}</span>
-                    <span>{tier.credit}</span>
-                  </div>
-                </article>
-              ))}
-            </div>
-            <div className="card-tier-note">
-              <span className="tag tag--outline">One-time card</span>
-              <span>Single-use cards do not have Regular, Gold or Platinum tiers.</span>
-            </div>
-          </>
-        ) : (
-          <div className="card-tier-summary">
-            <span>Regular, Gold and Platinum apply only to debit and credit cards.</span>
-            <span className="tag tag--outline">One-time cards excluded</span>
-          </div>
-        )}
       </div>
 
       <div className="tile">
@@ -443,8 +421,9 @@ export function CardsPage() {
           <div className="card-gallery">
             {cards.map((card) => {
               const wallet = wallets.find((item) => item.id === card.default_wallet_id);
-              const draft = draftPreferences[card.id];
               const isRevealed = revealedCardIds.has(card.id);
+              const isAccountLinkedCard = card.type === "DEBIT" || card.type === "ONE_TIME";
+              const isCreditCard = card.type === "CREDIT";
               return (
                 <article className="card-panel" key={card.id}>
                   <div className={cardToneClass(card)}>
@@ -508,8 +487,19 @@ export function CardsPage() {
 
                   <div className="card-panel__meta">
                     <div>
-                      <div className="eyebrow">Default wallet</div>
-                      <div className="card-panel__value">{wallet ? wallet.currency : "None"}</div>
+                      <div className="eyebrow">{isCreditCard ? "Available credit" : "Linked account"}</div>
+                      <div className="card-panel__value">
+                        {isCreditCard
+                          ? creditAvailableAmount(card)
+                          : isAccountLinkedCard
+                            ? wallet
+                              ? walletDisplayName(wallet)
+                              : "Not linked"
+                            : "Not required"}
+                      </div>
+                      {wallet && isAccountLinkedCard && (
+                        <div className="card-panel__subvalue">Wallet balance {formatWalletBalance(wallet)}</div>
+                      )}
                     </div>
                     <div className="card-panel__actions">
                       <button
@@ -524,42 +514,6 @@ export function CardsPage() {
                       </button>
                     </div>
                   </div>
-                  {draft && (
-                    <div className="card-preferences">
-                      <label>
-                        Preferred wallet
-                        <select
-                          value={draft.preferred_wallet_id ?? ""}
-                          onChange={(event) =>
-                            updatePreferenceDraft(card.id, {
-                              preferred_wallet_id: event.target.value || null,
-                            })
-                          }
-                        >
-                          <option value="">No preferred wallet</option>
-                          {activeWallets.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.currency}
-                              {item.is_main ? " - Main" : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <button
-                        type="button"
-                        className={`card-preference-toggle${draft.allow_main_wallet_fx ? " active" : ""}`}
-                        title="Allow main-wallet FX fallback"
-                        aria-label="Allow main-wallet FX fallback"
-                        aria-pressed={draft.allow_main_wallet_fx}
-                        onClick={() =>
-                          updatePreferenceDraft(card.id, { allow_main_wallet_fx: !draft.allow_main_wallet_fx })
-                        }
-                      >
-                        <ArrowLeftRight size={16} strokeWidth={2.2} aria-hidden="true" />
-                      </button>
-                      {preferencesCardId === card.id && <div className="eyebrow">Saving...</div>}
-                    </div>
-                  )}
                 </article>
               );
             })}

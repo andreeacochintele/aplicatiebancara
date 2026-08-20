@@ -763,8 +763,7 @@
 
 .aurora-shell .wallet-chip__amount,
 .aurora-shell .card-panel__value,
-.aurora-shell .stat-big,
-.aurora-shell .loan-result-grid strong {
+.aurora-shell .stat-big {
   color: var(--aurora-text);
 }
 
@@ -1196,38 +1195,51 @@
   border-color: rgba(255, 255, 255, 0.34);
 }
 
-.aurora-shell .card-preferences {
-  border-top: 1px solid var(--aurora-border);
+.aurora-shell .selected-tier-overview,
+.aurora-shell .one-time-tier-note,
+.aurora-shell .card-choice-explainer,
+.aurora-shell .compact-tier-option,
+.aurora-shell .card-tier-option {
+  border-color: var(--aurora-border);
+  background: var(--aurora-surface-alt);
 }
 
-.aurora-shell .card-tier__rewards span,
-.aurora-shell .card-tier-summary__rewards span {
+.aurora-shell .compact-tier-option:hover,
+.aurora-shell .compact-tier-option.active,
+.aurora-shell .card-tier-option:hover,
+.aurora-shell .card-tier-option.active {
+  border-color: var(--aurora-accent);
+  background: var(--aurora-accent-soft);
+}
+
+.aurora-shell .selected-tier-overview strong,
+.aurora-shell .one-time-tier-note strong,
+.aurora-shell .card-choice-explainer strong,
+.aurora-shell .compact-tier-option strong,
+.aurora-shell .card-tier__name {
+  color: var(--aurora-text);
+  font-family: "Manrope", sans-serif;
+}
+
+.aurora-shell .selected-tier-overview span:last-child,
+.aurora-shell .one-time-tier-note span:last-child,
+.aurora-shell .card-choice-explainer p,
+.aurora-shell .card-choice-explainer small,
+.aurora-shell .card-panel__subvalue,
+.aurora-shell .compact-tier-option span,
+.aurora-shell .card-tier-option__description {
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .card-choice-explainer__chips span,
+.aurora-shell .card-tier__rewards span {
   border-color: var(--aurora-border);
   color: var(--aurora-text-soft);
-  background: var(--aurora-surface-alt);
+  background: var(--aurora-surface);
 }
 
 .aurora-shell .checkbox-row input {
   accent-color: var(--aurora-accent);
-}
-
-.aurora-shell .card-preference-toggle {
-  display: inline-grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  border-radius: var(--aurora-radius-sm);
-  border: 1px solid var(--aurora-border);
-  background: var(--aurora-surface);
-  color: var(--aurora-text-soft);
-}
-
-.aurora-shell .card-preference-toggle:hover,
-.aurora-shell .card-preference-toggle.active {
-  border-color: var(--aurora-accent);
-  background: var(--aurora-accent-soft);
-  color: var(--aurora-accent-dark);
 }
 
 /* ---- Credit ---- */
@@ -1244,7 +1256,8 @@
 }
 
 .aurora-shell .credit-score-ring small,
-.aurora-shell .credit-profile-meta {
+.aurora-shell .credit-profile-meta,
+.aurora-shell .income-document-upload__surface span {
   color: var(--aurora-text-soft);
 }
 
@@ -1252,11 +1265,71 @@
   color: var(--aurora-text);
 }
 
+.aurora-shell .income-document-upload__surface {
+  border-color: var(--aurora-border);
+  background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .income-document-upload__surface strong {
+  color: var(--aurora-text);
+}
+
 .aurora-shell .credit-factor,
-.aurora-shell .loan-result-grid div {
+.aurora-shell .loan-product-panel,
+.aurora-shell .loan-estimate-card,
+.aurora-shell .approved-offers__header,
+.aurora-shell .approved-offer-card {
   border: 1px solid var(--aurora-border);
   border-radius: var(--aurora-radius-md);
   background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .loan-estimate-card__figures > div,
+.aurora-shell .loan-estimate-card__schedule > div,
+.aurora-shell .approved-offer-card__main-payment,
+.aurora-shell .approved-offer-card__figures > div,
+.aurora-shell .approved-offer-card__schedule > div {
+  border-color: var(--aurora-border);
+  background: var(--aurora-surface);
+}
+
+.aurora-shell .loan-product-panel__summary {
+  border-color: var(--aurora-border);
+  background: var(--aurora-surface);
+}
+
+.aurora-shell .loan-product-panel__summary h3,
+.aurora-shell .loan-product-metrics dd,
+.aurora-shell .loan-estimate-card > strong,
+.aurora-shell .loan-estimate-card__figures strong,
+.aurora-shell .loan-estimate-card__schedule strong,
+.aurora-shell .approved-offers__header strong,
+.aurora-shell .approved-offer-card__summary h3,
+.aurora-shell .approved-offer-card__main-payment strong,
+.aurora-shell .approved-offer-card__figures strong,
+.aurora-shell .approved-offer-card__schedule strong {
+  color: var(--aurora-text);
+  font-family: "Manrope", sans-serif;
+}
+
+.aurora-shell .loan-product-panel__summary p,
+.aurora-shell .loan-product-callouts p,
+.aurora-shell .loan-product-metrics dt,
+.aurora-shell .loan-disclosure-list ul,
+.aurora-shell .loan-estimate-card__figures span,
+.aurora-shell .loan-estimate-card__schedule span,
+.aurora-shell .loan-estimate-card__empty,
+.aurora-shell .approved-offer-card__summary p,
+.aurora-shell .approved-offer-card__main-payment > span:not(.eyebrow),
+.aurora-shell .approved-offer-card__schedule span,
+.aurora-shell .approved-offer-card__schedule small,
+.aurora-shell .approved-offer-card__loading {
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .loan-product-metrics div,
+.aurora-shell .loan-product-callouts > div {
+  border-color: var(--aurora-border);
 }
 
 /* ---- Analytics bar rows ---- */
