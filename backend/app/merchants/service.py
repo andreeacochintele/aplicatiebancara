@@ -1,9 +1,12 @@
 """Merchant catalog and cashback-offer business rules (architecture.md §11).
 
-Cashback amount computed here is informational math only: crediting money
-into a wallet requires the transaction engine (app/transactions/service.py,
-owned by the payments module) to post an actual CASHBACK transaction, and
-there's no purchase-creation path into that engine yet.
+Cashback is never money back into a wallet — the transaction engine
+(app/transactions/service.py, owned by the payments module) has no
+purchase-refund path, and this module doesn't mutate wallet balances.
+Instead, cashback (card-tier percent + this merchant's own offer percent,
+if any — see CARD_TIER_CASHBACK_PERCENT / _earn_from_transaction) is
+converted into bonus reward points at POINT_VALUE_IN_RON and credited to
+the points balance alongside the base points-per-RON earned on the payment.
 
 `sync_purchases_from_transactions` awards bank reward points off the user's
 *real* completed CARD_PAYMENT transactions instead of a client-supplied
@@ -62,6 +65,22 @@ CARD_TIER_POINT_MULTIPLIER: dict[CardTier, Decimal] = {
     CardTier.PLATINUM: Decimal("2"),
 }
 DEFAULT_POINT_MULTIPLIER = Decimal("1")
+
+# Card-tier cashback (separate from the points-per-RON rate above): a general
+# perk of the card itself, applied at any verified partner regardless of
+# whether that merchant currently has an active CashbackOffer. Stacks with
+# the merchant's own offer percent (CashbackOffer.cashback_percent) rather
+# than replacing it — see _earn_from_transaction.
+CARD_TIER_CASHBACK_PERCENT: dict[CardTier, Decimal] = {
+    CardTier.REGULAR: Decimal("0"),
+    CardTier.GOLD: Decimal("2"),
+    CardTier.PLATINUM: Decimal("4"),
+}
+
+# 1 RON = 20 points, i.e. how cashback (tier + partner, converted to a RON
+# amount) turns into bonus points instead of money back into a wallet. Must
+# match frontend/src/config/rewardPolicy.ts's POINT_VALUE_IN_RON.
+POINT_VALUE_IN_RON = Decimal("0.05")
 
 
 class MerchantService:
@@ -125,7 +144,7 @@ class MerchantService:
             merchant = self._merchant_for(transaction.merchant_id, transaction.description, merchants)
             if merchant is None:
                 continue
-            multiplier = self._point_multiplier_for(transaction.card_id)
+            tier = self._card_tier_for(transaction.card_id)
 
             # The has_earned_for_transaction check above plus this insert isn't
             # atomic, so a concurrent sync for the same user/transaction (e.g. a
@@ -136,20 +155,18 @@ class MerchantService:
             try:
                 with self.db.begin_nested():
                     result = self._earn_from_transaction(
-                        user_id, merchant, transaction.id, transaction.amount, transaction.currency, today, multiplier
+                        user_id, merchant, transaction.id, transaction.amount, transaction.currency, today, tier
                     )
             except IntegrityError:
                 continue
             results.append(result)
         return results
 
-    def _point_multiplier_for(self, card_id: uuid.UUID | None) -> Decimal:
+    def _card_tier_for(self, card_id: uuid.UUID | None) -> CardTier | None:
         if card_id is None:
-            return DEFAULT_POINT_MULTIPLIER
+            return None
         card = self.cards.get_by_id(card_id)
-        if card is None or card.tier is None:
-            return DEFAULT_POINT_MULTIPLIER
-        return CARD_TIER_POINT_MULTIPLIER.get(card.tier, DEFAULT_POINT_MULTIPLIER)
+        return card.tier if card is not None else None
 
     def _earn_from_transaction(
         self,
@@ -159,7 +176,7 @@ class MerchantService:
         amount: Decimal,
         currency: str,
         today,
-        multiplier: Decimal = DEFAULT_POINT_MULTIPLIER,
+        tier: CardTier | None = None,
     ) -> PurchaseResult:
         offer = self.repository.active_offer_for_merchant(merchant.id, today)
         cashback_percent = None
@@ -178,8 +195,23 @@ class MerchantService:
         # its RON equivalent first (via FXService, the same deterministic
         # rate table the rest of the app uses for cross-currency math) —
         # otherwise 1 EUR would earn the same points as 1 RON, off by ~5x.
-        amount_in_ron = amount * self.fx.get_rate(currency, "RON")
-        points_earned = int(amount_in_ron * multiplier)
+        fx_rate = self.fx.get_rate(currency, "RON")
+        amount_in_ron = amount * fx_rate
+        multiplier = CARD_TIER_POINT_MULTIPLIER.get(tier, DEFAULT_POINT_MULTIPLIER)
+        base_points = int(amount_in_ron * multiplier)
+
+        # Cashback is no longer informational-only: it's two stacking
+        # percentages (card-tier perk + this merchant's own offer, if any)
+        # converted into bonus points at POINT_VALUE_IN_RON, credited to the
+        # points balance the same as base points — never money back into a
+        # wallet, and never awarded at all for an unverified merchant (that
+        # gate happens one level up, before this method is ever called).
+        tier_cashback_percent = CARD_TIER_CASHBACK_PERCENT.get(tier, Decimal("0"))
+        tier_cashback_ron = amount_in_ron * tier_cashback_percent / Decimal("100")
+        partner_cashback_ron = cashback_amount * fx_rate
+        cashback_points = int((tier_cashback_ron + partner_cashback_ron) / POINT_VALUE_IN_RON)
+
+        points_earned = base_points + cashback_points
         proof_code = self._generate_proof_code() if points_earned > 0 else None
         account = (
             self.rewards.earn_points(
@@ -200,6 +232,8 @@ class MerchantService:
             currency=currency,
             cashback_percent=cashback_percent,
             cashback_amount=cashback_amount,
+            base_points=base_points,
+            cashback_points=cashback_points,
             points_earned=points_earned,
             reward_points_balance=account.points_balance,
         )

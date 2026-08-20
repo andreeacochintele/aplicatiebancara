@@ -3,7 +3,14 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { apiRequest, ApiError } from "../api/apiClient";
-import { bestOwnedCardTier, cardTierRewardBullets, pointsPerRonForCard, pointsPerRonLabel } from "../config/rewardPolicy";
+import {
+  bestOwnedCardTier,
+  cardTierCashbackPercent,
+  cardTierRewardBullets,
+  combinedRateLabel,
+  pointsPerRonLabel,
+  pointsToRon,
+} from "../config/rewardPolicy";
 import { useAuth } from "../hooks/useAuth";
 import type {
   Card,
@@ -245,8 +252,10 @@ export function RewardsPage() {
       const earned = await syncRewards();
       const match = earned.find((p) => p.merchant_id === merchant.id);
       if (match) {
+        const breakdown =
+          match.cashback_points > 0 ? ` (${match.base_points} base + ${match.cashback_points} cashback)` : "";
         setToast(
-          `Payment confirmed — ${receipt} · Earned ${match.points_earned} points` +
+          `Payment confirmed — ${receipt} · Earned ${match.points_earned} points${breakdown}` +
             (match.proof_code ? ` · Code: ${match.proof_code}` : ""),
         );
       } else if (!merchant.verified) {
@@ -321,7 +330,7 @@ export function RewardsPage() {
         </div>
         {rewards && (
           <div style={{ color: "rgba(255,255,255,0.75)", fontSize: "0.85rem" }}>
-            ≈ {rewards.points_balance} RON value · {rewards.lifetime_points_earned} lifetime points
+            ≈ {pointsToRon(rewards.points_balance)} RON value · {rewards.lifetime_points_earned} lifetime points
           </div>
         )}
         <div style={{ marginTop: "1rem", display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
@@ -532,7 +541,11 @@ export function RewardsPage() {
                 </div>
                 {selectedCard && (
                   <div className="tag tag--accent" style={{ width: "fit-content" }}>
-                    {pointsPerRonLabel(selectedCard)} · pays from {effectiveWallet(selectedCard)?.currency ?? "unknown"} wallet
+                    {pointsPerRonLabel(selectedCard)}
+                    {cardTierCashbackPercent(selectedCard) > 0
+                      ? ` + ${cardTierCashbackPercent(selectedCard)}% tier cashback at partners`
+                      : ""}{" "}
+                    · pays from {effectiveWallet(selectedCard)?.currency ?? "unknown"} wallet
                   </div>
                 )}
               </article>
@@ -571,7 +584,7 @@ export function RewardsPage() {
                       </div>
                       {selectedCard && (
                         <div className="eyebrow" style={{ marginTop: "0.4rem" }}>
-                          Earn {pointsPerRonForCard(selectedCard)} pts / RON with your card
+                          Earn {combinedRateLabel(selectedCard, Number(merchant.active_offer?.cashback_percent ?? 0))}
                         </div>
                       )}
                     </button>
@@ -592,8 +605,8 @@ export function RewardsPage() {
                 {newlyEarned.map((purchase) => (
                   <div key={purchase.merchant_id}>
                     Earned {purchase.points_earned} points from a real card payment
-                    {purchase.cashback_percent
-                      ? ` · ~${purchase.cashback_amount} ${purchase.currency} cashback (informational, not credited to a wallet yet)`
+                    {purchase.cashback_points > 0
+                      ? ` (${purchase.base_points} base + ${purchase.cashback_points} cashback)`
                       : ""}
                   </div>
                 ))}
@@ -783,7 +796,8 @@ export function RewardsPage() {
           )}
           {selectedCard && (
             <p className="eyebrow" style={{ marginTop: "0.5rem" }}>
-              With your {formatCardLabel(selectedCard)}: {pointsPerRonForCard(selectedCard)} pts / RON
+              With your {formatCardLabel(selectedCard)}:{" "}
+              {combinedRateLabel(selectedCard, Number(selectedMerchant.active_offer?.cashback_percent ?? 0))}
             </p>
           )}
           {!selectedMerchant.verified && (

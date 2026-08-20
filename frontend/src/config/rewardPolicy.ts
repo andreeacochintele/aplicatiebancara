@@ -16,14 +16,24 @@ export const CARD_TIER_POINTS_PER_RON: Record<CardTier, number> = {
   PLATINUM: 2,
 };
 
-// Partner-cashback percentage is descriptive copy only (like the rest of
-// this list) — it isn't a real, computed bonus on top of a merchant's own
-// CashbackOffer; there's no backend field for "card tier stacks with
-// merchant cashback".
+// Card-tier cashback: a general perk of the card, applied at any verified
+// partner regardless of whether that merchant has its own active offer.
+// Stacks with (doesn't replace) the merchant's own offer percent. Must
+// match backend/app/merchants/service.py's CARD_TIER_CASHBACK_PERCENT.
+export const CARD_TIER_CASHBACK_PERCENT: Record<CardTier, number> = {
+  REGULAR: 0,
+  GOLD: 2,
+  PLATINUM: 4,
+};
+
+// 1 RON = 20 points. Must match backend's POINT_VALUE_IN_RON — used both to
+// show a balance's RON-equivalent and to convert cashback into bonus points.
+export const POINT_VALUE_IN_RON = 0.05;
+
 const CARD_TIER_EXTRA_PERKS: Record<CardTier, string[]> = {
   REGULAR: ["Standard card controls", "Basic spending notifications"],
-  GOLD: ["2% partner cashback", "Priority card support", "Higher daily card limits"],
-  PLATINUM: ["4% partner cashback", "Travel insurance", "Airport lounge access"],
+  GOLD: ["2% tier cashback at partners", "Priority card support", "Higher daily card limits"],
+  PLATINUM: ["4% tier cashback at partners", "Travel insurance", "Airport lounge access"],
 };
 
 export function pointsPerRonForCard(card: Pick<Card, "tier">): number {
@@ -33,6 +43,25 @@ export function pointsPerRonForCard(card: Pick<Card, "tier">): number {
 export function pointsPerRonLabel(card: Pick<Card, "tier">): string {
   const rate = pointsPerRonForCard(card);
   return `${rate} pt${rate === 1 ? "" : "s"} / RON`;
+}
+
+export function cardTierCashbackPercent(card: Pick<Card, "tier">): number {
+  return card.tier ? CARD_TIER_CASHBACK_PERCENT[card.tier] : 0;
+}
+
+export function pointsToRon(points: number): number {
+  return Math.round(points * POINT_VALUE_IN_RON);
+}
+
+/** "2 pts/RON + 6% cashback (4% tier + 2% partner)" — combined rate for a
+ * card paying at a specific merchant, so the payer sees the real total
+ * before confirming, not just the card's own base rate. */
+export function combinedRateLabel(card: Pick<Card, "tier">, partnerCashbackPercent: number): string {
+  const tierCashback = cardTierCashbackPercent(card);
+  const total = tierCashback + partnerCashbackPercent;
+  const base = pointsPerRonLabel(card);
+  if (total <= 0) return base;
+  return `${base} + ${total}% cashback (${tierCashback}% tier + ${partnerCashbackPercent}% partner)`;
 }
 
 /** "1.5x reward points" etc., always derived from CARD_TIER_POINTS_PER_RON

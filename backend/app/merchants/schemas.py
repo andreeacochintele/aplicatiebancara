@@ -50,6 +50,8 @@ class PurchaseResult(BaseModel):
     currency: str
     cashback_percent: Decimal | None
     cashback_amount: Decimal
+    base_points: int
+    cashback_points: int
     points_earned: int
     reward_points_balance: int
     proof_code: str | None

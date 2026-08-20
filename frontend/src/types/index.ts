@@ -381,6 +381,8 @@ export interface PurchaseResult {
   currency: string;
   cashback_percent: string | null;
   cashback_amount: string;
+  base_points: number;
+  cashback_points: number;
   points_earned: number;
   reward_points_balance: number;
   proof_code: string | null;
