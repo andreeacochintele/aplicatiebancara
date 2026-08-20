@@ -13,6 +13,7 @@ class RewardTransactionPublic(BaseModel):
     type: RewardTransactionType
     points: int
     description: str | None
+    proof_code: str | None
     created_at: datetime
 
 
@@ -41,6 +42,7 @@ class BenefitRedemptionPublic(BaseModel):
 class RewardAccountPublic(BaseModel):
     points_balance: int
     lifetime_points_earned: int
+    referral_code: str | None
     transactions: list[RewardTransactionPublic]
     redemptions: list[BenefitRedemptionPublic]
 

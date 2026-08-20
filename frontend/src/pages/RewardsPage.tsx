@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { apiRequest, ApiError } from "../api/apiClient";
-import { bestCardTierBenefits, pointsPerRonForCard, pointsPerRonLabel } from "../config/rewardPolicy";
+import { bestOwnedCardTier, cardTierRewardBullets, pointsPerRonForCard, pointsPerRonLabel } from "../config/rewardPolicy";
 import { useAuth } from "../hooks/useAuth";
 import type {
   Card,
@@ -131,6 +131,7 @@ export function RewardsPage() {
   const [selectedMerchant, setSelectedMerchant] = useState<Merchant | null>(null);
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [showFullHistory, setShowFullHistory] = useState(false);
+  const [areCardsExpanded, setAreCardsExpanded] = useState(true);
 
   function loadRewards() {
     if (!accessToken) return;
@@ -244,7 +245,10 @@ export function RewardsPage() {
       const earned = await syncRewards();
       const match = earned.find((p) => p.merchant_id === merchant.id);
       if (match) {
-        setToast(`Payment confirmed — ${receipt} · Earned ${match.points_earned} points`);
+        setToast(
+          `Payment confirmed — ${receipt} · Earned ${match.points_earned} points` +
+            (match.proof_code ? ` · Code: ${match.proof_code}` : ""),
+        );
       } else if (!merchant.verified) {
         setToast(`Payment confirmed — ${receipt} · 0 points earned (merchant not verified yet)`);
       } else {
@@ -281,15 +285,25 @@ export function RewardsPage() {
     }
   }
 
-  function inviteFriends() {
-    // No referral system on the backend yet — kept as a clearly-labeled mock
-    // rather than a fabricated points reward, per the same "informational
-    // only" pattern already used for cashback amounts.
-    setToast("Referral link copied — demo only, not wired to a real invite flow yet.");
+  async function inviteFriends() {
+    // The code itself is real and persistent (RewardAccount.referral_code,
+    // generated once server-side and reused). Only what happens with it
+    // afterwards — validating a friend signed up, crediting 500 pts — is
+    // still mock, per the same "informational only" pattern already used
+    // for cashback amounts.
+    if (!rewards?.referral_code) return;
+    const link = `${window.location.origin}/invite/${rewards.referral_code}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setToast(`Referral link copied — ${link}`);
+    } catch {
+      setToast(`Your referral code: ${rewards.referral_code} (copy failed — clipboard blocked)`);
+    }
   }
 
   const selectedCard = cards.find((card) => card.id === payCardId);
-  const cardBenefits = bestCardTierBenefits(cards);
+  const bestTier = bestOwnedCardTier(cards);
+  const cardBenefits = bestTier ? cardTierRewardBullets(bestTier) : [];
   const categories = ["All", ...Array.from(new Set(merchants.map((m) => m.category)))];
   const visibleMerchants = categoryFilter === "All" ? merchants : merchants.filter((m) => m.category === categoryFilter);
   const history = rewards ? (showFullHistory ? rewards.transactions : rewards.transactions.slice(0, 5)) : [];
@@ -333,12 +347,20 @@ export function RewardsPage() {
                 <CreditCard size={14} strokeWidth={2.2} />
                 Your cards & rewards
               </span>
+              <button
+                type="button"
+                className="button--ghost"
+                onClick={() => setAreCardsExpanded((current) => !current)}
+                aria-expanded={areCardsExpanded}
+              >
+                {areCardsExpanded ? "Retract" : "Expand"}
+              </button>
             </div>
             <p className="eyebrow" style={{ marginTop: "-0.4rem", marginBottom: "0.75rem" }}>
               Card tier sets how many points you earn per RON, and which rewards in the catalog below you can redeem
               — some require owning at least a Gold or Platinum card.
             </p>
-            {cards.length > 0 ? (
+            {areCardsExpanded && cards.length > 0 ? (
               <div className="card-gallery">
                 {cards.map((card) => (
                   <article className="card-panel" key={card.id}>
@@ -380,15 +402,25 @@ export function RewardsPage() {
                     </div>
                     <div className="card-panel__meta">
                       <div>
-                        <div className="eyebrow">Earning rate</div>
-                        <div className="card-panel__value">{pointsPerRonLabel(card)}</div>
+                        <div className="eyebrow">This card's perks</div>
+                        <ul style={{ margin: "0.3rem 0 0", padding: 0, listStyle: "none", display: "grid", gap: "0.25rem" }}>
+                          {cardTierRewardBullets(card.tier ?? "REGULAR").map((perk) => (
+                            <li key={perk} className="card-panel__value" style={{ fontSize: "0.85rem" }}>
+                              {perk}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     </div>
                   </article>
                 ))}
               </div>
-            ) : (
+            ) : areCardsExpanded ? (
               <p className="eyebrow">No cards yet.</p>
+            ) : (
+              <p className="eyebrow">
+                {cards.length} card{cards.length === 1 ? "" : "s"} — expand to view.
+              </p>
             )}
           </div>
 
@@ -581,14 +613,16 @@ export function RewardsPage() {
                 Your benefits
               </span>
             </div>
+            {bestTier && (
+              <div className="eyebrow" style={{ marginBottom: "0.5rem" }}>
+                From your best card tier: {formatCardTierLabel(bestTier)}
+              </div>
+            )}
             {cardBenefits.length > 0 ? (
-              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.6rem" }}>
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.5rem" }}>
                 {cardBenefits.map((benefit) => (
-                  <li key={benefit.label}>
-                    <div className="card-panel__value" style={{ fontSize: "0.88rem" }}>
-                      {benefit.label}
-                    </div>
-                    <div className="eyebrow">{benefit.detail}</div>
+                  <li key={benefit} className="card-panel__value" style={{ fontSize: "0.88rem" }}>
+                    {benefit}
                   </li>
                 ))}
               </ul>
@@ -606,7 +640,17 @@ export function RewardsPage() {
             <p style={{ margin: "0.5rem 0 0.85rem", fontSize: "0.9rem" }}>
               Invite friends and earn 500 pts for each successful referral.
             </p>
-            <button type="button" onClick={inviteFriends} style={{ background: "#fff", color: "#4548c9", border: "none" }}>
+            {rewards?.referral_code && (
+              <p style={{ margin: "0 0 0.6rem", fontSize: "0.8rem", opacity: 0.85 }}>
+                Your code: <strong>{rewards.referral_code}</strong>
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={inviteFriends}
+              disabled={!rewards?.referral_code}
+              style={{ background: "#fff", color: "#4548c9", border: "none" }}
+            >
               Invite friends
             </button>
           </div>
@@ -621,7 +665,14 @@ export function RewardsPage() {
                 <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.5rem" }}>
                   {history.map((tx) => (
                     <li key={tx.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
-                      <span style={{ fontSize: "0.85rem" }}>{tx.description ?? tx.type}</span>
+                      <span style={{ fontSize: "0.85rem" }}>
+                        {tx.description ?? tx.type}
+                        {tx.proof_code && (
+                          <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
+                            Code: {tx.proof_code}
+                          </div>
+                        )}
+                      </span>
                       <span
                         style={{
                           fontWeight: 700,

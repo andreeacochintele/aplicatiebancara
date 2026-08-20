@@ -28,14 +28,14 @@ def _active_offer_window() -> tuple[date, date]:
 
 
 def _card_payment(
-    db_session, user_id, amount, description, status=TransactionStatus.COMPLETED, card_id=None
+    db_session, user_id, amount, description, status=TransactionStatus.COMPLETED, card_id=None, currency="RON"
 ) -> Transaction:
     transaction = Transaction(
         initiator_user_id=user_id,
         type=TransactionType.CARD_PAYMENT,
         status=status,
         amount=amount,
-        currency="RON",
+        currency=currency,
         description=description,
         card_id=card_id,
         created_at=datetime.now(timezone.utc),
@@ -104,9 +104,12 @@ def test_sync_awards_points_and_computes_cashback_from_real_transaction(db_sessi
     assert result.cashback_percent == Decimal("7")
     assert result.cashback_amount == Decimal("28.00")
     assert result.reward_points_balance == 400
+    assert result.proof_code is not None
+    assert result.proof_code.startswith("PUR-")
 
     rewards_account = RewardsService(db_session).get_account(seeded_user.id)
     assert rewards_account.points_balance == 400
+    assert rewards_account.transactions[0].proof_code == result.proof_code
 
 
 def test_sync_scales_points_by_card_tier(db_session, seeded_user):
@@ -139,6 +142,18 @@ def test_sync_without_a_known_card_uses_base_rate(db_session, seeded_user):
     results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
 
     assert results[0].points_earned == 200
+
+
+def test_sync_converts_non_ron_amount_to_ron_before_scoring_points(db_session, seeded_user):
+    merchant_service = MerchantService(db_session)
+    merchant_service.create_merchant(MerchantCreate(name="Nike", category="Retail", verified=True))
+    card = CardService(db_session).create_card(seeded_user.id, CardCreate(tier=CardTier.REGULAR))
+    # 100 EUR at the mocked 4.97 RON/EUR rate (app/fx/service.py) -> 497 RON -> 497 points at 1x.
+    _card_payment(db_session, seeded_user.id, Decimal("100.00"), "Nike - Shopping", card_id=card.id, currency="EUR")
+
+    results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
+
+    assert results[0].points_earned == 497
 
 
 def test_sync_caps_cashback_at_maximum(db_session, seeded_user):

@@ -52,3 +52,4 @@ class PurchaseResult(BaseModel):
     cashback_amount: Decimal
     points_earned: int
     reward_points_balance: int
+    proof_code: str | None

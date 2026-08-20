@@ -383,6 +383,7 @@ export interface PurchaseResult {
   cashback_amount: string;
   points_earned: number;
   reward_points_balance: number;
+  proof_code: string | null;
 }
 
 export interface RewardTransaction {
@@ -390,6 +391,7 @@ export interface RewardTransaction {
   type: "EARN" | "SPEND" | "ADJUSTMENT";
   points: number;
   description: string | null;
+  proof_code: string | null;
   created_at: string;
 }
 
@@ -420,6 +422,7 @@ export interface BenefitRedemption {
 export interface RewardAccount {
   points_balance: number;
   lifetime_points_earned: number;
+  referral_code: string | null;
   transactions: RewardTransaction[];
   redemptions: BenefitRedemption[];
 }

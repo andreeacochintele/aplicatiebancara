@@ -31,6 +31,7 @@ of each hardcoding their own numbers, which is what caused Cards and
 Rewards to disagree before). There's no automated check tying the two
 together, so change both together by hand.
 """
+import secrets
 import uuid
 from datetime import datetime, timezone
 from decimal import ROUND_DOWN, Decimal
@@ -41,6 +42,7 @@ from sqlalchemy.orm import Session
 from app.cards.models import CardTier
 from app.cards.repository import CardRepository
 from app.core.exceptions import NotFoundError, ValidationError
+from app.fx.service import FXService
 from app.merchants.models import CashbackOffer, Merchant, MerchantStatus
 from app.merchants.repository import MerchantRepository
 from app.merchants.schemas import (
@@ -69,6 +71,7 @@ class MerchantService:
         self.rewards = RewardsService(db)
         self.transactions = TransactionRepository(db)
         self.cards = CardRepository(db)
+        self.fx = FXService(db)
 
     def create_merchant(self, data: MerchantCreate) -> MerchantPublic:
         merchant = Merchant(name=data.name, category=data.category, logo_url=data.logo_url, verified=data.verified)
@@ -170,14 +173,21 @@ class MerchantService:
                 cashback_amount = min(cashback_amount, offer.maximum_cashback)
 
         # 100 RON spent -> 100 points at the 1x base rate (architecture.md §11),
-        # scaled by the paying card's tier multiplier.
-        points_earned = int(amount * multiplier)
+        # scaled by the paying card's tier multiplier. The rule is "points
+        # per RON", so a payment from a non-RON wallet must be converted to
+        # its RON equivalent first (via FXService, the same deterministic
+        # rate table the rest of the app uses for cross-currency math) —
+        # otherwise 1 EUR would earn the same points as 1 RON, off by ~5x.
+        amount_in_ron = amount * self.fx.get_rate(currency, "RON")
+        points_earned = int(amount_in_ron * multiplier)
+        proof_code = self._generate_proof_code() if points_earned > 0 else None
         account = (
             self.rewards.earn_points(
                 user_id,
                 points_earned,
                 description=f"Card payment at {merchant.name}",
                 source_transaction_id=source_transaction_id,
+                proof_code=proof_code,
             )
             if points_earned > 0
             else self.rewards.get_or_create_account(user_id)
@@ -185,6 +195,7 @@ class MerchantService:
 
         return PurchaseResult(
             merchant_id=merchant.id,
+            proof_code=proof_code,
             amount=amount,
             currency=currency,
             cashback_percent=cashback_percent,
@@ -192,6 +203,10 @@ class MerchantService:
             points_earned=points_earned,
             reward_points_balance=account.points_balance,
         )
+
+    @staticmethod
+    def _generate_proof_code() -> str:
+        return f"PUR-{secrets.token_hex(4).upper()}"
 
     @staticmethod
     def _merchant_for(

@@ -27,6 +27,17 @@ def test_new_user_has_zero_balance_and_empty_history(db_session, seeded_user):
     assert account.transactions == []
 
 
+def test_referral_code_is_generated_once_and_persists(db_session, seeded_user):
+    service = RewardsService(db_session)
+
+    first = service.get_account(seeded_user.id)
+    second = service.get_account(seeded_user.id)
+
+    assert first.referral_code is not None
+    assert first.referral_code.startswith("AURORA-")
+    assert first.referral_code == second.referral_code
+
+
 def test_earn_points_increases_balance_and_records_ledger_entry(db_session, seeded_user):
     service = RewardsService(db_session)
     service.earn_points(seeded_user.id, 120, description="Purchase at Nike")

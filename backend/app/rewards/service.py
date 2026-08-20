@@ -55,7 +55,13 @@ class RewardsService:
     def get_or_create_account(self, user_id: uuid.UUID) -> RewardAccount:
         account = self.repository.get_account_for_user(user_id)
         if account is None:
-            account = self.repository.add_account(RewardAccount(user_id=user_id))
+            account = self.repository.add_account(
+                RewardAccount(user_id=user_id, referral_code=self._generate_referral_code())
+            )
+        elif account.referral_code is None:
+            # Backfill for accounts created before referral codes existed.
+            account.referral_code = self._generate_referral_code()
+            self.db.flush()
         return account
 
     def get_account(self, user_id: uuid.UUID) -> RewardAccountPublic:
@@ -68,6 +74,7 @@ class RewardsService:
         points: int,
         description: str | None = None,
         source_transaction_id: uuid.UUID | None = None,
+        proof_code: str | None = None,
     ) -> RewardAccount:
         if points <= 0:
             raise ValidationError("points must be positive")
@@ -82,6 +89,7 @@ class RewardsService:
                 type=RewardTransactionType.EARN,
                 points=points,
                 description=description,
+                proof_code=proof_code,
             )
         )
         self.db.flush()
@@ -197,6 +205,10 @@ class RewardsService:
     def _generate_redemption_code() -> str:
         return f"RWD-{secrets.token_hex(4).upper()}"
 
+    @staticmethod
+    def _generate_referral_code() -> str:
+        return f"AURORA-{secrets.token_hex(4).upper()}"
+
     def _account_to_public(self, account: RewardAccount) -> RewardAccountPublic:
         transactions = self.repository.list_transactions(account.id)
         redemptions = self.repository.list_redemptions(account.id)
@@ -204,13 +216,19 @@ class RewardsService:
         return RewardAccountPublic(
             points_balance=account.points_balance,
             lifetime_points_earned=account.lifetime_points_earned,
+            referral_code=account.referral_code,
             transactions=[self._transaction_to_public(tx) for tx in transactions],
             redemptions=[self._redemption_to_public(r) for r in redemptions],
         )
 
     def _transaction_to_public(self, tx: RewardTransaction) -> RewardTransactionPublic:
         return RewardTransactionPublic(
-            id=tx.id, type=tx.type, points=tx.points, description=tx.description, created_at=tx.created_at
+            id=tx.id,
+            type=tx.type,
+            points=tx.points,
+            description=tx.description,
+            proof_code=tx.proof_code,
+            created_at=tx.created_at,
         )
 
     def _redemption_to_public(self, redemption: BenefitRedemption) -> BenefitRedemptionPublic:

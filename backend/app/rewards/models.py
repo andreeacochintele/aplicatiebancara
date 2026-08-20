@@ -53,6 +53,11 @@ class RewardAccount(Base):
     )
     points_balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     lifetime_points_earned: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Generated lazily (see RewardsService.get_or_create_account) and reused
+    # forever after — real and unique, but the invite flow it's shown in is
+    # still a demo: nothing verifies a friend actually signed up with it or
+    # grants the advertised 500 pts yet.
+    referral_code: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -71,6 +76,11 @@ class RewardTransaction(Base):
     )
     points: Mapped[int] = mapped_column(Integer, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Set only for EARN transactions from a real merchant purchase
+    # (MerchantService._earn_from_transaction) — a demo "proof of purchase"
+    # code shown to the user, same idea as BenefitRedemption.redemption_code
+    # but for the earning side instead of the spending side.
+    proof_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
