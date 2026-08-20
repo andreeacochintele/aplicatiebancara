@@ -28,6 +28,18 @@ export interface FXMarketRate {
   source_currency: string;
   target_currency: string;
   rate: string;
+  fee_rate: string;
+}
+
+export interface FXRatePoint {
+  date: string;
+  rate: string;
+}
+
+export interface FXRateHistory {
+  source_currency: string;
+  target_currency: string;
+  points: FXRatePoint[];
 }
 
 export type NotificationType =

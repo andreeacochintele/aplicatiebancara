@@ -17,9 +17,11 @@ def _reset_live_rate_cache():
     """The live-rate cache is process-global; keep each test isolated."""
     fx_service_module._live_rate_cache = None
     fx_service_module._live_rate_cached_at = None
+    fx_service_module._history_cache = {}
     yield
     fx_service_module._live_rate_cache = None
     fx_service_module._live_rate_cached_at = None
+    fx_service_module._history_cache = {}
 
 
 @pytest.fixture()
@@ -120,3 +122,38 @@ def test_market_rate_rejects_unsupported_currency(db_session, monkeypatch):
 
     with pytest.raises(ValidationError):
         service.get_market_rate("JPY", "RON")
+
+
+def test_rate_history_falls_back_to_a_single_static_point_when_offline(db_session, monkeypatch):
+    monkeypatch.setattr(fx_service_module, "_fetch_live_rate_history_to_ron", lambda days: None)
+    service = FXService(db_session)
+
+    points = service.get_market_rate_history("EUR", "RON", days=14)
+
+    assert len(points) == 1
+    assert points[0].rate < Decimal("4.97")
+
+
+def test_rate_history_uses_live_daily_rates(db_session, monkeypatch):
+    monkeypatch.setattr(
+        fx_service_module,
+        "_fetch_live_rate_history_to_ron",
+        lambda days: {
+            "2026-08-18": {"RON": Decimal("1"), "EUR": Decimal("4.95"), "USD": Decimal("4.60")},
+            "2026-08-19": {"RON": Decimal("1"), "EUR": Decimal("5.00"), "USD": Decimal("4.65")},
+        },
+    )
+    service = FXService(db_session)
+
+    points = service.get_market_rate_history("EUR", "RON", days=2)
+
+    assert [p.date for p in points] == ["2026-08-18", "2026-08-19"]
+    assert points[1].rate == Decimal("4.9500")  # 5.00 * (1 - 1%)
+
+
+def test_rate_history_rejects_unsupported_currency(db_session, monkeypatch):
+    monkeypatch.setattr(fx_service_module, "_fetch_live_rate_history_to_ron", lambda days: None)
+    service = FXService(db_session)
+
+    with pytest.raises(ValidationError):
+        service.get_market_rate_history("JPY", "RON", days=14)

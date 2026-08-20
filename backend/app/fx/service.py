@@ -12,14 +12,14 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.fx.models import FXQuote, FXQuoteStatus
 from app.fx.repository import FXQuoteRepository
-from app.fx.schemas import FXQuoteRequest
+from app.fx.schemas import FXQuoteRequest, FXRatePoint
 
 # Mock rates: units of RON per 1 unit of the currency. Used for all quote
 # math (transfers, tests) — deterministic and offline on purpose.
@@ -44,10 +44,17 @@ _live_rate_cache: dict[str, Decimal] | None = None
 _live_rate_cached_at: datetime | None = None
 
 
+def _get_json(url: str) -> dict:
+    # Frankfurter sits behind Cloudflare, which 403s the default
+    # "Python-urllib/x.y" user agent — send a normal one instead.
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; AuroraBankingApp/1.0)"})
+    with urlopen(request, timeout=5) as response:
+        return json.loads(response.read())
+
+
 def _fetch_live_rates_to_ron() -> dict[str, Decimal] | None:
     try:
-        with urlopen(_LIVE_RATES_URL, timeout=5) as response:
-            payload = json.loads(response.read())
+        payload = _get_json(_LIVE_RATES_URL)
         rates = payload["rates"]
         eur_to_ron = Decimal(str(rates["RON"]))
         live: dict[str, Decimal] = {"RON": Decimal("1"), "EUR": eur_to_ron}
@@ -68,6 +75,42 @@ def _rates_to_ron_for_display() -> dict[str, Decimal]:
     rates = live if live is not None else dict(_RATES_TO_RON)
     _live_rate_cache, _live_rate_cached_at = rates, now
     return rates
+
+
+_history_cache: dict[int, tuple[datetime, dict[str, dict[str, Decimal]]]] = {}
+
+
+def _fetch_live_rate_history_to_ron(days: int) -> dict[str, dict[str, Decimal]] | None:
+    end = datetime.now(timezone.utc).date()
+    start = end - timedelta(days=days)
+    url = f"https://api.frankfurter.app/{start.isoformat()}..{end.isoformat()}?from=EUR"
+    try:
+        payload = _get_json(url)
+        daily_rates = payload["rates"]
+        result: dict[str, dict[str, Decimal]] = {}
+        for date_str, rates in daily_rates.items():
+            if "RON" not in rates:
+                continue
+            eur_to_ron = Decimal(str(rates["RON"]))
+            day: dict[str, Decimal] = {"RON": Decimal("1"), "EUR": eur_to_ron}
+            for currency in ("USD", "GBP"):
+                if currency in rates and Decimal(str(rates[currency])) != 0:
+                    day[currency] = (eur_to_ron / Decimal(str(rates[currency]))).quantize(_RATE_PRECISION)
+            result[date_str] = day
+        return result if result else None
+    except (URLError, TimeoutError, KeyError, ValueError, TypeError):
+        return None
+
+
+def _rate_history_to_ron(days: int) -> dict[str, dict[str, Decimal]]:
+    now = datetime.now(timezone.utc)
+    cached = _history_cache.get(days)
+    if cached is not None and now - cached[0] < _LIVE_RATE_TTL:
+        return cached[1]
+    live = _fetch_live_rate_history_to_ron(days)
+    history = live if live is not None else {now.date().isoformat(): dict(_RATES_TO_RON)}
+    _history_cache[days] = (now, history)
+    return history
 
 
 def _round_money(value: Decimal) -> Decimal:
@@ -103,6 +146,30 @@ class FXService:
         if source_currency == target_currency:
             return mid_rate
         return (mid_rate * (Decimal("1") - _MARKET_MARKUP)).quantize(_RATE_PRECISION)
+
+    def get_market_rate_history(self, source_currency: str, target_currency: str, days: int) -> list[FXRatePoint]:
+        """Daily market-rate points for the small trend chart on Wallets —
+        same live source and markup as get_market_rate, sampled over time."""
+        source_currency, target_currency = source_currency.upper(), target_currency.upper()
+        days = max(2, min(days, 90))
+        history = _rate_history_to_ron(days)
+
+        points: list[FXRatePoint] = []
+        for date_str in sorted(history):
+            rates = history[date_str]
+            if source_currency not in rates or target_currency not in rates:
+                continue
+            mid_rate = rates[source_currency] / rates[target_currency]
+            rate = (
+                mid_rate
+                if source_currency == target_currency
+                else (mid_rate * (Decimal("1") - _MARKET_MARKUP)).quantize(_RATE_PRECISION)
+            )
+            points.append(FXRatePoint(date=date_str, rate=rate))
+
+        if not points:
+            raise ValidationError(f"Unsupported currency pair: {source_currency}/{target_currency}")
+        return points
 
     def get_quote(self, user_id: uuid.UUID, data: FXQuoteRequest) -> FXQuote:
         if data.source_amount <= 0:

@@ -1,10 +1,13 @@
-import { ArrowLeftRight, Star } from "lucide-react";
+import { ArrowLeftRight, Star, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
-import type { FXMarketRate, FXQuote, Wallet } from "../types";
+import type { FXMarketRate, FXQuote, FXRateHistory, Wallet } from "../types";
+
+const RATE_ACCENT = "#5b5fef"; // same violet as --aurora-accent, kept as one deliberate hue for the trend line
 
 function hueFromString(value: string): number {
   return Math.abs([...value].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % 360;
@@ -12,6 +15,56 @@ function hueFromString(value: string): number {
 
 function colorForCurrency(currency: string): string {
   return `hsl(${hueFromString(currency)} 65% 55%)`;
+}
+
+function RateTrendChart({ history }: { history: FXRateHistory }) {
+  const data = history.points.map((p) => ({ date: p.date, rate: Number(p.rate) }));
+  const short = (date: string) => date.slice(5).replace("-", "/");
+
+  const values = data.map((d) => d.rate);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = (max - min) * 0.2 || Math.max(min * 0.005, 0.0001);
+  const domain: [number, number] = [min - pad, max + pad];
+
+  return (
+    <div className="aurora-rate-chart">
+      <ResponsiveContainer width="100%" height={160}>
+        <AreaChart data={data} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
+          <defs>
+            <linearGradient id="rateFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={RATE_ACCENT} stopOpacity={0.3} />
+              <stop offset="100%" stopColor={RATE_ACCENT} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <XAxis
+            dataKey="date"
+            tickFormatter={short}
+            tick={{ fontSize: 10, fill: "var(--aurora-text-faint)" }}
+            axisLine={false}
+            tickLine={false}
+            interval="preserveStartEnd"
+            minTickGap={24}
+          />
+          <YAxis domain={domain} hide />
+          <Tooltip
+            formatter={(value: number) => [value.toFixed(4), `1 ${history.source_currency} =`]}
+            labelFormatter={(label: string) => label}
+            contentStyle={{ borderRadius: 10, border: "1px solid var(--aurora-border)", fontSize: 12 }}
+          />
+          <Area
+            type="monotone"
+            dataKey="rate"
+            stroke={RATE_ACCENT}
+            strokeWidth={2}
+            fill="url(#rateFill)"
+            dot={false}
+            activeDot={{ r: 4, strokeWidth: 0 }}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
 }
 
 export function WalletsPage() {
@@ -25,7 +78,10 @@ export function WalletsPage() {
   const [result, setResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [settingMainId, setSettingMainId] = useState<string | null>(null);
-  const [rates, setRates] = useState<Record<string, FXMarketRate>>({});
+  const [convertRate, setConvertRate] = useState<FXMarketRate | null>(null);
+  const [chartSourceId, setChartSourceId] = useState("");
+  const [chartTargetId, setChartTargetId] = useState("");
+  const [rateHistory, setRateHistory] = useState<FXRateHistory | null>(null);
 
   function loadWallets() {
     if (!accessToken) return;
@@ -33,25 +89,6 @@ export function WalletsPage() {
   }
 
   useEffect(loadWallets, [accessToken]);
-
-  useEffect(() => {
-    if (!accessToken || wallets.length < 2) return;
-    const mainWallet = wallets.find((w) => w.is_main);
-    if (!mainWallet) return;
-    const others = wallets.filter((w) => w.currency !== mainWallet.currency);
-    Promise.all(
-      others.map((w) =>
-        apiRequest<FXMarketRate>(
-          `/fx/rate?source_currency=${w.currency}&target_currency=${mainWallet.currency}`,
-          { token: accessToken },
-        ).catch(() => null),
-      ),
-    ).then((results) => {
-      const next: Record<string, FXMarketRate> = {};
-      for (const r of results) if (r) next[r.source_currency] = r;
-      setRates(next);
-    });
-  }, [accessToken, wallets]);
 
   async function setMainWallet(walletId: string) {
     if (!accessToken || settingMainId) return;
@@ -74,10 +111,47 @@ export function WalletsPage() {
       const other = wallets.find((w) => w.id !== wallets[0].id);
       if (other) setTargetId(other.id);
     }
-  }, [wallets, sourceId, targetId]);
+    if (!chartSourceId) setChartSourceId(wallets[0].id);
+    if (!chartTargetId) {
+      const other = wallets.find((w) => w.id !== wallets[0].id);
+      if (other) setChartTargetId(other.id);
+    }
+  }, [wallets, sourceId, targetId, chartSourceId, chartTargetId]);
 
   const source = wallets.find((w) => w.id === sourceId);
   const target = wallets.find((w) => w.id === targetId);
+  const chartSource = wallets.find((w) => w.id === chartSourceId);
+  const chartTarget = wallets.find((w) => w.id === chartTargetId);
+
+  useEffect(() => {
+    if (!accessToken || !source || !target || source.currency === target.currency) {
+      setConvertRate(null);
+      return;
+    }
+    apiRequest<FXMarketRate>(
+      `/fx/rate?source_currency=${source.currency}&target_currency=${target.currency}`,
+      { token: accessToken },
+    )
+      .then(setConvertRate)
+      .catch(() => setConvertRate(null));
+  }, [accessToken, source?.currency, target?.currency]);
+
+  useEffect(() => {
+    if (!accessToken || !chartSource || !chartTarget || chartSource.currency === chartTarget.currency) {
+      setRateHistory(null);
+      return;
+    }
+    apiRequest<FXRateHistory>(
+      `/fx/rate/history?source_currency=${chartSource.currency}&target_currency=${chartTarget.currency}&days=14`,
+      { token: accessToken },
+    )
+      .then(setRateHistory)
+      .catch(() => setRateHistory(null));
+  }, [accessToken, chartSource?.currency, chartTarget?.currency]);
+
+  const bankRate = convertRate ? Number(convertRate.rate) * (1 - Number(convertRate.fee_rate)) : null;
+  const convertedAmount =
+    bankRate !== null && amount && !Number.isNaN(Number(amount)) ? Number(amount) * bankRate : null;
 
   async function getQuote() {
     if (!accessToken || !source || !target) return;
@@ -149,17 +223,14 @@ export function WalletsPage() {
                   <span className="aurora-chip aurora-chip-neutral">{wallet.status}</span>
                 )}
               </div>
-              <div className="aurora-wallet-card__amount">{wallet.available_balance}</div>
+              <div className="aurora-wallet-card__amount" style={{ color: "var(--wallet-accent)" }}>
+                {wallet.available_balance}
+              </div>
               <div className="aurora-wallet-card__sub">
                 {wallet.reserved_balance !== "0" && wallet.reserved_balance !== "0.00"
                   ? `${wallet.reserved_balance} ${wallet.currency} reserved`
                   : "Nothing on hold"}
               </div>
-              {!wallet.is_main && rates[wallet.currency] && (
-                <div className="aurora-wallet-card__rate">
-                  1 {wallet.currency} ≈ {rates[wallet.currency].rate} {rates[wallet.currency].target_currency}
-                </div>
-              )}
               <div className="aurora-wallet-card__footer">
                 <span className="aurora-eyebrow" style={{ marginBottom: 0 }}>
                   {wallet.is_main ? "Main wallet" : wallet.status}
@@ -184,78 +255,137 @@ export function WalletsPage() {
       </div>
 
       {wallets.length >= 2 && (
-        <div className="aurora-card" style={{ maxWidth: 480 }}>
-          <div className="aurora-section-header">
-            <div>
-              <div className="aurora-eyebrow">Exchange</div>
-              <h2>
-                <ArrowLeftRight size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
-                Convert between your wallets
-              </h2>
+        <div className="aurora-exchange-row">
+          <div className="aurora-card aurora-exchange-card">
+            <div className="aurora-section-header">
+              <div>
+                <div className="aurora-eyebrow">Exchange</div>
+                <h2>
+                  <ArrowLeftRight size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
+                  Convert between your wallets
+                </h2>
+              </div>
             </div>
+
+            {bankRate !== null && convertRate && (
+              <div className="aurora-rate-banner">
+                <div className="aurora-rate-banner__headline">
+                  <TrendingUp size={16} />
+                  1 {convertRate.source_currency} = {bankRate.toFixed(4)} {convertRate.target_currency}
+                </div>
+                <div className="aurora-rate-banner__sub">Bank rate, fee included</div>
+                {convertedAmount !== null && (
+                  <div className="aurora-rate-banner__amount">
+                    {amount} {convertRate.source_currency} = <strong>{convertedAmount.toFixed(2)} {convertRate.target_currency}</strong>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="aurora-convert-grid">
+              <label>
+                From
+                <select value={sourceId} onChange={(e) => { setSourceId(e.target.value); setQuote(null); }}>
+                  {wallets.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.currency} · {w.available_balance}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                To
+                <select value={targetId} onChange={(e) => { setTargetId(e.target.value); setQuote(null); }}>
+                  {wallets
+                    .filter((w) => w.id !== sourceId)
+                    .map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.currency}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </div>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12, fontSize: 12.5, fontWeight: 600 }}>
+              Amount ({source?.currency})
+              <input value={amount} onChange={(e) => { setAmount(e.target.value); setQuote(null); }} />
+            </label>
+            <button onClick={getQuote} disabled={busy || !source || !target} style={{ marginTop: 14 }}>
+              Get quote
+            </button>
+
+            {error && <p role="alert">{error}</p>}
+            {result && <p>{result}</p>}
+
+            {quote && (
+              <div className="aurora-quote-card">
+                <div className="aurora-eyebrow">Quote expires {new Date(quote.expires_at).toLocaleTimeString()}</div>
+                <div className="aurora-quote-row">
+                  <span>Rate</span>
+                  <span>
+                    1 {quote.source_currency} = {quote.exchange_rate} {quote.target_currency}
+                  </span>
+                </div>
+                <div className="aurora-quote-row">
+                  <span>Fee</span>
+                  <span>
+                    {quote.fee} {quote.source_currency}
+                  </span>
+                </div>
+                <div className="aurora-quote-row total">
+                  <span>You receive</span>
+                  <span>
+                    {quote.target_amount} {quote.target_currency}
+                  </span>
+                </div>
+                <button onClick={acceptQuote} disabled={busy} style={{ marginTop: 10, width: "100%" }}>
+                  Accept quote
+                </button>
+              </div>
+            )}
           </div>
 
-          <div className="aurora-convert-grid">
-            <label>
-              From
-              <select value={sourceId} onChange={(e) => { setSourceId(e.target.value); setQuote(null); }}>
-                {wallets.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.currency} · {w.available_balance}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              To
-              <select value={targetId} onChange={(e) => { setTargetId(e.target.value); setQuote(null); }}>
-                {wallets
-                  .filter((w) => w.id !== sourceId)
-                  .map((w) => (
+          <div className="aurora-card aurora-exchange-card">
+            <div className="aurora-section-header">
+              <div>
+                <div className="aurora-eyebrow">Live · ECB, 14 days</div>
+                <h2>Rate trend</h2>
+              </div>
+            </div>
+
+            <div className="aurora-convert-grid">
+              <label>
+                From
+                <select value={chartSourceId} onChange={(e) => setChartSourceId(e.target.value)}>
+                  {wallets.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.currency}
                     </option>
                   ))}
-              </select>
-            </label>
-          </div>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12, fontSize: 12.5, fontWeight: 600 }}>
-            Amount ({source?.currency})
-            <input value={amount} onChange={(e) => { setAmount(e.target.value); setQuote(null); }} />
-          </label>
-          <button onClick={getQuote} disabled={busy || !source || !target} style={{ marginTop: 14 }}>
-            Get quote
-          </button>
-
-          {error && <p role="alert">{error}</p>}
-          {result && <p>{result}</p>}
-
-          {quote && (
-            <div className="aurora-quote-card">
-              <div className="aurora-eyebrow">Quote expires {new Date(quote.expires_at).toLocaleTimeString()}</div>
-              <div className="aurora-quote-row">
-                <span>Rate</span>
-                <span>
-                  1 {quote.source_currency} = {quote.exchange_rate} {quote.target_currency}
-                </span>
-              </div>
-              <div className="aurora-quote-row">
-                <span>Fee</span>
-                <span>
-                  {quote.fee} {quote.source_currency}
-                </span>
-              </div>
-              <div className="aurora-quote-row total">
-                <span>You receive</span>
-                <span>
-                  {quote.target_amount} {quote.target_currency}
-                </span>
-              </div>
-              <button onClick={acceptQuote} disabled={busy} style={{ marginTop: 10, width: "100%" }}>
-                Accept quote
-              </button>
+                </select>
+              </label>
+              <label>
+                To
+                <select value={chartTargetId} onChange={(e) => setChartTargetId(e.target.value)}>
+                  {wallets
+                    .filter((w) => w.id !== chartSourceId)
+                    .map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.currency}
+                      </option>
+                    ))}
+                </select>
+              </label>
             </div>
-          )}
+
+            {rateHistory && rateHistory.points.length > 1 ? (
+              <RateTrendChart history={rateHistory} />
+            ) : (
+              <p className="aurora-tx-meta" style={{ marginTop: 14 }}>
+                Not enough history for this pair yet.
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

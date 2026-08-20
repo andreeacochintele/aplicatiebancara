@@ -290,7 +290,9 @@
 .aurora-wallet-card {
   position: relative;
   overflow: hidden;
-  background: var(--aurora-surface);
+  background:
+    linear-gradient(165deg, color-mix(in srgb, var(--wallet-accent, var(--aurora-accent)) 10%, transparent), transparent 60%),
+    var(--aurora-surface);
   border: 1px solid var(--aurora-border);
   border-radius: var(--aurora-radius-md);
   box-shadow: var(--aurora-shadow);
@@ -320,7 +322,7 @@
   font-weight: 800;
   font-size: 14px;
   letter-spacing: 0.02em;
-  color: var(--aurora-text);
+  color: var(--wallet-accent, var(--aurora-text));
 }
 
 .aurora-wallet-card__amount {
@@ -335,18 +337,6 @@
   font-size: 12px;
   color: var(--aurora-text-soft);
   margin-top: 3px;
-  margin-bottom: 14px;
-}
-
-.aurora-wallet-card__rate {
-  display: inline-block;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--aurora-accent-dark);
-  background: var(--aurora-accent-soft);
-  border-radius: 999px;
-  padding: 3px 9px;
-  margin-top: -6px;
   margin-bottom: 14px;
 }
 
@@ -394,6 +384,71 @@
 
 @media (max-width: 640px) {
   .aurora-convert-grid { grid-template-columns: 1fr; }
+}
+
+.aurora-exchange-card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--aurora-accent) 5%, transparent), transparent 140px), var(--aurora-surface);
+}
+
+.aurora-rate-banner {
+  margin-top: 4px;
+  margin-bottom: 16px;
+  padding: 14px 16px 6px;
+  background: var(--aurora-accent-soft);
+  border: 1px solid var(--aurora-accent);
+  border-radius: var(--aurora-radius-md);
+}
+
+.aurora-rate-banner__headline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 17px;
+  color: var(--aurora-accent-dark);
+}
+
+.aurora-rate-banner__sub {
+  font-size: 11px;
+  color: var(--aurora-text-soft);
+  margin-top: 2px;
+  margin-bottom: 10px;
+}
+
+.aurora-rate-banner__amount {
+  font-size: 13px;
+  color: var(--aurora-text-soft);
+  padding-top: 10px;
+  margin-top: 4px;
+  border-top: 1px dashed var(--aurora-accent);
+}
+
+.aurora-rate-banner__amount strong {
+  font-family: "Manrope", sans-serif;
+  color: var(--aurora-text);
+}
+
+.aurora-rate-chart {
+  margin: 10px -6px -4px;
+}
+
+.aurora-exchange-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.aurora-exchange-row .aurora-exchange-card {
+  flex: 1 1 340px;
+  max-width: 460px;
+}
+
+@media (max-width: 900px) {
+  .aurora-exchange-row .aurora-exchange-card {
+    max-width: none;
+  }
 }
 
 .aurora-quote-card {
