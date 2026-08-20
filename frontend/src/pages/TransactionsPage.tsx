@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError, apiRequest } from "../api/apiClient";
+import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
 import type { Beneficiary, BillSplit, Transaction, Wallet } from "../types";
 
@@ -43,14 +44,19 @@ export function TransactionsPage() {
 
   useEffect(() => {
     if (!accessToken) return;
-    apiRequest<Transaction[]>("/transactions", { token: accessToken })
-      .then(setTransactions)
-      .catch(() => setTransactions([]));
-    apiRequest<Wallet[]>("/wallets", { token: accessToken }).then(setWallets).catch(() => setWallets([]));
+    void refreshTransactionsData();
     apiRequest<Beneficiary[]>("/payments/beneficiaries", { token: accessToken })
       .then(setBeneficiaries)
       .catch(() => setBeneficiaries([]));
-    void loadBillSplits();
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    function handleBillSplitChanged() {
+      void refreshTransactionsData();
+    }
+    window.addEventListener(BILL_SPLIT_CHANGED_EVENT, handleBillSplitChanged);
+    return () => window.removeEventListener(BILL_SPLIT_CHANGED_EVENT, handleBillSplitChanged);
   }, [accessToken]);
 
   const userWalletIds = new Set(wallets.map((wallet) => wallet.id));
@@ -69,6 +75,18 @@ export function TransactionsPage() {
     } catch {
       setBillSplits([]);
     }
+  }
+
+  async function refreshTransactionsData() {
+    if (!accessToken) return;
+    const [nextTransactions, nextWallets, nextBillSplits] = await Promise.all([
+      apiRequest<Transaction[]>("/transactions", { token: accessToken }).catch(() => []),
+      apiRequest<Wallet[]>("/wallets", { token: accessToken }).catch(() => []),
+      apiRequest<BillSplit[]>("/payments/bill-splits", { token: accessToken }).catch(() => []),
+    ]);
+    setTransactions(nextTransactions);
+    setWallets(nextWallets);
+    setBillSplits(nextBillSplits);
   }
 
   function openSplit(transaction: Transaction) {
@@ -198,11 +216,7 @@ export function TransactionsPage() {
         body: { source_wallet_id: sourceWallet.id },
       });
       setSplitNotice("Split bill paid.");
-      await loadBillSplits();
-      const nextTransactions = await apiRequest<Transaction[]>("/transactions", { token: accessToken });
-      setTransactions(nextTransactions);
-      const nextWallets = await apiRequest<Wallet[]>("/wallets", { token: accessToken });
-      setWallets(nextWallets);
+      await refreshTransactionsData();
     } catch (err) {
       setSplitError(err instanceof ApiError ? err.message : "Could not pay split bill");
     } finally {

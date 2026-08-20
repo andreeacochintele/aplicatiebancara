@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
+import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
 import type { BillSplit, Wallet } from "../types";
 
@@ -82,6 +83,7 @@ export function Header() {
         body: { source_wallet_id: sourceWallet.id },
       });
       await loadNotifications();
+      window.dispatchEvent(new Event(BILL_SPLIT_CHANGED_EVENT));
     } catch (err) {
       setNotificationError(err instanceof ApiError ? err.message : "Could not pay request");
     } finally {
@@ -98,6 +100,7 @@ export function Header() {
         token: accessToken,
       });
       await loadNotifications();
+      window.dispatchEvent(new Event(BILL_SPLIT_CHANGED_EVENT));
     } catch (err) {
       setNotificationError(err instanceof ApiError ? err.message : "Could not refuse request");
     } finally {
