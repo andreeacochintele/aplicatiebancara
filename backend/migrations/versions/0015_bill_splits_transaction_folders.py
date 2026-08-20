@@ -17,10 +17,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    bill_split_status = sa.Enum("OPEN", "SETTLED", "CANCELLED", name="bill_split_status")
-    participant_status = sa.Enum("PENDING", "PAID", "DECLINED", name="bill_split_participant_status")
-    bill_split_status.create(op.get_bind(), checkfirst=True)
-    participant_status.create(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
+    sa.Enum("OPEN", "SETTLED", "CANCELLED", name="bill_split_status").create(bind, checkfirst=True)
+    sa.Enum("PENDING", "PAID", "DECLINED", name="bill_split_participant_status").create(bind, checkfirst=True)
+    bill_split_status = postgresql.ENUM("OPEN", "SETTLED", "CANCELLED", name="bill_split_status", create_type=False)
+    participant_status = postgresql.ENUM(
+        "PENDING",
+        "PAID",
+        "DECLINED",
+        name="bill_split_participant_status",
+        create_type=False,
+    )
 
     op.create_table(
         "bill_splits",
