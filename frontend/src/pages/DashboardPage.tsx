@@ -50,6 +50,7 @@ export function DashboardPage() {
   const [spending, setSpending] = useState<SpendingByTypeResponse | null>(null);
   const [creditScore, setCreditScore] = useState<CreditScore | null>(null);
   const [settingMainId, setSettingMainId] = useState<string | null>(null);
+  const [showTotal, setShowTotal] = useState(false);
 
   function reloadNetWorth() {
     if (!accessToken) return;
@@ -103,6 +104,14 @@ export function DashboardPage() {
 
   const scorePercent = creditScore ? Math.min(100, Math.max(0, ((creditScore.score - 300) / 550) * 100)) : 0;
 
+  const mainWallet = netWorth?.wallets.find((wallet) => wallet.is_main);
+  const heroAmount = showTotal ? netWorth?.total_available_balance : mainWallet?.available_balance;
+  const heroLabel = !netWorth
+    ? `Welcome, ${user?.first_name}`
+    : showTotal
+      ? `Total balance · all wallets (${netWorth.base_currency})`
+      : `${mainWallet?.currency ?? netWorth.base_currency} wallet balance`;
+
   return (
     <div className="aurora-page">
       <div className="aurora-col">
@@ -110,15 +119,32 @@ export function DashboardPage() {
           <div className="aurora-hero-blob aurora-blob-1" />
           <div className="aurora-hero-blob aurora-blob-2" />
           <div className="aurora-hero-top">
-            <div className="aurora-eyebrow light">
-              {netWorth ? `Total balance · all wallets (${netWorth.base_currency})` : `Welcome, ${user?.first_name}`}
-            </div>
+            <div className="aurora-eyebrow light">{heroLabel}</div>
             <div className="aurora-hero-amount">
-              {hidden ? "••••••" : (netWorth?.total_available_balance ?? "—")}
+              {hidden ? "••••••" : (heroAmount ?? "—")}
               <button className="aurora-icon-btn" onClick={() => setHidden((h) => !h)} aria-label="Toggle balance visibility">
                 {hidden ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+            {netWorth && netWorth.wallets.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setShowTotal((v) => !v)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  marginTop: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "rgba(255, 255, 255, 0.75)",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                }}
+              >
+                {showTotal ? "Show main wallet only" : "Show total across all wallets"}
+              </button>
+            )}
           </div>
           <div className="aurora-hero-wallets">
             {netWorth?.wallets.map((wallet) => (
