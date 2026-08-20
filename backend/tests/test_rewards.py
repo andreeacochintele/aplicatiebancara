@@ -218,7 +218,13 @@ def test_redeem_benefit_uses_best_owned_card_tier_not_the_selected_receipt_card(
     Regular card as the receipt card should still be able to redeem a
     Gold-gated benefit."""
     regular_card = _regular_card(db_session, seeded_user.id)
-    _platinum_card(db_session, seeded_user.id)  # owned, but not the one passed below
+    # A second debit card needs its own wallet now (one debit card per
+    # wallet) — a different currency avoids colliding with the RON wallet
+    # _regular_card already attached.
+    eur_wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    CardService(db_session).create_card(
+        seeded_user.id, CardCreate(tier=CardTier.PLATINUM, default_wallet_id=eur_wallet.id)
+    )  # owned, but not the one passed below
     lounge = RewardBenefit(
         name="Priority Pass Lounge Access",
         category=BenefitCategory.LOUNGE_ACCESS,
