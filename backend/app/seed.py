@@ -37,6 +37,10 @@ from app.wallets.models import Wallet
 SEED_PASSWORD = "Password123!"
 ADMIN_SEED_PASSWORD = "admin"
 SEED_NAMESPACE = uuid.UUID("56d62763-b384-5f5b-a780-06eed62c3d62")
+TRANSFER_TEST_USERS = [
+    (index, f"transfer{index:02d}@example.com", f"+407000001{index:02d}", f"Transfer {index:02d}", "Tester")
+    for index in range(1, 11)
+]
 
 
 def _seed_uuid(name: str) -> str:
@@ -51,6 +55,95 @@ def _money(value: Decimal) -> str:
     return f"{value:.2f}"
 
 
+def _print_transfer_test_users() -> None:
+    print("Transfer test users:")
+    for _index, email, phone, first_name, last_name in TRANSFER_TEST_USERS:
+        print(f"  {email} / {SEED_PASSWORD} / {phone} / {first_name} {last_name}")
+
+
+def _seed_supabase_transfer_test_users(client: SupabaseRestSession) -> None:
+    created_at = _now()
+    user_rows = []
+    wallet_rows = []
+    for index, email, phone, first_name, last_name in TRANSFER_TEST_USERS:
+        user_id = _seed_uuid(f"transfer-user-{index:02d}")
+        wallet_id = _seed_uuid(f"wallet-transfer-user-{index:02d}-ron")
+        existing_user = client.request("GET", "users", params={"email": f"eq.{email}", "select": "id", "limit": "1"})
+        if existing_user:
+            user_id = existing_user[0]["id"]
+        else:
+            user_rows.append(
+                {
+                    "id": user_id,
+                    "email": email,
+                    "phone": phone,
+                    "password_hash": hash_password(SEED_PASSWORD),
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "role": UserRole.USER.value,
+                    "user_type": UserType.PERSONAL.value,
+                    "status": "ACTIVE",
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                }
+            )
+        existing_wallet = client.request(
+            "GET",
+            "wallets",
+            params={"user_id": f"eq.{user_id}", "currency": "eq.RON", "select": "id", "limit": "1"},
+        )
+        if not existing_wallet:
+            wallet_rows.append(
+                {
+                    "id": wallet_id,
+                    "user_id": user_id,
+                    "currency": "RON",
+                    "available_balance": _money(Decimal("1000.00")),
+                    "reserved_balance": _money(Decimal("0")),
+                    "is_main": True,
+                    "status": "ACTIVE",
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                }
+            )
+
+    if user_rows:
+        client.request("POST", "users", body=user_rows, prefer="return=minimal")
+    if wallet_rows:
+        client.request("POST", "wallets", body=wallet_rows, prefer="return=minimal")
+
+
+def _seed_transfer_test_users(db) -> None:
+    for index, email, phone, first_name, last_name in TRANSFER_TEST_USERS:
+        user = db.query(User).filter(User.email == email).first()
+        if user is None:
+            user = User(
+                id=uuid.UUID(_seed_uuid(f"transfer-user-{index:02d}")),
+                email=email,
+                phone=phone,
+                password_hash=hash_password(SEED_PASSWORD),
+                first_name=first_name,
+                last_name=last_name,
+                role=UserRole.USER,
+                user_type=UserType.PERSONAL,
+            )
+            db.add(user)
+            db.flush()
+
+        wallet = db.query(Wallet).filter(Wallet.user_id == user.id, Wallet.currency == "RON").first()
+        if wallet is None:
+            db.add(
+                Wallet(
+                    id=uuid.UUID(_seed_uuid(f"wallet-transfer-user-{index:02d}-ron")),
+                    user_id=user.id,
+                    currency="RON",
+                    available_balance=Decimal("1000.00"),
+                    reserved_balance=Decimal("0"),
+                    is_main=True,
+                )
+            )
+
+
 def run_supabase_rest() -> None:
     settings = get_settings()
     if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
@@ -59,8 +152,10 @@ def run_supabase_rest() -> None:
     client = SupabaseRestSession(settings.SUPABASE_URL, settings.SUPABASE_KEY)
     existing = client.request("GET", "users", params={"email": "eq.user@example.com", "select": "id", "limit": "1"})
     if existing:
+        _seed_supabase_transfer_test_users(client)
         _seed_supabase_rewards_and_merchants(client)
         print("Supabase REST seed data already present, skipping.")
+        _print_transfer_test_users()
         client.close()
         return
 
@@ -115,6 +210,7 @@ def run_supabase_rest() -> None:
         },
     ]
     client.request("POST", "users", body=users, prefer="return=minimal")
+    _seed_supabase_transfer_test_users(client)
 
     wallet_balances = {
         ron_id: Decimal("7100.50"),
@@ -242,6 +338,7 @@ def run_supabase_rest() -> None:
     print(f"  user:     user@example.com / {SEED_PASSWORD}")
     print(f"  admin:    admin@example.com / {ADMIN_SEED_PASSWORD}")
     print(f"  business: business@example.com / {SEED_PASSWORD}")
+    _print_transfer_test_users()
 
 
 def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
@@ -360,7 +457,10 @@ def run() -> None:
     db = SessionLocal()
     try:
         if db.query(User).filter(User.email == "user@example.com").first():
+            _seed_transfer_test_users(db)
+            db.commit()
             print("Seed data already present, skipping.")
+            _print_transfer_test_users()
             return
 
         user = User(
@@ -390,6 +490,7 @@ def run() -> None:
         )
         db.add_all([user, admin, business])
         db.flush()
+        _seed_transfer_test_users(db)
 
         ron = Wallet(user_id=user.id, currency="RON", available_balance=Decimal("8450.00"), is_main=True)
         eur = Wallet(user_id=user.id, currency="EUR", available_balance=Decimal("1240.00"))

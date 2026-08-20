@@ -93,6 +93,54 @@ export interface ScheduledPayment {
   updated_at: string;
 }
 
+export type BillSplitStatus = "OPEN" | "SETTLED" | "CANCELLED";
+export type BillSplitParticipantStatus = "PENDING" | "PAID" | "DECLINED";
+
+export interface BillSplitParticipant {
+  id: string;
+  bill_split_id: string;
+  participant_user_id: string | null;
+  name: string;
+  phone: string | null;
+  amount: string;
+  status: BillSplitParticipantStatus;
+  paid_transaction_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BillSplit {
+  id: string;
+  owner_user_id: string;
+  source_transaction_id: string | null;
+  title: string;
+  total_amount: string;
+  currency: string;
+  status: BillSplitStatus;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  participants: BillSplitParticipant[];
+}
+
+export interface TransactionFolderItem {
+  id: string;
+  folder_id: string;
+  transaction_id: string;
+  added_at: string;
+}
+
+export interface TransactionFolder {
+  id: string;
+  owner_user_id: string;
+  name: string;
+  color: string | null;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  items: TransactionFolderItem[];
+}
+
 export type CardType = "DEBIT" | "CREDIT" | "ONE_TIME";
 export type CardTier = "REGULAR" | "GOLD" | "PLATINUM";
 export type CardStatus = "ACTIVE" | "FROZEN" | "EXPIRED" | "CANCELLED";
