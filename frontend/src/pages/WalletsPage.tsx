@@ -1,8 +1,18 @@
+import { ArrowLeftRight, Star } from "lucide-react";
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { FXQuote, Wallet } from "../types";
+
+function hueFromString(value: string): number {
+  return Math.abs([...value].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % 360;
+}
+
+function colorForCurrency(currency: string): string {
+  return `hsl(${hueFromString(currency)} 65% 55%)`;
+}
 
 export function WalletsPage() {
   const { accessToken } = useAuth();
@@ -95,80 +105,100 @@ export function WalletsPage() {
   }
 
   return (
-    <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-      <div className="tile">
-        <table>
-          <thead>
-            <tr>
-              <th>Currency</th>
-              <th>Available</th>
-              <th>Reserved</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {wallets.map((wallet) => (
-              <tr key={wallet.id}>
-                <td>
-                  {wallet.currency} {wallet.is_main && <span className="tag tag--accent">MAIN</span>}
-                </td>
-                <td>{wallet.available_balance}</td>
-                <td>{wallet.reserved_balance}</td>
-                <td>
-                  <span className="tag tag--neutral">{wallet.status}</span>
-                </td>
-                <td>
-                  {!wallet.is_main && wallet.status === "ACTIVE" && (
-                    <button onClick={() => setMainWallet(wallet.id)} disabled={settingMainId === wallet.id}>
-                      Set as main
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {wallets.length === 0 && (
-              <tr>
-                <td colSpan={5}>No wallets yet.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+    <div className="aurora-col">
+      <div className="aurora-card">
+        <div className="aurora-section-header">
+          <div>
+            <div className="aurora-eyebrow">Your accounts</div>
+            <h2>Wallets</h2>
+          </div>
+        </div>
+
+        <div className="aurora-wallet-grid">
+          {wallets.map((wallet) => (
+            <div
+              className="aurora-wallet-card"
+              key={wallet.id}
+              style={{ "--wallet-accent": colorForCurrency(wallet.currency) } as CSSProperties}
+            >
+              <div className="aurora-wallet-card__top">
+                <span className="aurora-wallet-card__code">{wallet.currency}</span>
+                {wallet.is_main ? (
+                  <span className="aurora-chip aurora-chip-violet">Main</span>
+                ) : (
+                  <span className="aurora-chip aurora-chip-neutral">{wallet.status}</span>
+                )}
+              </div>
+              <div className="aurora-wallet-card__amount">{wallet.available_balance}</div>
+              <div className="aurora-wallet-card__sub">
+                {wallet.reserved_balance !== "0" && wallet.reserved_balance !== "0.00"
+                  ? `${wallet.reserved_balance} ${wallet.currency} reserved`
+                  : "Nothing on hold"}
+              </div>
+              <div className="aurora-wallet-card__footer">
+                <span className="aurora-eyebrow" style={{ marginBottom: 0 }}>
+                  {wallet.is_main ? "Main wallet" : wallet.status}
+                </span>
+                {!wallet.is_main && wallet.status === "ACTIVE" && (
+                  <button
+                    type="button"
+                    className="aurora-wallet-card__set-main"
+                    onClick={() => setMainWallet(wallet.id)}
+                    disabled={settingMainId === wallet.id}
+                  >
+                    <Star size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
+                    Set as main
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          {wallets.length === 0 && <p className="aurora-tx-meta">No wallets yet.</p>}
+        </div>
         {error && <p role="alert">{error}</p>}
       </div>
 
       {wallets.length >= 2 && (
-        <div className="tile" style={{ maxWidth: 420 }}>
-          <div className="eyebrow" style={{ marginBottom: "0.75rem" }}>
-            Convert between your wallets
+        <div className="aurora-card" style={{ maxWidth: 480 }}>
+          <div className="aurora-section-header">
+            <div>
+              <div className="aurora-eyebrow">Exchange</div>
+              <h2>
+                <ArrowLeftRight size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
+                Convert between your wallets
+              </h2>
+            </div>
           </div>
-          <label>
-            From
-            <select value={sourceId} onChange={(e) => { setSourceId(e.target.value); setQuote(null); }}>
-              {wallets.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.currency} · {w.available_balance}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            To
-            <select value={targetId} onChange={(e) => { setTargetId(e.target.value); setQuote(null); }}>
-              {wallets
-                .filter((w) => w.id !== sourceId)
-                .map((w) => (
+
+          <div className="aurora-convert-grid">
+            <label>
+              From
+              <select value={sourceId} onChange={(e) => { setSourceId(e.target.value); setQuote(null); }}>
+                {wallets.map((w) => (
                   <option key={w.id} value={w.id}>
-                    {w.currency}
+                    {w.currency} · {w.available_balance}
                   </option>
                 ))}
-            </select>
-          </label>
-          <label>
+              </select>
+            </label>
+            <label>
+              To
+              <select value={targetId} onChange={(e) => { setTargetId(e.target.value); setQuote(null); }}>
+                {wallets
+                  .filter((w) => w.id !== sourceId)
+                  .map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.currency}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </div>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12, fontSize: 12.5, fontWeight: 600 }}>
             Amount ({source?.currency})
             <input value={amount} onChange={(e) => { setAmount(e.target.value); setQuote(null); }} />
           </label>
-          <button onClick={getQuote} disabled={busy || !source || !target}>
+          <button onClick={getQuote} disabled={busy || !source || !target} style={{ marginTop: 14 }}>
             Get quote
           </button>
 
@@ -176,37 +206,33 @@ export function WalletsPage() {
           {result && <p>{result}</p>}
 
           {quote && (
-            <div className="tile" style={{ boxShadow: "inset 0 0 0 1px var(--color-accent)" }}>
-              <div className="eyebrow">Quote expires {new Date(quote.expires_at).toLocaleTimeString()}</div>
-              <table>
-                <tbody>
-                  <tr>
-                    <td>Rate</td>
-                    <td style={{ textAlign: "right" }}>
-                      1 {quote.source_currency} = {quote.exchange_rate} {quote.target_currency}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Fee</td>
-                    <td style={{ textAlign: "right" }}>
-                      {quote.fee} {quote.source_currency}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>You receive</td>
-                    <td style={{ textAlign: "right" }}>
-                      {quote.target_amount} {quote.target_currency}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <button onClick={acceptQuote} disabled={busy}>
+            <div className="aurora-quote-card">
+              <div className="aurora-eyebrow">Quote expires {new Date(quote.expires_at).toLocaleTimeString()}</div>
+              <div className="aurora-quote-row">
+                <span>Rate</span>
+                <span>
+                  1 {quote.source_currency} = {quote.exchange_rate} {quote.target_currency}
+                </span>
+              </div>
+              <div className="aurora-quote-row">
+                <span>Fee</span>
+                <span>
+                  {quote.fee} {quote.source_currency}
+                </span>
+              </div>
+              <div className="aurora-quote-row total">
+                <span>You receive</span>
+                <span>
+                  {quote.target_amount} {quote.target_currency}
+                </span>
+              </div>
+              <button onClick={acceptQuote} disabled={busy} style={{ marginTop: 10, width: "100%" }}>
                 Accept quote
               </button>
             </div>
           )}
         </div>
       )}
-    </section>
+    </div>
   );
 }

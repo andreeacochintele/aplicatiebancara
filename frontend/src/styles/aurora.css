@@ -279,6 +279,132 @@
   text-decoration: none;
 }
 
+/* ---- Wallet cards ---- */
+
+.aurora-wallet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.aurora-wallet-card {
+  position: relative;
+  overflow: hidden;
+  background: var(--aurora-surface);
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-md);
+  box-shadow: var(--aurora-shadow);
+  padding: 18px 18px 14px;
+}
+
+.aurora-wallet-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--wallet-accent, var(--aurora-gradient));
+}
+
+.aurora-wallet-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.aurora-wallet-card__code {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  color: var(--aurora-text);
+}
+
+.aurora-wallet-card__amount {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 27px;
+  letter-spacing: -0.01em;
+  color: var(--aurora-text);
+}
+
+.aurora-wallet-card__sub {
+  font-size: 12px;
+  color: var(--aurora-text-soft);
+  margin-top: 3px;
+  margin-bottom: 14px;
+}
+
+.aurora-wallet-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid var(--aurora-border);
+}
+
+.aurora-wallet-card__set-main {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--aurora-accent-dark);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.aurora-wallet-card__set-main:disabled {
+  color: var(--aurora-text-faint);
+  cursor: default;
+}
+
+.aurora-convert-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+}
+
+.aurora-convert-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.aurora-convert-grid input,
+.aurora-convert-grid select {
+  padding: 9px 10px;
+  font-size: 13.5px;
+}
+
+@media (max-width: 640px) {
+  .aurora-convert-grid { grid-template-columns: 1fr; }
+}
+
+.aurora-quote-card {
+  margin-top: 16px;
+  background: var(--aurora-accent-soft);
+  border: 1px solid var(--aurora-accent);
+  border-radius: var(--aurora-radius-md);
+  padding: 14px 16px;
+}
+
+.aurora-quote-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  font-size: 13px;
+  color: var(--aurora-text);
+}
+
+.aurora-quote-row.total {
+  font-weight: 800;
+  font-family: "Manrope", sans-serif;
+}
+
 /* ---- Hero balance card ---- */
 
 .aurora-hero {
