@@ -176,6 +176,7 @@ export interface CreditProfile {
   current_score: number;
   income: string;
   existing_debt: string;
+  currency: string;
   updated_at: string;
 }
 

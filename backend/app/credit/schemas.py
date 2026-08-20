@@ -17,12 +17,14 @@ class CreditProfilePublic(BaseModel):
     current_score: int
     income: Decimal
     existing_debt: Decimal
+    currency: str
     updated_at: datetime
 
 
 class CreditScoreRecalculateRequest(BaseModel):
     income: Decimal | None = None
     existing_debt: Decimal | None = None
+    currency: str | None = None
 
 
 class CreditScorePublic(BaseModel):

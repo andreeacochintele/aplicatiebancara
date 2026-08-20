@@ -46,6 +46,7 @@ export function CreditPage() {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [income, setIncome] = useState("");
   const [existingDebt, setExistingDebt] = useState("");
+  const [profileCurrency, setProfileCurrency] = useState("RON");
   const [applicationType, setApplicationType] = useState<CreditApplicationType>("PERSONAL_LOAN");
   const [requestedAmount, setRequestedAmount] = useState("");
   const [requestedCurrency, setRequestedCurrency] = useState("RON");
@@ -81,6 +82,7 @@ export function CreditPage() {
       setScore(scoreResponse);
       setIncome(profileResponse.income);
       setExistingDebt(profileResponse.existing_debt);
+      setProfileCurrency(profileResponse.currency);
 
       const [applicationsResult, loansResult] = await Promise.allSettled([
         apiRequest<CreditApplication[]>("/credit/applications", { token }),
@@ -127,6 +129,7 @@ export function CreditPage() {
         body: {
           income: income || null,
           existing_debt: existingDebt || null,
+          currency: profileCurrency,
         },
       });
       const profileResponse = await apiRequest<CreditProfile>("/credit/profile", { token: accessToken });
@@ -134,6 +137,7 @@ export function CreditPage() {
       setProfile(profileResponse);
       setIncome(profileResponse.income);
       setExistingDebt(profileResponse.existing_debt);
+      setProfileCurrency(profileResponse.currency);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -384,12 +388,24 @@ export function CreditPage() {
             Existing debt
             <input value={existingDebt} onChange={(event) => setExistingDebt(event.target.value)} inputMode="decimal" />
           </label>
+          <label>
+            Currency
+            <select value={profileCurrency} onChange={(event) => setProfileCurrency(event.target.value)}>
+              {CREDIT_CURRENCIES.map((currency) => (
+                <option key={currency} value={currency}>
+                  {currency}
+                </option>
+              ))}
+            </select>
+          </label>
           <button type="button" onClick={recalculateScore} disabled={isSaving}>
             {isSaving ? "Recalculating..." : "Recalculate score"}
           </button>
         </div>
         {profile && (
           <div className="credit-profile-meta">
+            <span>Profile currency</span>
+            <strong>{profile.currency}</strong>
             <span>Last updated</span>
             <strong>{new Date(profile.updated_at).toLocaleString()}</strong>
           </div>

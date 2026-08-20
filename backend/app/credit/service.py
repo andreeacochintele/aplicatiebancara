@@ -66,6 +66,8 @@ class CreditService:
             profile.income = data.income
         if data.existing_debt is not None:
             profile.existing_debt = data.existing_debt
+        if data.currency is not None:
+            profile.currency = _normalize_currency(data.currency)
 
         history = self._persist_score(profile, self._wallet_balance(user_id))
         return CreditScorePublic(
@@ -222,6 +224,7 @@ class CreditService:
                 "wallet_balance": str(wallet_balance),
                 "income": str(profile.income),
                 "existing_debt": str(profile.existing_debt),
+                "profile_currency": profile.currency,
             },
         )
         return self.repository.add_history(history)

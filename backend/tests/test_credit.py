@@ -54,6 +54,7 @@ def test_get_or_create_profile_persists_initial_score_history(db_session):
 
     assert profile.user_id == user.id
     assert profile.current_score == 620
+    assert profile.currency == "RON"
     assert score.score == 620
     assert score.band == "FAIR"
     assert score.reason_data["wallet_balance"] == "5000.00"
@@ -67,7 +68,7 @@ def test_recalculate_score_updates_mock_profile_inputs_and_history(db_session):
 
     score = service.recalculate_score(
         user.id,
-        CreditScoreRecalculateRequest(income=Decimal("12000.00"), existing_debt=Decimal("2000.00")),
+        CreditScoreRecalculateRequest(income=Decimal("12000.00"), existing_debt=Decimal("2000.00"), currency="eur"),
     )
     profile = service.get_or_create_profile(user.id)
 
@@ -75,7 +76,19 @@ def test_recalculate_score_updates_mock_profile_inputs_and_history(db_session):
     assert score.band == "GOOD"
     assert profile.income == Decimal("12000.00")
     assert profile.existing_debt == Decimal("2000.00")
+    assert profile.currency == "EUR"
+    assert score.reason_data["profile_currency"] == "EUR"
     assert len(profile.score_history) == 1
+
+
+def test_recalculate_score_rejects_invalid_currency(db_session):
+    user = _create_user(db_session)
+
+    with pytest.raises(ValidationError):
+        CreditService(db_session).recalculate_score(
+            user.id,
+            CreditScoreRecalculateRequest(income=Decimal("12000.00"), existing_debt=Decimal("2000.00"), currency="EURO"),
+        )
 
 
 def test_credit_score_endpoint_requires_auth(client):
@@ -102,6 +115,24 @@ def test_credit_score_endpoint_returns_score(client):
     body = response.json()
     assert body["score"] == 600
     assert body["band"] == "FAIR"
+
+
+def test_credit_profile_endpoint_returns_currency(client):
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "credit-profile-endpoint@example.com",
+            "password": "Sup3rSecret!",
+            "first_name": "Credit",
+            "last_name": "Profile",
+        },
+    )
+    token = register.json()["tokens"]["access_token"]
+
+    response = client.get("/api/v1/credit/profile", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200
+    assert response.json()["currency"] == "RON"
 
 
 def test_loan_calculator_builds_deterministic_amortization_schedule():

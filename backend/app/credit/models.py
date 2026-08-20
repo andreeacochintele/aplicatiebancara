@@ -55,6 +55,7 @@ class CreditProfile(Base):
     current_score: Mapped[int] = mapped_column(Integer, default=600, nullable=False)
     income: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     existing_debt: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="RON", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     owner = relationship("User")
