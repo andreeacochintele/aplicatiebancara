@@ -15,6 +15,7 @@ from app.credit.schemas import (
     LoanCalculatorRequest,
     LoanCalculatorResult,
     LoanInstallmentPublic,
+    LoanProductPublic,
     LoanPublic,
 )
 from app.credit.service import CreditService
@@ -62,6 +63,14 @@ def calculate_loan(
     db: Session = Depends(get_db),
 ) -> LoanCalculatorResult:
     return CreditService(db).calculate_loan(payload)
+
+
+@router.get("/loan-products", response_model=list[LoanProductPublic])
+def list_loan_products(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[LoanProductPublic]:
+    return CreditService(db).list_loan_products()
 
 
 @router.get("/applications", response_model=list[CreditApplicationPublic])

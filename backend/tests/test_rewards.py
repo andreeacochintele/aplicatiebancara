@@ -11,6 +11,8 @@ from app.rewards.models import BenefitCategory, BenefitRedemption, RewardBenefit
 from app.rewards.service import RewardsService
 from app.users.schemas import UserCreate
 from app.users.service import UserService
+from app.wallets.schemas import WalletCreate
+from app.wallets.service import WalletService
 
 
 @pytest.fixture()
@@ -82,16 +84,29 @@ def test_redeem_points_rejects_non_positive_amount(db_session, seeded_user):
         RewardsService(db_session).redeem_points(seeded_user.id, 0)
 
 
+def _wallet_for_card(db_session, user_id):
+    wallet_service = WalletService(db_session)
+    existing_wallet = wallet_service.repository.get_by_user_and_currency(user_id, "RON")
+    if existing_wallet is not None:
+        return existing_wallet
+    return wallet_service.create_wallet(user_id, WalletCreate(currency="RON"))
+
+
+def _tier_card(db_session, user_id, tier: CardTier):
+    wallet = _wallet_for_card(db_session, user_id)
+    return CardService(db_session).create_card(user_id, CardCreate(tier=tier, default_wallet_id=wallet.id))
+
+
 def _regular_card(db_session, user_id):
-    return CardService(db_session).create_card(user_id, CardCreate(tier=CardTier.REGULAR))
+    return _tier_card(db_session, user_id, CardTier.REGULAR)
 
 
 def _gold_card(db_session, user_id):
-    return CardService(db_session).create_card(user_id, CardCreate(tier=CardTier.GOLD))
+    return _tier_card(db_session, user_id, CardTier.GOLD)
 
 
 def _platinum_card(db_session, user_id):
-    return CardService(db_session).create_card(user_id, CardCreate(tier=CardTier.PLATINUM))
+    return _tier_card(db_session, user_id, CardTier.PLATINUM)
 
 
 def test_list_benefits_locks_by_card_tier_and_points(db_session, seeded_user):

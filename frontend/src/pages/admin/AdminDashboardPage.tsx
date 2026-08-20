@@ -2,9 +2,24 @@ import { useEffect, useMemo, useState } from "react";
 
 import { ApiError, apiRequest } from "../../api/apiClient";
 import { useAuth } from "../../hooks/useAuth";
-import type { CreditApplication, CreditApplicationStatus } from "../../types";
+import type { CreditApplication, CreditApplicationStatus, LoanProductType } from "../../types";
 
-function formatApplicationType(type: CreditApplication["type"]): string {
+const PRODUCT_RATE_DEFAULTS: Record<LoanProductType, string> = {
+  PERSONAL_LOAN: "9.90",
+  MORTGAGE: "6.80",
+  AUTO_LOAN: "8.40",
+  STUDENT_LOAN: "5.90",
+  HOME_IMPROVEMENT: "8.20",
+  DEBT_CONSOLIDATION: "10.50",
+};
+
+function defaultRate(application: CreditApplication): string {
+  if (application.type === "CREDIT_CARD") return "18.00";
+  return application.loan_product_type ? PRODUCT_RATE_DEFAULTS[application.loan_product_type] : "9.50";
+}
+
+function formatProductType(type: LoanProductType | null): string {
+  if (!type) return "General loan";
   return type
     .split("_")
     .map((part) => part[0] + part.slice(1).toLowerCase())
@@ -47,7 +62,7 @@ export function AdminDashboardPage() {
             application.id,
             {
               amount: application.offered_amount ?? application.requested_amount,
-              rate: application.offered_interest_rate ?? (application.type === "CREDIT_CARD" ? "18.00" : "9.50"),
+              rate: application.offered_interest_rate ?? defaultRate(application),
             },
           ]),
         ),
@@ -57,7 +72,7 @@ export function AdminDashboardPage() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not load credit applications.");
+      setError(err instanceof ApiError ? err.message : "Could not load loan applications.");
     } finally {
       setIsLoading(false);
     }
@@ -102,7 +117,7 @@ export function AdminDashboardPage() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not update credit application.");
+      setError(err instanceof ApiError ? err.message : "Could not update loan application.");
     } finally {
       setDecisionApplicationId(null);
     }
@@ -127,7 +142,7 @@ export function AdminDashboardPage() {
           <span className="tag tag--neutral">{pendingApplications.length} pending credit</span>
         </div>
         {error && <p style={{ color: "var(--color-warning)", margin: "0 0 0.85rem" }}>{error}</p>}
-        {isLoading && <div className="card-empty">Loading credit applications...</div>}
+        {isLoading && <div className="card-empty">Loading loan applications...</div>}
         {!isLoading && (
           <table>
             <thead>
@@ -147,12 +162,12 @@ export function AdminDashboardPage() {
                 const isOpen = application.status === "PENDING" || application.status === "DRAFT";
                 const draft = offerDrafts[application.id] ?? {
                   amount: application.requested_amount,
-                  rate: application.type === "CREDIT_CARD" ? "18.00" : "9.50",
+                  rate: defaultRate(application),
                 };
                 return (
                   <tr key={application.id}>
                     <td>{application.user_id.slice(0, 8)}</td>
-                    <td>{formatApplicationType(application.type)}</td>
+                    <td>{formatProductType(application.loan_product_type)}</td>
                     <td>{formatMoney(application.requested_amount, application.currency)}</td>
                     <td>
                       {isOpen ? (
@@ -213,7 +228,7 @@ export function AdminDashboardPage() {
               })}
               {applications.length === 0 && (
                 <tr>
-                  <td colSpan={8}>No credit applications yet.</td>
+                  <td colSpan={8}>No loan applications yet.</td>
                 </tr>
               )}
             </tbody>
