@@ -525,6 +525,23 @@ th {
   flex-wrap: wrap;
 }
 
+.card-tier__rewards,
+.card-tier-summary__rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.card-tier__rewards span,
+.card-tier-summary__rewards span {
+  padding: 0.28rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-divider);
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
 .card-tier__products span {
   padding: 0.3rem 0.5rem;
   border-radius: 999px;
@@ -938,6 +955,25 @@ th {
   width: 16px;
   height: 16px;
   accent-color: var(--color-accent);
+}
+
+.card-preference-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+.card-preference-toggle:hover,
+.card-preference-toggle.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
 }
 
 .form-actions {

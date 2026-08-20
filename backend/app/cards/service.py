@@ -8,18 +8,23 @@ from sqlalchemy.orm import Session
 from app.cards.models import Card, CardPaymentPreferences, CardStatus, CardTier, CardType
 from app.cards.repository import CardRepository
 from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate
-from app.core.exceptions import NotFoundError, ValidationError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.wallets.models import WalletStatus
 from app.wallets.repository import WalletRepository
 
 
 class CardService:
+    MAX_CARDS_PER_USER = 5
+
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repository = CardRepository(db)
         self.wallets = WalletRepository(db)
 
     def create_card(self, user_id: uuid.UUID, data: CardCreate) -> Card:
+        if len(self.repository.list_for_user(user_id)) >= self.MAX_CARDS_PER_USER:
+            raise ConflictError("Card limit reached. You can have up to 5 cards.")
+
         if data.type == CardType.ONE_TIME and data.tier is not None:
             raise ValidationError("One-time cards do not have tiers")
 

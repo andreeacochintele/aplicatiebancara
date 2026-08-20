@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Eye, EyeOff, Lock, Unlock } from "lucide-react";
+import { ArrowLeftRight, Eye, EyeOff, Lock, Trash2, Unlock } from "lucide-react";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
@@ -7,10 +7,16 @@ import type { Card, CardPaymentPreferences, CardTier, CardType, Wallet } from ".
 
 const CARD_TYPES: CardType[] = ["DEBIT", "CREDIT", "ONE_TIME"];
 const CARD_TIERS: CardTier[] = ["REGULAR", "GOLD", "PLATINUM"];
+const MAX_CARDS = 5;
 const CARD_TIER_DETAILS: Record<CardTier, string> = {
   REGULAR: "Standard everyday card controls.",
-  GOLD: "Higher comfort for frequent card users.",
-  PLATINUM: "Premium level for larger spending and travel needs.",
+  GOLD: "Cashback boosts and stronger everyday card support.",
+  PLATINUM: "Premium travel, insurance and concierge-style card benefits.",
+};
+const CARD_TIER_REWARDS: Record<CardTier, string[]> = {
+  REGULAR: ["1x reward points", "Standard card controls", "Basic spending notifications"],
+  GOLD: ["1.5x reward points", "2% partner cashback", "Priority card support", "Higher daily card limits"],
+  PLATINUM: ["2x reward points", "4% partner cashback", "Travel insurance", "Airport lounge access"],
 };
 const CARD_TIER_LABELS: Record<CardTier, string> = {
   REGULAR: "Regular",
@@ -37,18 +43,21 @@ const CARD_TIER_PRODUCT_LIST = [
     description: "Everyday debit or credit card with standard limits and core banking controls.",
     debit: "Standard debit",
     credit: "Standard credit",
+    rewards: CARD_TIER_REWARDS.REGULAR,
   },
   {
     name: "Gold",
-    description: "Higher daily comfort for frequent card users, with priority card support.",
+    description: "A stronger everyday tier with cashback boosts and faster support.",
     debit: "Gold debit",
     credit: "Gold credit",
+    rewards: CARD_TIER_REWARDS.GOLD,
   },
   {
     name: "Platinum",
-    description: "Premium card level for larger spending needs and travel-oriented benefits.",
+    description: "A premium tier focused on travel, protection and higher-touch service.",
     debit: "Platinum debit",
     credit: "Platinum credit",
+    rewards: CARD_TIER_REWARDS.PLATINUM,
   },
 ];
 
@@ -96,6 +105,7 @@ export function CardsPage() {
   const activeWallets = useMemo(() => wallets.filter((wallet) => wallet.status === "ACTIVE"), [wallets]);
   const cardholderName = user ? `${user.first_name} ${user.last_name}`.trim() : "Card holder";
   const selectedReusableCardType = selectedType === "DEBIT" || selectedType === "CREDIT";
+  const cardLimitReached = cards.length >= MAX_CARDS;
 
   async function loadCardsData(token: string) {
     setIsLoading(true);
@@ -140,7 +150,7 @@ export function CardsPage() {
   }, [accessToken, logout]);
 
   async function createCard() {
-    if (!accessToken || isSaving) return;
+    if (!accessToken || isSaving || cardLimitReached) return;
     setIsSaving(true);
     setError(null);
     try {
@@ -244,23 +254,21 @@ export function CardsPage() {
   }
 
   function updatePreferenceDraft(cardId: string, updates: Partial<CardPaymentPreferences>) {
-    setDraftPreferences((current) => {
-      const currentDraft = current[cardId] ?? preferences[cardId];
-      if (!currentDraft) return current;
-      return {
-        ...current,
-        [cardId]: {
-          ...currentDraft,
-          ...updates,
-        },
-      };
-    });
+    const currentDraft = draftPreferences[cardId] ?? preferences[cardId];
+    if (!currentDraft) return;
+    const nextDraft = {
+      ...currentDraft,
+      ...updates,
+    };
+    setDraftPreferences((current) => ({
+      ...current,
+      [cardId]: nextDraft,
+    }));
+    void savePaymentPreferences(cardId, nextDraft);
   }
 
-  async function savePaymentPreferences(cardId: string) {
-    if (!accessToken || preferencesCardId) return;
-    const draft = draftPreferences[cardId];
-    if (!draft) return;
+  async function savePaymentPreferences(cardId: string, draft: CardPaymentPreferences) {
+    if (!accessToken) return;
     setPreferencesCardId(cardId);
     setError(null);
     try {
@@ -281,7 +289,7 @@ export function CardsPage() {
       }
       setError(err instanceof ApiError ? err.message : "Could not save card preferences.");
     } finally {
-      setPreferencesCardId(null);
+      setPreferencesCardId((current) => (current === cardId ? null : current));
     }
   }
 
@@ -335,14 +343,21 @@ export function CardsPage() {
               ))}
             </select>
           </label>
-          <button type="button" onClick={createCard} disabled={isSaving} style={{ alignSelf: "end" }}>
+          <button type="button" onClick={createCard} disabled={isSaving || cardLimitReached} style={{ alignSelf: "end" }}>
             {isSaving
               ? "Creating..."
+              : cardLimitReached
+                ? "Card limit reached"
               : selectedReusableCardType
                 ? `Create ${CARD_TIER_LABELS[selectedTier]} ${formatCardType(selectedType)}`
                 : "Create one-time card"}
           </button>
         </div>
+        {cardLimitReached && (
+          <p className="eyebrow" style={{ margin: "0.85rem 0 0" }}>
+            You can have up to {MAX_CARDS} cards.
+          </p>
+        )}
         <div className="card-tier-summary" style={{ marginTop: "0.85rem" }}>
           {selectedReusableCardType ? (
             <>
@@ -351,6 +366,11 @@ export function CardsPage() {
                 {selectedType === "DEBIT"
                   ? CARD_TIER_PRODUCTS[selectedTier].debit
                   : CARD_TIER_PRODUCTS[selectedTier].credit}
+              </span>
+              <span className="card-tier-summary__rewards">
+                {CARD_TIER_REWARDS[selectedTier].map((reward) => (
+                  <span key={reward}>{reward}</span>
+                ))}
               </span>
             </>
           ) : (
@@ -385,6 +405,11 @@ export function CardsPage() {
                     <span className="tag tag--neutral">Debit + Credit</span>
                   </div>
                   <p>{tier.description}</p>
+                  <div className="card-tier__rewards">
+                    {tier.rewards.map((reward) => (
+                      <span key={reward}>{reward}</span>
+                    ))}
+                  </div>
                   <div className="card-tier__products">
                     <span>{tier.debit}</span>
                     <span>{tier.credit}</span>
@@ -486,11 +511,13 @@ export function CardsPage() {
                     <div className="card-panel__actions">
                       <button
                         type="button"
-                        className="button--danger"
+                        className="card-panel__icon-action button--danger"
                         onClick={() => deleteCard(card)}
                         disabled={deletingCardId === card.id}
+                        aria-label="Delete card"
+                        title="Delete card"
                       >
-                        {deletingCardId === card.id ? "Deleting..." : "Delete"}
+                        <Trash2 size={16} strokeWidth={2.2} />
                       </button>
                     </div>
                   </div>
@@ -515,23 +542,19 @@ export function CardsPage() {
                           ))}
                         </select>
                       </label>
-                      <label className="checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={draft.allow_main_wallet_fx}
-                          onChange={(event) =>
-                            updatePreferenceDraft(card.id, { allow_main_wallet_fx: event.target.checked })
-                          }
-                        />
-                        Allow main-wallet FX fallback
-                      </label>
                       <button
                         type="button"
-                        onClick={() => savePaymentPreferences(card.id)}
-                        disabled={preferencesCardId === card.id}
+                        className={`card-preference-toggle${draft.allow_main_wallet_fx ? " active" : ""}`}
+                        title="Allow main-wallet FX fallback"
+                        aria-label="Allow main-wallet FX fallback"
+                        aria-pressed={draft.allow_main_wallet_fx}
+                        onClick={() =>
+                          updatePreferenceDraft(card.id, { allow_main_wallet_fx: !draft.allow_main_wallet_fx })
+                        }
                       >
-                        {preferencesCardId === card.id ? "Saving..." : "Save preferences"}
+                        <ArrowLeftRight size={16} strokeWidth={2.2} aria-hidden="true" />
                       </button>
+                      {preferencesCardId === card.id && <div className="eyebrow">Saving...</div>}
                     </div>
                   )}
                 </article>

@@ -5,7 +5,7 @@ import pytest
 from app.cards.models import CardStatus, CardTier, CardType
 from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate
 from app.cards.service import CardService
-from app.core.exceptions import NotFoundError, ValidationError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.users.schemas import UserCreate
 from app.users.service import UserService
 from app.wallets.models import WalletStatus
@@ -67,6 +67,16 @@ def test_create_gold_credit_card(db_session, user_with_wallet):
 
     assert card.type == CardType.CREDIT
     assert card.tier == CardTier.GOLD
+
+
+def test_create_card_rejects_more_than_five_cards(db_session, user_with_wallet):
+    user, wallet = user_with_wallet
+    service = CardService(db_session)
+    for _ in range(5):
+        service.create_card(user.id, CardCreate(default_wallet_id=wallet.id))
+
+    with pytest.raises(ConflictError):
+        service.create_card(user.id, CardCreate(default_wallet_id=wallet.id))
 
 
 def test_one_time_card_rejects_tier(db_session, user_with_wallet):
