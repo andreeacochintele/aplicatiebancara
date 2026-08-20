@@ -4,11 +4,22 @@ from decimal import Decimal
 import pytest
 
 from app.core.exceptions import ConflictError, ValidationError
+from app.fx import service as fx_service_module
 from app.fx.models import FXQuoteStatus
 from app.fx.schemas import FXQuoteRequest
 from app.fx.service import FXService
 from app.users.schemas import UserCreate
 from app.users.service import UserService
+
+
+@pytest.fixture(autouse=True)
+def _reset_live_rate_cache():
+    """The live-rate cache is process-global; keep each test isolated."""
+    fx_service_module._live_rate_cache = None
+    fx_service_module._live_rate_cached_at = None
+    yield
+    fx_service_module._live_rate_cache = None
+    fx_service_module._live_rate_cached_at = None
 
 
 @pytest.fixture()
@@ -70,3 +81,42 @@ def test_accepted_quote_cannot_be_reused(db_session, seeded_user):
 
     with pytest.raises(ConflictError):
         service.get_valid_quote_for_user(seeded_user.id, quote.id)
+
+
+def test_market_rate_falls_back_to_static_table_when_offline(db_session, monkeypatch):
+    monkeypatch.setattr(fx_service_module, "_fetch_live_rates_to_ron", lambda: None)
+    service = FXService(db_session)
+
+    rate = service.get_market_rate("EUR", "RON")
+
+    # Static EUR/RON is 4.97; a 1% margin should shave it down a touch.
+    assert rate < Decimal("4.97")
+    assert rate > Decimal("4.97") * Decimal("0.98")
+
+
+def test_market_rate_uses_live_rates_with_markup(db_session, monkeypatch):
+    monkeypatch.setattr(
+        fx_service_module,
+        "_fetch_live_rates_to_ron",
+        lambda: {"RON": Decimal("1"), "EUR": Decimal("5.00"), "USD": Decimal("4.60")},
+    )
+    service = FXService(db_session)
+
+    rate = service.get_market_rate("EUR", "RON")
+
+    assert rate == Decimal("4.9500")  # 5.00 * (1 - 1%)
+
+
+def test_market_rate_same_currency_is_untouched_by_markup(db_session, monkeypatch):
+    monkeypatch.setattr(fx_service_module, "_fetch_live_rates_to_ron", lambda: None)
+    service = FXService(db_session)
+
+    assert service.get_market_rate("RON", "RON") == Decimal("1")
+
+
+def test_market_rate_rejects_unsupported_currency(db_session, monkeypatch):
+    monkeypatch.setattr(fx_service_module, "_fetch_live_rates_to_ron", lambda: None)
+    service = FXService(db_session)
+
+    with pytest.raises(ValidationError):
+        service.get_market_rate("JPY", "RON")

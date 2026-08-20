@@ -14,6 +14,12 @@ class FXQuoteRequest(BaseModel):
     source_amount: Decimal
 
 
+class FXMarketRatePublic(BaseModel):
+    source_currency: str
+    target_currency: str
+    rate: Decimal
+
+
 class FXQuotePublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

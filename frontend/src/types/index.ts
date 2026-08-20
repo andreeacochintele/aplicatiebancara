@@ -24,6 +24,12 @@ export interface Wallet {
   created_at: string;
 }
 
+export interface FXMarketRate {
+  source_currency: string;
+  target_currency: string;
+  rate: string;
+}
+
 export type NotificationType =
   | "TRANSACTION"
   | "FRAUD"

@@ -338,6 +338,18 @@
   margin-bottom: 14px;
 }
 
+.aurora-wallet-card__rate {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--aurora-accent-dark);
+  background: var(--aurora-accent-soft);
+  border-radius: 999px;
+  padding: 3px 9px;
+  margin-top: -6px;
+  margin-bottom: 14px;
+}
+
 .aurora-wallet-card__footer {
   display: flex;
   align-items: center;

@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
-import type { FXQuote, Wallet } from "../types";
+import type { FXMarketRate, FXQuote, Wallet } from "../types";
 
 function hueFromString(value: string): number {
   return Math.abs([...value].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % 360;
@@ -25,6 +25,7 @@ export function WalletsPage() {
   const [result, setResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [settingMainId, setSettingMainId] = useState<string | null>(null);
+  const [rates, setRates] = useState<Record<string, FXMarketRate>>({});
 
   function loadWallets() {
     if (!accessToken) return;
@@ -32,6 +33,25 @@ export function WalletsPage() {
   }
 
   useEffect(loadWallets, [accessToken]);
+
+  useEffect(() => {
+    if (!accessToken || wallets.length < 2) return;
+    const mainWallet = wallets.find((w) => w.is_main);
+    if (!mainWallet) return;
+    const others = wallets.filter((w) => w.currency !== mainWallet.currency);
+    Promise.all(
+      others.map((w) =>
+        apiRequest<FXMarketRate>(
+          `/fx/rate?source_currency=${w.currency}&target_currency=${mainWallet.currency}`,
+          { token: accessToken },
+        ).catch(() => null),
+      ),
+    ).then((results) => {
+      const next: Record<string, FXMarketRate> = {};
+      for (const r of results) if (r) next[r.source_currency] = r;
+      setRates(next);
+    });
+  }, [accessToken, wallets]);
 
   async function setMainWallet(walletId: string) {
     if (!accessToken || settingMainId) return;
@@ -135,6 +155,11 @@ export function WalletsPage() {
                   ? `${wallet.reserved_balance} ${wallet.currency} reserved`
                   : "Nothing on hold"}
               </div>
+              {!wallet.is_main && rates[wallet.currency] && (
+                <div className="aurora-wallet-card__rate">
+                  1 {wallet.currency} ≈ {rates[wallet.currency].rate} {rates[wallet.currency].target_currency}
+                </div>
+              )}
               <div className="aurora-wallet-card__footer">
                 <span className="aurora-eyebrow" style={{ marginBottom: 0 }}>
                   {wallet.is_main ? "Main wallet" : wallet.status}
