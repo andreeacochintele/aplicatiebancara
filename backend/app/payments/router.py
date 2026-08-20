@@ -11,6 +11,9 @@ from app.payments.schemas import (
     BeneficiaryCreate,
     BeneficiaryPublic,
     BeneficiaryUpdate,
+    BillSplitCreate,
+    BillSplitPay,
+    BillSplitPublic,
     IbanTransferCreate,
     IbanTransferQuoteCreate,
     PaymentRequestCreate,
@@ -22,13 +25,19 @@ from app.payments.schemas import (
     ScheduledPaymentCreate,
     ScheduledPaymentPublic,
     ScheduledPaymentUpdate,
+    TransactionFolderAddTransaction,
+    TransactionFolderCreate,
+    TransactionFolderPublic,
+    TransactionFolderUpdate,
 )
 from app.payments.service import (
     BeneficiaryService,
+    BillSplitService,
     IbanTransferService,
     PaymentRequestService,
     PhonePaymentService,
     ScheduledPaymentService,
+    TransactionFolderService,
 )
 from app.transactions.schemas import TransactionPublic
 from app.users.models import User
@@ -161,6 +170,145 @@ def delete_scheduled_payment(
     db: Session = Depends(get_db),
 ) -> Response:
     ScheduledPaymentService(db).delete_scheduled_payment(current_user.id, scheduled_payment_id)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/bill-splits", response_model=list[BillSplitPublic])
+def list_bill_splits(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[BillSplitPublic]:
+    return BillSplitService(db).list_bill_splits(current_user.id)
+
+
+@router.post("/bill-splits", response_model=BillSplitPublic, status_code=status.HTTP_201_CREATED)
+def create_bill_split(
+    payload: BillSplitCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BillSplitPublic:
+    bill_split = BillSplitService(db).create_bill_split(current_user.id, payload)
+    db.commit()
+    return bill_split
+
+
+@router.get("/bill-splits/{bill_split_id}", response_model=BillSplitPublic)
+def get_bill_split(
+    bill_split_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BillSplitPublic:
+    return BillSplitService(db).get_bill_split(current_user.id, bill_split_id)
+
+
+@router.patch("/bill-splits/{bill_split_id}/cancel", response_model=BillSplitPublic)
+def cancel_bill_split(
+    bill_split_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BillSplitPublic:
+    bill_split = BillSplitService(db).cancel_bill_split(current_user.id, bill_split_id)
+    db.commit()
+    return bill_split
+
+
+@router.post("/bill-splits/{bill_split_id}/participants/{participant_id}/pay", response_model=BillSplitPublic)
+def pay_bill_split_participant(
+    bill_split_id: uuid.UUID,
+    participant_id: uuid.UUID,
+    payload: BillSplitPay,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BillSplitPublic:
+    bill_split = BillSplitService(db).pay_participant(current_user.id, bill_split_id, participant_id, payload)
+    db.commit()
+    return bill_split
+
+
+@router.post("/bill-splits/{bill_split_id}/participants/{participant_id}/decline", response_model=BillSplitPublic)
+def decline_bill_split_participant(
+    bill_split_id: uuid.UUID,
+    participant_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BillSplitPublic:
+    bill_split = BillSplitService(db).decline_participant(current_user.id, bill_split_id, participant_id)
+    db.commit()
+    return bill_split
+
+
+@router.get("/transaction-folders", response_model=list[TransactionFolderPublic])
+def list_transaction_folders(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[TransactionFolderPublic]:
+    return TransactionFolderService(db).list_folders(current_user.id)
+
+
+@router.post("/transaction-folders", response_model=TransactionFolderPublic, status_code=status.HTTP_201_CREATED)
+def create_transaction_folder(
+    payload: TransactionFolderCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TransactionFolderPublic:
+    folder = TransactionFolderService(db).create_folder(current_user.id, payload)
+    db.commit()
+    return folder
+
+
+@router.get("/transaction-folders/{folder_id}", response_model=TransactionFolderPublic)
+def get_transaction_folder(
+    folder_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TransactionFolderPublic:
+    return TransactionFolderService(db).get_folder(current_user.id, folder_id)
+
+
+@router.patch("/transaction-folders/{folder_id}", response_model=TransactionFolderPublic)
+def update_transaction_folder(
+    folder_id: uuid.UUID,
+    payload: TransactionFolderUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TransactionFolderPublic:
+    folder = TransactionFolderService(db).update_folder(current_user.id, folder_id, payload)
+    db.commit()
+    return folder
+
+
+@router.delete("/transaction-folders/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_transaction_folder(
+    folder_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    TransactionFolderService(db).delete_folder(current_user.id, folder_id)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/transaction-folders/{folder_id}/transactions", response_model=TransactionFolderPublic)
+def add_transaction_to_folder(
+    folder_id: uuid.UUID,
+    payload: TransactionFolderAddTransaction,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TransactionFolderPublic:
+    folder = TransactionFolderService(db).add_transaction(current_user.id, folder_id, payload.transaction_id)
+    db.commit()
+    return folder
+
+
+@router.delete("/transaction-folders/{folder_id}/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_transaction_from_folder(
+    folder_id: uuid.UUID,
+    transaction_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    TransactionFolderService(db).remove_transaction(current_user.id, folder_id, transaction_id)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

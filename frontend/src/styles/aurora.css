@@ -114,6 +114,7 @@
   border-bottom: 1px solid var(--aurora-border);
   padding: 18px 32px;
   align-items: center;
+  position: relative;
 }
 
 .aurora-shell .aurora-header .header__title {
@@ -129,9 +130,11 @@
   font-size: 13px;
 }
 
-.aurora-bell {
+.aurora-shell .aurora-header .aurora-bell {
+  position: relative;
   width: 36px;
   height: 36px;
+  padding: 0;
   border-radius: 50%;
   background: var(--aurora-surface-alt);
   border: 1px solid var(--aurora-border);
@@ -140,6 +143,37 @@
   justify-content: center;
   color: var(--aurora-text-soft);
   flex-shrink: 0;
+}
+
+.aurora-shell .aurora-header .aurora-bell:hover {
+  background: var(--aurora-accent-soft);
+  border-color: var(--aurora-accent);
+}
+
+.aurora-shell .notification-panel {
+  right: 136px;
+  background: var(--aurora-surface);
+  border-color: var(--aurora-border);
+  box-shadow: var(--aurora-shadow);
+}
+
+.aurora-shell .notification-panel__header strong,
+.aurora-shell .notification-item strong {
+  color: var(--aurora-text);
+}
+
+.aurora-shell .notification-item span:not(.eyebrow) {
+  color: var(--aurora-text-soft);
+  font-size: 12px;
+}
+
+.aurora-shell .notification-item__actions button {
+  min-width: 92px;
+}
+
+.aurora-shell .notification-badge {
+  background: var(--aurora-gradient);
+  color: #fff;
 }
 
 .aurora-shell .aurora-header .avatar {
@@ -820,6 +854,64 @@
   background: var(--aurora-accent-soft);
 }
 
+.aurora-shell .button--wide {
+  min-width: 150px;
+  min-height: 38px;
+}
+
+.aurora-shell .split-builder {
+  padding: 16px 18px;
+  border: 1px solid rgba(106, 90, 249, 0.2);
+  background:
+    linear-gradient(135deg, rgba(91, 95, 239, 0.07), rgba(255, 111, 165, 0.05)),
+    var(--aurora-surface);
+  box-shadow: var(--aurora-shadow-sm);
+}
+
+.aurora-shell .split-builder__summary {
+  border-color: var(--aurora-border);
+  background: rgba(91, 95, 239, 0.035);
+}
+
+.aurora-shell .split-participant-row {
+  background: #19213a;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.aurora-shell .split-participant-row label {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.aurora-shell .split-participant-row input {
+  min-height: 36px;
+}
+
+.aurora-shell .split-participant-row__amount {
+  color: #fff;
+}
+
+.aurora-shell .transaction-split-requests {
+  margin-bottom: 18px;
+}
+
+.aurora-shell .transaction-split-request {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(106, 90, 249, 0.22);
+  background:
+    linear-gradient(135deg, rgba(91, 95, 239, 0.12), rgba(255, 111, 165, 0.08)),
+    var(--aurora-surface);
+  box-shadow: var(--aurora-shadow-sm);
+}
+
+.aurora-shell .transaction-split-request strong {
+  color: var(--aurora-text);
+}
+
+.aurora-shell .transaction-split-request span:not(.eyebrow) {
+  color: var(--aurora-text-soft);
+}
+
 .aurora-shell .button--favorite {
   background: var(--aurora-accent-soft);
   color: var(--aurora-accent-dark);
@@ -885,6 +977,50 @@
 
 .aurora-shell .scheduled-row {
   border-bottom: 1px solid var(--aurora-border);
+}
+
+.aurora-shell .bill-split-table {
+  gap: 0;
+}
+
+.aurora-shell .bill-split-row {
+  min-height: 72px;
+  padding: 12px 2px;
+  border-bottom: 1px solid var(--aurora-border);
+}
+
+.aurora-shell .bill-split-row__main {
+  grid-template-columns: minmax(220px, 1fr) 112px 94px 126px;
+}
+
+.aurora-shell .bill-split-row__main span {
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .bill-split-participant {
+  min-width: 340px;
+  min-height: 38px;
+  grid-template-columns: 58px minmax(88px, 1fr) 74px auto;
+  padding: 6px 8px;
+  border-color: rgba(91, 95, 239, 0.55);
+  background:
+    linear-gradient(135deg, rgba(91, 95, 239, 0.08), rgba(255, 111, 165, 0.045)),
+    var(--aurora-surface-alt);
+}
+
+.aurora-shell .bill-split-participant strong {
+  color: var(--aurora-text);
+}
+
+.aurora-shell .bill-split-participant span:not(.eyebrow) {
+  color: var(--aurora-text-soft);
+  font-size: 12px;
+}
+
+.aurora-shell .bill-split-participant button {
+  min-width: 132px;
+  min-height: 34px;
+  padding-block: 6px;
 }
 
 .aurora-shell .scheduled-row--head {
