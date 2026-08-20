@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
+import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
 import type {
   Beneficiary,
@@ -80,10 +82,11 @@ interface BillSplitFormState {
   description: string;
 }
 
-interface FolderFormState {
+interface FolderSplitParticipantDraft {
+  key: string;
   name: string;
-  color: string;
-  description: string;
+  phone: string;
+  percent: string;
 }
 
 function dateInputValue(offsetDays: number): string {
@@ -146,12 +149,6 @@ const EMPTY_BILL_SPLIT_FORM: BillSplitFormState = {
   description: "",
 };
 
-const EMPTY_FOLDER_FORM: FolderFormState = {
-  name: "",
-  color: "violet",
-  description: "",
-};
-
 const TABS: Array<{ id: PaymentTab; label: string }> = [
   { id: "transfer", label: "Transfer" },
   { id: "phone", label: "By phone" },
@@ -195,6 +192,10 @@ function normalizePhone(value: string): string {
   return value.replace(/\s/g, "");
 }
 
+function folderSplitMarker(folderId: string): string {
+  return `[folder:${folderId}]`;
+}
+
 function sortBeneficiaries(list: Beneficiary[]): Beneficiary[] {
   return [...list].sort((left, right) => {
     if (left.is_favorite !== right.is_favorite) {
@@ -206,6 +207,8 @@ function sortBeneficiaries(list: Beneficiary[]): Beneficiary[] {
 
 export function PaymentsPage() {
   const { accessToken, user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightedFolderId = searchParams.get("folder") ?? "";
   const [activeTab, setActiveTab] = useState<PaymentTab>("transfer");
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
@@ -218,15 +221,12 @@ export function PaymentsPage() {
   const [qrPayForm, setQrPayForm] = useState<QrPayFormState>(EMPTY_QR_PAY_FORM);
   const [scheduledForm, setScheduledForm] = useState<ScheduledFormState>(EMPTY_SCHEDULED_FORM);
   const [billSplitForm, setBillSplitForm] = useState<BillSplitFormState>(EMPTY_BILL_SPLIT_FORM);
-  const [folderForm, setFolderForm] = useState<FolderFormState>(EMPTY_FOLDER_FORM);
-  const [folderTransactionId, setFolderTransactionId] = useState("");
   const [qrRequest, setQrRequest] = useState<PaymentRequest | null>(null);
   const [qrLookup, setQrLookup] = useState<PaymentRequest | null>(null);
   const [scheduledPayments, setScheduledPayments] = useState<ScheduledPayment[]>([]);
   const [billSplits, setBillSplits] = useState<BillSplit[]>([]);
   const [transactionFolders, setTransactionFolders] = useState<TransactionFolder[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [selectedFolderId, setSelectedFolderId] = useState("");
   const [transferQuote, setTransferQuote] = useState<FXQuote | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
   const [qrNotice, setQrNotice] = useState<string | null>(null);
@@ -235,7 +235,6 @@ export function PaymentsPage() {
   const [splitError, setSplitError] = useState<string | null>(null);
   const [splitNotice, setSplitNotice] = useState<string | null>(null);
   const [folderError, setFolderError] = useState<string | null>(null);
-  const [folderNotice, setFolderNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -248,7 +247,6 @@ export function PaymentsPage() {
   const [splitLoading, setSplitLoading] = useState(false);
   const [splitSubmitting, setSplitSubmitting] = useState(false);
   const [folderLoading, setFolderLoading] = useState(false);
-  const [folderSubmitting, setFolderSubmitting] = useState(false);
   const [qrCreating, setQrCreating] = useState(false);
   const [qrLookingUp, setQrLookingUp] = useState(false);
   const [qrPaying, setQrPaying] = useState(false);
@@ -257,6 +255,8 @@ export function PaymentsPage() {
   const [scheduledActionId, setScheduledActionId] = useState<string | null>(null);
   const [splitActionId, setSplitActionId] = useState<string | null>(null);
   const [folderActionId, setFolderActionId] = useState<string | null>(null);
+  const [folderSplitTarget, setFolderSplitTarget] = useState<TransactionFolder | null>(null);
+  const [folderSplitParticipants, setFolderSplitParticipants] = useState<FolderSplitParticipantDraft[]>([]);
 
   async function loadBeneficiaries() {
     if (!accessToken) return;
@@ -315,6 +315,23 @@ export function PaymentsPage() {
     void loadTransactions();
   }, [accessToken]);
 
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && TABS.some((item) => item.id === tab)) {
+      setActiveTab(tab as PaymentTab);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    function handleBillSplitChanged() {
+      void loadBillSplits();
+      void loadTransactionFolders();
+    }
+    window.addEventListener(BILL_SPLIT_CHANGED_EVENT, handleBillSplitChanged);
+    return () => window.removeEventListener(BILL_SPLIT_CHANGED_EVENT, handleBillSplitChanged);
+  }, [accessToken]);
+
   async function loadScheduledPayments() {
     if (!accessToken) return;
     setScheduledLoading(true);
@@ -344,10 +361,10 @@ export function PaymentsPage() {
   async function loadTransactionFolders() {
     if (!accessToken) return;
     setFolderLoading(true);
+    setFolderError(null);
     try {
       const list = await apiRequest<TransactionFolder[]>("/payments/transaction-folders", { token: accessToken });
       setTransactionFolders(list);
-      setSelectedFolderId((current) => current || list[0]?.id || "");
     } catch (err) {
       setFolderError(err instanceof ApiError ? err.message : "Could not load transaction folders");
     } finally {
@@ -776,30 +793,135 @@ export function PaymentsPage() {
     }
   }
 
-  async function handleFolderSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!accessToken) return;
-    setFolderSubmitting(true);
+  function folderTransactions(folder: TransactionFolder): Transaction[] {
+    const ids = new Set(folder.items.map((item) => item.transaction_id));
+    return transactions.filter((transaction) => ids.has(transaction.id));
+  }
+
+  function folderSplitData(folder: TransactionFolder) {
+    const relatedTransactions = folderTransactions(folder);
+    const currencies = Array.from(new Set(relatedTransactions.map((transaction) => transaction.currency)));
+    const currency = currencies.length === 1 ? currencies[0] : "";
+    const total = relatedTransactions.reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+    const folderSplits = billSplits.filter(
+      (candidate) => candidate.owner_user_id === user?.id && candidate.description?.includes(folderSplitMarker(folder.id)),
+    );
+    const settledSplit = folderSplits.find((candidate) => candidate.status === "SETTLED");
+    const waitingSplit = folderSplits.find(
+      (candidate) =>
+        candidate.status === "OPEN" &&
+        candidate.participants.every((participant) => participant.status !== "DECLINED"),
+    );
+    const refusedSplit = folderSplits.find(
+      (candidate) =>
+        candidate.status === "OPEN" &&
+        candidate.participants.some((participant) => participant.status === "DECLINED"),
+    );
+    const split = settledSplit ?? waitingSplit ?? refusedSplit ?? folderSplits[0];
+    return {
+      currency,
+      hasDeclinedSplit: Boolean(refusedSplit),
+      hasMixedCurrencies: currencies.length > 1,
+      split,
+      total: total.toFixed(2),
+      transactions: relatedTransactions,
+    };
+  }
+
+  function openFolderSplit(folder: TransactionFolder) {
     setFolderError(null);
-    setFolderNotice(null);
+    setSplitNotice(null);
+    setFolderSplitTarget(folder);
+    setFolderSplitParticipants([]);
+  }
+
+  function addFolderSplitParticipant() {
+    setFolderError(null);
+    setFolderSplitParticipants((current) => [
+      ...current,
+      { key: crypto.randomUUID(), name: "", phone: "", percent: "" },
+    ]);
+  }
+
+  function updateFolderSplitParticipant(key: string, changes: Partial<FolderSplitParticipantDraft>) {
+    setFolderError(null);
+    setFolderSplitParticipants((current) =>
+      current.map((participant) => (participant.key === key ? { ...participant, ...changes } : participant)),
+    );
+  }
+
+  function removeFolderSplitParticipant(key: string) {
+    setFolderError(null);
+    setFolderSplitParticipants((current) => current.filter((participant) => participant.key !== key));
+  }
+
+  function splitFolderEqually() {
+    setFolderSplitParticipants((current) => {
+      if (current.length === 0) return current;
+      const percent = (100 / (current.length + 1)).toFixed(2);
+      return current.map((participant) => ({ ...participant, percent }));
+    });
+  }
+
+  async function createFolderBillSplit(event: FormEvent) {
+    event.preventDefault();
+    if (!accessToken || !folderSplitTarget) return;
+    const data = folderSplitData(folderSplitTarget);
+    const participants = folderSplitParticipants
+      .map((participant) => ({
+        name: participant.name.trim(),
+        phone: normalizePhone(participant.phone),
+        percent: Number(participant.percent),
+      }))
+      .filter((participant) => participant.name.length > 0 && participant.phone.length > 0);
+    const percentTotal = folderSplitParticipants.reduce((sum, participant) => {
+      const value = Number(participant.percent);
+      return Number.isFinite(value) ? sum + value : sum;
+    }, 0);
+    if (data.transactions.length === 0) {
+      setFolderError("Folder has no transactions to split.");
+      return;
+    }
+    if (data.hasMixedCurrencies || !data.currency) {
+      setFolderError("Folder has mixed currencies. Split a single-currency folder.");
+      return;
+    }
+    if (participants.length === 0) {
+      setFolderError("Add at least one recipient name and phone number.");
+      return;
+    }
+    if (percentTotal > 100) {
+      setFolderError("Folder split participants cannot exceed 100% of the folder total.");
+      return;
+    }
+
+    setFolderActionId(folderSplitTarget.id);
+    setFolderError(null);
+    setSplitNotice(null);
     try {
-      const folder = await apiRequest<TransactionFolder>("/payments/transaction-folders", {
+      await apiRequest<BillSplit>("/payments/bill-splits", {
         method: "POST",
         token: accessToken,
         body: {
-          name: folderForm.name.trim(),
-          color: compact(folderForm.color),
-          description: compact(folderForm.description),
+          title: `Folder split: ${folderSplitTarget.name}`,
+          total_amount: data.total,
+          currency: data.currency,
+          description: `${folderSplitMarker(folderSplitTarget.id)} Split all transactions in ${folderSplitTarget.name}`,
+          participants: participants.map(({ name, phone, percent }) => ({
+            name,
+            phone,
+            percent: percent.toFixed(2),
+          })),
         },
       });
-      setFolderNotice("Transaction folder created.");
-      setFolderForm(EMPTY_FOLDER_FORM);
-      setSelectedFolderId(folder.id);
-      await loadTransactionFolders();
+      setFolderSplitTarget(null);
+      setFolderSplitParticipants([]);
+      setSplitNotice("Folder split created. It will show Splitted after every participant pays.");
+      await loadBillSplits();
     } catch (err) {
-      setFolderError(err instanceof ApiError ? err.message : "Could not create transaction folder");
+      setFolderError(err instanceof ApiError ? err.message : "Could not split this folder");
     } finally {
-      setFolderSubmitting(false);
+      setFolderActionId(null);
     }
   }
 
@@ -807,14 +929,14 @@ export function PaymentsPage() {
     if (!accessToken) return;
     setFolderActionId(folder.id);
     setFolderError(null);
-    setFolderNotice(null);
     try {
       await apiRequest<void>(`/payments/transaction-folders/${folder.id}`, {
         method: "DELETE",
         token: accessToken,
       });
-      setFolderNotice("Transaction folder deleted.");
-      setSelectedFolderId("");
+      if (highlightedFolderId === folder.id) {
+        setSearchParams({ tab: "folders" });
+      }
       await loadTransactionFolders();
     } catch (err) {
       setFolderError(err instanceof ApiError ? err.message : "Could not delete transaction folder");
@@ -823,39 +945,15 @@ export function PaymentsPage() {
     }
   }
 
-  async function addTransactionToFolder(event: FormEvent) {
-    event.preventDefault();
-    if (!accessToken || !selectedFolderId || !folderTransactionId) return;
-    setFolderActionId(folderTransactionId);
-    setFolderError(null);
-    setFolderNotice(null);
-    try {
-      await apiRequest<TransactionFolder>(`/payments/transaction-folders/${selectedFolderId}/transactions`, {
-        method: "POST",
-        token: accessToken,
-        body: { transaction_id: folderTransactionId },
-      });
-      setFolderNotice("Transaction added to folder.");
-      setFolderTransactionId("");
-      await loadTransactionFolders();
-    } catch (err) {
-      setFolderError(err instanceof ApiError ? err.message : "Could not add transaction to folder");
-    } finally {
-      setFolderActionId(null);
-    }
-  }
-
-  async function removeTransactionFromFolder(folderId: string, transactionId: string) {
+  async function removeTransactionFromFolder(folder: TransactionFolder, transactionId: string) {
     if (!accessToken) return;
     setFolderActionId(transactionId);
     setFolderError(null);
-    setFolderNotice(null);
     try {
-      await apiRequest<void>(`/payments/transaction-folders/${folderId}/transactions/${transactionId}`, {
+      await apiRequest<void>(`/payments/transaction-folders/${folder.id}/transactions/${transactionId}`, {
         method: "DELETE",
         token: accessToken,
       });
-      setFolderNotice("Transaction removed from folder.");
       await loadTransactionFolders();
     } catch (err) {
       setFolderError(err instanceof ApiError ? err.message : "Could not remove transaction from folder");
@@ -869,10 +967,12 @@ export function PaymentsPage() {
   const hasTransferCurrencyMismatch = Boolean(transferWallet && transferWallet.currency !== form.currency);
   const scheduledWallet = wallets.find((wallet) => wallet.id === scheduledForm.source_wallet_id);
   const hasScheduledCurrencyMismatch = Boolean(scheduledWallet && scheduledWallet.currency !== scheduledForm.currency);
-  const selectedFolder = transactionFolders.find((folder) => folder.id === selectedFolderId) ?? transactionFolders[0];
-  const selectedFolderItemIds = new Set(selectedFolder?.items.map((item) => item.transaction_id) ?? []);
-  const folderCandidateTransactions = transactions.filter((transaction) => !selectedFolderItemIds.has(transaction.id));
   const internalBeneficiaries = beneficiaries.filter((beneficiary) => beneficiary.beneficiary_user_id);
+  const folderSplitPercentTotal = folderSplitParticipants.reduce((sum, participant) => {
+    const value = Number(participant.percent);
+    return Number.isFinite(value) ? sum + value : sum;
+  }, 0);
+  const folderSplitExceedsTotal = folderSplitPercentTotal > 100;
 
   return (
     <section className="payments-page">
@@ -881,7 +981,10 @@ export function PaymentsPage() {
           <button
             className={activeTab === tab.id ? "payment-tabs__button active" : "payment-tabs__button"}
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => {
+              setActiveTab(tab.id);
+              setSearchParams(tab.id === "transfer" ? {} : { tab: tab.id });
+            }}
             type="button"
           >
             {tab.label}
@@ -1750,11 +1853,12 @@ export function PaymentsPage() {
             </label>
 
             <label>
-              Participant name
+              Recipient name
               <input
                 onChange={(event) =>
                   setBillSplitForm((current) => ({ ...current, participant_name: event.target.value }))
                 }
+                placeholder="Maria Dinu"
                 required
                 value={billSplitForm.participant_name}
               />
@@ -1882,128 +1986,104 @@ export function PaymentsPage() {
           </section>
         </div>
       ) : activeTab === "folders" ? (
-        <div className="scheduled-grid">
-          <form className="tile scheduled-form-card" onSubmit={handleFolderSubmit}>
-            <div>
-              <span className="eyebrow">New folder</span>
-              <h2>Organize transactions</h2>
-            </div>
-
-            <label>
-              Name
-              <input
-                onChange={(event) => setFolderForm((current) => ({ ...current, name: event.target.value }))}
-                placeholder="Rent"
-                required
-                value={folderForm.name}
-              />
-            </label>
-
-            <label>
-              Color
-              <select
-                onChange={(event) => setFolderForm((current) => ({ ...current, color: event.target.value }))}
-                value={folderForm.color}
-              >
-                <option value="violet">Violet</option>
-                <option value="blue">Blue</option>
-                <option value="green">Green</option>
-                <option value="orange">Orange</option>
-              </select>
-            </label>
-
-            <label>
-              Description
-              <input
-                onChange={(event) => setFolderForm((current) => ({ ...current, description: event.target.value }))}
-                placeholder="Apartment payments"
-                value={folderForm.description}
-              />
-            </label>
-
-            {folderError && <p className="status-line status-line--error">{folderError}</p>}
-            {folderNotice && <p className="status-line">{folderNotice}</p>}
-
-            <button disabled={folderSubmitting} type="submit">
-              {folderSubmitting ? "Creating..." : "Create folder"}
-            </button>
-          </form>
-
+        <div className="folder-view-grid">
           <section className="tile scheduled-list-card">
             <div className="tile__header">
               <span className="eyebrow">Transaction folders</span>
               {folderLoading && <span className="tag tag--neutral">Loading</span>}
             </div>
 
-            <div className="scheduled-table">
-              {transactionFolders.map((folder) => (
-                <div className="scheduled-row" key={folder.id}>
-                  <strong>{folder.name}</strong>
-                  <span>{folder.description || "No description"}</span>
-                  <span className="tag tag--outline">{folder.items.length} tx</span>
-                  <div className="beneficiary-actions scheduled-actions">
-                    <button
-                      className="button--ghost"
-                      onClick={() => setSelectedFolderId(folder.id)}
-                      type="button"
-                    >
-                      Select
-                    </button>
-                    <button
-                      className="button--danger"
-                      disabled={folderActionId === folder.id}
-                      onClick={() => deleteTransactionFolder(folder)}
-                      type="button"
-                    >
-                      Delete
-                    </button>
+            {folderError && <div className="form-error">{folderError}</div>}
+
+            <div className="folder-readonly-list">
+              {transactionFolders.map((folder) => {
+                const data = folderSplitData(folder);
+                const splitButtonLabel =
+                  data.split?.status === "SETTLED"
+                    ? "Splitted"
+                    : data.hasDeclinedSplit
+                      ? "Split again"
+                    : data.split?.status === "OPEN"
+                      ? "Waiting payments"
+                      : "Split folder";
+                const hasActiveFolderSplit =
+                  data.split?.status === "SETTLED" || (data.split?.status === "OPEN" && !data.hasDeclinedSplit);
+                const splitDisabled =
+                  hasActiveFolderSplit ||
+                  data.transactions.length === 0 ||
+                  data.hasMixedCurrencies ||
+                  folderActionId === folder.id;
+                return (
+                  <div
+                    className={
+                      highlightedFolderId === folder.id
+                        ? "folder-readonly-card folder-readonly-card--active"
+                        : "folder-readonly-card"
+                    }
+                    key={folder.id}
+                  >
+                    <div className="folder-readonly-card__header">
+                      <div className="folder-readonly-card__meta">
+                        <div className="folder-readonly-card__title">
+                          <strong>{folder.name}</strong>
+                          {data.currency && <span className="tag tag--outline">{data.total} {data.currency}</span>}
+                        </div>
+                        <span>{folder.description || "No description"}</span>
+                      </div>
+                      <div className="folder-readonly-card__actions">
+                        <button
+                          className="button--ghost"
+                          disabled={splitDisabled}
+                          onClick={() => openFolderSplit(folder)}
+                          type="button"
+                        >
+                          {folderActionId === folder.id && !data.split ? "Working..." : splitButtonLabel}
+                        </button>
+                        <button
+                          className="button--danger"
+                          disabled={folderActionId === folder.id}
+                          onClick={() => deleteTransactionFolder(folder)}
+                          type="button"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                    {data.hasMixedCurrencies && (
+                      <p className="status-line status-line--error">Mixed-currency folders cannot be split together.</p>
+                    )}
+                    {data.hasDeclinedSplit && (
+                      <p className="status-line status-line--error">A participant refused this split. You can split it again.</p>
+                    )}
+                    <div className="folder-readonly-card__items">
+                      {folder.items.map((item) => {
+                        const transaction = transactions.find((candidate) => candidate.id === item.transaction_id);
+                        return (
+                          <div className="folder-transaction-row" key={item.id}>
+                            <div>
+                              <span>{transaction?.description || transaction?.type || item.transaction_id}</span>
+                              <strong>{transaction ? `${transaction.amount} ${transaction.currency}` : "Transaction"}</strong>
+                            </div>
+                            <button
+                              className="button--danger"
+                              disabled={folderActionId === item.transaction_id}
+                              onClick={() => removeTransactionFromFolder(folder, item.transaction_id)}
+                              type="button"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {folder.items.length === 0 && <div className="empty-state">No transactions in this folder.</div>}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {!folderLoading && transactionFolders.length === 0 && (
                 <div className="empty-state">No transaction folders yet.</div>
               )}
             </div>
-
-            {selectedFolder && (
-              <form className="request-summary" onSubmit={addTransactionToFolder}>
-                <span className="eyebrow">Selected folder</span>
-                <strong>{selectedFolder.name}</strong>
-                <select
-                  onChange={(event) => setFolderTransactionId(event.target.value)}
-                  value={folderTransactionId}
-                >
-                  <option value="">Choose transaction</option>
-                  {folderCandidateTransactions.map((transaction) => (
-                    <option key={transaction.id} value={transaction.id}>
-                      {transaction.description || transaction.type} - {transaction.amount} {transaction.currency}
-                    </option>
-                  ))}
-                </select>
-                <button disabled={!folderTransactionId || Boolean(folderActionId)} type="submit">
-                  Add transaction
-                </button>
-                {selectedFolder.items.map((item) => {
-                  const transaction = transactions.find((candidate) => candidate.id === item.transaction_id);
-                  return (
-                    <div className="match-card" key={item.id}>
-                      <div className="beneficiary-meta">
-                        <strong>{transaction?.description || transaction?.type || item.transaction_id}</strong>
-                        <span>{transaction ? `${transaction.amount} ${transaction.currency}` : "Transaction"}</span>
-                      </div>
-                      <button
-                        className="button--danger"
-                        disabled={folderActionId === item.transaction_id}
-                        onClick={() => removeTransactionFromFolder(selectedFolder.id, item.transaction_id)}
-                        type="button"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  );
-                })}
-              </form>
-            )}
           </section>
 
           <section className="tile backend-note scheduled-note">
@@ -2017,6 +2097,115 @@ export function PaymentsPage() {
           <p>This payment flow is next for Dev 2. Beneficiaries are available now.</p>
         </section>
       )}
+
+      {folderSplitTarget ? (
+        <div className="folder-modal-backdrop" role="presentation">
+          <form className="tile folder-modal" onSubmit={createFolderBillSplit} role="dialog" aria-modal="true">
+            <div className="tile__header">
+              <div>
+                <span className="eyebrow">Split folder</span>
+                <h2>{folderSplitTarget.name}</h2>
+              </div>
+              <button className="button--ghost" onClick={() => setFolderSplitTarget(null)} type="button">
+                Close
+              </button>
+            </div>
+
+            <div className="split-builder__summary">
+              <strong>
+                {folderSplitData(folderSplitTarget).total} {folderSplitData(folderSplitTarget).currency || "mixed"}
+              </strong>
+              <span>{folderSplitTarget.items.length} transaction(s)</span>
+              <button className="button--ghost button--wide" onClick={splitFolderEqually} type="button">
+                Split equally
+              </button>
+            </div>
+
+            <div className="folder-modal__list">
+              {folderSplitExceedsTotal && (
+                <p className="status-line status-line--error">
+                  Requested split is {folderSplitPercentTotal.toFixed(2)}%. It cannot exceed 100%.
+                </p>
+              )}
+              {folderSplitParticipants.map((participant) => {
+                const total = Number(folderSplitData(folderSplitTarget).total);
+                const share = ((total * Number(participant.percent || 0)) / 100).toFixed(2);
+                return (
+                  <div className="folder-split-participant" key={participant.key}>
+                    <label>
+                      Recipient name
+                      <input
+                        onChange={(event) =>
+                          updateFolderSplitParticipant(participant.key, { name: event.target.value })
+                        }
+                        placeholder="Maria Dinu"
+                        required
+                        value={participant.name}
+                      />
+                    </label>
+                    <label>
+                      Phone number
+                      <input
+                        onChange={(event) =>
+                          updateFolderSplitParticipant(participant.key, { phone: event.target.value })
+                        }
+                        placeholder="+40700000003"
+                        required
+                        value={participant.phone}
+                      />
+                    </label>
+                    <label>
+                      Percent
+                      <input
+                        max="100"
+                        min="0.01"
+                        onChange={(event) =>
+                          updateFolderSplitParticipant(participant.key, { percent: event.target.value })
+                        }
+                        required
+                        step="0.01"
+                        type="number"
+                        value={participant.percent}
+                      />
+                    </label>
+                    <div className="folder-split-participant__amount">
+                      <strong>
+                        {share} {folderSplitData(folderSplitTarget).currency || ""}
+                      </strong>
+                      <span>{normalizePhone(participant.phone) || "Phone required"}</span>
+                    </div>
+                    <button
+                      className="button--danger"
+                      onClick={() => removeFolderSplitParticipant(participant.key)}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+              {folderSplitParticipants.length === 0 && (
+                <div className="empty-state">Add the people who should pay this folder split.</div>
+              )}
+            </div>
+
+            {folderError && <p className="status-line status-line--error">{folderError}</p>}
+
+            <div className="beneficiary-actions">
+              <button className="button--ghost button--wide" onClick={addFolderSplitParticipant} type="button">
+                Add person
+              </button>
+              <button
+                className="button--wide"
+                disabled={folderActionId === folderSplitTarget.id || folderSplitExceedsTotal}
+                type="submit"
+              >
+                {folderActionId === folderSplitTarget.id ? "Creating..." : "Send folder split"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -16,6 +16,25 @@ interface RequestOptions {
   token?: string | null;
 }
 
+function formatErrorDetail(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) {
+          return String((item as { msg: unknown }).msg);
+        }
+        return "Validation error";
+      })
+      .join(" ");
+  }
+  if (detail && typeof detail === "object" && "msg" in detail) {
+    return String((detail as { msg: unknown }).msg);
+  }
+  return "Request failed";
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, token } = options;
 
@@ -32,7 +51,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   if (!response.ok) {
     const detail = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new ApiError(response.status, detail.detail ?? "Request failed");
+    throw new ApiError(response.status, formatErrorDetail(detail.detail ?? response.statusText));
   }
 
   if (response.status === 204) {

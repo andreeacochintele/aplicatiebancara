@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
-import type { Beneficiary, BillSplit, Transaction, Wallet } from "../types";
+import type { Beneficiary, BillSplit, Transaction, TransactionFolder, Wallet } from "../types";
+
+const FOLDER_NAME_MAX_LENGTH = 40;
+const FOLDER_DESCRIPTION_MAX_LENGTH = 120;
 
 interface SplitParticipantDraft {
   key: string;
@@ -39,16 +43,27 @@ function percentInput(value: string): string {
 
 export function TransactionsPage() {
   const { accessToken, user } = useAuth();
+  const navigate = useNavigate();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [billSplits, setBillSplits] = useState<BillSplit[]>([]);
+  const [transactionFolders, setTransactionFolders] = useState<TransactionFolder[]>([]);
   const [splitTransaction, setSplitTransaction] = useState<Transaction | null>(null);
   const [splitParticipants, setSplitParticipants] = useState<SplitParticipantDraft[]>([]);
+  const [folderTransaction, setFolderTransaction] = useState<Transaction | null>(null);
+  const [folderName, setFolderName] = useState("");
+  const [folderDescription, setFolderDescription] = useState("");
+  const [folderError, setFolderError] = useState<string | null>(null);
+  const [folderNotice, setFolderNotice] = useState<string | null>(null);
+  const [folderActionId, setFolderActionId] = useState<string | null>(null);
+  const [folderCreating, setFolderCreating] = useState(false);
   const [splitNotice, setSplitNotice] = useState<string | null>(null);
   const [splitError, setSplitError] = useState<string | null>(null);
   const [splitSubmitting, setSplitSubmitting] = useState(false);
   const [splitActionId, setSplitActionId] = useState<string | null>(null);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [transactionsError, setTransactionsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -87,14 +102,24 @@ export function TransactionsPage() {
 
   async function refreshTransactionsData() {
     if (!accessToken) return;
-    const [nextTransactions, nextWallets, nextBillSplits] = await Promise.all([
-      apiRequest<Transaction[]>("/transactions", { token: accessToken }).catch(() => []),
-      apiRequest<Wallet[]>("/wallets", { token: accessToken }).catch(() => []),
-      apiRequest<BillSplit[]>("/payments/bill-splits", { token: accessToken }).catch(() => []),
-    ]);
-    setTransactions(nextTransactions);
-    setWallets(nextWallets);
-    setBillSplits(nextBillSplits);
+    setTransactionsLoading(true);
+    setTransactionsError(null);
+    try {
+      const [nextTransactions, nextWallets, nextBillSplits] = await Promise.all([
+        apiRequest<Transaction[]>("/transactions", { token: accessToken }),
+        apiRequest<Wallet[]>("/wallets", { token: accessToken }).catch(() => []),
+        apiRequest<BillSplit[]>("/payments/bill-splits", { token: accessToken }).catch(() => []),
+      ]);
+      setTransactions(nextTransactions);
+      setWallets(nextWallets);
+      setBillSplits(nextBillSplits);
+      await loadTransactionFolders();
+    } catch (err) {
+      setTransactions([]);
+      setTransactionsError(err instanceof ApiError ? err.message : "Could not load transactions.");
+    } finally {
+      setTransactionsLoading(false);
+    }
   }
 
   function openSplit(transaction: Transaction) {
@@ -102,6 +127,79 @@ export function TransactionsPage() {
     setSplitParticipants([]);
     setSplitNotice(null);
     setSplitError(null);
+  }
+
+  async function loadTransactionFolders() {
+    if (!accessToken) return;
+    try {
+      const list = await apiRequest<TransactionFolder[]>("/payments/transaction-folders", { token: accessToken });
+      setTransactionFolders(list);
+    } catch {
+      setTransactionFolders([]);
+    }
+  }
+
+  function openFolderModal(transaction: Transaction) {
+    setFolderTransaction(transaction);
+    setFolderError(null);
+    setFolderNotice(null);
+    setFolderName("");
+    setFolderDescription("");
+    void loadTransactionFolders();
+  }
+
+  async function createFolder() {
+    if (!accessToken || !folderName.trim()) return;
+    if (folderName.length > FOLDER_NAME_MAX_LENGTH) {
+      setFolderError(`Folder title must be ${FOLDER_NAME_MAX_LENGTH} characters or less.`);
+      return;
+    }
+    if (folderDescription.length > FOLDER_DESCRIPTION_MAX_LENGTH) {
+      setFolderError(`Folder description must be ${FOLDER_DESCRIPTION_MAX_LENGTH} characters or less.`);
+      return;
+    }
+    setFolderCreating(true);
+    setFolderError(null);
+    setFolderNotice(null);
+    try {
+      const folder = await apiRequest<TransactionFolder>("/payments/transaction-folders", {
+        method: "POST",
+        token: accessToken,
+        body: {
+          name: folderName.trim(),
+          color: "violet",
+          description: folderDescription.trim() || null,
+        },
+      });
+      setTransactionFolders((current) => [folder, ...current]);
+      setFolderName("");
+      setFolderDescription("");
+      setFolderNotice("Folder created.");
+    } catch (err) {
+      setFolderError(err instanceof ApiError ? err.message : "Could not create folder");
+    } finally {
+      setFolderCreating(false);
+    }
+  }
+
+  async function addTransactionToFolder(folder: TransactionFolder) {
+    if (!accessToken || !folderTransaction) return;
+    setFolderActionId(folder.id);
+    setFolderError(null);
+    setFolderNotice(null);
+    try {
+      await apiRequest<TransactionFolder>(`/payments/transaction-folders/${folder.id}/transactions`, {
+        method: "POST",
+        token: accessToken,
+        body: { transaction_id: folderTransaction.id },
+      });
+      setFolderNotice("Transaction added to folder.");
+      await loadTransactionFolders();
+    } catch (err) {
+      setFolderError(err instanceof ApiError ? err.message : "Could not add transaction to folder");
+    } finally {
+      setFolderActionId(null);
+    }
   }
 
   function toggleSplitBeneficiary(beneficiary: Beneficiary) {
@@ -172,7 +270,7 @@ export function TransactionsPage() {
         (participant) => !participant.name.trim() || (!participant.participant_user_id.trim() && !participant.phone.trim()),
       )
     ) {
-      setSplitError("Each request needs a name and phone number.");
+      setSplitError("Each request needs the recipient name and phone number.");
       return;
     }
 
@@ -252,7 +350,13 @@ export function TransactionsPage() {
 
   return (
     <section>
-      <h2>Transactions</h2>
+      <div className="transactions-header">
+        <h2>Transactions</h2>
+        <button className="button--ghost button--wide" onClick={() => void refreshTransactionsData()} type="button">
+          Refresh
+        </button>
+      </div>
+      {transactionsError && <p className="status-line status-line--error">{transactionsError}</p>}
       {splitNotice && <p className="status-line">{splitNotice}</p>}
       {pendingSplitRequests.length > 0 && (
         <div className="transaction-split-requests">
@@ -333,10 +437,10 @@ export function TransactionsPage() {
             {splitParticipants.map((participant) => (
               <div className="split-participant-row" key={participant.key}>
                 <label>
-                  Person
+                  Recipient name
                   <input
                     onChange={(event) => updateSplitParticipant(participant.key, { name: event.target.value })}
-                    placeholder="Name"
+                    placeholder="Maria Dinu"
                     value={participant.name}
                   />
                 </label>
@@ -383,34 +487,139 @@ export function TransactionsPage() {
           </button>
         </div>
       ) : null}
-      <table>
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Type</th>
-            <th>Description</th>
-            <th>Amount</th>
-            <th>Status</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {transactions.map((tx) => (
-            <tr key={tx.id}>
-              <td>{new Date(tx.created_at).toLocaleString()}</td>
-              <td>{tx.type}</td>
-              <td>{tx.description}</td>
-              <td>{formatAmount(tx, userWalletIds)}</td>
-              <td>{tx.status}</td>
-              <td>
-                <button className="button--ghost" onClick={() => openSplit(tx)} type="button">
-                  Split bill
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {folderTransaction ? (
+        <div className="folder-modal-backdrop" role="presentation">
+          <section className="tile folder-modal" role="dialog" aria-modal="true" aria-label="Add transaction to folder">
+            <div className="tile__header">
+              <div>
+                <span className="eyebrow">Add to folder</span>
+                <h2>{folderTransaction.description || folderTransaction.type}</h2>
+              </div>
+              <button className="button--ghost" onClick={() => setFolderTransaction(null)} type="button">
+                Close
+              </button>
+            </div>
+
+            <div className="folder-modal__create">
+              <label>
+                Folder title
+                <input
+                  maxLength={FOLDER_NAME_MAX_LENGTH}
+                  onChange={(event) => setFolderName(event.target.value)}
+                  placeholder="Travel"
+                  value={folderName}
+                />
+                <span className="field-hint">
+                  {folderName.length}/{FOLDER_NAME_MAX_LENGTH}
+                </span>
+              </label>
+              <label>
+                Description
+                <input
+                  maxLength={FOLDER_DESCRIPTION_MAX_LENGTH}
+                  onChange={(event) => setFolderDescription(event.target.value)}
+                  placeholder="Optional"
+                  value={folderDescription}
+                />
+                <span className="field-hint">
+                  {folderDescription.length}/{FOLDER_DESCRIPTION_MAX_LENGTH}
+                </span>
+              </label>
+              <button className="button--wide" disabled={folderCreating || !folderName.trim()} onClick={createFolder} type="button">
+                {folderCreating ? "Creating..." : "Create new folder"}
+              </button>
+            </div>
+
+            {folderError && <p className="status-line status-line--error">{folderError}</p>}
+            {folderNotice && <p className="status-line">{folderNotice}</p>}
+
+            <div className="folder-modal__list">
+              {transactionFolders.map((folder) => {
+                const alreadyAdded = folder.items.some((item) => item.transaction_id === folderTransaction.id);
+                if (alreadyAdded) {
+                  return (
+                    <div className="folder-choice folder-choice--active" key={folder.id}>
+                      <span>
+                        <strong>{folder.name}</strong>
+                        <small>{folder.description || `${folder.items.length} transaction(s)`}</small>
+                      </span>
+                      <div className="folder-choice__actions">
+                        <span>Added</span>
+                        <button
+                          className="button--ghost button--wide"
+                          onClick={() => navigate(`/payments?tab=folders&folder=${folder.id}`)}
+                          type="button"
+                        >
+                          Go to folder
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <button
+                    className="folder-choice"
+                    disabled={folderActionId === folder.id}
+                    key={folder.id}
+                    onClick={() => addTransactionToFolder(folder)}
+                    type="button"
+                  >
+                    <span>
+                      <strong>{folder.name}</strong>
+                      <small>{folder.description || `${folder.items.length} transaction(s)`}</small>
+                    </span>
+                    <span>Add</span>
+                  </button>
+                );
+              })}
+              {transactionFolders.length === 0 && (
+                <div className="empty-state">No folders yet. Create one above.</div>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+      <section className="tile transactions-table-card">
+        {transactionsLoading ? (
+          <div className="empty-state">Loading transactions...</div>
+        ) : transactions.length === 0 ? (
+          <div className="empty-state">No transactions found for {user?.first_name ?? "this user"}.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transactions.map((tx) => (
+                <tr key={tx.id}>
+                  <td>{new Date(tx.created_at).toLocaleString()}</td>
+                  <td>{tx.type}</td>
+                  <td>{tx.description}</td>
+                  <td>{formatAmount(tx, userWalletIds)}</td>
+                  <td>{tx.status}</td>
+                  <td>
+                    <div className="transaction-actions">
+                      <button className="button--ghost button--wide" onClick={() => openSplit(tx)} type="button">
+                        Split bill
+                      </button>
+                      <button className="button--ghost button--wide" onClick={() => openFolderModal(tx)} type="button">
+                        Add to folder
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
     </section>
   );
 }
