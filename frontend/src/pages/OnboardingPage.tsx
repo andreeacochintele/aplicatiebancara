@@ -17,6 +17,20 @@ import {
   updateOnboardingStep2,
   updateOnboardingStep4,
 } from "../features/auth";
+import { CountrySearchSelect } from "../features/auth/CountrySearchSelect";
+import { DropdownWithOther } from "../features/auth/DropdownWithOther";
+import { EMPLOYMENT_STATUSES_WITHOUT_EMPLOYER, INCOME_SOURCE_OPTIONS, INDUSTRY_OPTIONS } from "../features/auth/employmentOptions";
+import {
+  cnpMatchesDateOfBirth,
+  validateAddressToken,
+  validateCnp,
+  validateDateOfBirth,
+  validateMonthlyIncome,
+  validateOccupation,
+  validateOptionalFreeText,
+  validatePostalCode,
+  validateStreet,
+} from "../features/auth/onboardingValidation";
 import { useAuth } from "../hooks/useAuth";
 import type { EmploymentStatus, OnboardingStep2Payload, OnboardingStep4Payload, UserFullProfile } from "../types";
 
@@ -65,6 +79,8 @@ function SelectField({
   );
 }
 
+const todayIso = new Date().toISOString().slice(0, 10);
+
 export function OnboardingPage() {
   const { accessToken, logout } = useAuth();
   const navigate = useNavigate();
@@ -96,8 +112,18 @@ export function OnboardingPage() {
     account_purpose: "",
   });
 
-  const currentStep = profile?.onboarding.completed ? 4 : (profile?.onboarding.pending_step ?? 2);
-  const activeStep = Math.max(2, Math.min(4, currentStep));
+  const [viewStep, setViewStep] = useState<number | null>(null);
+
+  function stepFromProfile(source: UserFullProfile): number {
+    const step = source.onboarding.completed ? 4 : (source.onboarding.pending_step ?? 2);
+    return Math.max(2, Math.min(4, step));
+  }
+
+  const activeStep = viewStep ?? (profile ? stepFromProfile(profile) : 2);
+
+  function goBack() {
+    setViewStep((current) => Math.max(2, (current ?? activeStep) - 1));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -113,6 +139,7 @@ export function OnboardingPage() {
           return;
         }
         setProfile(nextProfile);
+        setViewStep(stepFromProfile(nextProfile));
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           logout();
@@ -174,9 +201,33 @@ export function OnboardingPage() {
     setError(err instanceof ApiError ? err.message : fallback);
   }
 
+  function validateStep2(): string | null {
+    const cnpError = validateCnp(step2.cnp);
+    if (cnpError) return cnpError;
+    const dobError = validateDateOfBirth(step2.date_of_birth);
+    if (dobError) return dobError;
+    if (!cnpMatchesDateOfBirth(step2.cnp, step2.date_of_birth)) {
+      return "CNP does not match the date of birth provided";
+    }
+    const streetError = validateStreet(step2.street);
+    if (streetError) return streetError;
+    for (const field of ["building", "staircase", "apartment"] as const) {
+      const tokenError = validateAddressToken(step2[field] ?? "");
+      if (tokenError) return tokenError;
+    }
+    const postalCodeError = validatePostalCode(step2.postal_code ?? "");
+    if (postalCodeError) return postalCodeError;
+    return null;
+  }
+
   async function submitStep2(event: FormEvent) {
     event.preventDefault();
     if (!accessToken) return;
+    const validationError = validateStep2();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -188,6 +239,7 @@ export function OnboardingPage() {
         postal_code: cleanOptional(step2.postal_code ?? ""),
       });
       setProfile(response);
+      setViewStep(stepFromProfile(response));
     } catch (err) {
       handleApiError(err, "Could not save personal details");
     } finally {
@@ -200,7 +252,9 @@ export function OnboardingPage() {
     setSubmitting(true);
     setError(null);
     try {
-      setProfile(await createIdentityDocumentPlaceholder(accessToken));
+      const response = await createIdentityDocumentPlaceholder(accessToken);
+      setProfile(response);
+      setViewStep(stepFromProfile(response));
     } catch (err) {
       handleApiError(err, "Could not continue identity step");
     } finally {
@@ -208,9 +262,28 @@ export function OnboardingPage() {
     }
   }
 
+  function validateStep4(): string | null {
+    const occupationError = validateOccupation(step4.occupation ?? "");
+    if (occupationError) return occupationError;
+    const employerError = validateOptionalFreeText(step4.employer ?? "", "Employer");
+    if (employerError) return employerError;
+    const industryError = validateOptionalFreeText(step4.industry ?? "", "Industry");
+    if (industryError) return industryError;
+    const incomeSourceError = validateOptionalFreeText(step4.income_source ?? "", "Income source");
+    if (incomeSourceError) return incomeSourceError;
+    const incomeError = validateMonthlyIncome(step4.approximate_monthly_income ?? "");
+    if (incomeError) return incomeError;
+    return null;
+  }
+
   async function submitStep4(event: FormEvent) {
     event.preventDefault();
     if (!accessToken) return;
+    const validationError = validateStep4();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -278,6 +351,12 @@ export function OnboardingPage() {
           ))}
         </ol>
 
+        {activeStep > 2 && (
+          <button type="button" className="button--ghost onboarding-back" disabled={submitting} onClick={goBack}>
+            &larr; Back
+          </button>
+        )}
+
         {error && (
           <p role="alert" className="status-line status-line--error">
             {error}
@@ -291,25 +370,36 @@ export function OnboardingPage() {
               <h2>Personal details</h2>
             </div>
             <div className="onboarding-form__grid">
-              <Field label="CNP" value={step2.cnp} onChange={(e) => setStep2({ ...step2, cnp: e.target.value })} required />
+              <Field
+                label="CNP"
+                value={step2.cnp}
+                onChange={(e) => setStep2({ ...step2, cnp: e.target.value })}
+                required
+                inputMode="numeric"
+                maxLength={13}
+              />
               <Field
                 label="Date of birth"
                 type="date"
                 value={step2.date_of_birth}
                 onChange={(e) => setStep2({ ...step2, date_of_birth: e.target.value })}
                 required
+                min="1900-01-01"
+                max={todayIso}
               />
-              <Field
+              <CountrySearchSelect
                 label="Citizenship"
                 value={step2.citizenship}
-                onChange={(e) => setStep2({ ...step2, citizenship: e.target.value })}
+                onChange={(name) => setStep2({ ...step2, citizenship: name })}
                 required
+                placeholder="Start typing a country..."
               />
-              <Field
+              <CountrySearchSelect
                 label="Country"
                 value={step2.country}
-                onChange={(e) => setStep2({ ...step2, country: e.target.value })}
+                onChange={(name) => setStep2({ ...step2, country: name })}
                 required
+                placeholder="Start typing a country..."
               />
               <Field
                 label="County"
@@ -334,21 +424,25 @@ export function OnboardingPage() {
                 label="Building"
                 value={step2.building ?? ""}
                 onChange={(e) => setStep2({ ...step2, building: e.target.value })}
+                maxLength={32}
               />
               <Field
                 label="Staircase"
                 value={step2.staircase ?? ""}
                 onChange={(e) => setStep2({ ...step2, staircase: e.target.value })}
+                maxLength={32}
               />
               <Field
                 label="Apartment"
                 value={step2.apartment ?? ""}
                 onChange={(e) => setStep2({ ...step2, apartment: e.target.value })}
+                maxLength={32}
               />
               <Field
                 label="Postal code"
                 value={step2.postal_code ?? ""}
                 onChange={(e) => setStep2({ ...step2, postal_code: e.target.value })}
+                maxLength={12}
               />
             </div>
             <button type="submit" disabled={submitting}>
@@ -381,26 +475,21 @@ export function OnboardingPage() {
                 label="Occupation"
                 value={step4.occupation ?? ""}
                 onChange={(e) => setStep4({ ...step4, occupation: e.target.value })}
-              />
-              <Field
-                label="Employer"
-                value={step4.employer ?? ""}
-                onChange={(e) => setStep4({ ...step4, employer: e.target.value })}
-              />
-              <Field
-                label="Industry"
-                value={step4.industry ?? ""}
-                onChange={(e) => setStep4({ ...step4, industry: e.target.value })}
+                maxLength={100}
               />
               <SelectField
                 label="Employment status"
                 value={step4.employment_status ?? ""}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const nextStatus = e.target.value === "" ? null : (e.target.value as EmploymentStatus);
+                  const hidesEmployer = nextStatus !== null && EMPLOYMENT_STATUSES_WITHOUT_EMPLOYER.has(nextStatus);
                   setStep4({
                     ...step4,
-                    employment_status: e.target.value === "" ? null : (e.target.value as EmploymentStatus),
-                  })
-                }
+                    employment_status: nextStatus,
+                    employer: hidesEmployer ? "" : step4.employer,
+                    industry: hidesEmployer ? "" : step4.industry,
+                  });
+                }}
               >
                 <option value="">Select status</option>
                 {employmentStatuses.map((status) => (
@@ -409,15 +498,33 @@ export function OnboardingPage() {
                   </option>
                 ))}
               </SelectField>
-              <Field
+              {!(step4.employment_status && EMPLOYMENT_STATUSES_WITHOUT_EMPLOYER.has(step4.employment_status)) && (
+                <>
+                  <Field
+                    label="Employer"
+                    value={step4.employer ?? ""}
+                    onChange={(e) => setStep4({ ...step4, employer: e.target.value })}
+                    maxLength={255}
+                  />
+                  <DropdownWithOther
+                    label="Industry"
+                    value={step4.industry ?? ""}
+                    options={INDUSTRY_OPTIONS}
+                    onChange={(value) => setStep4({ ...step4, industry: value })}
+                  />
+                </>
+              )}
+              <DropdownWithOther
                 label="Income source"
                 value={step4.income_source ?? ""}
-                onChange={(e) => setStep4({ ...step4, income_source: e.target.value })}
+                options={INCOME_SOURCE_OPTIONS}
+                onChange={(value) => setStep4({ ...step4, income_source: value })}
               />
               <Field
                 label="Approximate monthly income"
                 type="number"
                 min="0"
+                max="10000000"
                 step="0.01"
                 value={step4.approximate_monthly_income ?? ""}
                 onChange={(e) => setStep4({ ...step4, approximate_monthly_income: e.target.value })}

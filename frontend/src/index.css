@@ -223,6 +223,13 @@ body {
   gap: 0.75rem;
 }
 
+.auth-field-hint {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
 .auth-switch {
   margin: 0.25rem 0 0;
   color: var(--color-text-muted);
@@ -294,6 +301,12 @@ body {
   border: 1px solid var(--color-divider);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.02);
+}
+
+.onboarding-back {
+  align-self: flex-start;
+  margin: 0.75rem 0 -0.25rem;
+  padding-left: 0;
 }
 
 .onboarding-progress__step {
@@ -373,6 +386,57 @@ label {
   font-size: 0.75rem;
   color: var(--color-text-muted);
   text-align: right;
+}
+
+.country-select {
+  position: relative;
+}
+
+.country-select__list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+
+.country-select__list button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  font-size: 0.875rem;
+  cursor: pointer;
+  border-radius: var(--radius-sm, 6px);
+}
+
+.country-select__list button:hover {
+  background: var(--color-accent-soft);
+}
+
+.country-select__flag {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.country-select__empty {
+  padding: 0.4rem 0.5rem;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
 }
 
 input,

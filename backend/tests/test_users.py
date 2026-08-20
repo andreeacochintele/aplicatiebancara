@@ -49,3 +49,57 @@ def test_register_endpoint(client):
     body = response.json()
     assert body["user"]["email"] == "register@example.com"
     assert "access_token" in body["tokens"]
+
+
+@pytest.mark.parametrize(
+    "weak_password",
+    [
+        "short1!",  # too short
+        "alllowercase1!",  # no uppercase
+        "ALLUPPERCASE1!",  # no lowercase
+        "NoDigitsHere!",  # no digit
+        "NoSpecialChar1",  # no special character
+    ],
+)
+def test_register_endpoint_rejects_weak_password(client, weak_password):
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "weak-password@example.com",
+            "phone": "+40733333334",
+            "password": weak_password,
+            "first_name": "Ana",
+            "last_name": "Ionescu",
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("invalid_name", ["Ana2", "Ana!", "", "A"])
+def test_register_endpoint_rejects_invalid_first_name(client, invalid_name):
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "invalid-name@example.com",
+            "phone": "+40733333335",
+            "password": "Sup3rSecret!",
+            "first_name": invalid_name,
+            "last_name": "Ionescu",
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("invalid_phone", ["andrei", "0712345678", "+4071234", "+0712345678", "12345"])
+def test_register_endpoint_rejects_invalid_phone(client, invalid_phone):
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "invalid-phone@example.com",
+            "phone": invalid_phone,
+            "password": "Sup3rSecret!",
+            "first_name": "Ana",
+            "last_name": "Ionescu",
+        },
+    )
+    assert response.status_code == 422

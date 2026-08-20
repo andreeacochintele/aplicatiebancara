@@ -6,6 +6,30 @@ import { useAuth } from "../hooks/useAuth";
 
 type AuthMode = "login" | "register";
 
+const NAME_PATTERN = /^\p{L}+(?:[ '-]\p{L}+)*$/u;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_PATTERN = /^\+[1-9]\d{7,14}$/;
+
+function validateName(value: string, label: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length < 2 || trimmed.length > 50) {
+    return `${label} must be between 2 and 50 characters`;
+  }
+  if (!NAME_PATTERN.test(trimmed)) {
+    return `${label} must contain only letters`;
+  }
+  return null;
+}
+
+function validatePassword(value: string): string | null {
+  if (value.length < 8) return "Password must be at least 8 characters long";
+  if (!/[a-z]/.test(value)) return "Password must contain at least one lowercase letter";
+  if (!/[A-Z]/.test(value)) return "Password must contain at least one uppercase letter";
+  if (!/\d/.test(value)) return "Password must contain at least one digit";
+  if (!/[^\w\s]/.test(value)) return "Password must contain at least one special character";
+  return null;
+}
+
 export function LoginPage() {
   const { login, register } = useAuth();
   const navigate = useNavigate();
@@ -36,10 +60,30 @@ export function LoginPage() {
   async function handleRegister(event: FormEvent) {
     event.preventDefault();
     setError(null);
+
+    const nameError = validateName(firstName, "First name") ?? validateName(lastName, "Last name");
+    if (nameError) {
+      setError(nameError);
+      return;
+    }
+    if (!EMAIL_PATTERN.test(email.trim())) {
+      setError("Enter a valid email address");
+      return;
+    }
+    if (!PHONE_PATTERN.test(phone.trim())) {
+      setError("Enter a valid phone number in international format, e.g. +40712345678");
+      return;
+    }
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
     }
+
     setSubmitting(true);
     try {
       await register({
@@ -67,11 +111,25 @@ export function LoginPage() {
         <div className="auth-form__grid">
           <label>
             First name
-            <input value={firstName} onChange={(e) => setFirstName(e.target.value)} required autoComplete="given-name" />
+            <input
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              required
+              minLength={2}
+              maxLength={50}
+              autoComplete="given-name"
+            />
           </label>
           <label>
             Last name
-            <input value={lastName} onChange={(e) => setLastName(e.target.value)} required autoComplete="family-name" />
+            <input
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              required
+              minLength={2}
+              maxLength={50}
+              autoComplete="family-name"
+            />
           </label>
         </div>
         <label>
@@ -80,7 +138,14 @@ export function LoginPage() {
         </label>
         <label>
           Phone
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} required autoComplete="tel" />
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            required
+            placeholder="+40712345678"
+            autoComplete="tel"
+          />
         </label>
         <label>
           Password
@@ -89,8 +154,12 @@ export function LoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            minLength={8}
             autoComplete="new-password"
           />
+          <small className="auth-field-hint">
+            At least 8 characters, with an uppercase letter, a lowercase letter, a digit and a special character.
+          </small>
         </label>
         <label>
           Confirm password

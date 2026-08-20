@@ -3,18 +3,33 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.core.enums import UserRole, UserStatus, UserType
+from app.core.validation import (
+    Cnp,
+    DateOfBirth,
+    MonthlyIncome,
+    Occupation,
+    OptionalAddressToken,
+    OptionalFreeText100,
+    OptionalFreeText255,
+    PersonName,
+    PhoneNumber,
+    PostalCode,
+    StreetName,
+    StrongPassword,
+    cnp_birth_date,
+)
 from app.users.models import EmploymentStatus, KycDocumentStatus
 
 
 class UserCreate(BaseModel):
     email: EmailStr
-    phone: str | None = None
-    password: str
-    first_name: str
-    last_name: str
+    phone: PhoneNumber | None = None
+    password: StrongPassword
+    first_name: PersonName
+    last_name: PersonName
     user_type: UserType = UserType.PERSONAL
 
 
@@ -84,27 +99,34 @@ class UserFullProfilePublic(BaseModel):
 
 
 class OnboardingStep2Update(BaseModel):
-    cnp: str = Field(min_length=13, max_length=13)
-    date_of_birth: date
+    cnp: Cnp
+    date_of_birth: DateOfBirth
     citizenship: str = Field(min_length=1, max_length=100)
     country: str = Field(min_length=1, max_length=100)
     county: str = Field(min_length=1, max_length=100)
     city: str = Field(min_length=1, max_length=100)
-    street: str = Field(min_length=1, max_length=255)
+    street: StreetName
     street_number: str = Field(min_length=1, max_length=32)
-    building: str | None = Field(default=None, max_length=32)
-    staircase: str | None = Field(default=None, max_length=32)
-    apartment: str | None = Field(default=None, max_length=32)
-    postal_code: str | None = Field(default=None, max_length=32)
+    building: OptionalAddressToken = None
+    staircase: OptionalAddressToken = None
+    apartment: OptionalAddressToken = None
+    postal_code: PostalCode = None
+
+    @model_validator(mode="after")
+    def _cnp_matches_birth_date(self) -> "OnboardingStep2Update":
+        expected = cnp_birth_date(self.cnp)
+        if expected is not None and expected != self.date_of_birth:
+            raise ValueError("CNP does not match the date of birth provided")
+        return self
 
 
 class OnboardingStep4Update(BaseModel):
-    occupation: str | None = Field(default=None, max_length=100)
-    employer: str | None = Field(default=None, max_length=255)
-    industry: str | None = Field(default=None, max_length=100)
+    occupation: Occupation = None
+    employer: OptionalFreeText255 = None
+    industry: OptionalFreeText100 = None
     employment_status: EmploymentStatus | None = None
-    income_source: str | None = Field(default=None, max_length=100)
-    approximate_monthly_income: Decimal | None = Field(default=None, ge=0)
+    income_source: OptionalFreeText100 = None
+    approximate_monthly_income: MonthlyIncome = None
     account_purpose: str | None = Field(default=None, max_length=1000)
 
 

@@ -1,3 +1,5 @@
+import pytest
+
 from app.core.security import hash_password
 from app.users.models import User, UserOnboardingState
 
@@ -41,7 +43,9 @@ def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _step_2_payload(cnp: str = "1900101123456") -> dict:
+def _step_2_payload(cnp: str = "1900101123457") -> dict:
+    # cnp defaults to a real 1990-01-01 CNP with a correct checksum digit;
+    # the encoded date must match date_of_birth below.
     return {
         "cnp": cnp,
         "date_of_birth": "1990-01-01",
@@ -96,7 +100,7 @@ def test_partially_onboarded_new_user_resumes_correct_step(client):
     step_2 = client.patch(
         "/api/v1/users/me/onboarding/step-2",
         headers=_headers(token),
-        json=_step_2_payload("1900101777777"),
+        json=_step_2_payload("1900101777773"),
     )
     assert step_2.status_code == 200
 
@@ -123,6 +127,27 @@ def test_completed_new_user_is_considered_onboarded_after_login(client):
     assert body["onboarding"]["pending_step"] is None
 
 
+def _step_4_payload(**overrides) -> dict:
+    data = dict(
+        occupation="Engineer",
+        employer="Aurora",
+        industry="Technology",
+        employment_status="EMPLOYED",
+        income_source="Salary",
+        approximate_monthly_income="9000.00",
+        account_purpose="Salary and daily banking",
+    )
+    data.update(overrides)
+    return data
+
+
+def _advance_to_step_4(client, email: str, phone: str) -> str:
+    token = _register(client, email, phone)
+    client.patch("/api/v1/users/me/onboarding/step-2", headers=_headers(token), json=_step_2_payload())
+    client.post("/api/v1/users/me/onboarding/step-3/identity-document-placeholder", headers=_headers(token))
+    return token
+
+
 def test_onboarding_flow_completes_with_optional_step_4(client):
     token = _register(client, "flow@example.com", "+40710000002")
 
@@ -133,7 +158,7 @@ def test_onboarding_flow_completes_with_optional_step_4(client):
     )
     assert step_2.status_code == 200
     assert step_2.json()["onboarding"]["pending_step"] == 3
-    assert step_2.json()["profile"]["cnp"] == "1900101123456"
+    assert step_2.json()["profile"]["cnp"] == "1900101123457"
     assert step_2.json()["address"]["city"] == "Bucuresti"
 
     step_3 = client.post(
@@ -165,6 +190,58 @@ def test_onboarding_flow_completes_with_optional_step_4(client):
     assert body["employment"]["occupation"] == "Engineer"
 
 
+def test_step_4_rejects_occupation_without_a_letter(client):
+    token = _advance_to_step_4(client, "bad-occupation@example.com", "+40710000017")
+
+    response = client.patch(
+        "/api/v1/users/me/onboarding/step-4",
+        headers=_headers(token),
+        json=_step_4_payload(occupation="12345"),
+    )
+
+    assert response.status_code == 422
+
+
+def test_step_4_rejects_employer_with_only_symbols(client):
+    token = _advance_to_step_4(client, "bad-employer@example.com", "+40710000018")
+
+    response = client.patch(
+        "/api/v1/users/me/onboarding/step-4",
+        headers=_headers(token),
+        json=_step_4_payload(employer="!!!"),
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("income,phone", [("10000001", "+40710000019"), ("9000.999", "+40710000021")])
+def test_step_4_rejects_invalid_monthly_income(client, income, phone):
+    token = _advance_to_step_4(client, f"bad-income-{income.replace('.', '-')}@example.com", phone)
+
+    response = client.patch(
+        "/api/v1/users/me/onboarding/step-4",
+        headers=_headers(token),
+        json=_step_4_payload(approximate_monthly_income=income),
+    )
+
+    assert response.status_code == 422
+
+
+def test_step_4_accepts_dropdown_other_free_text(client):
+    token = _advance_to_step_4(client, "other-industry@example.com", "+40710000020")
+
+    response = client.patch(
+        "/api/v1/users/me/onboarding/step-4",
+        headers=_headers(token),
+        json=_step_4_payload(industry="Deep-sea welding", income_source="Lottery winnings"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()["employment"]
+    assert body["industry"] == "Deep-sea welding"
+    assert body["income_source"] == "Lottery winnings"
+
+
 def test_skip_step_4_completes_onboarding(client):
     token = _register(client, "skip-step-4@example.com", "+40710000003")
 
@@ -183,17 +260,77 @@ def test_duplicate_cnp_is_rejected(client):
     first = client.patch(
         "/api/v1/users/me/onboarding/step-2",
         headers=_headers(first_token),
-        json=_step_2_payload("1900101999999"),
+        json=_step_2_payload("1900101999991"),
     )
     assert first.status_code == 200
 
     second = client.patch(
         "/api/v1/users/me/onboarding/step-2",
         headers=_headers(second_token),
-        json=_step_2_payload("1900101999999"),
+        json=_step_2_payload("1900101999991"),
     )
 
     assert second.status_code == 409
+
+
+def test_step_2_rejects_cnp_with_invalid_checksum(client):
+    token = _register(client, "bad-cnp-checksum@example.com", "+40710000011")
+    payload = _step_2_payload()
+    payload["cnp"] = "1900101123456"  # same digits as the default fixture, wrong final checksum digit
+
+    response = client.patch("/api/v1/users/me/onboarding/step-2", headers=_headers(token), json=payload)
+
+    assert response.status_code == 422
+
+
+def test_step_2_rejects_cnp_not_matching_date_of_birth(client):
+    token = _register(client, "cnp-dob-mismatch@example.com", "+40710000012")
+    payload = _step_2_payload()
+    payload["date_of_birth"] = "1991-02-03"  # cnp still encodes 1990-01-01
+
+    response = client.patch("/api/v1/users/me/onboarding/step-2", headers=_headers(token), json=payload)
+
+    assert response.status_code == 422
+
+
+def test_step_2_rejects_underage_date_of_birth(client):
+    token = _register(client, "underage@example.com", "+40710000013")
+    payload = _step_2_payload("5200101123451")  # encodes 2020-01-01
+    payload["date_of_birth"] = "2020-01-01"
+
+    response = client.patch("/api/v1/users/me/onboarding/step-2", headers=_headers(token), json=payload)
+
+    assert response.status_code == 422
+
+
+def test_step_2_rejects_date_of_birth_before_1900(client):
+    token = _register(client, "too-old@example.com", "+40710000014")
+    payload = _step_2_payload()
+    payload["date_of_birth"] = "1899-01-01"
+
+    response = client.patch("/api/v1/users/me/onboarding/step-2", headers=_headers(token), json=payload)
+
+    assert response.status_code == 422
+
+
+def test_step_2_rejects_postal_code_without_a_digit(client):
+    token = _register(client, "bad-postal@example.com", "+40710000015")
+    payload = _step_2_payload()
+    payload["postal_code"] = "Steaua"
+
+    response = client.patch("/api/v1/users/me/onboarding/step-2", headers=_headers(token), json=payload)
+
+    assert response.status_code == 422
+
+
+def test_step_2_rejects_street_without_letters(client):
+    token = _register(client, "bad-street@example.com", "+40710000016")
+    payload = _step_2_payload()
+    payload["street"] = "12345"
+
+    response = client.patch("/api/v1/users/me/onboarding/step-2", headers=_headers(token), json=payload)
+
+    assert response.status_code == 422
 
 
 def test_authenticated_profile_can_be_read_and_updated(client):
