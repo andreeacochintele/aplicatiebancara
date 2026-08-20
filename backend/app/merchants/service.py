@@ -57,6 +57,8 @@ from app.merchants.schemas import (
     MerchantPublic,
     PurchaseResult,
 )
+from app.notifications.models import NotificationType
+from app.notifications.service import NotificationService
 from app.rewards.service import RewardsService
 from app.supabase import is_supabase_session
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
@@ -91,6 +93,7 @@ class MerchantService:
         self.cards = CardRepository(db)
         self.wallets = WalletRepository(db)
         self.fx = FXService(db)
+        self.notifications = NotificationService(db)
 
     def create_merchant(self, data: MerchantCreate) -> MerchantPublic:
         merchant = Merchant(name=data.name, category=data.category, logo_url=data.logo_url, verified=data.verified)
@@ -273,6 +276,20 @@ class MerchantService:
         # points record.
         if cashback_amount > 0 and wallet_id is not None:
             self._credit_cashback_to_wallet(wallet_id, cashback_amount, merchant.name)
+
+        if points_earned > 0 or cashback_amount > 0:
+            parts = []
+            if points_earned > 0:
+                parts.append(f"{points_earned} points")
+            if cashback_amount > 0:
+                parts.append(f"{cashback_amount} {currency} cashback")
+            self.notifications.notify(
+                user_id,
+                NotificationType.CASHBACK,
+                "Cashback earned",
+                f"You earned {' and '.join(parts)} at {merchant.name}.",
+                related_transaction_id=source_transaction_id,
+            )
 
         return PurchaseResult(
             merchant_id=merchant.id,

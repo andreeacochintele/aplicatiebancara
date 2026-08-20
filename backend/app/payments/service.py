@@ -9,6 +9,8 @@ from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.fx.models import FXQuote
 from app.fx.schemas import FXQuoteRequest
 from app.fx.service import FEE_RATE, FXService
+from app.notifications.models import NotificationType
+from app.notifications.service import NotificationService
 from app.payments.models import (
     Beneficiary,
     BillSplit,
@@ -466,6 +468,7 @@ class BillSplitService:
         self.transaction_service = TransactionService(db)
         self.users = UserRepository(db)
         self.wallets = WalletRepository(db)
+        self.notifications = NotificationService(db)
 
     def create_bill_split(self, owner_user_id: uuid.UUID, data: BillSplitCreate) -> BillSplitPublic:
         if data.source_transaction_id is not None and self.transactions.get_for_user(owner_user_id, data.source_transaction_id) is None:
@@ -507,6 +510,12 @@ class BillSplitService:
                     amount=participant_data.amount or Decimal("0"),
                     status=BillSplitParticipantStatus.PENDING,
                 )
+            )
+            self.notifications.notify(
+                participant_user_id,
+                NotificationType.SPLIT_BILL,
+                "Split bill request",
+                f"You were asked to pay {participant_data.amount or Decimal('0')} {bill_split.currency} for '{bill_split.title}'.",
             )
 
         self.db.flush()
@@ -569,6 +578,13 @@ class BillSplitService:
 
         participant.status = BillSplitParticipantStatus.PAID
         participant.paid_transaction_id = transaction.id
+        self.notifications.notify(
+            bill_split.owner_user_id,
+            NotificationType.SPLIT_BILL,
+            "Split bill payment received",
+            f"{participant.name} paid their {participant.amount} {bill_split.currency} share of '{bill_split.title}'.",
+            related_transaction_id=transaction.id,
+        )
         self.db.flush()
         self._settle_if_complete(bill_split)
         self.db.flush()

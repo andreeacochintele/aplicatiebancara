@@ -9,6 +9,8 @@ from app.cards.service import CardService
 from app.core.exceptions import NotFoundError, ValidationError
 from app.merchants.schemas import CashbackOfferCreate, MerchantCreate
 from app.merchants.service import MerchantService
+from app.notifications.models import NotificationType
+from app.notifications.service import NotificationService
 from app.rewards.service import RewardsService
 from app.transactions.models import Transaction, TransactionStatus, TransactionType
 from app.transactions.schemas import CardPaymentCreate
@@ -131,6 +133,12 @@ def test_sync_awards_points_and_computes_cashback_from_real_transaction(db_sessi
     rewards_account = RewardsService(db_session).get_account(seeded_user.id)
     assert rewards_account.points_balance == 400
     assert rewards_account.transactions[0].proof_code == result.proof_code
+
+    cashback_notifications = [
+        n for n in NotificationService(db_session).list_for_user(seeded_user.id) if n.type == NotificationType.CASHBACK
+    ]
+    assert len(cashback_notifications) == 1
+    assert "Nike" in cashback_notifications[0].message
 
 
 def test_sync_scales_points_by_card_tier(db_session, seeded_user):

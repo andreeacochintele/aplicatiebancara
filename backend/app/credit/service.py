@@ -30,6 +30,8 @@ from app.credit.schemas import (
     LoanCalculatorResult,
 )
 from app.credit.scoring import calculate_credit_score, credit_band
+from app.notifications.models import NotificationType
+from app.notifications.service import NotificationService
 from app.wallets.repository import WalletRepository
 
 
@@ -38,6 +40,7 @@ class CreditService:
         self.db = db
         self.repository = CreditRepository(db)
         self.wallets = WalletRepository(db)
+        self.notifications = NotificationService(db)
 
     def get_or_create_profile(self, user_id: uuid.UUID) -> CreditProfile:
         profile = self.repository.get_profile_by_user(user_id)
@@ -117,7 +120,15 @@ class CreditService:
             status=status,
             resolved_at=resolved_at,
         )
-        return self.repository.add_application(application)
+        application = self.repository.add_application(application)
+        if status == CreditApplicationStatus.APPROVED:
+            self.notifications.notify(
+                user_id,
+                NotificationType.CREDIT,
+                "Credit application approved",
+                f"Your application for {offered_amount} {currency} was approved at {offered_interest_rate}% APR.",
+            )
+        return application
 
     def calculate_loan(self, data: LoanCalculatorRequest) -> LoanCalculatorResult:
         return calculate_loan_schedule(data)
@@ -230,6 +241,21 @@ class CreditService:
 
         application.status = data.status
         application.resolved_at = utcnow()
+        if data.status == CreditApplicationStatus.APPROVED:
+            self.notifications.notify(
+                application.user_id,
+                NotificationType.CREDIT,
+                "Credit application approved",
+                f"Your application for {application.offered_amount} {application.currency} was approved "
+                f"at {application.offered_interest_rate}% APR.",
+            )
+        else:
+            self.notifications.notify(
+                application.user_id,
+                NotificationType.CREDIT,
+                "Credit application rejected",
+                f"Your application for {application.requested_amount} {application.currency} was rejected.",
+            )
         self.db.flush()
         return application
 
