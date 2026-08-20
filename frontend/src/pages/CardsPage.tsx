@@ -20,20 +20,6 @@ const CARD_TIER_LABELS: Record<CardTier, string> = {
   GOLD: "Gold",
   PLATINUM: "Platinum",
 };
-const CARD_TIER_PRODUCTS: Record<CardTier, { debit: string; credit: string }> = {
-  REGULAR: {
-    debit: "Regular debit",
-    credit: "Regular credit",
-  },
-  GOLD: {
-    debit: "Gold debit",
-    credit: "Gold credit",
-  },
-  PLATINUM: {
-    debit: "Platinum debit",
-    credit: "Platinum credit",
-  },
-};
 const CREDIT_CARD_LIMITS: Record<CardTier, number> = {
   REGULAR: 5000,
   GOLD: 15000,
@@ -193,7 +179,7 @@ export function CardsPage() {
   }, [accessToken, logout]);
 
   async function createCard() {
-    if (!accessToken || isSaving || !canCreateCard || selectedType === "") return;
+    if (!accessToken || isSaving || !canCreateCard) return;
     setIsSaving(true);
     setError(null);
     try {
