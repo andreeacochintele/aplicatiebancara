@@ -379,10 +379,14 @@ export interface PurchaseResult {
   merchant_id: string;
   amount: string;
   currency: string;
+  // Total cashback (card-tier percent + this merchant's own offer percent),
+  // already credited as real money into the wallet that was debited — not
+  // points. points_earned below is entirely independent of these two.
   cashback_percent: string | null;
   cashback_amount: string;
   points_earned: number;
   reward_points_balance: number;
+  proof_code: string | null;
 }
 
 export interface RewardTransaction {
@@ -390,14 +394,8 @@ export interface RewardTransaction {
   type: "EARN" | "SPEND" | "ADJUSTMENT";
   points: number;
   description: string | null;
+  proof_code: string | null;
   created_at: string;
-}
-
-export interface RewardTier {
-  id: string;
-  name: string;
-  min_lifetime_points: number;
-  perks: string[];
 }
 
 export type BenefitCategory = "LOUNGE_ACCESS" | "RETAIL_DISCOUNT" | "TRAVEL" | "INSURANCE" | "OTHER";
@@ -408,26 +406,31 @@ export interface RewardBenefit {
   category: BenefitCategory;
   description: string;
   points_cost: number | null;
-  min_tier: RewardTier | null;
+  min_card_tier: CardTier | null;
   partner_name: string | null;
   can_redeem: boolean;
   reason_if_locked: string | null;
 }
 
+export type RedemptionStatus = "VALID" | "USED" | "EXPIRED";
+
 export interface BenefitRedemption {
   id: string;
   benefit_id: string;
   benefit_name: string;
+  card_id: string | null;
+  redemption_code: string | null;
   points_spent: number;
   redeemed_at: string;
+  expires_at: string | null;
+  used_at: string | null;
+  status: RedemptionStatus;
 }
 
 export interface RewardAccount {
   points_balance: number;
   lifetime_points_earned: number;
-  tier: RewardTier;
-  next_tier: RewardTier | null;
-  points_to_next_tier: number | null;
+  referral_code: string | null;
   transactions: RewardTransaction[];
   redemptions: BenefitRedemption[];
 }

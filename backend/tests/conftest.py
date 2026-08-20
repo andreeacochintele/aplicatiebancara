@@ -15,7 +15,7 @@ from app.fx import models as fx_models  # noqa: F401
 from app.main import app
 from app.merchants import models as merchants_models  # noqa: F401
 from app.payments import models as payments_models  # noqa: F401
-from app.rewards.models import RewardTier
+from app.rewards import models as rewards_models  # noqa: F401
 from app.savings import models as savings_models  # noqa: F401
 from app.transactions import models as transactions_models  # noqa: F401
 from app.users import models as users_models  # noqa: F401
@@ -39,26 +39,6 @@ def db_session():
         session.close()
         Base.metadata.drop_all(bind=engine)
         engine.dispose()
-
-
-@pytest.fixture(autouse=True)
-def seeded_reward_tiers(db_session):
-    """Mirrors migration 0005's reference-data seed (STANDARD/PREMIUM/METAL) —
-    tests run against Base.metadata.create_all(), not the migrations, so
-    reward tier rows (every account needs at least one to resolve a tier)
-    need seeding here instead."""
-    tiers = {
-        "STANDARD": RewardTier(name="STANDARD", min_lifetime_points=0, perks="Earn 1 point per RON spent", sort_order=0),
-        "PREMIUM": RewardTier(
-            name="PREMIUM", min_lifetime_points=2000, perks="Airport lounge access|Priority support", sort_order=1
-        ),
-        "METAL": RewardTier(
-            name="METAL", min_lifetime_points=8000, perks="Unlimited lounge access|Concierge support", sort_order=2
-        ),
-    }
-    db_session.add_all(tiers.values())
-    db_session.flush()
-    return tiers
 
 
 @pytest.fixture()

@@ -20,12 +20,12 @@ from app.config import get_settings
 from app.core.enums import UserRole, UserType
 from app.core.security import hash_password
 from app.database import SessionLocal
+from app.cards.models import CardTier
 from app.merchants.models import CashbackOffer, Merchant
 from app.rewards.models import (
     BenefitCategory,
     RewardAccount,
     RewardBenefit,
-    RewardTier,
     RewardTransaction,
     RewardTransactionType,
 )
@@ -343,19 +343,26 @@ def run_supabase_rest() -> None:
 
 def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
     existing_merchants = client.request("GET", "merchants", params={"select": "id", "limit": "1"})
+    # First 5 are architecture.md §11's example line-up; the rest round out
+    # the catalog with more categories (e.g. a first Entertainment merchant).
     merchants = [
         ("merchant-nike", "Nike", "Retail"),
         ("merchant-starbucks", "Starbucks", "Food"),
         ("merchant-emag", "eMAG", "Retail"),
         ("merchant-omv", "OMV", "Fuel"),
         ("merchant-booking", "Booking.com", "Travel"),
+        ("merchant-zara", "Zara", "Retail"),
+        ("merchant-kfc", "KFC", "Food"),
+        ("merchant-petrom", "Petrom", "Fuel"),
+        ("merchant-emirates", "Emirates", "Travel"),
+        ("merchant-cinema-city", "Cinema City", "Entertainment"),
     ]
     if not existing_merchants:
         client.request(
             "POST",
             "merchants",
             body=[
-                {"id": _seed_uuid(key), "name": name, "category": category, "status": "ACTIVE"}
+                {"id": _seed_uuid(key), "name": name, "category": category, "status": "ACTIVE", "verified": True}
                 for key, name, category in merchants
             ],
             prefer="return=minimal",
@@ -383,6 +390,11 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                     ("merchant-emag", "eMAG", "Retail", "5.00"),
                     ("merchant-omv", "OMV", "Fuel", "3.00"),
                     ("merchant-booking", "Booking.com", "Travel", "4.00"),
+                    ("merchant-zara", "Zara", "Retail", "6.00"),
+                    ("merchant-kfc", "KFC", "Food", "8.00"),
+                    ("merchant-petrom", "Petrom", "Fuel", "4.00"),
+                    ("merchant-emirates", "Emirates", "Travel", "5.00"),
+                    ("merchant-cinema-city", "Cinema City", "Entertainment", "12.00"),
                 ]
             ],
             prefer="return=minimal",
@@ -392,8 +404,6 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
     if existing_benefits:
         return
 
-    tiers = client.request("GET", "reward_tiers", params={"select": "id,name"}) or []
-    tier_ids = {tier["name"]: tier["id"] for tier in tiers}
     client.request(
         "POST",
         "reward_benefits",
@@ -404,7 +414,7 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                 "category": "LOUNGE_ACCESS",
                 "description": "One complimentary visit to a Priority Pass airport lounge.",
                 "points_cost": 1500,
-                "min_tier_id": tier_ids.get("PREMIUM"),
+                "min_card_tier": "GOLD",
                 "partner_name": "Priority Pass",
                 "status": "ACTIVE",
             },
@@ -414,7 +424,7 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                 "category": "RETAIL_DISCOUNT",
                 "description": "10% discount voucher for your next eMAG order.",
                 "points_cost": 300,
-                "min_tier_id": None,
+                "min_card_tier": None,
                 "partner_name": "eMAG",
                 "status": "ACTIVE",
             },
@@ -424,7 +434,7 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                 "category": "RETAIL_DISCOUNT",
                 "description": "5% discount voucher for Starbucks.",
                 "points_cost": 150,
-                "min_tier_id": None,
+                "min_card_tier": None,
                 "partner_name": "Starbucks",
                 "status": "ACTIVE",
             },
@@ -434,7 +444,7 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                 "category": "TRAVEL",
                 "description": "One free airport transfer booked through Booking.com.",
                 "points_cost": 800,
-                "min_tier_id": tier_ids.get("PREMIUM"),
+                "min_card_tier": "GOLD",
                 "partner_name": "Booking.com",
                 "status": "ACTIVE",
             },
@@ -444,7 +454,7 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                 "category": "INSURANCE",
                 "description": "7 days of travel insurance coverage for a trip abroad.",
                 "points_cost": 1000,
-                "min_tier_id": tier_ids.get("METAL"),
+                "min_card_tier": "PLATINUM",
                 "partner_name": "Allianz",
                 "status": "ACTIVE",
             },
@@ -595,14 +605,21 @@ def run() -> None:
         credit(ron, TransactionType.CASHBACK, Decimal("28.00"), "Cashback - Nike")
         transfer(ron, business_ron, business.id, Decimal("500.00"), "Invoice payment - Aurora Tech SRL")
 
-        # Merchants + cashback offers (architecture.md §11 example line-up).
+        # Merchants + cashback offers. First 5 are architecture.md §11's example
+        # line-up; the rest just round out the catalog with more categories
+        # (e.g. a first Entertainment merchant) for the Rewards demo.
         offer_window = {"start_date": date.today() - timedelta(days=30), "end_date": date.today() + timedelta(days=335)}
         nike = Merchant(name="Nike", category="Retail", verified=True)
         starbucks = Merchant(name="Starbucks", category="Food", verified=True)
         emag = Merchant(name="eMAG", category="Retail", verified=True)
         omv = Merchant(name="OMV", category="Fuel", verified=True)
         booking = Merchant(name="Booking.com", category="Travel", verified=True)
-        db.add_all([nike, starbucks, emag, omv, booking])
+        zara = Merchant(name="Zara", category="Retail", verified=True)
+        kfc = Merchant(name="KFC", category="Food", verified=True)
+        petrom = Merchant(name="Petrom", category="Fuel", verified=True)
+        emirates = Merchant(name="Emirates", category="Travel", verified=True)
+        cinema_city = Merchant(name="Cinema City", category="Entertainment", verified=True)
+        db.add_all([nike, starbucks, emag, omv, booking, zara, kfc, petrom, emirates, cinema_city])
         db.flush()
 
         db.add_all(
@@ -612,6 +629,11 @@ def run() -> None:
                 CashbackOffer(merchant_id=emag.id, cashback_percent=Decimal("5"), **offer_window),
                 CashbackOffer(merchant_id=omv.id, cashback_percent=Decimal("3"), **offer_window),
                 CashbackOffer(merchant_id=booking.id, cashback_percent=Decimal("4"), **offer_window),
+                CashbackOffer(merchant_id=zara.id, cashback_percent=Decimal("6"), **offer_window),
+                CashbackOffer(merchant_id=kfc.id, cashback_percent=Decimal("8"), **offer_window),
+                CashbackOffer(merchant_id=petrom.id, cashback_percent=Decimal("4"), **offer_window),
+                CashbackOffer(merchant_id=emirates.id, cashback_percent=Decimal("5"), **offer_window),
+                CashbackOffer(merchant_id=cinema_city.id, cashback_percent=Decimal("12"), **offer_window),
             ]
         )
 
@@ -631,10 +653,6 @@ def run() -> None:
             )
         )
 
-        # Tiers are seeded by migration 0005; look them up rather than re-creating them.
-        premium_tier = db.query(RewardTier).filter(RewardTier.name == "PREMIUM").first()
-        metal_tier = db.query(RewardTier).filter(RewardTier.name == "METAL").first()
-
         db.add_all(
             [
                 RewardBenefit(
@@ -642,7 +660,7 @@ def run() -> None:
                     category=BenefitCategory.LOUNGE_ACCESS,
                     description="One complimentary visit to a Priority Pass airport lounge.",
                     points_cost=1500,
-                    min_tier_id=premium_tier.id if premium_tier else None,
+                    min_card_tier=CardTier.GOLD,
                     partner_name="Priority Pass",
                 ),
                 RewardBenefit(
@@ -664,7 +682,7 @@ def run() -> None:
                     category=BenefitCategory.TRAVEL,
                     description="One free airport transfer booked through Booking.com.",
                     points_cost=800,
-                    min_tier_id=premium_tier.id if premium_tier else None,
+                    min_card_tier=CardTier.GOLD,
                     partner_name="Booking.com",
                 ),
                 RewardBenefit(
@@ -672,7 +690,7 @@ def run() -> None:
                     category=BenefitCategory.INSURANCE,
                     description="7 days of travel insurance coverage for a trip abroad.",
                     points_cost=1000,
-                    min_tier_id=metal_tier.id if metal_tier else None,
+                    min_card_tier=CardTier.PLATINUM,
                     partner_name="Allianz",
                 ),
             ]

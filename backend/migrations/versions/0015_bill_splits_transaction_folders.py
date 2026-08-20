@@ -17,10 +17,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # No explicit .create() here: op.create_table() below auto-creates each
+    # Enum column's Postgres type as part of creating the table (unlike
+    # op.add_column, which doesn't) — calling .create(checkfirst=True) first
+    # made table creation immediately try (and fail) to recreate the same
+    # type without checkfirst.
     bill_split_status = sa.Enum("OPEN", "SETTLED", "CANCELLED", name="bill_split_status")
     participant_status = sa.Enum("PENDING", "PAID", "DECLINED", name="bill_split_participant_status")
-    bill_split_status.create(op.get_bind(), checkfirst=True)
-    participant_status.create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "bill_splits",
