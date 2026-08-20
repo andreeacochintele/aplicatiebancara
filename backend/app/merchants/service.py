@@ -59,7 +59,7 @@ from app.merchants.schemas import (
 )
 from app.rewards.service import RewardsService
 from app.supabase import is_supabase_session
-from app.transactions.models import LedgerEntryType, TransactionStatus, TransactionType, WalletLedgerEntry
+from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
 from app.wallets.repository import WalletRepository
 
@@ -134,17 +134,26 @@ class MerchantService:
         if not merchants:
             return []
 
+        # Fetched once up front instead of one has_earned_for_transaction REST
+        # round-trip per transaction below — that made sync scale O(history
+        # size) network calls and was the main reason a sync could take
+        # tens of seconds once a user had a few dozen transactions.
+        already_earned = self.rewards.get_synced_transaction_ids(user_id)
+        tier_cache: dict[uuid.UUID | None, CardTier | None] = {}
+
         today = datetime.now(timezone.utc).date()
         results: list[PurchaseResult] = []
         for transaction in self.transactions.list_for_user(user_id):
             if transaction.type != TransactionType.CARD_PAYMENT or transaction.status != TransactionStatus.COMPLETED:
                 continue
-            if self.rewards.has_earned_for_transaction(transaction.id):
+            if transaction.id in already_earned:
                 continue
             merchant = self._merchant_for(transaction.merchant_id, transaction.description, merchants)
             if merchant is None:
                 continue
-            tier = self._card_tier_for(transaction.card_id)
+            if transaction.card_id not in tier_cache:
+                tier_cache[transaction.card_id] = self._card_tier_for(transaction.card_id)
+            tier = tier_cache[transaction.card_id]
 
             # The has_earned_for_transaction check above plus this insert isn't
             # atomic, so a concurrent sync for the same user/transaction (e.g. a
@@ -263,7 +272,7 @@ class MerchantService:
         # race skips both instead of crediting money without a matching
         # points record.
         if cashback_amount > 0 and wallet_id is not None:
-            self._credit_cashback_to_wallet(wallet_id, cashback_amount, source_transaction_id)
+            self._credit_cashback_to_wallet(wallet_id, cashback_amount, merchant.name)
 
         return PurchaseResult(
             merchant_id=merchant.id,
@@ -276,15 +285,32 @@ class MerchantService:
             reward_points_balance=account.points_balance,
         )
 
-    def _credit_cashback_to_wallet(self, wallet_id: uuid.UUID, cashback_amount: Decimal, transaction_id: uuid.UUID) -> None:
+    def _credit_cashback_to_wallet(self, wallet_id: uuid.UUID, cashback_amount: Decimal, merchant_name: str) -> None:
         wallet = self.wallets.get_by_id(wallet_id)
         if wallet is None:
             return
+        # A real, standalone CASHBACK transaction — not just a ledger entry
+        # tacked onto the original CARD_PAYMENT — so it shows up in the
+        # Transactions list and in analytics' spending-by-type breakdown,
+        # same as the existing TransactionType.CASHBACK seed example
+        # ("Cashback - Nike") already demonstrates.
+        cashback_transaction = self.transactions.add(
+            Transaction(
+                initiator_user_id=wallet.user_id,
+                source_wallet_id=None,
+                destination_wallet_id=wallet.id,
+                type=TransactionType.CASHBACK,
+                status=TransactionStatus.COMPLETED,
+                amount=cashback_amount,
+                currency=wallet.currency,
+                description=f"Cashback - {merchant_name}",
+            )
+        )
         wallet.available_balance += cashback_amount
         self.transactions.add_ledger_entry(
             WalletLedgerEntry(
                 wallet_id=wallet.id,
-                transaction_id=transaction_id,
+                transaction_id=cashback_transaction.id,
                 entry_type=LedgerEntryType.CREDIT,
                 amount=cashback_amount,
                 currency=wallet.currency,

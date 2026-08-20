@@ -6,18 +6,24 @@
 -- same catalog — this script is only for a shared DB that was already
 -- seeded before this change.
 --
--- Safe to run once; merchant names aren't unique-constrained, so re-running
--- would create duplicates. Check `SELECT name FROM merchants` first if
--- unsure whether this already ran.
+-- Idempotent: merchant names aren't unique-constrained, so a plain INSERT
+-- would create duplicates on a second run. This only inserts the ones not
+-- already present by name, so it's safe to re-run regardless of whether it
+-- (or a partial version of it) already ran.
 
-WITH new_merchants AS (
-  INSERT INTO merchants (id, name, category, status, verified, created_at)
+WITH desired(name, category) AS (
   VALUES
-    (gen_random_uuid(), 'Zara', 'Retail', 'ACTIVE', true, now()),
-    (gen_random_uuid(), 'KFC', 'Food', 'ACTIVE', true, now()),
-    (gen_random_uuid(), 'Petrom', 'Fuel', 'ACTIVE', true, now()),
-    (gen_random_uuid(), 'Emirates', 'Travel', 'ACTIVE', true, now()),
-    (gen_random_uuid(), 'Cinema City', 'Entertainment', 'ACTIVE', true, now())
+    ('Zara', 'Retail'),
+    ('KFC', 'Food'),
+    ('Petrom', 'Fuel'),
+    ('Emirates', 'Travel'),
+    ('Cinema City', 'Entertainment')
+),
+new_merchants AS (
+  INSERT INTO merchants (id, name, category, status, verified, created_at)
+  SELECT gen_random_uuid(), desired.name, desired.category, 'ACTIVE', true, now()
+  FROM desired
+  WHERE NOT EXISTS (SELECT 1 FROM merchants WHERE merchants.name = desired.name)
   RETURNING id, name
 )
 INSERT INTO cashback_offers (id, merchant_id, cashback_percent, start_date, end_date, status, created_at)
