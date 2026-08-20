@@ -321,13 +321,16 @@
 
 .aurora-hero-amount {
   font-family: "Manrope", sans-serif;
-  font-size: 36px;
+  font-size: clamp(24px, 7vw, 36px);
   font-weight: 800;
   letter-spacing: -0.02em;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .aurora-hero-sub {
