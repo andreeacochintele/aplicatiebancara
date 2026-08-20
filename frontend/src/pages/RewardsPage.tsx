@@ -769,29 +769,31 @@ export function RewardsPage() {
             </div>
             {history.length > 0 ? (
               <>
-                <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.5rem" }}>
-                  {history.map((tx) => (
-                    <li key={tx.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
-                      <span style={{ fontSize: "0.85rem" }}>
-                        {tx.description ?? tx.type}
-                        {tx.proof_code && (
-                          <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
-                            Code: {tx.proof_code}
-                          </div>
-                        )}
-                      </span>
-                      <span
-                        style={{
-                          fontWeight: 700,
-                          color: tx.points >= 0 ? "var(--aurora-green, #2e9e5b)" : "var(--color-text-muted)",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {tx.points > 0 ? `+${tx.points}` : tx.points}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <div style={{ maxHeight: "360px", overflowY: "auto", paddingRight: "0.25rem" }}>
+                  <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.5rem" }}>
+                    {history.map((tx) => (
+                      <li key={tx.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+                        <span style={{ fontSize: "0.85rem" }}>
+                          {tx.description ?? tx.type}
+                          {tx.proof_code && (
+                            <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
+                              Code: {tx.proof_code}
+                            </div>
+                          )}
+                        </span>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            color: tx.points >= 0 ? "var(--aurora-green, #2e9e5b)" : "var(--color-text-muted)",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {tx.points > 0 ? `+${tx.points}` : tx.points}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
                 {rewards && rewards.transactions.length > 5 && (
                   <button
                     type="button"
@@ -825,6 +827,7 @@ export function RewardsPage() {
                 </button>
               </div>
               {areVouchersExpanded ? (
+                <div style={{ maxHeight: "360px", overflowY: "auto", paddingRight: "0.25rem" }}>
                 <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.6rem" }}>
                   {rewards.redemptions.map((redemption) => (
                     <li
@@ -883,6 +886,7 @@ export function RewardsPage() {
                     </li>
                   ))}
                 </ul>
+                </div>
               ) : (
                 <p className="eyebrow">
                   {rewards.redemptions.length} voucher{rewards.redemptions.length === 1 ? "" : "s"} — expand to view.
