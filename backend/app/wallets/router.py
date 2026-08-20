@@ -1,4 +1,6 @@
 """Wallet endpoints, scoped to the authenticated user."""
+import uuid
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -26,5 +28,16 @@ def create_wallet(
     db: Session = Depends(get_db),
 ) -> WalletPublic:
     wallet = WalletService(db).create_wallet(current_user.id, payload)
+    db.commit()
+    return wallet
+
+
+@router.patch("/{wallet_id}/set-main", response_model=WalletPublic)
+def set_main_wallet(
+    wallet_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> WalletPublic:
+    wallet = WalletService(db).set_main_wallet(current_user.id, wallet_id)
     db.commit()
     return wallet

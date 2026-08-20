@@ -27,8 +27,7 @@ class StatementRepository:
                 WalletLedgerEntry,
                 {
                     "wallet_id": f"eq.{wallet_id}",
-                    "created_at": f"gte.{period_start.isoformat()}",
-                    "created_at": f"lte.{period_end.isoformat()}",
+                    "and": f"(created_at.gte.{period_start.isoformat()},created_at.lte.{period_end.isoformat()})",
                     "order": "created_at.asc",
                 },
             )

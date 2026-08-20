@@ -49,12 +49,18 @@ export function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [spending, setSpending] = useState<SpendingByTypeResponse | null>(null);
   const [creditScore, setCreditScore] = useState<CreditScore | null>(null);
+  const [settingMainId, setSettingMainId] = useState<string | null>(null);
 
-  useEffect(() => {
+  function reloadNetWorth() {
     if (!accessToken) return;
     apiRequest<NetWorthResponse>("/analytics/net-worth", { token: accessToken })
       .then(setNetWorth)
       .catch(() => setNetWorth(null));
+  }
+
+  useEffect(() => {
+    if (!accessToken) return;
+    reloadNetWorth();
     apiRequest<Transaction[]>("/transactions", { token: accessToken })
       .then((list) => setTransactions([...list].sort((a, b) => b.created_at.localeCompare(a.created_at))))
       .catch(() => setTransactions([]));
@@ -65,6 +71,19 @@ export function DashboardPage() {
       .then(setCreditScore)
       .catch(() => setCreditScore(null));
   }, [accessToken]);
+
+  async function setMainWallet(walletId: string) {
+    if (!accessToken || settingMainId) return;
+    setSettingMainId(walletId);
+    try {
+      await apiRequest(`/wallets/${walletId}/set-main`, { method: "PATCH", token: accessToken });
+      reloadNetWorth();
+    } catch {
+      // best-effort from this widget; the wallet chip simply stays as it was
+    } finally {
+      setSettingMainId(null);
+    }
+  }
 
   const userWalletIds = new Set(netWorth?.wallets.map((wallet) => wallet.wallet_id) ?? []);
   const recentTransactions = transactions.slice(0, 5);
@@ -95,7 +114,7 @@ export function DashboardPage() {
               {netWorth ? `Total balance · all wallets (${netWorth.base_currency})` : `Welcome, ${user?.first_name}`}
             </div>
             <div className="aurora-hero-amount">
-              {hidden ? "•••••• " + (netWorth?.base_currency ?? "") : (netWorth?.total_available_balance ?? "—")}
+              {hidden ? "••••••" : (netWorth?.total_available_balance ?? "—")}
               <button className="aurora-icon-btn" onClick={() => setHidden((h) => !h)} aria-label="Toggle balance visibility">
                 {hidden ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
@@ -103,13 +122,33 @@ export function DashboardPage() {
           </div>
           <div className="aurora-hero-wallets">
             {netWorth?.wallets.map((wallet) => (
-              <div className="aurora-hero-wallet" key={wallet.wallet_id}>
+              <button
+                type="button"
+                key={wallet.wallet_id}
+                onClick={() => setMainWallet(wallet.wallet_id)}
+                disabled={wallet.is_main || settingMainId === wallet.wallet_id}
+                title={wallet.is_main ? "Main wallet" : "Set as main wallet"}
+                style={{
+                  background: "rgba(255, 255, 255, 0.1)",
+                  border: "1px solid rgba(255, 255, 255, 0.14)",
+                  borderRadius: 999,
+                  padding: "7px 14px",
+                  fontSize: 13,
+                  fontWeight: 400,
+                  fontFamily: "inherit",
+                  color: "inherit",
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                  cursor: wallet.is_main || settingMainId ? "default" : "pointer",
+                }}
+              >
                 <span className="aurora-hero-wallet-code">
                   {wallet.currency}
                   {wallet.is_main ? " · main" : ""}
                 </span>
                 <span>{hidden ? "••••" : wallet.available_balance}</span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
