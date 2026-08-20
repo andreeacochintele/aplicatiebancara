@@ -3,7 +3,7 @@ import { createContext, useCallback, useEffect, useMemo, useRef, useState, type 
 import { apiRequest } from "../api/apiClient";
 import type { User } from "../types";
 
-const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const IDLE_WARNING_MS = 30 * 1000;
 const ACTIVITY_EVENTS = ["mousedown", "mousemove", "keydown", "scroll", "touchstart"] as const;
 
