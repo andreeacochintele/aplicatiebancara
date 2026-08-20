@@ -911,16 +911,6 @@ export function RewardsPage() {
           <p className="eyebrow">
             Balance after redemption: {rewards.points_balance - (confirmBenefit.points_cost ?? 0)} points
           </p>
-          <label style={{ display: "block", marginTop: "0.75rem" }}>
-            Pay with card
-            <select value={redeemCardId} onChange={(e) => setRedeemCardId(e.target.value)} style={{ width: "100%" }}>
-              {cards.map((card) => (
-                <option key={card.id} value={card.id}>
-                  {formatCardLabel(card)}
-                </option>
-              ))}
-            </select>
-          </label>
         </ConfirmModal>
       )}
 
