@@ -21,6 +21,15 @@ class CreditApplicationType(str, enum.Enum):
     CREDIT_CARD = "CREDIT_CARD"
 
 
+class LoanProductType(str, enum.Enum):
+    PERSONAL_LOAN = "PERSONAL_LOAN"
+    MORTGAGE = "MORTGAGE"
+    AUTO_LOAN = "AUTO_LOAN"
+    STUDENT_LOAN = "STUDENT_LOAN"
+    HOME_IMPROVEMENT = "HOME_IMPROVEMENT"
+    DEBT_CONSOLIDATION = "DEBT_CONSOLIDATION"
+
+
 class CreditApplicationStatus(str, enum.Enum):
     DRAFT = "DRAFT"
     PENDING = "PENDING"
@@ -55,6 +64,7 @@ class CreditProfile(Base):
     current_score: Mapped[int] = mapped_column(Integer, default=600, nullable=False)
     income: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     existing_debt: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="RON", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     owner = relationship("User")
@@ -82,6 +92,9 @@ class CreditApplication(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     type: Mapped[CreditApplicationType] = mapped_column(
         Enum(CreditApplicationType, name="credit_application_type"), nullable=False
+    )
+    loan_product_type: Mapped[LoanProductType | None] = mapped_column(
+        Enum(LoanProductType, name="loan_product_type"), nullable=True
     )
     requested_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="RON", nullable=False)
