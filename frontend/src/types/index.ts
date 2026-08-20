@@ -148,6 +148,7 @@ export interface LoanInstallmentPreview {
 
 export interface LoanCalculatorResult {
   principal_amount: string;
+  currency: string;
   annual_interest_rate: string;
   term_months: number;
   monthly_payment: string;
@@ -161,6 +162,7 @@ export interface Loan {
   user_id: string;
   application_id: string;
   principal_amount: string;
+  currency: string;
   interest_rate: string;
   term_months: number;
   monthly_payment: string;
@@ -194,6 +196,7 @@ export interface CreditApplication {
   user_id: string;
   type: CreditApplicationType;
   requested_amount: string;
+  currency: string;
   requested_term_months: number | null;
   offered_interest_rate: string | null;
   offered_amount: string | null;

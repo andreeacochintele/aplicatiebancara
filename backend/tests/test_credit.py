@@ -114,6 +114,7 @@ def test_loan_calculator_builds_deterministic_amortization_schedule():
     )
 
     assert result.monthly_payment == Decimal("888.49")
+    assert result.currency == "RON"
     assert result.total_payment == sum((item.payment_amount for item in result.schedule), Decimal("0.00"))
     assert result.total_interest == sum((item.interest_amount for item in result.schedule), Decimal("0.00"))
     assert len(result.schedule) == 12
@@ -159,6 +160,16 @@ def test_loan_calculator_rejects_invalid_inputs():
         calculate_loan_schedule(
             LoanCalculatorRequest(
                 principal_amount=Decimal("1000.00"),
+                currency="EURO",
+                annual_interest_rate=Decimal("12.00"),
+                term_months=12,
+            )
+        )
+
+    with pytest.raises(ValidationError):
+        calculate_loan_schedule(
+            LoanCalculatorRequest(
+                principal_amount=Decimal("1000.00"),
                 annual_interest_rate=Decimal("12.00"),
                 term_months=0,
             )
@@ -195,6 +206,7 @@ def test_loan_calculator_endpoint_returns_schedule(client):
     assert response.status_code == 200
     body = response.json()
     assert body["monthly_payment"] == "888.49"
+    assert body["currency"] == "RON"
     assert len(body["schedule"]) == 12
     assert body["schedule"][-1]["remaining_principal"] == "0.00"
 
@@ -219,6 +231,38 @@ def test_create_personal_loan_application_captures_current_score(db_session):
     assert application.user_id == user.id
     assert application.status == CreditApplicationStatus.PENDING
     assert application.credit_score_at_application == 644
+    assert application.currency == "RON"
+
+
+def test_create_application_accepts_currency(db_session):
+    user = _create_user(db_session)
+
+    application = CreditService(db_session).create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("50000.00"),
+            currency="eur",
+            requested_term_months=48,
+        ),
+    )
+
+    assert application.currency == "EUR"
+
+
+def test_create_application_rejects_invalid_currency(db_session):
+    user = _create_user(db_session)
+
+    with pytest.raises(ValidationError):
+        CreditService(db_session).create_application(
+            user.id,
+            CreditApplicationCreate(
+                type=CreditApplicationType.PERSONAL_LOAN,
+                requested_amount=Decimal("50000.00"),
+                currency="EURO",
+                requested_term_months=48,
+            ),
+        )
 
 
 def test_create_credit_card_application_allows_missing_term(db_session):
@@ -304,6 +348,7 @@ def test_create_credit_application_endpoint(client):
     body = response.json()
     assert body["type"] == "CREDIT_CARD"
     assert body["status"] == "PENDING"
+    assert body["currency"] == "RON"
     assert body["credit_score_at_application"] == 600
 
 
@@ -327,6 +372,7 @@ def test_create_loan_from_approved_application(db_session):
     assert loan.user_id == user.id
     assert loan.application_id == application.id
     assert loan.principal_amount == Decimal("20000.00")
+    assert loan.currency == "RON"
     assert loan.interest_rate == Decimal("9.50")
     assert loan.term_months == 36
     assert loan.monthly_payment == Decimal("640.66")
@@ -618,5 +664,6 @@ def test_admin_credit_application_endpoint_decides_application(client, db_sessio
     body = response.json()
     assert body["status"] == "APPROVED"
     assert body["offered_amount"] == "9000.00"
+    assert body["currency"] == "RON"
     assert body["offered_interest_rate"] == "10.00"
     assert body["resolved_at"] is not None

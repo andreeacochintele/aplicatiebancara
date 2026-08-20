@@ -35,6 +35,7 @@ class CreditScorePublic(BaseModel):
 class CreditApplicationCreate(BaseModel):
     type: CreditApplicationType
     requested_amount: Decimal
+    currency: str = "RON"
     requested_term_months: int | None = None
 
 
@@ -46,6 +47,7 @@ class CreditApplicationDecision(BaseModel):
 
 class LoanCalculatorRequest(BaseModel):
     principal_amount: Decimal
+    currency: str = "RON"
     annual_interest_rate: Decimal
     term_months: int
 
@@ -60,6 +62,7 @@ class LoanInstallmentPreview(BaseModel):
 
 class LoanCalculatorResult(BaseModel):
     principal_amount: Decimal
+    currency: str
     annual_interest_rate: Decimal
     term_months: int
     monthly_payment: Decimal
@@ -75,6 +78,7 @@ class LoanPublic(BaseModel):
     user_id: uuid.UUID
     application_id: uuid.UUID
     principal_amount: Decimal
+    currency: str
     interest_rate: Decimal
     term_months: int
     monthly_payment: Decimal
@@ -109,6 +113,7 @@ class CreditApplicationPublic(BaseModel):
     user_id: uuid.UUID
     type: CreditApplicationType
     requested_amount: Decimal
+    currency: str
     requested_term_months: int | None
     offered_interest_rate: Decimal | None
     offered_amount: Decimal | None

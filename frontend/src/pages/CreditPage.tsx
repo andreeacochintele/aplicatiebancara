@@ -12,6 +12,7 @@ import type {
 } from "../types";
 
 const APPLICATION_TYPES: CreditApplicationType[] = ["PERSONAL_LOAN", "CREDIT_CARD"];
+const CREDIT_CURRENCIES = ["RON", "EUR", "USD", "GBP"];
 
 function bandClass(band: string): string {
   if (band === "EXCELLENT" || band === "VERY_GOOD" || band === "GOOD") return "tag tag--accent";
@@ -33,8 +34,8 @@ function formatApplicationType(type: CreditApplicationType): string {
     .join(" ");
 }
 
-function formatMoney(value: string): string {
-  return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function formatMoney(value: string, currency = "RON"): string {
+  return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 }
 
 export function CreditPage() {
@@ -47,8 +48,10 @@ export function CreditPage() {
   const [existingDebt, setExistingDebt] = useState("");
   const [applicationType, setApplicationType] = useState<CreditApplicationType>("PERSONAL_LOAN");
   const [requestedAmount, setRequestedAmount] = useState("");
+  const [requestedCurrency, setRequestedCurrency] = useState("RON");
   const [requestedTermMonths, setRequestedTermMonths] = useState("48");
   const [loanPrincipal, setLoanPrincipal] = useState("50000");
+  const [loanCurrency, setLoanCurrency] = useState("RON");
   const [loanRate, setLoanRate] = useState("8.5");
   const [loanTerm, setLoanTerm] = useState("60");
   const [loanResult, setLoanResult] = useState<LoanCalculatorResult | null>(null);
@@ -153,6 +156,7 @@ export function CreditPage() {
         body: {
           type: applicationType,
           requested_amount: requestedAmount,
+          currency: requestedCurrency,
           requested_term_months: applicationType === "PERSONAL_LOAN" ? Number(requestedTermMonths) : null,
         },
       });
@@ -200,6 +204,7 @@ export function CreditPage() {
         token: accessToken,
         body: {
           principal_amount: loanPrincipal,
+          currency: loanCurrency,
           annual_interest_rate: loanRate,
           term_months: Number(loanTerm),
         },
@@ -263,6 +268,16 @@ export function CreditPage() {
               />
             </label>
             <label>
+              Currency
+              <select value={loanCurrency} onChange={(event) => setLoanCurrency(event.target.value)}>
+                {CREDIT_CURRENCIES.map((currency) => (
+                  <option key={currency} value={currency}>
+                    {currency}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
               Annual interest rate
               <input value={loanRate} onChange={(event) => setLoanRate(event.target.value)} inputMode="decimal" />
             </label>
@@ -280,15 +295,15 @@ export function CreditPage() {
               <div className="loan-result-grid">
                 <div>
                   <span className="eyebrow">Monthly payment</span>
-                  <strong>{formatMoney(loanResult.monthly_payment)}</strong>
+                  <strong>{formatMoney(loanResult.monthly_payment, loanResult.currency)}</strong>
                 </div>
                 <div>
                   <span className="eyebrow">Total interest</span>
-                  <strong>{formatMoney(loanResult.total_interest)}</strong>
+                  <strong>{formatMoney(loanResult.total_interest, loanResult.currency)}</strong>
                 </div>
                 <div>
                   <span className="eyebrow">Total payment</span>
-                  <strong>{formatMoney(loanResult.total_payment)}</strong>
+                  <strong>{formatMoney(loanResult.total_payment, loanResult.currency)}</strong>
                 </div>
               </div>
               <table className="loan-schedule-table">
@@ -305,10 +320,10 @@ export function CreditPage() {
                   {loanResult.schedule.slice(0, 6).map((item) => (
                     <tr key={item.installment_number}>
                       <td>{item.installment_number}</td>
-                      <td>{formatMoney(item.payment_amount)}</td>
-                      <td>{formatMoney(item.principal_amount)}</td>
-                      <td>{formatMoney(item.interest_amount)}</td>
-                      <td>{formatMoney(item.remaining_principal)}</td>
+                      <td>{formatMoney(item.payment_amount, loanResult.currency)}</td>
+                      <td>{formatMoney(item.principal_amount, loanResult.currency)}</td>
+                      <td>{formatMoney(item.interest_amount, loanResult.currency)}</td>
+                      <td>{formatMoney(item.remaining_principal, loanResult.currency)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -336,9 +351,9 @@ export function CreditPage() {
           <tbody>
             {loans.map((loan) => (
               <tr key={loan.id}>
-                <td>{formatMoney(loan.principal_amount)}</td>
-                <td>{formatMoney(loan.monthly_payment)}</td>
-                <td>{formatMoney(loan.outstanding_principal)}</td>
+                <td>{formatMoney(loan.principal_amount, loan.currency)}</td>
+                <td>{formatMoney(loan.monthly_payment, loan.currency)}</td>
+                <td>{formatMoney(loan.outstanding_principal, loan.currency)}</td>
                 <td>{new Date(loan.next_payment_date).toLocaleDateString()}</td>
                 <td>
                   <span className={loan.status === "ACTIVE" ? "tag tag--accent" : "tag tag--neutral"}>
@@ -407,6 +422,16 @@ export function CreditPage() {
               inputMode="decimal"
             />
           </label>
+          <label>
+            Currency
+            <select value={requestedCurrency} onChange={(event) => setRequestedCurrency(event.target.value)}>
+              {CREDIT_CURRENCIES.map((currency) => (
+                <option key={currency} value={currency}>
+                  {currency}
+                </option>
+              ))}
+            </select>
+          </label>
           {applicationType === "PERSONAL_LOAN" && (
             <label>
               Term months
@@ -442,7 +467,7 @@ export function CreditPage() {
               return (
                 <tr key={application.id}>
                   <td>{formatApplicationType(application.type)}</td>
-                  <td>{application.requested_amount}</td>
+                  <td>{formatMoney(application.requested_amount, application.currency)}</td>
                   <td>{application.requested_term_months ?? "N/A"}</td>
                   <td>{application.credit_score_at_application}</td>
                   <td>

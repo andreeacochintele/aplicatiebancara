@@ -78,6 +78,7 @@ class CreditService:
     def create_application(self, user_id: uuid.UUID, data: CreditApplicationCreate) -> CreditApplication:
         if data.requested_amount <= 0:
             raise ValidationError("Requested amount must be positive")
+        currency = _normalize_currency(data.currency)
         if data.type == CreditApplicationType.PERSONAL_LOAN:
             if data.requested_term_months is None or data.requested_term_months <= 0:
                 raise ValidationError("Personal loan applications require a positive term")
@@ -89,6 +90,7 @@ class CreditService:
             user_id=user_id,
             type=data.type,
             requested_amount=data.requested_amount,
+            currency=currency,
             requested_term_months=data.requested_term_months,
             credit_score_at_application=score.score,
             status=CreditApplicationStatus.PENDING,
@@ -119,6 +121,7 @@ class CreditService:
         preview = calculate_loan_schedule(
             LoanCalculatorRequest(
                 principal_amount=application.offered_amount,
+                currency=application.currency,
                 annual_interest_rate=application.offered_interest_rate,
                 term_months=application.requested_term_months,
             )
@@ -128,6 +131,7 @@ class CreditService:
                 user_id=user_id,
                 application_id=application.id,
                 principal_amount=preview.principal_amount,
+                currency=preview.currency,
                 interest_rate=preview.annual_interest_rate,
                 term_months=preview.term_months,
                 monthly_payment=preview.monthly_payment,
@@ -238,3 +242,10 @@ def _days_in_month(year: int, month: int) -> int:
     if month in {4, 6, 9, 11}:
         return 30
     return 31
+
+
+def _normalize_currency(value: str) -> str:
+    currency = value.strip().upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise ValidationError("Currency must be a 3-letter ISO code")
+    return currency

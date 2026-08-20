@@ -9,7 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, UniqueConstraint
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -84,6 +84,7 @@ class CreditApplication(Base):
         Enum(CreditApplicationType, name="credit_application_type"), nullable=False
     )
     requested_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="RON", nullable=False)
     requested_term_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     offered_interest_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     offered_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
@@ -109,6 +110,7 @@ class Loan(Base):
         UUID(as_uuid=True), ForeignKey("credit_applications.id"), unique=True, nullable=False
     )
     principal_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="RON", nullable=False)
     interest_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     term_months: Mapped[int] = mapped_column(Integer, nullable=False)
     monthly_payment: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)

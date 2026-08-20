@@ -11,9 +11,9 @@ function formatApplicationType(type: CreditApplication["type"]): string {
     .join(" ");
 }
 
-function formatMoney(value: string | null): string {
+function formatMoney(value: string | null, currency = "RON"): string {
   if (!value) return "N/A";
-  return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 }
 
 function statusClass(status: CreditApplicationStatus): string {
@@ -153,17 +153,20 @@ export function AdminDashboardPage() {
                   <tr key={application.id}>
                     <td>{application.user_id.slice(0, 8)}</td>
                     <td>{formatApplicationType(application.type)}</td>
-                    <td>{formatMoney(application.requested_amount)}</td>
+                    <td>{formatMoney(application.requested_amount, application.currency)}</td>
                     <td>
                       {isOpen ? (
-                        <input
-                          value={draft.amount}
-                          onChange={(event) => updateDraft(application.id, { amount: event.target.value })}
-                          inputMode="decimal"
-                          style={{ minWidth: "8rem" }}
-                        />
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <input
+                            value={draft.amount}
+                            onChange={(event) => updateDraft(application.id, { amount: event.target.value })}
+                            inputMode="decimal"
+                            style={{ minWidth: "8rem" }}
+                          />
+                          <span className="tag tag--outline">{application.currency}</span>
+                        </div>
                       ) : (
-                        formatMoney(application.offered_amount)
+                        formatMoney(application.offered_amount, application.currency)
                       )}
                     </td>
                     <td>
