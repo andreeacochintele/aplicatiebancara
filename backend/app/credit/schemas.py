@@ -6,7 +6,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from app.credit.models import CreditApplicationStatus, CreditApplicationType, LoanInstallmentStatus, LoanStatus
+from app.credit.models import (
+    CreditApplicationStatus,
+    CreditApplicationType,
+    LoanInstallmentStatus,
+    LoanProductType,
+    LoanStatus,
+)
 
 
 class CreditProfilePublic(BaseModel):
@@ -36,9 +42,25 @@ class CreditScorePublic(BaseModel):
 
 class CreditApplicationCreate(BaseModel):
     type: CreditApplicationType
+    loan_product_type: LoanProductType | None = LoanProductType.PERSONAL_LOAN
     requested_amount: Decimal
     currency: str = "RON"
     requested_term_months: int | None = None
+
+
+class LoanProductPublic(BaseModel):
+    product_type: LoanProductType
+    name: str
+    description: str
+    representative_apr: Decimal
+    borrowing_rate_note: str
+    typical_term_months: str
+    fees: list[str]
+    obligations: list[str]
+    liabilities: list[str]
+    required_documents: list[str]
+    collateral_required: bool
+    insurance_required: bool
 
 
 class CreditApplicationDecision(BaseModel):
@@ -114,6 +136,7 @@ class CreditApplicationPublic(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     type: CreditApplicationType
+    loan_product_type: LoanProductType | None
     requested_amount: Decimal
     currency: str
     requested_term_months: int | None

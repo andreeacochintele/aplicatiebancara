@@ -22,11 +22,15 @@ class CardService:
         self.wallets = WalletRepository(db)
 
     def create_card(self, user_id: uuid.UUID, data: CardCreate) -> Card:
-        if len(self.repository.list_for_user(user_id)) >= self.MAX_CARDS_PER_USER:
+        existing_cards = self.repository.list_for_user(user_id)
+        if len(existing_cards) >= self.MAX_CARDS_PER_USER:
             raise ConflictError("Card limit reached. You can have up to 5 cards.")
 
         if data.type == CardType.ONE_TIME and data.tier is not None:
             raise ValidationError("One-time cards do not have tiers")
+
+        if data.type in (CardType.DEBIT, CardType.ONE_TIME) and data.default_wallet_id is None:
+            raise ValidationError("Debit and one-time cards must be linked to an account")
 
         if data.default_wallet_id is not None:
             wallet = self.wallets.get_by_id(data.default_wallet_id)
@@ -35,6 +39,17 @@ class CardService:
             if wallet.status != WalletStatus.ACTIVE:
                 raise ValidationError("Default wallet must be active")
 
+        if data.type == CardType.DEBIT and data.default_wallet_id is not None:
+            for existing_card in existing_cards:
+                if existing_card.type == CardType.DEBIT and existing_card.default_wallet_id == data.default_wallet_id:
+                    raise ConflictError("This account already has a debit card")
+
+        if data.type == CardType.ONE_TIME:
+            for existing_card in existing_cards:
+                if existing_card.type == CardType.ONE_TIME and existing_card.status in (CardStatus.ACTIVE, CardStatus.FROZEN):
+                    raise ConflictError("You can only have one one-time payment card")
+
+        default_wallet_id = data.default_wallet_id if data.type in (CardType.DEBIT, CardType.ONE_TIME) else None
         last_four = f"{secrets.randbelow(10000):04d}"
         mock_pan = f"4000 {secrets.randbelow(10000):04d} {secrets.randbelow(10000):04d} {last_four}"
         mock_cvv = f"{secrets.randbelow(1000):03d}"
@@ -44,7 +59,7 @@ class CardService:
 
         card = Card(
             user_id=user_id,
-            default_wallet_id=data.default_wallet_id,
+            default_wallet_id=default_wallet_id,
             type=data.type,
             tier=tier,
             status=CardStatus.ACTIVE,
@@ -58,7 +73,7 @@ class CardService:
         )
         card = self.repository.add(card)
         self.repository.add_preferences(
-            CardPaymentPreferences(card_id=card.id, preferred_wallet_id=data.default_wallet_id)
+            CardPaymentPreferences(card_id=card.id, preferred_wallet_id=default_wallet_id)
         )
         return card
 

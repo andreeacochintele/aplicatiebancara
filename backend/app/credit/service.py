@@ -16,11 +16,14 @@ from app.credit.models import (
     CreditScoreHistory,
     Loan,
     LoanInstallment,
+    LoanProductType,
 )
+from app.credit.products import get_loan_product, list_loan_products
 from app.credit.repository import CreditRepository
 from app.credit.schemas import (
     CreditApplicationCreate,
     CreditApplicationDecision,
+    LoanProductPublic,
     CreditScorePublic,
     CreditScoreRecalculateRequest,
     LoanCalculatorRequest,
@@ -82,25 +85,45 @@ class CreditService:
             raise ValidationError("Requested amount must be positive")
         currency = _normalize_currency(data.currency)
         if data.type == CreditApplicationType.PERSONAL_LOAN:
+            loan_product_type = data.loan_product_type or LoanProductType.PERSONAL_LOAN
             if data.requested_term_months is None or data.requested_term_months <= 0:
                 raise ValidationError("Personal loan applications require a positive term")
-        elif data.requested_term_months is not None and data.requested_term_months <= 0:
-            raise ValidationError("Requested term must be positive")
+            loan_product = get_loan_product(loan_product_type)
+            # Temporary no-admin demo path: restore manual review by setting this back to PENDING.
+            status = CreditApplicationStatus.APPROVED
+            offered_amount = data.requested_amount
+            offered_interest_rate = loan_product.representative_apr
+            resolved_at = utcnow()
+        else:
+            loan_product_type = None
+            status = CreditApplicationStatus.PENDING
+            offered_amount = None
+            offered_interest_rate = None
+            resolved_at = None
+            if data.requested_term_months is not None and data.requested_term_months <= 0:
+                raise ValidationError("Requested term must be positive")
 
         score = self.get_score(user_id)
         application = CreditApplication(
             user_id=user_id,
             type=data.type,
+            loan_product_type=loan_product_type,
             requested_amount=data.requested_amount,
             currency=currency,
             requested_term_months=data.requested_term_months,
+            offered_amount=offered_amount,
+            offered_interest_rate=offered_interest_rate,
             credit_score_at_application=score.score,
-            status=CreditApplicationStatus.PENDING,
+            status=status,
+            resolved_at=resolved_at,
         )
         return self.repository.add_application(application)
 
     def calculate_loan(self, data: LoanCalculatorRequest) -> LoanCalculatorResult:
         return calculate_loan_schedule(data)
+
+    def list_loan_products(self) -> list[LoanProductPublic]:
+        return list_loan_products()
 
     def create_loan_from_application(self, user_id: uuid.UUID, application_id: uuid.UUID) -> Loan:
         application = self.get_application_for_user(user_id, application_id)
