@@ -1,11 +1,17 @@
 """Pydantic schemas for payment beneficiaries."""
 import uuid
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.payments.models import PaymentRequestStatus, ScheduledPaymentFrequency, ScheduledPaymentStatus
+from app.payments.models import (
+    BillSplitParticipantStatus,
+    BillSplitStatus,
+    PaymentRequestStatus,
+    ScheduledPaymentFrequency,
+    ScheduledPaymentStatus,
+)
 
 
 class BeneficiaryCreate(BaseModel):
@@ -185,3 +191,124 @@ class ScheduledPaymentPublic(BaseModel):
     description: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class BillSplitParticipantCreate(BaseModel):
+    participant_user_id: uuid.UUID | None = None
+    name: str = Field(min_length=1, max_length=255)
+    phone: str | None = Field(default=None, max_length=32)
+    amount: Decimal | None = None
+    percent: Decimal | None = None
+
+    @model_validator(mode="after")
+    def validate_amount_and_target(self) -> "BillSplitParticipantCreate":
+        if self.amount is None and self.percent is None:
+            raise ValueError("Participant requires amount or percent")
+        if self.amount is not None and self.amount <= 0:
+            raise ValueError("Participant amount must be positive")
+        if self.percent is not None and (self.percent <= 0 or self.percent > 100):
+            raise ValueError("Participant percent must be between 0 and 100")
+        if self.participant_user_id is None and self.phone is None:
+            raise ValueError("Participant requires participant_user_id or phone")
+        return self
+
+
+class BillSplitCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    total_amount: Decimal
+    currency: str = Field(min_length=3, max_length=3)
+    source_transaction_id: uuid.UUID | None = None
+    description: str | None = Field(default=None, max_length=500)
+    participants: list[BillSplitParticipantCreate] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_total(self) -> "BillSplitCreate":
+        if self.total_amount <= 0:
+            raise ValueError("Bill split total amount must be positive")
+        participants_total = Decimal("0")
+        for participant in self.participants:
+            if participant.amount is None and participant.percent is not None:
+                participant.amount = (self.total_amount * participant.percent / Decimal("100")).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+            if participant.amount is None:
+                raise ValueError("Participant amount is required")
+            participants_total += participant.amount
+        if participants_total > self.total_amount:
+            raise ValueError("Participant amounts cannot exceed the total amount")
+        return self
+
+
+class BillSplitParticipantPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    bill_split_id: uuid.UUID
+    participant_user_id: uuid.UUID | None
+    name: str
+    phone: str | None
+    amount: Decimal
+    status: BillSplitParticipantStatus
+    paid_transaction_id: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class BillSplitPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    owner_user_id: uuid.UUID
+    source_transaction_id: uuid.UUID | None
+    title: str
+    total_amount: Decimal
+    currency: str
+    status: BillSplitStatus
+    description: str | None
+    created_at: datetime
+    updated_at: datetime
+    participants: list[BillSplitParticipantPublic]
+
+
+class BillSplitPay(BaseModel):
+    source_wallet_id: uuid.UUID
+    description: str | None = Field(default=None, max_length=500)
+
+
+class TransactionFolderCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    color: str | None = Field(default=None, max_length=32)
+    description: str | None = Field(default=None, max_length=500)
+
+
+class TransactionFolderUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    color: str | None = Field(default=None, max_length=32)
+    description: str | None = Field(default=None, max_length=500)
+
+
+class TransactionFolderItemPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    folder_id: uuid.UUID
+    transaction_id: uuid.UUID
+    added_at: datetime
+
+
+class TransactionFolderPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    owner_user_id: uuid.UUID
+    name: str
+    color: str | None
+    description: str | None
+    created_at: datetime
+    updated_at: datetime
+    items: list[TransactionFolderItemPublic] = []
+
+
+class TransactionFolderAddTransaction(BaseModel):
+    transaction_id: uuid.UUID

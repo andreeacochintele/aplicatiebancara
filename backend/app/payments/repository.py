@@ -5,7 +5,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.supabase import is_supabase_session
-from app.payments.models import Beneficiary, PaymentRequest, ScheduledPayment
+from app.payments.models import (
+    Beneficiary,
+    BillSplit,
+    BillSplitParticipant,
+    PaymentRequest,
+    ScheduledPayment,
+    TransactionFolder,
+    TransactionFolderItem,
+)
 
 
 class BeneficiaryRepository:
@@ -126,4 +134,184 @@ class ScheduledPaymentRepository:
             self.db.delete(scheduled_payment)
             return
         self.db.delete(scheduled_payment)
+        self.db.flush()
+
+
+class BillSplitRepository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def add(self, bill_split: BillSplit) -> BillSplit:
+        if is_supabase_session(self.db):
+            return self.db.add(bill_split)
+        self.db.add(bill_split)
+        self.db.flush()
+        return bill_split
+
+    def add_participant(self, participant: BillSplitParticipant) -> BillSplitParticipant:
+        if is_supabase_session(self.db):
+            return self.db.add(participant)
+        self.db.add(participant)
+        self.db.flush()
+        return participant
+
+    def get_owned_by_id(self, owner_user_id: uuid.UUID, bill_split_id: uuid.UUID) -> BillSplit | None:
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(BillSplit, {"id": f"eq.{bill_split_id}", "owner_user_id": f"eq.{owner_user_id}"})
+        return self.db.scalar(select(BillSplit).where(BillSplit.id == bill_split_id, BillSplit.owner_user_id == owner_user_id))
+
+    def get_visible_by_id(self, user_id: uuid.UUID, bill_split_id: uuid.UUID) -> BillSplit | None:
+        bill_split = self.get_owned_by_id(user_id, bill_split_id)
+        if bill_split is not None:
+            return bill_split
+        participant = self.get_participant_for_user(user_id, bill_split_id)
+        if participant is None:
+            return None
+        if is_supabase_session(self.db):
+            return self.db.get(BillSplit, bill_split_id)
+        return self.db.get(BillSplit, bill_split_id)
+
+    def list_for_user(self, user_id: uuid.UUID, limit: int = 100, offset: int = 0) -> list[BillSplit]:
+        if is_supabase_session(self.db):
+            owned = self.db.fetch_many(
+                BillSplit,
+                {"owner_user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": str(limit), "offset": str(offset)},
+            )
+            participant_rows = self.db.fetch_many(BillSplitParticipant, {"participant_user_id": f"eq.{user_id}"})
+            seen = {item.id for item in owned}
+            for participant in participant_rows:
+                if participant.bill_split_id in seen:
+                    continue
+                bill_split = self.db.get(BillSplit, participant.bill_split_id)
+                if bill_split is not None:
+                    owned.append(bill_split)
+                    seen.add(bill_split.id)
+            return sorted(owned, key=lambda item: item.created_at, reverse=True)[:limit]
+
+        participant_split_ids = select(BillSplitParticipant.bill_split_id).where(BillSplitParticipant.participant_user_id == user_id)
+        stmt = (
+            select(BillSplit)
+            .where((BillSplit.owner_user_id == user_id) | (BillSplit.id.in_(participant_split_ids)))
+            .order_by(BillSplit.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(self.db.scalars(stmt))
+
+    def list_participants(self, bill_split_id: uuid.UUID) -> list[BillSplitParticipant]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(
+                BillSplitParticipant,
+                {"bill_split_id": f"eq.{bill_split_id}", "order": "created_at.asc"},
+            )
+        return list(
+            self.db.scalars(
+                select(BillSplitParticipant)
+                .where(BillSplitParticipant.bill_split_id == bill_split_id)
+                .order_by(BillSplitParticipant.created_at.asc())
+            )
+        )
+
+    def get_participant(self, participant_id: uuid.UUID) -> BillSplitParticipant | None:
+        if is_supabase_session(self.db):
+            return self.db.get(BillSplitParticipant, participant_id)
+        return self.db.get(BillSplitParticipant, participant_id)
+
+    def get_participant_for_user(self, user_id: uuid.UUID, bill_split_id: uuid.UUID) -> BillSplitParticipant | None:
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(
+                BillSplitParticipant,
+                {"bill_split_id": f"eq.{bill_split_id}", "participant_user_id": f"eq.{user_id}"},
+            )
+        return self.db.scalar(
+            select(BillSplitParticipant).where(
+                BillSplitParticipant.bill_split_id == bill_split_id,
+                BillSplitParticipant.participant_user_id == user_id,
+            )
+        )
+
+
+class TransactionFolderRepository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def add(self, folder: TransactionFolder) -> TransactionFolder:
+        if is_supabase_session(self.db):
+            return self.db.add(folder)
+        self.db.add(folder)
+        self.db.flush()
+        return folder
+
+    def get_owned_by_id(self, owner_user_id: uuid.UUID, folder_id: uuid.UUID) -> TransactionFolder | None:
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(TransactionFolder, {"id": f"eq.{folder_id}", "owner_user_id": f"eq.{owner_user_id}"})
+        return self.db.scalar(
+            select(TransactionFolder).where(TransactionFolder.id == folder_id, TransactionFolder.owner_user_id == owner_user_id)
+        )
+
+    def get_by_name(self, owner_user_id: uuid.UUID, name: str) -> TransactionFolder | None:
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(TransactionFolder, {"owner_user_id": f"eq.{owner_user_id}", "name": f"eq.{name}"})
+        return self.db.scalar(select(TransactionFolder).where(TransactionFolder.owner_user_id == owner_user_id, TransactionFolder.name == name))
+
+    def list_for_owner(self, owner_user_id: uuid.UUID, limit: int = 100, offset: int = 0) -> list[TransactionFolder]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(
+                TransactionFolder,
+                {"owner_user_id": f"eq.{owner_user_id}", "order": "created_at.desc", "limit": str(limit), "offset": str(offset)},
+            )
+        stmt = (
+            select(TransactionFolder)
+            .where(TransactionFolder.owner_user_id == owner_user_id)
+            .order_by(TransactionFolder.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(self.db.scalars(stmt))
+
+    def delete(self, folder: TransactionFolder) -> None:
+        for item in self.list_items(folder.id):
+            self.delete_item(item)
+        if is_supabase_session(self.db):
+            self.db.delete(folder)
+            return
+        self.db.delete(folder)
+        self.db.flush()
+
+    def add_item(self, item: TransactionFolderItem) -> TransactionFolderItem:
+        if is_supabase_session(self.db):
+            return self.db.add(item)
+        self.db.add(item)
+        self.db.flush()
+        return item
+
+    def get_item(self, folder_id: uuid.UUID, transaction_id: uuid.UUID) -> TransactionFolderItem | None:
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(
+                TransactionFolderItem,
+                {"folder_id": f"eq.{folder_id}", "transaction_id": f"eq.{transaction_id}"},
+            )
+        return self.db.scalar(
+            select(TransactionFolderItem).where(
+                TransactionFolderItem.folder_id == folder_id,
+                TransactionFolderItem.transaction_id == transaction_id,
+            )
+        )
+
+    def list_items(self, folder_id: uuid.UUID) -> list[TransactionFolderItem]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(TransactionFolderItem, {"folder_id": f"eq.{folder_id}", "order": "added_at.asc"})
+        return list(
+            self.db.scalars(
+                select(TransactionFolderItem)
+                .where(TransactionFolderItem.folder_id == folder_id)
+                .order_by(TransactionFolderItem.added_at.asc())
+            )
+        )
+
+    def delete_item(self, item: TransactionFolderItem) -> None:
+        if is_supabase_session(self.db):
+            self.db.delete(item)
+            return
+        self.db.delete(item)
         self.db.flush()

@@ -11,15 +11,30 @@ from app.fx.schemas import FXQuoteRequest
 from app.fx.service import FEE_RATE, FXService
 from app.payments.models import (
     Beneficiary,
+    BillSplit,
+    BillSplitParticipant,
+    BillSplitParticipantStatus,
+    BillSplitStatus,
     PaymentRequest,
     PaymentRequestStatus,
     ScheduledPayment,
     ScheduledPaymentStatus,
+    TransactionFolder,
+    TransactionFolderItem,
 )
-from app.payments.repository import BeneficiaryRepository, PaymentRequestRepository, ScheduledPaymentRepository
+from app.payments.repository import (
+    BeneficiaryRepository,
+    BillSplitRepository,
+    PaymentRequestRepository,
+    ScheduledPaymentRepository,
+    TransactionFolderRepository,
+)
 from app.payments.schemas import (
     BeneficiaryCreate,
     BeneficiaryUpdate,
+    BillSplitCreate,
+    BillSplitPay,
+    BillSplitPublic,
     IbanTransferCreate,
     IbanTransferQuoteCreate,
     PaymentRequestCreate,
@@ -28,9 +43,13 @@ from app.payments.schemas import (
     PhoneTransferCreate,
     ScheduledPaymentCreate,
     ScheduledPaymentUpdate,
+    TransactionFolderCreate,
+    TransactionFolderPublic,
+    TransactionFolderUpdate,
 )
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.schemas import InternalTransferCreate
+from app.transactions.repository import TransactionRepository
 from app.transactions.service import TransactionService
 from app.users.repository import UserRepository
 from app.wallets.models import Wallet
@@ -437,3 +456,262 @@ class PaymentRequestService:
         if _as_aware_utc(payment_request.expires_at) < datetime.now(timezone.utc):
             payment_request.status = PaymentRequestStatus.EXPIRED
             raise ConflictError("Payment request has expired")
+
+
+class BillSplitService:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.repository = BillSplitRepository(db)
+        self.transactions = TransactionRepository(db)
+        self.transaction_service = TransactionService(db)
+        self.users = UserRepository(db)
+        self.wallets = WalletRepository(db)
+
+    def create_bill_split(self, owner_user_id: uuid.UUID, data: BillSplitCreate) -> BillSplitPublic:
+        if data.source_transaction_id is not None and self.transactions.get_for_user(owner_user_id, data.source_transaction_id) is None:
+            raise NotFoundError("Source transaction not found")
+
+        bill_split = self.repository.add(
+            BillSplit(
+                owner_user_id=owner_user_id,
+                source_transaction_id=data.source_transaction_id,
+                title=data.title,
+                total_amount=data.total_amount,
+                currency=data.currency.upper(),
+                status=BillSplitStatus.OPEN,
+                description=data.description,
+            )
+        )
+
+        for participant_data in data.participants:
+            participant_user_id = participant_data.participant_user_id
+            if participant_user_id is None and participant_data.phone is not None:
+                participant_user = self.users.get_by_phone(participant_data.phone)
+                if participant_user is None:
+                    raise NotFoundError("User with this phone number was not found")
+                participant_user_id = participant_user.id
+            elif participant_user_id is not None:
+                participant_user = self.users.get_by_id(participant_user_id)
+                if participant_user is None:
+                    raise NotFoundError("Participant user not found")
+
+            if participant_user_id == owner_user_id:
+                raise ValidationError("Bill split participant cannot be the owner")
+
+            self.repository.add_participant(
+                BillSplitParticipant(
+                    bill_split_id=bill_split.id,
+                    participant_user_id=participant_user_id,
+                    name=participant_data.name,
+                    phone=participant_data.phone,
+                    amount=participant_data.amount or Decimal("0"),
+                    status=BillSplitParticipantStatus.PENDING,
+                )
+            )
+
+        self.db.flush()
+        return self._to_public(bill_split)
+
+    def list_bill_splits(self, user_id: uuid.UUID) -> list[BillSplitPublic]:
+        return [self._to_public(bill_split) for bill_split in self.repository.list_for_user(user_id)]
+
+    def get_bill_split(self, user_id: uuid.UUID, bill_split_id: uuid.UUID) -> BillSplitPublic:
+        return self._to_public(self._get_visible(user_id, bill_split_id))
+
+    def cancel_bill_split(self, owner_user_id: uuid.UUID, bill_split_id: uuid.UUID) -> BillSplitPublic:
+        bill_split = self._get_owned(owner_user_id, bill_split_id)
+        if bill_split.status == BillSplitStatus.SETTLED:
+            raise ConflictError("Settled bill splits cannot be cancelled")
+        bill_split.status = BillSplitStatus.CANCELLED
+        self.db.flush()
+        return self._to_public(bill_split)
+
+    def pay_participant(
+        self,
+        payer_user_id: uuid.UUID,
+        bill_split_id: uuid.UUID,
+        participant_id: uuid.UUID,
+        data: BillSplitPay,
+    ) -> BillSplitPublic:
+        bill_split = self._get_visible(payer_user_id, bill_split_id)
+        if bill_split.status != BillSplitStatus.OPEN:
+            raise ConflictError(f"Bill split is {bill_split.status.value}")
+
+        participant = self.repository.get_participant(participant_id)
+        if (
+            participant is None
+            or participant.bill_split_id != bill_split.id
+            or participant.participant_user_id != payer_user_id
+        ):
+            raise NotFoundError("Bill split participant not found")
+        if participant.status != BillSplitParticipantStatus.PENDING:
+            raise ConflictError(f"Bill split participant is {participant.status.value}")
+
+        source = self.wallets.get_by_id(data.source_wallet_id)
+        if source is None or source.user_id != payer_user_id:
+            raise ValidationError("Source wallet does not belong to the paying user")
+        if source.currency != bill_split.currency:
+            raise ValidationError("Source wallet currency must match the bill split currency")
+
+        destination = self.wallets.get_by_user_and_currency(bill_split.owner_user_id, bill_split.currency)
+        if destination is None:
+            raise NotFoundError("Bill split owner has no destination wallet in this currency")
+
+        transaction = self.transaction_service.create_internal_transfer(
+            payer_user_id,
+            InternalTransferCreate(
+                source_wallet_id=source.id,
+                destination_wallet_id=destination.id,
+                amount=participant.amount,
+                description=data.description or f"Bill split payment - {bill_split.title}",
+            ),
+        )
+
+        participant.status = BillSplitParticipantStatus.PAID
+        participant.paid_transaction_id = transaction.id
+        self.db.flush()
+        self._settle_if_complete(bill_split)
+        self.db.flush()
+        return self._to_public(bill_split)
+
+    def decline_participant(
+        self,
+        participant_user_id: uuid.UUID,
+        bill_split_id: uuid.UUID,
+        participant_id: uuid.UUID,
+    ) -> BillSplitPublic:
+        bill_split = self._get_visible(participant_user_id, bill_split_id)
+        if bill_split.status != BillSplitStatus.OPEN:
+            raise ConflictError(f"Bill split is {bill_split.status.value}")
+
+        participant = self.repository.get_participant(participant_id)
+        if (
+            participant is None
+            or participant.bill_split_id != bill_split.id
+            or participant.participant_user_id != participant_user_id
+        ):
+            raise NotFoundError("Bill split participant not found")
+        if participant.status != BillSplitParticipantStatus.PENDING:
+            raise ConflictError(f"Bill split participant is {participant.status.value}")
+
+        participant.status = BillSplitParticipantStatus.DECLINED
+        self.db.flush()
+        return self._to_public(bill_split)
+
+    def _get_owned(self, owner_user_id: uuid.UUID, bill_split_id: uuid.UUID) -> BillSplit:
+        bill_split = self.repository.get_owned_by_id(owner_user_id, bill_split_id)
+        if bill_split is None:
+            raise NotFoundError("Bill split not found")
+        return bill_split
+
+    def _get_visible(self, user_id: uuid.UUID, bill_split_id: uuid.UUID) -> BillSplit:
+        bill_split = self.repository.get_visible_by_id(user_id, bill_split_id)
+        if bill_split is None:
+            raise NotFoundError("Bill split not found")
+        return bill_split
+
+    def _settle_if_complete(self, bill_split: BillSplit) -> None:
+        participants = self.repository.list_participants(bill_split.id)
+        if participants and all(participant.status == BillSplitParticipantStatus.PAID for participant in participants):
+            bill_split.status = BillSplitStatus.SETTLED
+
+    def _to_public(self, bill_split: BillSplit) -> BillSplitPublic:
+        return BillSplitPublic(
+            id=bill_split.id,
+            owner_user_id=bill_split.owner_user_id,
+            source_transaction_id=bill_split.source_transaction_id,
+            title=bill_split.title,
+            total_amount=bill_split.total_amount,
+            currency=bill_split.currency,
+            status=bill_split.status,
+            description=bill_split.description,
+            created_at=bill_split.created_at,
+            updated_at=bill_split.updated_at,
+            participants=self.repository.list_participants(bill_split.id),
+        )
+
+
+class TransactionFolderService:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.repository = TransactionFolderRepository(db)
+        self.transactions = TransactionRepository(db)
+
+    def create_folder(self, owner_user_id: uuid.UUID, data: TransactionFolderCreate) -> TransactionFolderPublic:
+        if self.repository.get_by_name(owner_user_id, data.name) is not None:
+            raise ConflictError("Transaction folder name already exists")
+        folder = self.repository.add(
+            TransactionFolder(
+                owner_user_id=owner_user_id,
+                name=data.name,
+                color=data.color,
+                description=data.description,
+            )
+        )
+        return self._to_public(folder)
+
+    def list_folders(self, owner_user_id: uuid.UUID) -> list[TransactionFolderPublic]:
+        return [self._to_public(folder) for folder in self.repository.list_for_owner(owner_user_id)]
+
+    def get_folder(self, owner_user_id: uuid.UUID, folder_id: uuid.UUID) -> TransactionFolderPublic:
+        return self._to_public(self._get_owned(owner_user_id, folder_id))
+
+    def update_folder(
+        self,
+        owner_user_id: uuid.UUID,
+        folder_id: uuid.UUID,
+        data: TransactionFolderUpdate,
+    ) -> TransactionFolderPublic:
+        folder = self._get_owned(owner_user_id, folder_id)
+        changes = data.model_dump(exclude_unset=True)
+        if "name" in changes:
+            existing = self.repository.get_by_name(owner_user_id, changes["name"])
+            if existing is not None and existing.id != folder.id:
+                raise ConflictError("Transaction folder name already exists")
+        for field, value in changes.items():
+            setattr(folder, field, value)
+        self.db.flush()
+        return self._to_public(folder)
+
+    def delete_folder(self, owner_user_id: uuid.UUID, folder_id: uuid.UUID) -> None:
+        folder = self._get_owned(owner_user_id, folder_id)
+        self.repository.delete(folder)
+
+    def add_transaction(
+        self,
+        owner_user_id: uuid.UUID,
+        folder_id: uuid.UUID,
+        transaction_id: uuid.UUID,
+    ) -> TransactionFolderPublic:
+        folder = self._get_owned(owner_user_id, folder_id)
+        if self.transactions.get_for_user(owner_user_id, transaction_id) is None:
+            raise NotFoundError("Transaction not found")
+        if self.repository.get_item(folder.id, transaction_id) is not None:
+            raise ConflictError("Transaction is already in this folder")
+        self.repository.add_item(TransactionFolderItem(folder_id=folder.id, transaction_id=transaction_id))
+        return self._to_public(folder)
+
+    def remove_transaction(self, owner_user_id: uuid.UUID, folder_id: uuid.UUID, transaction_id: uuid.UUID) -> None:
+        folder = self._get_owned(owner_user_id, folder_id)
+        item = self.repository.get_item(folder.id, transaction_id)
+        if item is None:
+            raise NotFoundError("Transaction folder item not found")
+        self.repository.delete_item(item)
+
+    def _get_owned(self, owner_user_id: uuid.UUID, folder_id: uuid.UUID) -> TransactionFolder:
+        folder = self.repository.get_owned_by_id(owner_user_id, folder_id)
+        if folder is None:
+            raise NotFoundError("Transaction folder not found")
+        return folder
+
+    def _to_public(self, folder: TransactionFolder) -> TransactionFolderPublic:
+        return TransactionFolderPublic(
+            id=folder.id,
+            owner_user_id=folder.owner_user_id,
+            name=folder.name,
+            color=folder.color,
+            description=folder.description,
+            created_at=folder.created_at,
+            updated_at=folder.updated_at,
+            items=self.repository.list_items(folder.id),
+        )
