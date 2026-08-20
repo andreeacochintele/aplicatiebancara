@@ -4,15 +4,17 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_admin
 from app.credit.schemas import (
     CreditApplicationCreate,
+    CreditApplicationDecision,
     CreditApplicationPublic,
     CreditProfilePublic,
     CreditScorePublic,
     CreditScoreRecalculateRequest,
     LoanCalculatorRequest,
     LoanCalculatorResult,
+    LoanInstallmentPublic,
     LoanPublic,
 )
 from app.credit.service import CreditService
@@ -81,12 +83,43 @@ def create_application(
     return application
 
 
+@router.get("/admin/applications", response_model=list[CreditApplicationPublic])
+def list_all_applications(
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[CreditApplicationPublic]:
+    return CreditService(db).list_all_applications()
+
+
+@router.patch("/admin/applications/{application_id}/decision", response_model=CreditApplicationPublic)
+def decide_application(
+    application_id: uuid.UUID,
+    payload: CreditApplicationDecision,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> CreditApplicationPublic:
+    application = CreditService(db).decide_application(application_id, payload)
+    db.commit()
+    return application
+
+
 @router.get("/loans", response_model=list[LoanPublic])
 def list_loans(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[LoanPublic]:
     return CreditService(db).list_loans(current_user.id)
+
+
+@router.post("/applications/{application_id}/loan", response_model=LoanPublic, status_code=201)
+def create_loan_from_application(
+    application_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LoanPublic:
+    loan = CreditService(db).create_loan_from_application(current_user.id, application_id)
+    db.commit()
+    return loan
 
 
 @router.get("/loans/{loan_id}", response_model=LoanPublic)
@@ -96,6 +129,15 @@ def get_loan(
     db: Session = Depends(get_db),
 ) -> LoanPublic:
     return CreditService(db).get_loan_for_user(current_user.id, loan_id)
+
+
+@router.get("/loans/{loan_id}/installments", response_model=list[LoanInstallmentPublic])
+def list_loan_installments(
+    loan_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[LoanInstallmentPublic]:
+    return CreditService(db).list_installments_for_loan(current_user.id, loan_id)
 
 
 @router.get("/applications/{application_id}", response_model=CreditApplicationPublic)

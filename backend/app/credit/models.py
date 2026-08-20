@@ -5,11 +5,11 @@ credit bureau data is integrated here.
 """
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, JSON, Numeric
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,8 +30,21 @@ class CreditApplicationStatus(str, enum.Enum):
 
 class LoanStatus(str, enum.Enum):
     ACTIVE = "ACTIVE"
+    PAID = "PAID"
     CLOSED = "CLOSED"
     DEFAULTED = "DEFAULTED"
+
+
+class LoanInstallmentStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    PAID = "PAID"
+    PARTIAL = "PARTIAL"
+    OVERDUE = "OVERDUE"
+
+
+class LoanPaymentType(str, enum.Enum):
+    REGULAR = "REGULAR"
+    EARLY_REPAYMENT = "EARLY_REPAYMENT"
 
 
 class CreditProfile(Base):
@@ -100,6 +113,9 @@ class Loan(Base):
     term_months: Mapped[int] = mapped_column(Integer, nullable=False)
     monthly_payment: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     outstanding_principal: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    maturity_date: Mapped[date] = mapped_column(Date, nullable=False)
+    next_payment_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[LoanStatus] = mapped_column(
         Enum(LoanStatus, name="loan_status"),
         default=LoanStatus.ACTIVE,
@@ -110,3 +126,46 @@ class Loan(Base):
 
     owner = relationship("User")
     application = relationship("CreditApplication", back_populates="loan")
+    installments = relationship("LoanInstallment", back_populates="loan", cascade="all, delete-orphan")
+    payments = relationship("LoanPayment", back_populates="loan", cascade="all, delete-orphan")
+
+
+class LoanInstallment(Base):
+    __tablename__ = "loan_installments"
+    __table_args__ = (UniqueConstraint("loan_id", "installment_number", name="uq_loan_installments_loan_number"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    loan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=False)
+    installment_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    due_date: Mapped[date] = mapped_column(Date, nullable=False)
+    payment_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    principal_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    interest_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    fees_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0.00"), nullable=False)
+    remaining_principal: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    status: Mapped[LoanInstallmentStatus] = mapped_column(
+        Enum(LoanInstallmentStatus, name="loan_installment_status"),
+        default=LoanInstallmentStatus.PENDING,
+        nullable=False,
+    )
+
+    loan = relationship("Loan", back_populates="installments")
+
+
+class LoanPayment(Base):
+    __tablename__ = "loan_payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    loan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("loans.id"), nullable=False)
+    transaction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("transactions.id"), nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    principal_paid: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    interest_paid: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    fees_paid: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0.00"), nullable=False)
+    payment_type: Mapped[LoanPaymentType] = mapped_column(
+        Enum(LoanPaymentType, name="loan_payment_type"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    loan = relationship("Loan", back_populates="payments")

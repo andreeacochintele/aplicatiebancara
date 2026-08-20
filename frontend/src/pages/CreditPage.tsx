@@ -7,6 +7,7 @@ import type {
   CreditApplicationType,
   CreditProfile,
   CreditScore,
+  Loan,
   LoanCalculatorResult,
 } from "../types";
 
@@ -41,6 +42,7 @@ export function CreditPage() {
   const [profile, setProfile] = useState<CreditProfile | null>(null);
   const [score, setScore] = useState<CreditScore | null>(null);
   const [applications, setApplications] = useState<CreditApplication[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
   const [income, setIncome] = useState("");
   const [existingDebt, setExistingDebt] = useState("");
   const [applicationType, setApplicationType] = useState<CreditApplicationType>("PERSONAL_LOAN");
@@ -54,7 +56,9 @@ export function CreditPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [isCalculatingLoan, setIsCalculatingLoan] = useState(false);
+  const [activatingApplicationId, setActivatingApplicationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadWarning, setLoadWarning] = useState<string | null>(null);
 
   const scorePercent = useMemo(() => {
     if (!score) return 0;
@@ -64,17 +68,35 @@ export function CreditPage() {
   async function loadCreditData(token: string) {
     setIsLoading(true);
     setError(null);
+    setLoadWarning(null);
     try {
       const [profileResponse, scoreResponse] = await Promise.all([
         apiRequest<CreditProfile>("/credit/profile", { token }),
         apiRequest<CreditScore>("/credit/score", { token }),
       ]);
-      const applicationsResponse = await apiRequest<CreditApplication[]>("/credit/applications", { token });
       setProfile(profileResponse);
       setScore(scoreResponse);
-      setApplications(applicationsResponse);
       setIncome(profileResponse.income);
       setExistingDebt(profileResponse.existing_debt);
+
+      const [applicationsResult, loansResult] = await Promise.allSettled([
+        apiRequest<CreditApplication[]>("/credit/applications", { token }),
+        apiRequest<Loan[]>("/credit/loans", { token }),
+      ]);
+
+      if (applicationsResult.status === "fulfilled") {
+        setApplications(applicationsResult.value);
+      } else {
+        setApplications([]);
+        setLoadWarning("Credit score loaded, but credit applications could not be loaded.");
+      }
+
+      if (loansResult.status === "fulfilled") {
+        setLoans(loansResult.value);
+      } else {
+        setLoans([]);
+        setLoadWarning("Credit score loaded, but active loans could not be loaded.");
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -144,6 +166,27 @@ export function CreditPage() {
       setError(err instanceof ApiError ? err.message : "Could not create credit application.");
     } finally {
       setIsApplying(false);
+    }
+  }
+
+  async function activateLoan(application: CreditApplication) {
+    if (!accessToken || activatingApplicationId) return;
+    setActivatingApplicationId(application.id);
+    setError(null);
+    try {
+      const loan = await apiRequest<Loan>(`/credit/applications/${application.id}/loan`, {
+        method: "POST",
+        token: accessToken,
+      });
+      setLoans((current) => [loan, ...current]);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : "Could not activate loan.");
+    } finally {
+      setActivatingApplicationId(null);
     }
   }
 
@@ -277,6 +320,44 @@ export function CreditPage() {
 
       <div className="tile">
         <div className="tile__header">
+          <span className="eyebrow">Active loans</span>
+        </div>
+        {loadWarning && <p style={{ color: "var(--color-warning)", margin: "0 0 0.85rem" }}>{loadWarning}</p>}
+        <table>
+          <thead>
+            <tr>
+              <th>Principal</th>
+              <th>Monthly</th>
+              <th>Outstanding</th>
+              <th>Next payment</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loans.map((loan) => (
+              <tr key={loan.id}>
+                <td>{formatMoney(loan.principal_amount)}</td>
+                <td>{formatMoney(loan.monthly_payment)}</td>
+                <td>{formatMoney(loan.outstanding_principal)}</td>
+                <td>{new Date(loan.next_payment_date).toLocaleDateString()}</td>
+                <td>
+                  <span className={loan.status === "ACTIVE" ? "tag tag--accent" : "tag tag--neutral"}>
+                    {loan.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {!isLoading && loans.length === 0 && (
+              <tr>
+                <td colSpan={5}>No active loans yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="tile">
+        <div className="tile__header">
           <span className="eyebrow">Mock profile inputs</span>
         </div>
         <div className="credit-form-grid">
@@ -350,26 +431,46 @@ export function CreditPage() {
               <th>Score</th>
               <th>Status</th>
               <th>Created</th>
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
-            {applications.map((application) => (
-              <tr key={application.id}>
-                <td>{formatApplicationType(application.type)}</td>
-                <td>{application.requested_amount}</td>
-                <td>{application.requested_term_months ?? "N/A"}</td>
-                <td>{application.credit_score_at_application}</td>
-                <td>
-                  <span className={application.status === "PENDING" ? "tag tag--neutral" : "tag tag--accent"}>
-                    {application.status}
-                  </span>
-                </td>
-                <td>{new Date(application.created_at).toLocaleDateString()}</td>
-              </tr>
-            ))}
+            {applications.map((application) => {
+              const existingLoan = loans.find((loan) => loan.application_id === application.id);
+              const canActivate =
+                application.type === "PERSONAL_LOAN" && application.status === "APPROVED" && !existingLoan;
+              return (
+                <tr key={application.id}>
+                  <td>{formatApplicationType(application.type)}</td>
+                  <td>{application.requested_amount}</td>
+                  <td>{application.requested_term_months ?? "N/A"}</td>
+                  <td>{application.credit_score_at_application}</td>
+                  <td>
+                    <span className={application.status === "PENDING" ? "tag tag--neutral" : "tag tag--accent"}>
+                      {application.status}
+                    </span>
+                  </td>
+                  <td>{new Date(application.created_at).toLocaleDateString()}</td>
+                  <td>
+                    {existingLoan ? (
+                      <span className="tag tag--accent">Loan active</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="button--ghost"
+                        onClick={() => activateLoan(application)}
+                        disabled={!canActivate || activatingApplicationId === application.id}
+                      >
+                        {activatingApplicationId === application.id ? "Activating..." : "Activate loan"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {!isLoading && applications.length === 0 && (
               <tr>
-                <td colSpan={6}>No credit applications yet.</td>
+                <td colSpan={7}>No credit applications yet.</td>
               </tr>
             )}
           </tbody>

@@ -3,9 +3,15 @@ from decimal import Decimal
 import pytest
 
 from app.core.exceptions import NotFoundError, ValidationError
+from app.core.enums import UserRole
 from app.credit.loan_calculator import calculate_loan_schedule
-from app.credit.models import CreditApplicationStatus, CreditApplicationType, LoanStatus
-from app.credit.schemas import CreditApplicationCreate, CreditScoreRecalculateRequest, LoanCalculatorRequest
+from app.credit.models import CreditApplicationStatus, CreditApplicationType, LoanInstallmentStatus, LoanStatus
+from app.credit.schemas import (
+    CreditApplicationCreate,
+    CreditApplicationDecision,
+    CreditScoreRecalculateRequest,
+    LoanCalculatorRequest,
+)
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.credit.service import CreditService
 from app.users.schemas import UserCreate
@@ -14,10 +20,10 @@ from app.wallets.schemas import WalletCreate
 from app.wallets.service import WalletService
 
 
-def _create_user(db_session):
+def _create_user(db_session, email="credit-owner@example.com"):
     return UserService(db_session).create_user(
         UserCreate(
-            email="credit-owner@example.com",
+            email=email,
             password="Sup3rSecret!",
             first_name="Credit",
             last_name="Owner",
@@ -326,6 +332,64 @@ def test_create_loan_from_approved_application(db_session):
     assert loan.monthly_payment == Decimal("640.66")
     assert loan.outstanding_principal == Decimal("20000.00")
     assert loan.status == LoanStatus.ACTIVE
+    assert loan.start_date is not None
+    assert loan.next_payment_date is not None
+    assert loan.maturity_date is not None
+
+    installments = service.list_installments_for_loan(user.id, loan.id)
+    assert len(installments) == 36
+    assert installments[0].installment_number == 1
+    assert installments[0].status == LoanInstallmentStatus.PENDING
+    assert installments[0].payment_amount == Decimal("640.66")
+    assert installments[-1].remaining_principal == Decimal("0.00")
+
+
+def test_admin_decides_credit_application(db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("25000.00"),
+            requested_term_months=36,
+        ),
+    )
+
+    decided = service.decide_application(
+        application.id,
+        CreditApplicationDecision(
+            status=CreditApplicationStatus.APPROVED,
+            offered_amount=Decimal("20000.00"),
+            offered_interest_rate=Decimal("9.50"),
+        ),
+    )
+
+    assert decided.status == CreditApplicationStatus.APPROVED
+    assert decided.offered_amount == Decimal("20000.00")
+    assert decided.offered_interest_rate == Decimal("9.50")
+    assert decided.resolved_at is not None
+
+
+def test_admin_decision_rejects_invalid_status_and_offer(db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(type=CreditApplicationType.CREDIT_CARD, requested_amount=Decimal("5000.00")),
+    )
+
+    with pytest.raises(ValidationError):
+        service.decide_application(
+            application.id,
+            CreditApplicationDecision(status=CreditApplicationStatus.PENDING),
+        )
+
+    with pytest.raises(ValidationError):
+        service.decide_application(
+            application.id,
+            CreditApplicationDecision(status=CreditApplicationStatus.APPROVED, offered_amount=Decimal("5000.00")),
+        )
 
 
 def test_create_loan_requires_approved_personal_loan_application(db_session):
@@ -419,9 +483,13 @@ def test_list_and_get_loans_are_scoped_to_user(db_session):
 def test_loan_endpoints_require_auth(client):
     list_response = client.get("/api/v1/credit/loans")
     get_response = client.get("/api/v1/credit/loans/00000000-0000-0000-0000-000000000000")
+    create_response = client.post("/api/v1/credit/applications/00000000-0000-0000-0000-000000000000/loan")
+    installments_response = client.get("/api/v1/credit/loans/00000000-0000-0000-0000-000000000000/installments")
 
     assert list_response.status_code == 401
     assert get_response.status_code == 401
+    assert create_response.status_code == 401
+    assert installments_response.status_code == 401
 
 
 def test_list_loans_endpoint_returns_user_loans(client, db_session):
@@ -452,3 +520,103 @@ def test_list_loans_endpoint_returns_user_loans(client, db_session):
     assert list_response.json()[0]["id"] == str(loan.id)
     assert get_response.status_code == 200
     assert get_response.json()["application_id"] == str(application.id)
+
+
+def test_create_loan_endpoint_creates_installments(client, db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    service.decide_application(
+        application.id,
+        CreditApplicationDecision(
+            status=CreditApplicationStatus.APPROVED,
+            offered_amount=Decimal("10000.00"),
+            offered_interest_rate=Decimal("12.00"),
+        ),
+    )
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "credit-owner@example.com", "password": "Sup3rSecret!"},
+    )
+    token = login.json()["tokens"]["access_token"]
+
+    create_response = client.post(
+        f"/api/v1/credit/applications/{application.id}/loan",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert create_response.status_code == 201
+    loan_id = create_response.json()["id"]
+    installments_response = client.get(
+        f"/api/v1/credit/loans/{loan_id}/installments",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert installments_response.status_code == 200
+    installments = installments_response.json()
+    assert len(installments) == 12
+    assert installments[0]["payment_amount"] == "888.49"
+    assert installments[-1]["remaining_principal"] == "0.00"
+
+
+def test_admin_credit_application_endpoints_require_admin(client, db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(type=CreditApplicationType.CREDIT_CARD, requested_amount=Decimal("5000.00")),
+    )
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "credit-owner@example.com", "password": "Sup3rSecret!"},
+    )
+    token = login.json()["tokens"]["access_token"]
+
+    list_response = client.get("/api/v1/credit/admin/applications", headers={"Authorization": f"Bearer {token}"})
+    decision_response = client.patch(
+        f"/api/v1/credit/admin/applications/{application.id}/decision",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"status": "REJECTED"},
+    )
+
+    assert list_response.status_code == 403
+    assert decision_response.status_code == 403
+
+
+def test_admin_credit_application_endpoint_decides_application(client, db_session):
+    user = _create_user(db_session, email="credit-user@example.com")
+    admin = _create_user(db_session, email="credit-admin@example.com")
+    admin.role = UserRole.ADMIN
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "credit-admin@example.com", "password": "Sup3rSecret!"},
+    )
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.patch(
+        f"/api/v1/credit/admin/applications/{application.id}/decision",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"status": "APPROVED", "offered_amount": "9000.00", "offered_interest_rate": "10.00"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "APPROVED"
+    assert body["offered_amount"] == "9000.00"
+    assert body["offered_interest_rate"] == "10.00"
+    assert body["resolved_at"] is not None

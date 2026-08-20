@@ -4,7 +4,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.credit.models import CreditApplication, CreditProfile, CreditScoreHistory, Loan
+from app.credit.models import CreditApplication, CreditProfile, CreditScoreHistory, Loan, LoanInstallment
 from app.supabase import is_supabase_session
 
 
@@ -72,12 +72,25 @@ class CreditRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def list_applications(self) -> list[CreditApplication]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(CreditApplication, {"order": "created_at.desc"})
+        stmt = select(CreditApplication).order_by(CreditApplication.created_at.desc())
+        return list(self.db.scalars(stmt))
+
     def add_loan(self, loan: Loan) -> Loan:
         if is_supabase_session(self.db):
             return self.db.add(loan)
         self.db.add(loan)
         self.db.flush()
         return loan
+
+    def add_installments(self, installments: list[LoanInstallment]) -> list[LoanInstallment]:
+        if is_supabase_session(self.db):
+            return [self.db.add(installment) for installment in installments]
+        self.db.add_all(installments)
+        self.db.flush()
+        return installments
 
     def get_loan_by_id(self, loan_id: uuid.UUID) -> Loan | None:
         if is_supabase_session(self.db):
@@ -93,4 +106,17 @@ class CreditRepository:
         if is_supabase_session(self.db):
             return self.db.fetch_many(Loan, {"user_id": f"eq.{user_id}", "order": "created_at.desc"})
         stmt = select(Loan).where(Loan.user_id == user_id).order_by(Loan.created_at.desc())
+        return list(self.db.scalars(stmt))
+
+    def list_installments_for_loan(self, loan_id: uuid.UUID) -> list[LoanInstallment]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(
+                LoanInstallment,
+                {"loan_id": f"eq.{loan_id}", "order": "installment_number.asc"},
+            )
+        stmt = (
+            select(LoanInstallment)
+            .where(LoanInstallment.loan_id == loan_id)
+            .order_by(LoanInstallment.installment_number.asc())
+        )
         return list(self.db.scalars(stmt))
