@@ -1,6 +1,6 @@
 import { Bell } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
@@ -33,6 +33,7 @@ export function Header() {
   const page = PAGE_INFO[location.pathname];
   const [billSplits, setBillSplits] = useState<BillSplit[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
@@ -51,12 +52,16 @@ export function Header() {
   async function loadNotifications() {
     if (!accessToken) return;
     try {
-      const [nextSplits, nextWallets] = await Promise.all([
+      const [nextSplits, nextWallets, nextUnread] = await Promise.all([
         apiRequest<BillSplit[]>("/payments/bill-splits", { token: accessToken }),
         apiRequest<Wallet[]>("/wallets", { token: accessToken }),
+        apiRequest<{ unread_count: number }>("/notifications/unread-count", { token: accessToken }).catch(() => ({
+          unread_count: 0,
+        })),
       ]);
       setBillSplits(nextSplits);
       setWallets(nextWallets);
+      setUnreadNotifications(nextUnread.unread_count);
       setNotificationError(null);
     } catch {
       setBillSplits([]);
@@ -120,7 +125,9 @@ export function Header() {
           type="button"
         >
           <Bell size={16} />
-          {pendingSplitRequests.length > 0 && <span className="notification-badge">{pendingSplitRequests.length}</span>}
+          {pendingSplitRequests.length + unreadNotifications > 0 && (
+            <span className="notification-badge">{pendingSplitRequests.length + unreadNotifications}</span>
+          )}
         </button>
         {notificationsOpen && (
           <div className="notification-panel">
@@ -130,6 +137,9 @@ export function Header() {
                 Refresh
               </button>
             </div>
+            <Link to="/notifications" className="button--ghost" onClick={() => setNotificationsOpen(false)}>
+              View all notifications{unreadNotifications > 0 ? ` (${unreadNotifications} unread)` : ""}
+            </Link>
             {notificationError && <p className="status-line status-line--error">{notificationError}</p>}
             {pendingSplitRequests.length === 0 ? (
               <p className="empty-state">No pending requests.</p>
