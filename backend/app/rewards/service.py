@@ -113,6 +113,19 @@ class RewardsService:
     def has_earned_for_transaction(self, source_transaction_id: uuid.UUID) -> bool:
         return self.repository.has_transaction_for_source(source_transaction_id)
 
+    def get_synced_transaction_ids(self, user_id: uuid.UUID) -> set[uuid.UUID]:
+        """All source_transaction_ids already earning-recorded for this user,
+        fetched in one call — used by MerchantService.sync_purchases_from_transactions
+        to filter its transaction list in memory instead of doing one
+        has_earned_for_transaction REST round-trip per transaction, which is
+        what made sync scale O(transaction count) network calls."""
+        account = self.get_or_create_account(user_id)
+        return {
+            tx.source_transaction_id
+            for tx in self.repository.list_transactions(account.id)
+            if tx.source_transaction_id is not None
+        }
+
     def redeem_points(self, user_id: uuid.UUID, points: int) -> RewardAccountPublic:
         if points <= 0:
             raise ValidationError("points must be positive")
