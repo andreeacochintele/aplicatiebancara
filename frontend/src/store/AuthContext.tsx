@@ -1,18 +1,20 @@
 import { createContext, useCallback, useMemo, useState, type ReactNode } from "react";
 
-import { apiRequest } from "../api/apiClient";
+import { loginUser, registerUser, type AuthResponse, type AuthTokens } from "../features/auth";
 import type { User } from "../types";
-
-interface AuthTokens {
-  access_token: string;
-  refresh_token: string;
-}
 
 interface AuthContextValue {
   user: User | null;
   accessToken: string | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<AuthResponse>;
+  register: (payload: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    password: string;
+  }) => Promise<AuthResponse>;
   logout: () => void;
 }
 
@@ -38,14 +40,31 @@ function loadStoredAuth(): StoredAuth | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [stored, setStored] = useState<StoredAuth | null>(loadStoredAuth);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await apiRequest<{ user: User; tokens: AuthTokens }>("/auth/login", {
-      method: "POST",
-      body: { email, password },
-    });
+  const storeAuth = useCallback((response: StoredAuth) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(response));
     setStored(response);
   }, []);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await loginUser(email, password);
+    storeAuth(response);
+    return response;
+  }, [storeAuth]);
+
+  const register = useCallback(
+    async (payload: {
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone: string;
+      password: string;
+    }) => {
+      const response = await registerUser(payload);
+      storeAuth(response);
+      return response;
+    },
+    [storeAuth],
+  );
 
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
@@ -58,9 +77,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       accessToken: stored?.tokens.access_token ?? null,
       isAuthenticated: stored !== null,
       login,
+      register,
       logout,
     }),
-    [stored, login, logout],
+    [stored, login, register, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
