@@ -56,6 +56,7 @@ from app.merchants.schemas import (
     PurchaseResult,
 )
 from app.rewards.service import RewardsService
+from app.supabase import is_supabase_session
 from app.transactions.models import TransactionStatus, TransactionType
 from app.transactions.repository import TransactionRepository
 
@@ -151,14 +152,25 @@ class MerchantService:
             # duplicate effect firing client-side) can race past both checks. The
             # unique constraint on source_transaction_id (migration 0011) is the
             # real guard; a savepoint here means the loser just skips this
-            # transaction instead of the whole sync call failing.
-            try:
-                with self.db.begin_nested():
+            # transaction instead of the whole sync call failing. SupabaseRestSession
+            # has no local transaction to protect (each call is an independent HTTP
+            # request), so there's nothing to nest — just skip on the REST layer's
+            # own error for the failed insert instead.
+            if is_supabase_session(self.db):
+                try:
                     result = self._earn_from_transaction(
                         user_id, merchant, transaction.id, transaction.amount, transaction.currency, today, tier
                     )
-            except IntegrityError:
-                continue
+                except RuntimeError:
+                    continue
+            else:
+                try:
+                    with self.db.begin_nested():
+                        result = self._earn_from_transaction(
+                            user_id, merchant, transaction.id, transaction.amount, transaction.currency, today, tier
+                        )
+                except IntegrityError:
+                    continue
             results.append(result)
         return results
 

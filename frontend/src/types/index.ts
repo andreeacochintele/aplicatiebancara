@@ -411,6 +411,8 @@ export interface RewardBenefit {
   reason_if_locked: string | null;
 }
 
+export type RedemptionStatus = "VALID" | "USED" | "EXPIRED";
+
 export interface BenefitRedemption {
   id: string;
   benefit_id: string;
@@ -419,6 +421,9 @@ export interface BenefitRedemption {
   redemption_code: string | null;
   points_spent: number;
   redeemed_at: string;
+  expires_at: string | null;
+  used_at: string | null;
+  status: RedemptionStatus;
 }
 
 export interface RewardAccount {

@@ -44,6 +44,15 @@ class BenefitStatus(str, enum.Enum):
     INACTIVE = "INACTIVE"
 
 
+class RedemptionStatus(str, enum.Enum):
+    """Derived (not stored) from BenefitRedemption.expires_at/used_at — see
+    RewardsService._redemption_to_public."""
+
+    VALID = "VALID"
+    USED = "USED"
+    EXPIRED = "EXPIRED"
+
+
 class RewardAccount(Base):
     __tablename__ = "reward_accounts"
 
@@ -118,5 +127,10 @@ class BenefitRedemption(Base):
     redemption_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     points_spent: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     redeemed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Set 30 days out at redemption time; used_at is set later (from the "My
+    # vouchers" panel) once the user has actually used the voucher. Status
+    # (VALID/USED/EXPIRED) is derived from these two, not stored directly.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     benefit = relationship("RewardBenefit")

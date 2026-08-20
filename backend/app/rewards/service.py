@@ -16,6 +16,7 @@ module docstring in app/rewards/models.py for why.
 """
 import secrets
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import DetachedInstanceError
@@ -23,9 +24,11 @@ from sqlalchemy.orm.exc import DetachedInstanceError
 from app.cards.models import CardTier
 from app.cards.repository import CardRepository
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.database import utcnow
 from app.rewards.models import (
     BenefitRedemption,
     BenefitStatus,
+    RedemptionStatus,
     RewardAccount,
     RewardBenefit,
     RewardTransaction,
@@ -44,6 +47,18 @@ CARD_TIER_RANK: dict[CardTier, int] = {
     CardTier.GOLD: 1,
     CardTier.PLATINUM: 2,
 }
+
+# How long a redeemed voucher stays presentable at the partner before it
+# expires — a fixed demo rule, not configurable per benefit yet.
+REDEMPTION_VALIDITY = timedelta(days=30)
+
+
+def _as_aware_utc(value: datetime) -> datetime:
+    """SQLite (used in tests) drops tzinfo on round-trip even for
+    DateTime(timezone=True) columns; Postgres preserves it. Normalize so
+    comparisons against `datetime.now(timezone.utc)` work on both — same
+    pattern as app/fx/service.py and app/payments/service.py."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 class RewardsService:
@@ -173,6 +188,7 @@ class RewardsService:
                 )
             )
 
+        now = utcnow()
         self.repository.add_redemption(
             BenefitRedemption(
                 reward_account_id=account.id,
@@ -181,8 +197,24 @@ class RewardsService:
                 card_id=card.id,
                 redemption_code=self._generate_redemption_code(),
                 points_spent=points_cost,
+                redeemed_at=now,
+                expires_at=now + REDEMPTION_VALIDITY,
             )
         )
+        self.db.flush()
+        return self.get_account(user_id)
+
+    def mark_redemption_used(self, user_id: uuid.UUID, redemption_id: uuid.UUID) -> RewardAccountPublic:
+        account = self.get_or_create_account(user_id)
+        redemption = self.repository.get_redemption(redemption_id)
+        if redemption is None or redemption.reward_account_id != account.id:
+            raise NotFoundError("Voucher not found")
+        if redemption.used_at is not None:
+            raise ValidationError("Voucher already used")
+        if redemption.expires_at is not None and utcnow() > _as_aware_utc(redemption.expires_at):
+            raise ValidationError("Voucher expired")
+
+        redemption.used_at = utcnow()
         self.db.flush()
         return self.get_account(user_id)
 
@@ -247,4 +279,15 @@ class RewardsService:
             redemption_code=redemption.redemption_code,
             points_spent=redemption.points_spent,
             redeemed_at=redemption.redeemed_at,
+            expires_at=redemption.expires_at,
+            used_at=redemption.used_at,
+            status=self._redemption_status(redemption),
         )
+
+    @staticmethod
+    def _redemption_status(redemption: BenefitRedemption) -> RedemptionStatus:
+        if redemption.used_at is not None:
+            return RedemptionStatus.USED
+        if redemption.expires_at is not None and utcnow() > _as_aware_utc(redemption.expires_at):
+            return RedemptionStatus.EXPIRED
+        return RedemptionStatus.VALID

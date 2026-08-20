@@ -52,6 +52,12 @@ class RewardsRepository:
         return list(self.db.scalars(stmt))
 
     def has_transaction_for_source(self, source_transaction_id: uuid.UUID) -> bool:
+        if is_supabase_session(self.db):
+            return bool(
+                self.db.fetch_many(
+                    RewardTransaction, {"source_transaction_id": f"eq.{source_transaction_id}", "select": "id"}
+                )
+            )
         stmt = select(RewardTransaction.id).where(RewardTransaction.source_transaction_id == source_transaction_id)
         return self.db.scalar(stmt) is not None
 
@@ -72,6 +78,11 @@ class RewardsRepository:
         self.db.add(redemption)
         self.db.flush()
         return redemption
+
+    def get_redemption(self, redemption_id: uuid.UUID) -> BenefitRedemption | None:
+        if is_supabase_session(self.db):
+            return self.db.get(BenefitRedemption, redemption_id)
+        return self.db.get(BenefitRedemption, redemption_id)
 
     def list_redemptions(self, reward_account_id: uuid.UUID) -> list[BenefitRedemption]:
         if is_supabase_session(self.db):

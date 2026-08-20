@@ -5,7 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.cards.models import CardTier
-from app.rewards.models import BenefitCategory, RewardTransactionType
+from app.rewards.models import BenefitCategory, RedemptionStatus, RewardTransactionType
 
 
 class RewardTransactionPublic(BaseModel):
@@ -37,6 +37,9 @@ class BenefitRedemptionPublic(BaseModel):
     redemption_code: str | None
     points_spent: int
     redeemed_at: datetime
+    expires_at: datetime | None
+    used_at: datetime | None
+    status: RedemptionStatus
 
 
 class RewardAccountPublic(BaseModel):

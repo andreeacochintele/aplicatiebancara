@@ -56,3 +56,14 @@ def redeem_benefit(
     result = RewardsService(db).redeem_benefit(current_user.id, benefit_id, payload.card_id)
     db.commit()
     return result
+
+
+@router.post("/redemptions/{redemption_id}/use", response_model=RewardAccountPublic)
+def mark_redemption_used(
+    redemption_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RewardAccountPublic:
+    result = RewardsService(db).mark_redemption_used(current_user.id, redemption_id)
+    db.commit()
+    return result

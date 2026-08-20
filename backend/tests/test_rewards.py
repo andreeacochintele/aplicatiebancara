@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -6,7 +7,7 @@ from app.cards.models import CardTier
 from app.cards.schemas import CardCreate
 from app.cards.service import CardService
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
-from app.rewards.models import BenefitCategory, RewardBenefit
+from app.rewards.models import BenefitCategory, BenefitRedemption, RewardBenefit
 from app.rewards.service import RewardsService
 from app.users.schemas import UserCreate
 from app.users.service import UserService
@@ -170,6 +171,9 @@ def test_redeem_benefit_spends_points_records_redemption_and_generates_a_code(db
     assert redemption.card_id == card.id
     assert redemption.redemption_code is not None
     assert redemption.redemption_code.startswith("RWD-")
+    assert redemption.status == "VALID"
+    assert redemption.used_at is None
+    assert redemption.expires_at is not None
 
 
 def test_redeem_benefit_rejects_below_required_card_tier(db_session, seeded_user):
@@ -248,3 +252,67 @@ def test_redeem_benefit_with_unknown_card_raises_not_found(db_session, seeded_us
 
     with pytest.raises(NotFoundError):
         RewardsService(db_session).redeem_benefit(seeded_user.id, discount.id, uuid.uuid4())
+
+
+def _redeem_a_benefit(db_session, user_id, card_id) -> uuid.UUID:
+    discount = RewardBenefit(
+        name="10% off at eMAG",
+        category=BenefitCategory.RETAIL_DISCOUNT,
+        description="10% voucher",
+        points_cost=300,
+        partner_name="eMAG",
+    )
+    db_session.add(discount)
+    db_session.flush()
+    service = RewardsService(db_session)
+    service.earn_points(user_id, 500)
+    account = service.redeem_benefit(user_id, discount.id, card_id)
+    return account.redemptions[0].id
+
+
+def test_mark_redemption_used_flips_status_to_used(db_session, seeded_user):
+    card = _regular_card(db_session, seeded_user.id)
+    redemption_id = _redeem_a_benefit(db_session, seeded_user.id, card.id)
+
+    account = RewardsService(db_session).mark_redemption_used(seeded_user.id, redemption_id)
+
+    redemption = next(r for r in account.redemptions if r.id == redemption_id)
+    assert redemption.status == "USED"
+    assert redemption.used_at is not None
+
+
+def test_mark_redemption_used_rejects_already_used(db_session, seeded_user):
+    card = _regular_card(db_session, seeded_user.id)
+    redemption_id = _redeem_a_benefit(db_session, seeded_user.id, card.id)
+    service = RewardsService(db_session)
+    service.mark_redemption_used(seeded_user.id, redemption_id)
+
+    with pytest.raises(ValidationError):
+        service.mark_redemption_used(seeded_user.id, redemption_id)
+
+
+def test_mark_redemption_used_rejects_expired_voucher(db_session, seeded_user):
+    card = _regular_card(db_session, seeded_user.id)
+    redemption_id = _redeem_a_benefit(db_session, seeded_user.id, card.id)
+    redemption = db_session.get(BenefitRedemption, redemption_id)
+    redemption.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+    db_session.flush()
+
+    with pytest.raises(ValidationError):
+        RewardsService(db_session).mark_redemption_used(seeded_user.id, redemption_id)
+
+
+def test_mark_redemption_used_rejects_someone_elses_redemption(db_session, seeded_user):
+    other_user = UserService(db_session).create_user(
+        UserCreate(email="other-voucher-user@example.com", password="Sup3rSecret!", first_name="Other", last_name="User")
+    )
+    card = _regular_card(db_session, seeded_user.id)
+    redemption_id = _redeem_a_benefit(db_session, seeded_user.id, card.id)
+
+    with pytest.raises(NotFoundError):
+        RewardsService(db_session).mark_redemption_used(other_user.id, redemption_id)
+
+
+def test_mark_redemption_used_rejects_unknown_redemption(db_session, seeded_user):
+    with pytest.raises(NotFoundError):
+        RewardsService(db_session).mark_redemption_used(seeded_user.id, uuid.uuid4())

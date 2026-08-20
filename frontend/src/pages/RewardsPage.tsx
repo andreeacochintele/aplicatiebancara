@@ -139,6 +139,10 @@ export function RewardsPage() {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [showFullHistory, setShowFullHistory] = useState(false);
   const [areCardsExpanded, setAreCardsExpanded] = useState(true);
+  const [areVouchersExpanded, setAreVouchersExpanded] = useState(false);
+  const [codeReveal, setCodeReveal] = useState<{ title: string; subtitle: string; code: string } | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState(false);
+  const [markingUsedId, setMarkingUsedId] = useState<string | null>(null);
 
   function loadRewards() {
     if (!accessToken) return;
@@ -227,16 +231,17 @@ export function RewardsPage() {
   }, [toast]);
 
   useEffect(() => {
-    if (!confirmBenefit && !selectedMerchant) return;
+    if (!confirmBenefit && !selectedMerchant && !codeReveal) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setConfirmBenefit(null);
         setSelectedMerchant(null);
+        setCodeReveal(null);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [confirmBenefit, selectedMerchant]);
+  }, [confirmBenefit, selectedMerchant, codeReveal]);
 
   async function handlePay(merchant: Merchant) {
     if (!accessToken || !payCardId) return;
@@ -251,13 +256,16 @@ export function RewardsPage() {
       const receipt = `Receipt #${transaction.id.slice(0, 8).toUpperCase()}`;
       const earned = await syncRewards();
       const match = earned.find((p) => p.merchant_id === merchant.id);
-      if (match) {
+      if (match && match.proof_code) {
         const breakdown =
           match.cashback_points > 0 ? ` (${match.base_points} base + ${match.cashback_points} cashback)` : "";
-        setToast(
-          `Payment confirmed — ${receipt} · Earned ${match.points_earned} points${breakdown}` +
-            (match.proof_code ? ` · Code: ${match.proof_code}` : ""),
-        );
+        setCodeReveal({
+          title: `Earned ${match.points_earned} points${breakdown}`,
+          subtitle: `${receipt} at ${merchant.name} — this is your permanent proof of purchase, also saved in Points history.`,
+          code: match.proof_code,
+        });
+      } else if (match) {
+        setToast(`Payment confirmed — ${receipt} · Earned ${match.points_earned} points`);
       } else if (!merchant.verified) {
         setToast(`Payment confirmed — ${receipt} · 0 points earned (merchant not verified yet)`);
       } else {
@@ -284,13 +292,52 @@ export function RewardsPage() {
       setRewards(updated);
       loadBenefits();
       setConfirmBenefit(null);
-      const code = updated.redemptions[0]?.redemption_code;
-      setToast(`Redeemed "${benefit.name}" for ${benefit.points_cost ?? 0} points.${code ? ` Code: ${code}` : ""}`);
+      const redemption = updated.redemptions[0];
+      if (redemption?.redemption_code) {
+        const validUntil = redemption.expires_at ? new Date(redemption.expires_at).toLocaleDateString() : null;
+        setCodeReveal({
+          title: `Redeemed "${benefit.name}"`,
+          subtitle:
+            `${benefit.points_cost ?? 0} points spent — show this code at ${benefit.partner_name ?? "the partner"} to claim it.` +
+            (validUntil ? ` Valid until ${validUntil}, also saved under My vouchers below.` : ""),
+          code: redemption.redemption_code,
+        });
+      } else {
+        setToast(`Redeemed "${benefit.name}" for ${benefit.points_cost ?? 0} points.`);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Redeem failed");
       setConfirmBenefit(null);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function markVoucherUsed(redemptionId: string) {
+    if (!accessToken) return;
+    setMarkingUsedId(redemptionId);
+    setError(null);
+    try {
+      const updated = await apiRequest<RewardAccount>(`/rewards/redemptions/${redemptionId}/use`, {
+        method: "POST",
+        token: accessToken,
+      });
+      setRewards(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not mark voucher as used");
+    } finally {
+      setMarkingUsedId(null);
+    }
+  }
+
+  async function copyCode(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 1800);
+    } catch {
+      // Clipboard blocked (e.g. insecure context) — the code stays visible
+      // on screen and permanently in Points history / My vouchers either way.
     }
   }
 
@@ -515,17 +562,45 @@ export function RewardsPage() {
             )}
 
             {cards.length > 0 && (
-              <article className="card-panel" style={{ maxWidth: "420px", margin: "0 auto 1rem" }}>
-                <div className="card-panel__meta">
-                  <div style={{ flex: 1 }}>
-                    <div className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                      <CreditCard size={14} strokeWidth={2.2} />
-                      Pay with card
-                    </div>
+              <div
+                className="tile"
+                style={{
+                  maxWidth: "460px",
+                  margin: "0 auto 1.25rem",
+                  background: "linear-gradient(135deg, rgba(91,95,239,0.09), rgba(255,111,165,0.06))",
+                  border: "1px solid rgba(91,95,239,0.2)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", marginBottom: "0.9rem" }}>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "2rem",
+                      height: "2rem",
+                      borderRadius: "0.65rem",
+                      background: "var(--aurora-gradient, #5b5fef)",
+                      color: "#fff",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <CreditCard size={15} strokeWidth={2.4} />
+                  </span>
+                  <span className="eyebrow" style={{ fontSize: "0.85rem" }}>
+                    Pay with card
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+                  <div style={{ flex: "2 1 220px", minWidth: 0 }}>
+                    <label className="eyebrow" style={{ display: "block", marginBottom: "0.3rem" }}>
+                      Card
+                    </label>
                     <select
                       value={payCardId}
                       onChange={(e) => setPayCardId(e.target.value)}
-                      style={{ marginTop: "0.35rem", width: "100%" }}
+                      style={{ width: "100%" }}
                     >
                       {cards.map((card) => (
                         <option key={card.id} value={card.id}>
@@ -534,21 +609,39 @@ export function RewardsPage() {
                       ))}
                     </select>
                   </div>
-                  <label>
-                    Amount ({effectiveWallet(selectedCard)?.currency ?? "RON"})
-                    <input value={payAmount} onChange={(e) => setPayAmount(e.target.value)} style={{ width: "6rem" }} />
-                  </label>
+                  <div style={{ flex: "1 1 110px" }}>
+                    <label className="eyebrow" style={{ display: "block", marginBottom: "0.3rem" }}>
+                      Amount ({effectiveWallet(selectedCard)?.currency ?? "RON"})
+                    </label>
+                    <input
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                      style={{ width: "100%" }}
+                    />
+                  </div>
                 </div>
                 {selectedCard && (
-                  <div className="tag tag--accent" style={{ width: "fit-content" }}>
+                  <div
+                    className="tag tag--accent"
+                    style={{
+                      width: "fit-content",
+                      marginTop: "0.85rem",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.35rem",
+                    }}
+                  >
+                    <Sparkles size={12} strokeWidth={2.4} />
                     {pointsPerRonLabel(selectedCard)}
                     {cardTierCashbackPercent(selectedCard) > 0
                       ? ` + ${cardTierCashbackPercent(selectedCard)}% tier cashback at partners`
-                      : ""}{" "}
-                    · pays from {effectiveWallet(selectedCard)?.currency ?? "unknown"} wallet
+                      : ""}
                   </div>
                 )}
-              </article>
+                <p className="eyebrow" style={{ marginTop: "0.6rem", marginBottom: 0 }}>
+                  Pays from {effectiveWallet(selectedCard)?.currency ?? "unknown"} wallet · pick a merchant below
+                </p>
+              </div>
             )}
 
             {visibleMerchants.length > 0 ? (
@@ -717,26 +810,83 @@ export function RewardsPage() {
           {rewards && rewards.redemptions.length > 0 && (
             <div className="tile">
               <div className="tile__header">
-                <span className="eyebrow">Redeemed</span>
+                <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <Gift size={14} strokeWidth={2.2} />
+                  My vouchers ({rewards.redemptions.length})
+                </span>
+                <button
+                  type="button"
+                  className="button--ghost"
+                  onClick={() => setAreVouchersExpanded((current) => !current)}
+                  aria-expanded={areVouchersExpanded}
+                >
+                  {areVouchersExpanded ? "Retract" : "Expand"}
+                </button>
               </div>
-              <table>
-                <tbody>
+              {areVouchersExpanded ? (
+                <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.6rem" }}>
                   {rewards.redemptions.map((redemption) => (
-                    <tr key={redemption.id}>
-                      <td>
-                        {redemption.benefit_name}
+                    <li
+                      key={redemption.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: "0.75rem",
+                        padding: "0.6rem 0",
+                        borderBottom: "1px solid var(--aurora-border, rgba(0,0,0,0.08))",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{redemption.benefit_name}</div>
                         {redemption.redemption_code && (
-                          <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
-                            Code: {redemption.redemption_code}
+                          <div style={{ fontFamily: "monospace", fontSize: "0.85rem", marginTop: "0.15rem" }}>
+                            {redemption.redemption_code}
                           </div>
                         )}
-                      </td>
-                      <td>{redemption.points_spent} pts</td>
-                      <td>{new Date(redemption.redeemed_at).toLocaleDateString()}</td>
-                    </tr>
+                        <div className="eyebrow" style={{ marginTop: "0.2rem" }}>
+                          {redemption.points_spent} pts · redeemed {new Date(redemption.redeemed_at).toLocaleDateString()}
+                          {redemption.status === "VALID" && redemption.expires_at
+                            ? ` · valid until ${new Date(redemption.expires_at).toLocaleDateString()}`
+                            : redemption.status === "USED" && redemption.used_at
+                              ? ` · used ${new Date(redemption.used_at).toLocaleDateString()}`
+                              : redemption.status === "EXPIRED" && redemption.expires_at
+                                ? ` · expired ${new Date(redemption.expires_at).toLocaleDateString()}`
+                                : ""}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.35rem" }}>
+                        <span
+                          className={
+                            redemption.status === "VALID"
+                              ? "tag tag--accent"
+                              : redemption.status === "USED"
+                                ? "tag tag--neutral"
+                                : "tag tag--warning"
+                          }
+                        >
+                          {redemption.status === "VALID" ? "Valid" : redemption.status === "USED" ? "Used" : "Expired"}
+                        </span>
+                        {redemption.status === "VALID" && (
+                          <button
+                            type="button"
+                            className="button--ghost"
+                            style={{ fontSize: "0.75rem" }}
+                            disabled={markingUsedId === redemption.id}
+                            onClick={() => markVoucherUsed(redemption.id)}
+                          >
+                            {markingUsedId === redemption.id ? "Marking…" : "Mark as used"}
+                          </button>
+                        )}
+                      </div>
+                    </li>
                   ))}
-                </tbody>
-              </table>
+                </ul>
+              ) : (
+                <p className="eyebrow">
+                  {rewards.redemptions.length} voucher{rewards.redemptions.length === 1 ? "" : "s"} — expand to view.
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -804,6 +954,87 @@ export function RewardsPage() {
             <p className="eyebrow">Not verified yet — purchases here don't earn points.</p>
           )}
         </ConfirmModal>
+      )}
+
+      {codeReveal && (
+        <div
+          role="presentation"
+          onClick={() => setCodeReveal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 17, 25, 0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 70,
+            padding: "1rem",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={codeReveal.title}
+            className="tile"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: "420px",
+              width: "100%",
+              textAlign: "center",
+              background: "var(--aurora-gradient, #5b5fef)",
+              color: "#fff",
+              border: "none",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="button--ghost"
+                onClick={() => setCodeReveal(null)}
+                aria-label="Close"
+                style={{ color: "#fff" }}
+              >
+                <X size={16} strokeWidth={2.2} />
+              </button>
+            </div>
+            <Sparkles size={22} strokeWidth={2} style={{ marginBottom: "0.5rem" }} />
+            <p style={{ fontWeight: 700, fontSize: "1.05rem", margin: "0 0 0.75rem" }}>{codeReveal.title}</p>
+            <div
+              style={{
+                background: "rgba(255,255,255,0.16)",
+                border: "1px dashed rgba(255,255,255,0.5)",
+                borderRadius: "0.75rem",
+                padding: "1rem",
+                fontFamily: "monospace",
+                fontSize: "1.6rem",
+                fontWeight: 700,
+                letterSpacing: "0.05em",
+                margin: "0 0 0.75rem",
+                wordBreak: "break-all",
+              }}
+            >
+              {codeReveal.code}
+            </div>
+            <p style={{ fontSize: "0.85rem", opacity: 0.9, margin: "0 0 1rem" }}>{codeReveal.subtitle}</p>
+            <div style={{ display: "flex", gap: "0.6rem", justifyContent: "center", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => copyCode(codeReveal.code)}
+                style={{ background: "#fff", color: "#4548c9", border: "none" }}
+              >
+                {copyFeedback ? "Copied!" : "Copy code"}
+              </button>
+              <button
+                type="button"
+                className="button--ghost"
+                onClick={() => setCodeReveal(null)}
+                style={{ color: "#fff", border: "1px solid rgba(255,255,255,0.5)" }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (

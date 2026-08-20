@@ -1,6 +1,7 @@
 -- Everything from our own migration chain that Supabase is still missing:
 -- 0016_benefit_card_tier_gating (min_card_tier gating, redemption receipts)
--- + 0019_referral_and_proof_codes (referral/purchase codes). 0017 and 0018
+-- + 0019_referral_and_proof_codes (referral/purchase codes)
+-- + 0020_redemption_expiry (voucher expiry/used tracking). 0017 and 0018
 -- belong to other branches (Credit, Payments) or are no-op merge markers —
 -- see team_supabase_workflow.md for their own scripts. This jumps the
 -- version marker straight from our last-known Supabase state to our real
@@ -34,6 +35,11 @@ ALTER TABLE reward_accounts ADD CONSTRAINT uq_reward_accounts_referral_code UNIQ
 
 ALTER TABLE reward_transactions ADD COLUMN proof_code VARCHAR(20);
 
-UPDATE alembic_version SET version_num='0019_referral_and_proof_codes' WHERE alembic_version.version_num = '0015_transaction_card_id';
+-- 0020_redemption_expiry
+
+ALTER TABLE benefit_redemptions ADD COLUMN expires_at TIMESTAMPTZ;
+ALTER TABLE benefit_redemptions ADD COLUMN used_at TIMESTAMPTZ;
+
+UPDATE alembic_version SET version_num='0020_redemption_expiry' WHERE alembic_version.version_num = '0015_transaction_card_id';
 
 COMMIT;
