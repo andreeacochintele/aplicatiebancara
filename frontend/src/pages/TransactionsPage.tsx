@@ -37,6 +37,27 @@ function percentInput(value: string): string {
   return String(clamped);
 }
 
+// Splitting a transaction that is itself the result of a previous split
+// (description "Bill split payment - Split: <original>") would otherwise
+// keep nesting "Bill split payment - Split: " on every re-split. Strip any
+// prior wrapping first so the new title always reads "Split: <original>".
+function baseSplitDescription(description: string): string {
+  let base = description;
+  let stripped = true;
+  while (stripped) {
+    stripped = false;
+    if (base.startsWith("Bill split payment - ")) {
+      base = base.slice("Bill split payment - ".length);
+      stripped = true;
+    }
+    if (base.startsWith("Split: ")) {
+      base = base.slice("Split: ".length);
+      stripped = true;
+    }
+  }
+  return base;
+}
+
 export function TransactionsPage() {
   const { accessToken, user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -184,7 +205,9 @@ export function TransactionsPage() {
         method: "POST",
         token: accessToken,
         body: {
-          title: splitTransaction.description ? `Split: ${splitTransaction.description}` : "Split bill",
+          title: splitTransaction.description
+            ? `Split: ${baseSplitDescription(splitTransaction.description)}`
+            : "Split bill",
           total_amount: splitTransaction.amount,
           currency: splitTransaction.currency,
           source_transaction_id: splitTransaction.id,
