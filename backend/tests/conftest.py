@@ -14,6 +14,7 @@ from app.database import Base, get_db
 from app.fx import models as fx_models  # noqa: F401
 from app.main import app
 from app.merchants import models as merchants_models  # noqa: F401
+from app.notifications import models as notifications_models  # noqa: F401
 from app.payments import models as payments_models  # noqa: F401
 from app.rewards.models import RewardTier
 from app.savings import models as savings_models  # noqa: F401

@@ -24,6 +24,25 @@ export interface Wallet {
   created_at: string;
 }
 
+export type NotificationType =
+  | "TRANSACTION"
+  | "FRAUD"
+  | "PAYMENT_REMINDER"
+  | "CASHBACK"
+  | "CREDIT"
+  | "SPLIT_BILL"
+  | "SYSTEM";
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  related_transaction_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
 export interface Transaction {
   id: string;
   initiator_user_id: string;

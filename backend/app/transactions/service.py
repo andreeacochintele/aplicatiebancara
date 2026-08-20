@@ -21,6 +21,8 @@ from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.fx.service import FXService
 from app.merchants.models import MerchantStatus
 from app.merchants.repository import MerchantRepository
+from app.notifications.models import NotificationType
+from app.notifications.service import NotificationService
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
 from app.transactions.schemas import CardPaymentCreate, InternalTransferCreate
@@ -36,6 +38,7 @@ class TransactionService:
         self.fx = FXService(db)
         self.cards = CardRepository(db)
         self.merchants = MerchantRepository(db)
+        self.notifications = NotificationService(db)
 
     def create_internal_transfer(self, initiator_user_id: uuid.UUID, data: InternalTransferCreate) -> Transaction:
         if data.amount <= 0:
@@ -146,6 +149,13 @@ class TransactionService:
 
         transaction.status = TransactionStatus.COMPLETED
         transaction.completed_at = datetime.now(timezone.utc)
+        self.notifications.notify(
+            destination.user_id,
+            NotificationType.TRANSACTION,
+            "Money received",
+            f"You received {destination_amount} {destination.currency}.",
+            related_transaction_id=transaction.id,
+        )
         self.db.flush()
 
     def create_card_payment(self, initiator_user_id: uuid.UUID, data: CardPaymentCreate) -> Transaction:
