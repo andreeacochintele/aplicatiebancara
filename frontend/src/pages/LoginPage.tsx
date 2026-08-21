@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
@@ -33,13 +33,16 @@ function validatePassword(value: string): string | null {
 export function LoginPage() {
   const { login, register } = useAuth();
   const navigate = useNavigate();
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [searchParams] = useSearchParams();
+  const referralCodeFromLink = searchParams.get("ref") ?? "";
+  const [mode, setMode] = useState<AuthMode>(referralCodeFromLink ? "register" : "login");
   const [email, setEmail] = useState("user@example.com");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [referralCode, setReferralCode] = useState(referralCodeFromLink);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -92,6 +95,7 @@ export function LoginPage() {
         email,
         phone,
         password,
+        referral_code: referralCode.trim() || undefined,
       });
       navigate("/onboarding");
     } catch (err) {
@@ -170,6 +174,16 @@ export function LoginPage() {
             required
             autoComplete="new-password"
           />
+        </label>
+        <label>
+          Referral code (optional)
+          <input
+            value={referralCode}
+            onChange={(e) => setReferralCode(e.target.value)}
+            placeholder="AURORA-XXXXXXXX"
+            maxLength={20}
+          />
+          <small className="auth-field-hint">Got a friend's code? Enter it and they'll earn 500 points.</small>
         </label>
         {error && (
           <p role="alert" className="status-line status-line--error">

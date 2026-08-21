@@ -24,6 +24,12 @@ class RewardsRepository:
         stmt = select(RewardAccount).where(RewardAccount.user_id == user_id)
         return self.db.scalars(stmt).first()
 
+    def get_account_by_referral_code(self, code: str) -> RewardAccount | None:
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(RewardAccount, {"referral_code": f"eq.{code}"})
+        stmt = select(RewardAccount).where(RewardAccount.referral_code == code)
+        return self.db.scalars(stmt).first()
+
     def add_account(self, account: RewardAccount) -> RewardAccount:
         if is_supabase_session(self.db):
             return self.db.add(account)

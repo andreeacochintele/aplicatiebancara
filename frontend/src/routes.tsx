@@ -1,5 +1,6 @@
 import { Navigate, type RouteObject } from "react-router-dom";
 
+import { InviteRedirect } from "./components/InviteRedirect";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthLayout } from "./layouts/AuthLayout";
 import { MainLayout } from "./layouts/MainLayout";
@@ -24,6 +25,7 @@ export const routes: RouteObject[] = [
     element: <AuthLayout />,
     children: [{ path: "/login", element: <LoginPage /> }],
   },
+  { path: "/invite/:code", element: <InviteRedirect /> },
   {
     path: "/onboarding",
     element: (

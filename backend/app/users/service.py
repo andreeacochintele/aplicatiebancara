@@ -4,9 +4,10 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError
+from app.core.exceptions import ConflictError, ValidationError
 from app.core.security import hash_password
 from app.notifications.service import NotificationsService
+from app.rewards.service import REFERRAL_BONUS_POINTS, RewardsService
 from app.users.models import KycDocumentStatus, User, UserAddress, UserEmploymentProfile, UserOnboardingState, UserProfile
 from app.users.repository import UserRepository
 from app.users.schemas import OnboardingStep2Update, OnboardingStep4Update, ProfileUpdate, UserCreate, UserFullProfilePublic
@@ -17,12 +18,20 @@ class UserService:
         self.db = db
         self.repository = UserRepository(db)
         self.notifications = NotificationsService(db)
+        self.rewards = RewardsService(db)
 
     def create_user(self, data: UserCreate) -> User:
         if self.repository.get_by_email(data.email):
             raise ConflictError(f"Email '{data.email}' is already registered")
         if data.phone and self.repository.get_by_phone(data.phone):
             raise ConflictError(f"Phone '{data.phone}' is already registered")
+
+        referrer_user_id = None
+        referral_code = (data.referral_code or "").strip()
+        if referral_code:
+            referrer_user_id = self.rewards.get_referrer_user_id(referral_code)
+            if referrer_user_id is None:
+                raise ValidationError("Referral code not found")
 
         user = User(
             email=data.email,
@@ -46,6 +55,26 @@ class UserService:
             )
         except Exception:
             pass
+
+        # Also best-effort: the referral code was already validated above, so
+        # this should always succeed, but a hiccup crediting points must not
+        # unwind an otherwise-successful registration.
+        if referrer_user_id is not None:
+            try:
+                self.rewards.earn_points(
+                    referrer_user_id,
+                    REFERRAL_BONUS_POINTS,
+                    description=f"Referral bonus: {user.first_name} {user.last_name} joined with your code",
+                )
+                self.notifications.create(
+                    referrer_user_id,
+                    type="REFERRAL",
+                    title="Referral bonus!",
+                    message=f"{user.first_name} {user.last_name} joined using your referral code. You earned {REFERRAL_BONUS_POINTS} points.",
+                )
+            except Exception:
+                pass
+
         return user
 
     def get_full_profile(self, user: User) -> UserFullProfilePublic:

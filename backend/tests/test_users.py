@@ -51,6 +51,68 @@ def test_register_endpoint(client):
     assert "access_token" in body["tokens"]
 
 
+def test_register_with_referral_code_credits_the_referrer(client):
+    referrer = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "referrer@example.com",
+            "phone": "+40733333334",
+            "password": "Sup3rSecret!",
+            "first_name": "Refer",
+            "last_name": "Rer",
+        },
+    ).json()
+    referrer_token = referrer["tokens"]["access_token"]
+    referral_code = client.get(
+        "/api/v1/rewards", headers={"Authorization": f"Bearer {referrer_token}"}
+    ).json()["referral_code"]
+
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "referred@example.com",
+            "phone": "+40733333335",
+            "password": "Sup3rSecret!",
+            "first_name": "Referred",
+            "last_name": "User",
+            "referral_code": referral_code,
+        },
+    )
+    assert response.status_code == 201
+
+    referrer_account = client.get("/api/v1/rewards", headers={"Authorization": f"Bearer {referrer_token}"}).json()
+    assert referrer_account["points_balance"] == 500
+    assert referrer_account["lifetime_points_earned"] == 500
+
+
+def test_register_with_invalid_referral_code_is_rejected(client):
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "bad-referral@example.com",
+            "phone": "+40733333336",
+            "password": "Sup3rSecret!",
+            "first_name": "Bad",
+            "last_name": "Referral",
+            "referral_code": "AURORA-NOTREAL1",
+        },
+    )
+    assert response.status_code == 422
+
+    # No leftover half-registered account -- the same email can still register.
+    retry = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "bad-referral@example.com",
+            "phone": "+40733333336",
+            "password": "Sup3rSecret!",
+            "first_name": "Bad",
+            "last_name": "Referral",
+        },
+    )
+    assert retry.status_code == 201
+
+
 @pytest.mark.parametrize(
     "weak_password",
     [
