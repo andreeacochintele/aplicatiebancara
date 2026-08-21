@@ -1,8 +1,8 @@
-# Banking App — Phase 1 skeleton
+# Aurora — banking app
 
-A modular-monolith banking web application: React/TypeScript frontend, FastAPI/SQLAlchemy/Alembic backend, PostgreSQL, Docker Compose. See [arhitectura_aplicatie_bancara.md](arhitectura_aplicatie_bancara.md) for the full domain architecture.
+A modular-monolith banking web application: React/TypeScript frontend, FastAPI/SQLAlchemy/Alembic backend, PostgreSQL, Docker Compose. See [docs/architecture.md](docs/architecture.md) and [docs/architecture_diagrams.md](docs/architecture_diagrams.md) for the full domain architecture.
 
-This repository is the **Phase 1 foundation**: auth, users, wallets, transactions + ledger are implemented; every other domain (payments, cards, credit, fraud, rewards, AI agents, ...) is a structured placeholder the team fills in during later phases.
+Core banking, payments, cards, credit, rewards, notifications, analytics, onboarding/KYC and a deterministic fraud engine are implemented and merged to `master`. AI agents (Orchestrator, Personal Finance, Credit, Fraud Investigation) are still a structured placeholder — see [backend/app/ai/README.md](backend/app/ai/README.md).
 
 ## Tech stack
 
@@ -16,18 +16,20 @@ This repository is the **Phase 1 foundation**: auth, users, wallets, transaction
 
 ```
 backend/app/
-  auth/ users/ wallets/ transactions/      # implemented (Phase 1)
-  fx/ payments/ cards/ rewards/ merchants/
-  personal_finance/ credit/ fraud/
-  notifications/ exports/ analytics/
-  budgets/ savings/ statements/ audit/ business/  # placeholders (later phases)
-  ai/client/                                # shared Azure Foundry GPT-5-mini client
+  auth/ users/ wallets/ transactions/ fx/
+  payments/ cards/ credit/ rewards/ merchants/
+  notifications/ analytics/ statements/ fraud/
+  budgets/ savings/                           # implemented
+  exports/ audit/ business/                   # still placeholders (routers return 501)
+  ai/client/                                  # shared Azure Foundry GPT-5-mini client
   ai/orchestrator/ personal_finance/ credit/ fraud/ tools/  # agent placeholders
-backend/migrations/                         # Alembic
+backend/migrations/                           # Alembic
 backend/tests/
+supabase/sql/                                 # ad-hoc SQL run by hand against the shared Supabase project
+  # (schema dumps, seed fixes, cross-branch migration syncs — see docs/supabase_rest_backend.md)
 frontend/src/
   pages/        # one route-level component per nav item
-  features/     # placeholder folders for feature-specific code (later phases)
+  features/     # feature-specific components/hooks (auth onboarding, analytics, ...)
   components/ layouts/ hooks/ store/ api/ types/
 ```
 
@@ -39,6 +41,8 @@ The shared source of truth is **Supabase Postgres**. Copy `.env.example` to `.en
 
 If your network blocks the Supabase pooler (some corporate networks block outbound 5432/6543 entirely), `docker-compose.yml` also defines an optional local `postgres` service — point `DATABASE_URL` at it instead (`postgresql+psycopg://banking:banking@postgres:5432/banking`) for local dev while the network issue gets sorted separately.
 
+If direct Postgres ports are blocked entirely (no 5432/6543 outbound at all, only HTTPS), set `DATABASE_BACKEND=supabase_rest` instead and talk to Supabase over its REST API — see [docs/supabase_rest_backend.md](docs/supabase_rest_backend.md) for setup and current endpoint coverage.
+
 ## Running with Docker (recommended)
 
 ```bash
@@ -46,7 +50,7 @@ cp .env.example .env   # then fill in DATABASE_URL (see Database section above)
 docker compose up --build
 ```
 
-This starts the backend (`http://localhost:8000`) and the frontend (`http://localhost:5173`), plus the optional local `postgres` service. Which database the backend actually talks to is controlled by `DATABASE_URL` (see Database section above). The app boots correctly even without Azure AI credentials set — AI functionality isn't part of Phase 1.
+This starts the backend (`http://localhost:8000`) and the frontend (`http://localhost:5173`), plus the optional local `postgres` service. Which database the backend actually talks to is controlled by `DATABASE_URL` (see Database section above). The app boots correctly even without Azure AI credentials set — the AI agents aren't implemented yet.
 
 Apply migrations and seed data once the containers are up:
 
@@ -93,6 +97,8 @@ pytest
 
 Tests run against an in-memory SQLite database, so they need no Postgres/Docker.
 
+To run them inside the running `backend` container instead, `requirements-dev.txt` isn't baked into its image (only `requirements.txt` is), so install it into the container first: `docker compose exec backend pip install -r requirements-dev.txt`, then `docker compose exec backend python -m pytest`.
+
 ## Seed data
 
 `python -m app.seed` (backend) creates, if not already present:
@@ -102,25 +108,32 @@ Tests run against an in-memory SQLite database, so they need no Postgres/Docker.
 
 Not imported by the app itself — run it explicitly after migrating.
 
-## What's implemented (Phase 1)
+## What's implemented
 
-- FastAPI app, config via env vars, PostgreSQL/SQLAlchemy setup, Alembic with a hand-written Migration 1 (`users, wallets, transactions, wallet_ledger_entries, user_sessions, user_devices`)
-- JWT auth (access + refresh), password hashing, `USER`/`ADMIN` roles, register/login
-- `User`, `Wallet` (multi-currency, one main wallet, available/reserved balance), `Transaction` + `WalletLedgerEntry` (full status lifecycle enum, paired debit/credit ledger entries)
-- A deterministic internal wallet-to-wallet transfer service (`POST /api/v1/transactions/transfer`) demonstrating the end-to-end flow: transfer → ledger entries → balance update, including cross-currency transfers priced via `POST /fx/quote`
-- Wallet statements (`GET /api/v1/statements`, `GET /api/v1/statements/export?format=csv|pdf`) — opening/closing balance, totals and transaction list for a wallet over a date range, computed on demand from the ledger
+- JWT auth (access + refresh), password hashing, `USER`/`ADMIN` roles, register/login, optional referral code at registration
+- Multi-user onboarding: KYC placeholder, address, employment profile, full profile editing
+- `User`, `Wallet` (multi-currency, opt-in additional currencies, one main wallet, available/reserved balance), `Transaction` + `WalletLedgerEntry` (full status lifecycle enum, paired debit/credit ledger entries)
+- Wallet-to-wallet transfers, live FX quoting (Frankfurter/ECB market rate + bank margin) and cross-currency exchange, wallet close/reopen
+- Payments: phone/IBAN transfers, beneficiaries, QR payment requests, scheduled/recurring payments, split bill, transaction folders
+- Cards: tiers, freeze/unfreeze, secure mock details, card payment preferences, stored credit card accounts
+- Credit: score, applications, loans, loan calculator, multi-currency credit profiles
+- Rewards & merchant cashback: points ledger, tiers, redeemable benefits, cashback offers
+- Notifications: built once, wired into transfers, split bills, cashback, credit and registration across every domain
+- Analytics: spending breakdown, trends, net worth (with history/forecast), monthly trend series
+- Wallet statements (`GET /api/v1/statements`, `GET /api/v1/statements/export?format=csv|pdf`)
+- A deterministic fraud engine (rule-based scoring, evidence tracking) plus an admin fraud-review dashboard section — the engine flags/holds, a human makes the final call
+- Budgets and savings goals
 - `/health` and `/api/v1/health`
-- React shell: routing, layout, auth context, protected routes, and a working Login → Dashboard → Wallets → Transactions flow against the real API
-- Placeholder pages for every nav item (Cards, Payments, Rewards, Analytics, Credit, Assistant, Profile, Admin)
-- Backend tests: health, user creation, wallet creation/rules, transaction/ledger service
+- React app: routing, layout, auth context (with idle logout), protected routes, onboarding flow, and working pages for every domain above
+- Backend test suite covering all of the above (see `backend/tests/`)
 - `ai/client` — the shared Azure AI Foundry (GPT-5-mini) client abstraction, lazily instantiated so the app runs with no AI credentials configured
 
-## What's intentionally left as placeholder
+## What's still a placeholder
 
-- Every backend module besides auth/users/wallets/transactions/fx/statements (`payments, cards, rewards, merchants, personal_finance, credit, fraud, notifications, exports, analytics, budgets, savings, audit, business`) — routers exist and return `501` so the route table is stable, but no models/logic yet
-- All AI agents (`orchestrator, personal_finance, credit, fraud`) and `ai/tools` — structure only, per the task's explicit instruction not to implement agent logic yet
-- Fraud scoring, PENDING_REVIEW flow, cards, credit, business exports, notifications, admin workflows
-- Frontend feature folders (`features/*`) — empty placeholders; real feature-specific components/hooks land here as each domain is built
+- All AI agents (`orchestrator, personal_finance, credit, fraud`) and `ai/tools` — structure only; agents must go `Agent → Tool → Backend Service → Database`, never straight to the DB
+- Business transaction export
+- Loan servicing: no endpoint to pay down an existing loan's principal or run an early-repayment simulation, despite `EARLY_REPAYMENT` existing as an enum value — the loan calculator only simulates a schedule
+- Admin audit log
 
 ## Known issues / environment notes
 
@@ -128,17 +141,19 @@ Not imported by the app itself — run it explicitly after migrating.
 - **`bcrypt` is pinned to `4.0.1`** in `backend/requirements.txt` — `passlib` 1.7.4 (last release 2020, unmaintained) breaks against `bcrypt>=4.1`'s stricter 72-byte handling.
 - **Migration 1 is hand-written**, not autogenerated (no live Postgres instance was available to run `alembic revision --autogenerate` against). Double-check it against the models before your first real deploy: `alembic upgrade head` on a fresh database is the way to verify.
 - Statement PDF export uses `fpdf2` (pure Python, no system dependencies) — a plain tabular layout, not a branded document design.
+- **Alembic revision ids must stay ≤32 characters.** `alembic_version.version_num` is `varchar(32)` by default; a longer merge-migration id crashes `alembic upgrade head` with `StringDataRightTruncation` for everyone on a clean database. This has bitten the team more than once when naming merge migrations after long branch names — keep merge-migration ids short (e.g. `0027_merge_heads`, not a concatenation of both parent names).
+- With 4 people branching in parallel, Alembic ends up with multiple heads regularly. Run `alembic heads` before opening a PR; if there's more than one, add a merge migration (`down_revision` as a tuple) rather than rewriting either side's migration.
 
 ## Branch / work split for the 4 developers
 
-Mirrors architecture.md §40:
+Mirrors [docs/architecture.md](docs/architecture.md) §40:
 
 - **Dev 1 — Core Banking:** wallets, balances, transaction engine, ledger, FX, statements, PDF/CSV export
 - **Dev 2 — Payments:** transfers, phone transfers, beneficiaries, QR payments, scheduled/recurring payments, split bill, transaction folders, business exports
 - **Dev 3 — Cards & Credit:** cards (freeze/unfreeze, one-time cards), credit score, credit applications, loans, installments, early repayment
 - **Dev 4 — Intelligence & Risk:** analytics, budgets, savings goals, rewards, merchant cashback, fraud engine + admin UI, AI orchestrator and agents
 
-Suggested branch naming: `feature/<dev-area>/<short-description>`, e.g. `feature/payments/qr-flow`. All four branch off `main` once this skeleton is merged; the shared `auth/users/wallets/transactions` modules should be treated as stable contracts — extend, don't restructure, without a heads-up to the team.
+Suggested branch naming: `feature/<dev-area>/<short-description>`, e.g. `feature/payments/qr-flow`. All four branch off `master` and merge back via PR; the shared `auth/users/wallets/transactions` modules should be treated as stable contracts — extend, don't restructure, without a heads-up to the team. See [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md) for the full cross-agent collaboration rules.
 
 ## Where the future Azure AI Foundry (GPT-5-mini) integration connects
 
