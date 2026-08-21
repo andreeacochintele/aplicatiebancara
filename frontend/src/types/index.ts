@@ -29,6 +29,7 @@ export interface Transaction {
   initiator_user_id: string;
   source_wallet_id: string | null;
   destination_wallet_id: string | null;
+  card_id: string | null;
   type: string;
   status: string;
   amount: string;

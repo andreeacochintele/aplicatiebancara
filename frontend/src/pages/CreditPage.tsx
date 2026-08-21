@@ -394,6 +394,7 @@ export function CreditPage() {
           </div>
         )}
         {error && <p style={{ color: "var(--color-warning)", margin: "0.85rem 0 0" }}>{error}</p>}
+        {loadWarning && <p style={{ color: "var(--color-warning)", margin: "0.85rem 0 0" }}>{loadWarning}</p>}
       </div>
 
       <div className="tile">
