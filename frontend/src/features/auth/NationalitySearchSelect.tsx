@@ -2,15 +2,18 @@ import { useEffect, useId, useMemo, useRef, useState, type FocusEvent } from "re
 
 import { COUNTRIES } from "./countries";
 
-interface CountrySearchSelectProps {
+interface NationalitySearchSelectProps {
   label: string;
   value: string;
-  onChange: (name: string) => void;
+  onChange: (demonym: string) => void;
   required?: boolean;
   placeholder?: string;
 }
 
-export function CountrySearchSelect({ label, value, onChange, required, placeholder }: CountrySearchSelectProps) {
+// Same search-combobox UX as CountrySearchSelect, but for the nationality
+// adjective (e.g. "Romanian") rather than the country name, and with no
+// flag icon — a nationality isn't a country.
+export function NationalitySearchSelect({ label, value, onChange, required, placeholder }: NationalitySearchSelectProps) {
   const listId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState(value);
@@ -22,13 +25,19 @@ export function CountrySearchSelect({ label, value, onChange, required, placehol
 
   const matches = useMemo(() => {
     const term = query.trim().toLowerCase();
-    const filtered = term ? COUNTRIES.filter((country) => country.name.toLowerCase().includes(term)) : COUNTRIES;
+    // Matches on either the nationality or the country name, since someone
+    // may type "Romania" while looking for "Romanian".
+    const filtered = term
+      ? COUNTRIES.filter(
+          (country) => country.demonym.toLowerCase().includes(term) || country.name.toLowerCase().includes(term),
+        )
+      : COUNTRIES;
     return filtered.slice(0, 50);
   }, [query]);
 
-  function selectCountry(name: string) {
-    onChange(name);
-    setQuery(name);
+  function selectNationality(demonym: string) {
+    onChange(demonym);
+    setQuery(demonym);
     setOpen(false);
   }
 
@@ -36,8 +45,8 @@ export function CountrySearchSelect({ label, value, onChange, required, placehol
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
       setOpen(false);
       // Revert to the last confirmed selection if the typed text isn't an exact match.
-      const exact = COUNTRIES.find((country) => country.name.toLowerCase() === query.trim().toLowerCase());
-      setQuery(exact ? exact.name : value);
+      const exact = COUNTRIES.find((country) => country.demonym.toLowerCase() === query.trim().toLowerCase());
+      setQuery(exact ? exact.demonym : value);
     }
   }
 
@@ -66,9 +75,8 @@ export function CountrySearchSelect({ label, value, onChange, required, placehol
           {matches.length === 0 && <li className="country-select__empty">No matches</li>}
           {matches.map((country) => (
             <li key={country.code}>
-              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => selectCountry(country.name)}>
-                <span className={`fi fi-${country.code.toLowerCase()} country-select__flag`} aria-hidden="true" />
-                {country.name}
+              <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => selectNationality(country.demonym)}>
+                {country.demonym}
               </button>
             </li>
           ))}

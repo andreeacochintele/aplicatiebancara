@@ -95,6 +95,7 @@ export interface OnboardingStep4Payload {
 export interface ProfileUpdatePayload {
   first_name?: string;
   last_name?: string;
+  email?: string;
   phone?: string;
   step_2?: OnboardingStep2Payload;
   employment?: OnboardingStep4Payload;
