@@ -238,7 +238,8 @@ def test_sync_credits_cashback_to_the_debited_wallet_as_real_money(db_session, s
     card = CardService(db_session).create_card(seeded_user.id, CardCreate(default_wallet_id=wallet.id))
 
     TransactionService(db_session).create_card_payment(
-        seeded_user.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"))
+        seeded_user.id,
+        CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"), cvv=card.mock_cvv),
     )
     assert wallet.available_balance == Decimal("450.00")  # debited at payment time
 
