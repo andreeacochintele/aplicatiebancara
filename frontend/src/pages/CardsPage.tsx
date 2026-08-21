@@ -50,6 +50,7 @@ const CARD_TIER_PRODUCT_LIST = [
 ];
 const MOCK_CARD_MERCHANTS = ["Carrefour", "Netflix", "OMV", "Starbucks", "eMAG", "Uber"];
 type CreditPaymentSourceType = "ACCOUNT" | "DEBIT_CARD";
+type CreditPaymentAmountMode = "FULL_BALANCE" | "CUSTOM";
 
 interface CardTransactionDisplay {
   id: string;
@@ -95,15 +96,12 @@ function formatWalletBalance(wallet: Wallet): string {
 }
 
 function creditStatementBalance(card: Card): number {
-  const limit = CREDIT_CARD_LIMITS[card.tier ?? "REGULAR"];
-  const seed = Number(card.last_four) || card.id.length;
-  const baseRatio = card.tier === "PLATINUM" ? 0.28 : card.tier === "GOLD" ? 0.34 : 0.42;
-  const seededExtra = (seed % 9) / 100;
-  return Math.min(limit * 0.72, Math.round(limit * (baseRatio + seededExtra)));
+  return Number(card.credit_account?.used_amount ?? "0");
 }
 
 function creditAvailableBalance(card: Card, balanceDue: number): number {
-  return Math.max(0, CREDIT_CARD_LIMITS[card.tier ?? "REGULAR"] - balanceDue);
+  const creditLimit = Number(card.credit_account?.credit_limit ?? CREDIT_CARD_LIMITS[card.tier ?? "REGULAR"]);
+  return Math.max(0, creditLimit - balanceDue);
 }
 
 function walletDisplayName(wallet: Wallet): string {
@@ -177,6 +175,7 @@ export function CardsPage() {
   const [paymentPanelCardId, setPaymentPanelCardId] = useState<string | null>(null);
   const [paymentSourceType, setPaymentSourceType] = useState<CreditPaymentSourceType>("ACCOUNT");
   const [paymentSourceId, setPaymentSourceId] = useState("");
+  const [paymentAmountMode, setPaymentAmountMode] = useState<CreditPaymentAmountMode>("FULL_BALANCE");
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
@@ -262,20 +261,28 @@ export function CardsPage() {
 
   useEffect(() => {
     if (!paymentPanelCardId || paymentSourceId === "") return;
+    const paymentCard = cards.find((card) => card.id === paymentPanelCardId);
+    const currency = paymentCard?.credit_account?.currency ?? "RON";
     const sourceStillExists =
       paymentSourceType === "ACCOUNT"
-        ? directPaymentWallets.some((wallet) => wallet.id === paymentSourceId)
-        : activeDebitCards.some((card) => card.id === paymentSourceId);
+        ? directPaymentWallets.some((wallet) => wallet.id === paymentSourceId && wallet.currency === currency)
+        : activeDebitCards.some((card) => {
+            const linkedWallet = wallets.find((wallet) => wallet.id === card.default_wallet_id);
+            return card.id === paymentSourceId && linkedWallet?.currency === currency;
+          });
 
     if (!sourceStillExists) {
-      const nextAccount = directPaymentWallets[0];
-      const nextDebitCard = activeDebitCards[0];
+      const nextAccount = directPaymentWallets.find((wallet) => wallet.currency === currency);
+      const nextDebitCard = activeDebitCards.find((card) => {
+        const linkedWallet = wallets.find((wallet) => wallet.id === card.default_wallet_id);
+        return linkedWallet?.currency === currency;
+      });
       setPaymentSourceType(nextAccount ? "ACCOUNT" : "DEBIT_CARD");
       setPaymentSourceId(nextAccount?.id ?? nextDebitCard?.id ?? "");
       setPaymentMessage(null);
       setPaymentError(null);
     }
-  }, [activeDebitCards, directPaymentWallets, paymentPanelCardId, paymentSourceId, paymentSourceType]);
+  }, [activeDebitCards, cards, directPaymentWallets, paymentPanelCardId, paymentSourceId, paymentSourceType, wallets]);
 
   async function createCard() {
     if (!accessToken || isSaving || !canCreateCard) return;
@@ -383,19 +390,23 @@ export function CardsPage() {
     });
   }
 
-  function resetPaymentForm(nextCardId: string | null) {
-    const nextAccount = directPaymentWallets[0];
-    const nextDebitCard = activeDebitCards[0];
+  function resetPaymentForm(nextCardId: string | null, currency = "RON") {
+    const nextAccount = directPaymentWallets.find((wallet) => wallet.currency === currency);
+    const nextDebitCard = activeDebitCards.find((card) => {
+      const linkedWallet = wallets.find((wallet) => wallet.id === card.default_wallet_id);
+      return linkedWallet?.currency === currency;
+    });
     setPaymentPanelCardId(nextCardId);
     setPaymentSourceType(nextAccount ? "ACCOUNT" : "DEBIT_CARD");
     setPaymentSourceId(nextAccount?.id ?? nextDebitCard?.id ?? "");
+    setPaymentAmountMode("FULL_BALANCE");
     setPaymentAmount("");
     setPaymentMessage(null);
     setPaymentError(null);
   }
 
-  function togglePaymentPanel(cardId: string) {
-    resetPaymentForm(paymentPanelCardId === cardId ? null : cardId);
+  function togglePaymentPanel(card: Card) {
+    resetPaymentForm(paymentPanelCardId === card.id ? null : card.id, card.credit_account?.currency ?? "RON");
   }
 
   function paymentSourceWalletId(): string {
@@ -413,18 +424,23 @@ export function CardsPage() {
     return debitCard ? `Debit **** ${debitCard.last_four}${wallet ? ` from ${walletDisplayName(wallet)}` : ""}` : "selected debit card";
   }
 
-  function submitCreditCardPayment(card: Card) {
-    const amount = Number(paymentAmount);
+  async function submitCreditCardPayment(card: Card) {
+    if (!accessToken) return;
     const sourceWalletId = paymentSourceWalletId();
     const sourceWallet = wallets.find((wallet) => wallet.id === sourceWalletId);
     const sourceDebitCard = paymentSourceType === "DEBIT_CARD" ? activeDebitCards.find((sourceCard) => sourceCard.id === paymentSourceId) : null;
     const currentBalanceDue = creditBalanceOverrides[card.id] ?? creditStatementBalance(card);
+    const amount = paymentAmountMode === "FULL_BALANCE" ? currentBalanceDue : Number(paymentAmount);
 
     setPaymentMessage(null);
     setPaymentError(null);
 
     if (!sourceWallet) {
       setPaymentError("Choose a payment source.");
+      return;
+    }
+    if (sourceWallet.currency !== (card.credit_account?.currency ?? "RON")) {
+      setPaymentError("Choose a source in the same currency as the credit card balance.");
       return;
     }
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -441,11 +457,44 @@ export function CardsPage() {
     }
 
     const nextBalanceDue = Math.max(0, currentBalanceDue - amount);
+    try {
+      await apiRequest<Transaction>("/transactions/credit-card-repayment", {
+        method: "POST",
+        token: accessToken,
+        body: {
+          card_id: card.id,
+          source_wallet_id: sourceWallet.id,
+          amount: amount.toFixed(2),
+        },
+      });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setPaymentError(err instanceof ApiError ? err.message : "Could not pay credit card.");
+      return;
+    }
+
     setWallets((current) =>
       current.map((wallet) =>
         wallet.id === sourceWallet.id
           ? { ...wallet, available_balance: Math.max(0, Number(wallet.available_balance) - amount).toFixed(2) }
           : wallet,
+      ),
+    );
+    setCards((current) =>
+      current.map((item) =>
+        item.id === card.id && item.credit_account
+          ? {
+              ...item,
+              credit_account: {
+                ...item.credit_account,
+                used_amount: nextBalanceDue.toFixed(2),
+                available_credit: creditAvailableBalance(item, nextBalanceDue).toFixed(2),
+              },
+            }
+          : item,
       ),
     );
     setCreditBalanceOverrides((current) => ({ ...current, [card.id]: nextBalanceDue }));
@@ -625,21 +674,27 @@ export function CardsPage() {
               const isCreditCard = card.type === "CREDIT";
               const creditBalanceDue = creditBalanceOverrides[card.id] ?? creditStatementBalance(card);
               const creditAvailable = creditAvailableBalance(card, creditBalanceDue);
+              const creditAccountCurrency = card.credit_account?.currency ?? "RON";
               const isPaymentPanelOpen = paymentPanelCardId === card.id;
               const paymentSourceOptions = [
-                ...directPaymentWallets.map((sourceWallet) => ({
-                  value: `ACCOUNT:${sourceWallet.id}`,
-                  walletId: sourceWallet.id,
-                  label: `${walletDisplayName(sourceWallet)} account`,
-                })),
-                ...activeDebitCards.map((debitCard) => {
-                  const linkedWallet = wallets.find((item) => item.id === debitCard.default_wallet_id);
-                  return {
-                    value: `DEBIT_CARD:${debitCard.id}`,
-                    walletId: debitCard.default_wallet_id ?? "",
-                    label: `Debit **** ${debitCard.last_four}${linkedWallet ? ` - ${walletDisplayName(linkedWallet)}` : ""}`,
-                  };
-                }),
+                ...directPaymentWallets
+                  .filter((sourceWallet) => sourceWallet.currency === creditAccountCurrency)
+                  .map((sourceWallet) => ({
+                    value: `ACCOUNT:${sourceWallet.id}`,
+                    walletId: sourceWallet.id,
+                    label: `${walletDisplayName(sourceWallet)} account`,
+                  })),
+                ...activeDebitCards
+                  .map((debitCard) => {
+                    const linkedWallet = wallets.find((item) => item.id === debitCard.default_wallet_id);
+                    return {
+                      value: `DEBIT_CARD:${debitCard.id}`,
+                      walletId: debitCard.default_wallet_id ?? "",
+                      label: `Debit **** ${debitCard.last_four}${linkedWallet ? ` - ${walletDisplayName(linkedWallet)}` : ""}`,
+                      currency: linkedWallet?.currency,
+                    };
+                  })
+                  .filter((source) => source.currency === creditAccountCurrency),
               ];
               const selectedPaymentWalletId =
                 paymentSourceType === "ACCOUNT"
@@ -713,7 +768,7 @@ export function CardsPage() {
                       <div className="eyebrow">{isCreditCard ? "Available credit" : "Linked account"}</div>
                       <div className="card-panel__value">
                         {isCreditCard
-                          ? formatCurrencyAmount(creditAvailable)
+                          ? formatCurrencyAmount(creditAvailable, creditAccountCurrency)
                           : isAccountLinkedCard
                             ? wallet
                               ? walletDisplayName(wallet)
@@ -725,7 +780,7 @@ export function CardsPage() {
                       )}
                       {isCreditCard && (
                         <div className="card-panel__subvalue">
-                          Balance due {formatCurrencyAmount(creditBalanceDue)}
+                          Balance due {formatCurrencyAmount(creditBalanceDue, creditAccountCurrency)}
                         </div>
                       )}
                     </div>
@@ -748,7 +803,7 @@ export function CardsPage() {
                       <button
                         type="button"
                         className="card-panel__payment-toggle"
-                        onClick={() => togglePaymentPanel(card.id)}
+                        onClick={() => togglePaymentPanel(card)}
                         aria-expanded={isPaymentPanelOpen}
                       >
                         {isPaymentPanelOpen ? "Close payment" : "Make a payment"}
@@ -759,13 +814,17 @@ export function CardsPage() {
                           <div className="credit-card-payment__summary">
                             <div>
                               <span>Card balance</span>
-                              <strong>{formatCurrencyAmount(creditBalanceDue)}</strong>
+                              <strong>{formatCurrencyAmount(creditBalanceDue, creditAccountCurrency)}</strong>
                             </div>
                             <div>
                               <span>Available after payment</span>
                               <strong>
                                 {formatCurrencyAmount(
-                                  creditAvailableBalance(card, Math.max(0, creditBalanceDue - (Number(paymentAmount) || 0))),
+                                  creditAvailableBalance(
+                                    card,
+                                    Math.max(0, creditBalanceDue - (paymentAmountMode === "FULL_BALANCE" ? creditBalanceDue : Number(paymentAmount) || 0)),
+                                  ),
+                                  creditAccountCurrency,
                                 )}
                               </strong>
                             </div>
@@ -802,21 +861,53 @@ export function CardsPage() {
                               )}
                             </label>
 
-                            <label>
-                              Amount
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={paymentAmount}
-                                onChange={(event) => {
-                                  setPaymentAmount(event.target.value);
-                                  setPaymentError(null);
-                                  setPaymentMessage(null);
-                                }}
-                                placeholder="0.00"
-                              />
-                            </label>
+                            <div className="credit-card-payment__amount">
+                              <span>Amount</span>
+                              <div className="credit-card-payment__amount-options">
+                                <label>
+                                  <input
+                                    type="radio"
+                                    name={`credit-payment-amount-${card.id}`}
+                                    checked={paymentAmountMode === "FULL_BALANCE"}
+                                    onChange={() => {
+                                      setPaymentAmountMode("FULL_BALANCE");
+                                      setPaymentError(null);
+                                      setPaymentMessage(null);
+                                    }}
+                                  />
+                                  Whole balance
+                                </label>
+                                <label>
+                                  <input
+                                    type="radio"
+                                    name={`credit-payment-amount-${card.id}`}
+                                    checked={paymentAmountMode === "CUSTOM"}
+                                    onChange={() => {
+                                      setPaymentAmountMode("CUSTOM");
+                                      setPaymentError(null);
+                                      setPaymentMessage(null);
+                                    }}
+                                  />
+                                  Enter amount
+                                </label>
+                              </div>
+                              {paymentAmountMode === "CUSTOM" ? (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={paymentAmount}
+                                  onChange={(event) => {
+                                    setPaymentAmount(event.target.value);
+                                    setPaymentError(null);
+                                    setPaymentMessage(null);
+                                  }}
+                                  placeholder="0.00"
+                                />
+                              ) : (
+                                <strong>{formatCurrencyAmount(creditBalanceDue, creditAccountCurrency)}</strong>
+                              )}
+                            </div>
                           </div>
 
                           <button type="button" className="credit-card-payment__submit" onClick={() => submitCreditCardPayment(card)}>

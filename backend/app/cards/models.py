@@ -6,8 +6,9 @@ sandbox-only mock PAN/CVV values, never real card credentials.
 import enum
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -67,6 +68,12 @@ class Card(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    credit_account = relationship(
+        "CreditCardAccount",
+        back_populates="card",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
 
 class CardPaymentPreferences(Base):
@@ -85,3 +92,26 @@ class CardPaymentPreferences(Base):
 
     card = relationship("Card", back_populates="payment_preferences")
     preferred_wallet = relationship("Wallet")
+
+
+class CreditCardAccount(Base):
+    __tablename__ = "credit_card_accounts"
+
+    card_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cards.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="RON", nullable=False)
+    credit_limit: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    used_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0.00"), nullable=False)
+    annual_interest_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    card = relationship("Card", back_populates="credit_account")
+    owner = relationship("User")
+
+    @property
+    def available_credit(self) -> Decimal:
+        return max(Decimal("0.00"), self.credit_limit - self.used_amount)

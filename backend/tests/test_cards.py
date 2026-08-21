@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 import pytest
 
@@ -78,6 +79,9 @@ def test_create_gold_credit_card(db_session, user_with_wallet):
     assert card.type == CardType.CREDIT
     assert card.tier == CardTier.GOLD
     assert card.default_wallet_id is None
+    assert card.credit_account is not None
+    assert card.credit_account.credit_limit == Decimal("15000.00")
+    assert card.credit_account.used_amount == Decimal("0.00")
 
 
 def test_credit_card_does_not_keep_wallet_link(db_session, user_with_wallet):

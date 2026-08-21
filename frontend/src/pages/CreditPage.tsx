@@ -13,6 +13,7 @@ import type {
 } from "../types";
 
 const CREDIT_CURRENCIES = ["RON", "EUR", "USD", "GBP"];
+const DOWN_PAYMENT_LOAN_TYPES = new Set<LoanProductType>(["MORTGAGE", "AUTO_LOAN", "HOME_IMPROVEMENT"]);
 const DEFAULT_LOAN_PRODUCTS: LoanProduct[] = [
   {
     product_type: "PERSONAL_LOAN",
@@ -88,6 +89,11 @@ function formatMoney(value: string, currency = "RON"): string {
   return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 }
 
+function parseAmount(value: string): number {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
 function ListPreview({ items }: { items: string[] }) {
   return (
     <ul>
@@ -116,6 +122,8 @@ export function CreditPage() {
   const [areApprovedOffersExpanded, setAreApprovedOffersExpanded] = useState(false);
   const [expandedOfferIds, setExpandedOfferIds] = useState<Set<string>>(() => new Set());
   const [requestedAmount, setRequestedAmount] = useState("");
+  const [assetPrice, setAssetPrice] = useState("");
+  const [downPayment, setDownPayment] = useState("");
   const [requestedCurrency, setRequestedCurrency] = useState("RON");
   const [requestedTermMonths, setRequestedTermMonths] = useState("48");
   const [applicationEstimate, setApplicationEstimate] = useState<LoanCalculatorResult | null>(null);
@@ -141,6 +149,14 @@ export function CreditPage() {
     () => applications.filter((application) => application.status === "APPROVED" || application.status === "PENDING"),
     [applications],
   );
+  const supportsDownPayment = DOWN_PAYMENT_LOAN_TYPES.has(loanProductType);
+  const assetPriceAmount = parseAmount(assetPrice);
+  const downPaymentAmount = parseAmount(downPayment);
+  const financedAmount = supportsDownPayment ? Math.max(0, assetPriceAmount - downPaymentAmount) : parseAmount(requestedAmount);
+  const principalAmountForApplication = financedAmount > 0 ? financedAmount.toFixed(2) : "";
+  const hasDownPaymentError = supportsDownPayment && downPaymentAmount > assetPriceAmount && assetPriceAmount > 0;
+  const canSubmitApplication =
+    !isApplying && principalAmountForApplication !== "" && Number(requestedTermMonths) > 0 && !hasDownPaymentError;
 
   async function loadCreditData(token: string) {
     setIsLoading(true);
@@ -203,7 +219,7 @@ export function CreditPage() {
 
   useEffect(() => {
     if (!accessToken || !selectedLoanProduct) return;
-    const amount = Number(requestedAmount);
+    const amount = financedAmount;
     const termMonths = Number(requestedTermMonths);
     if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(termMonths) || termMonths <= 0) {
       setApplicationEstimate(null);
@@ -217,7 +233,7 @@ export function CreditPage() {
         method: "POST",
         token: accessToken,
         body: {
-          principal_amount: requestedAmount,
+          principal_amount: principalAmountForApplication,
           currency: requestedCurrency,
           annual_interest_rate: selectedLoanProduct.representative_apr,
           term_months: termMonths,
@@ -229,7 +245,7 @@ export function CreditPage() {
     }, 250);
 
     return () => window.clearTimeout(timeout);
-  }, [accessToken, requestedAmount, requestedCurrency, requestedTermMonths, selectedLoanProduct]);
+  }, [accessToken, financedAmount, principalAmountForApplication, requestedCurrency, requestedTermMonths, selectedLoanProduct]);
 
   async function loadApplicationBreakdowns(token: string, applicationList: CreditApplication[]) {
     const approvedApplications = applicationList.filter(
@@ -314,7 +330,7 @@ export function CreditPage() {
   }
 
   async function createApplication() {
-    if (!accessToken || isApplying) return;
+    if (!accessToken || !canSubmitApplication) return;
     setIsApplying(true);
     setError(null);
     try {
@@ -324,13 +340,15 @@ export function CreditPage() {
         body: {
           type: "PERSONAL_LOAN",
           loan_product_type: loanProductType,
-          requested_amount: requestedAmount,
+          requested_amount: principalAmountForApplication,
           currency: requestedCurrency,
           requested_term_months: Number(requestedTermMonths),
         },
       });
       setApplications((current) => [application, ...current]);
       setRequestedAmount("");
+      setAssetPrice("");
+      setDownPayment("");
       setLoanApplicationDocuments([]);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -483,14 +501,38 @@ export function CreditPage() {
                 ))}
               </select>
             </label>
-            <label>
-              Requested amount
-              <input
-                value={requestedAmount}
-                onChange={(event) => setRequestedAmount(event.target.value)}
-                inputMode="decimal"
-              />
-            </label>
+            {supportsDownPayment ? (
+              <>
+                <label>
+                  Asset price
+                  <input
+                    value={assetPrice}
+                    onChange={(event) => setAssetPrice(event.target.value)}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                  />
+                </label>
+                <label>
+                  Down payment
+                  <input
+                    value={downPayment}
+                    onChange={(event) => setDownPayment(event.target.value)}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                  />
+                </label>
+              </>
+            ) : (
+              <label>
+                Requested amount
+                <input
+                  value={requestedAmount}
+                  onChange={(event) => setRequestedAmount(event.target.value)}
+                  inputMode="decimal"
+                  placeholder="0.00"
+                />
+              </label>
+            )}
             <label>
               Currency
               <select value={requestedCurrency} onChange={(event) => setRequestedCurrency(event.target.value)}>
@@ -509,6 +551,25 @@ export function CreditPage() {
                 inputMode="numeric"
               />
             </label>
+            {supportsDownPayment && (
+              <div className="down-payment-breakdown">
+                <div>
+                  <span>Asset price</span>
+                  <strong>{formatMoney(assetPriceAmount.toFixed(2), requestedCurrency)}</strong>
+                </div>
+                <div>
+                  <span>Down payment</span>
+                  <strong>{formatMoney(downPaymentAmount.toFixed(2), requestedCurrency)}</strong>
+                </div>
+                <div>
+                  <span>Financed amount</span>
+                  <strong>{formatMoney(principalAmountForApplication || "0", requestedCurrency)}</strong>
+                </div>
+                {hasDownPaymentError && (
+                  <p>Down payment cannot be higher than the asset price.</p>
+                )}
+              </div>
+            )}
             <div className="loan-application-documents">
               <div className="income-document-upload">
                 <span className="eyebrow">Required documents</span>
@@ -537,7 +598,7 @@ export function CreditPage() {
                 </div>
               </div>
             </div>
-            <button type="button" onClick={createApplication} disabled={isApplying}>
+            <button type="button" onClick={createApplication} disabled={!canSubmitApplication}>
               {isApplying ? "Submitting..." : "Submit application"}
             </button>
           </div>

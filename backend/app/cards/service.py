@@ -2,10 +2,11 @@
 import secrets
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.cards.models import Card, CardPaymentPreferences, CardStatus, CardTier, CardType
+from app.cards.models import Card, CardPaymentPreferences, CardStatus, CardTier, CardType, CreditCardAccount
 from app.cards.repository import CardRepository
 from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
@@ -15,6 +16,16 @@ from app.wallets.repository import WalletRepository
 
 class CardService:
     MAX_CARDS_PER_USER = 5
+    CREDIT_LIMITS = {
+        CardTier.REGULAR: Decimal("5000.00"),
+        CardTier.GOLD: Decimal("15000.00"),
+        CardTier.PLATINUM: Decimal("30000.00"),
+    }
+    CREDIT_APRS = {
+        CardTier.REGULAR: Decimal("18.90"),
+        CardTier.GOLD: Decimal("17.50"),
+        CardTier.PLATINUM: Decimal("15.90"),
+    }
 
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -75,16 +86,45 @@ class CardService:
         self.repository.add_preferences(
             CardPaymentPreferences(card_id=card.id, preferred_wallet_id=default_wallet_id)
         )
+        if card.type == CardType.CREDIT:
+            card.credit_account = self.repository.add_credit_account(
+                CreditCardAccount(
+                    card_id=card.id,
+                    user_id=user_id,
+                    credit_limit=self.CREDIT_LIMITS[card.tier or CardTier.REGULAR],
+                    annual_interest_rate=self.CREDIT_APRS[card.tier or CardTier.REGULAR],
+                )
+            )
         return card
 
     def list_cards(self, user_id: uuid.UUID) -> list[Card]:
-        return self.repository.list_for_user(user_id)
+        cards = self.repository.list_for_user(user_id)
+        for card in cards:
+            if card.type == CardType.CREDIT:
+                card.credit_account = self._get_or_create_credit_account(card)
+        return cards
 
     def get_for_user(self, user_id: uuid.UUID, card_id: uuid.UUID) -> Card:
         card = self.repository.get_by_id(card_id)
         if card is None or card.user_id != user_id:
             raise NotFoundError("Card not found")
+        if card.type == CardType.CREDIT:
+            card.credit_account = self._get_or_create_credit_account(card)
         return card
+
+    def _get_or_create_credit_account(self, card: Card) -> CreditCardAccount:
+        account = self.repository.get_credit_account(card.id)
+        if account is not None:
+            return account
+        tier = card.tier or CardTier.REGULAR
+        return self.repository.add_credit_account(
+            CreditCardAccount(
+                card_id=card.id,
+                user_id=card.user_id,
+                credit_limit=self.CREDIT_LIMITS[tier],
+                annual_interest_rate=self.CREDIT_APRS[tier],
+            )
+        )
 
     def delete_card(self, user_id: uuid.UUID, card_id: uuid.UUID) -> None:
         card = self.get_for_user(user_id, card_id)
