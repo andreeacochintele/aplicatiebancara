@@ -131,8 +131,8 @@ class OnboardingStep4Update(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    first_name: str | None = Field(default=None, min_length=1, max_length=100)
-    last_name: str | None = Field(default=None, min_length=1, max_length=100)
-    phone: str | None = Field(default=None, max_length=32)
+    first_name: PersonName | None = None
+    last_name: PersonName | None = None
+    phone: PhoneNumber | None = None
     step_2: OnboardingStep2Update | None = None
     employment: OnboardingStep4Update | None = None
