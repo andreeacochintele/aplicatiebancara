@@ -22,13 +22,22 @@ from app.fx.repository import FXQuoteRepository
 from app.fx.schemas import FXQuoteRequest, FXRatePoint
 
 # Mock rates: units of RON per 1 unit of the currency. Used for all quote
-# math (transfers, tests) — deterministic and offline on purpose.
+# math (transfers, tests) — deterministic and offline on purpose. Also the
+# fallback (and the offline floor) for get_market_rate()/history — any
+# currency a wallet can be opened in must have an entry here.
 _RATES_TO_RON: dict[str, Decimal] = {
     "RON": Decimal("1"),
     "EUR": Decimal("4.97"),
     "USD": Decimal("4.58"),
     "GBP": Decimal("5.80"),
+    "CHF": Decimal("5.55"),
+    "JPY": Decimal("0.031"),
+    "CAD": Decimal("3.35"),
+    "AUD": Decimal("3.05"),
+    "PLN": Decimal("1.22"),
+    "TRY": Decimal("0.14"),
 }
+_NON_EUR_CURRENCIES = [c for c in _RATES_TO_RON if c not in ("RON", "EUR")]
 
 FEE_RATE = Decimal("0.005")  # 0.5% of the source amount
 QUOTE_VALIDITY_MINUTES = 5
@@ -58,7 +67,7 @@ def _fetch_live_rates_to_ron() -> dict[str, Decimal] | None:
         rates = payload["rates"]
         eur_to_ron = Decimal(str(rates["RON"]))
         live: dict[str, Decimal] = {"RON": Decimal("1"), "EUR": eur_to_ron}
-        for currency in ("USD", "GBP"):
+        for currency in _NON_EUR_CURRENCIES:
             if currency in rates and Decimal(str(rates[currency])) != 0:
                 live[currency] = (eur_to_ron / Decimal(str(rates[currency]))).quantize(_RATE_PRECISION)
         return live
@@ -93,7 +102,7 @@ def _fetch_live_rate_history_to_ron(days: int) -> dict[str, dict[str, Decimal]] 
                 continue
             eur_to_ron = Decimal(str(rates["RON"]))
             day: dict[str, Decimal] = {"RON": Decimal("1"), "EUR": eur_to_ron}
-            for currency in ("USD", "GBP"):
+            for currency in _NON_EUR_CURRENCIES:
                 if currency in rates and Decimal(str(rates[currency])) != 0:
                     day[currency] = (eur_to_ron / Decimal(str(rates[currency]))).quantize(_RATE_PRECISION)
             result[date_str] = day
