@@ -17,7 +17,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    kyc_document_status = postgresql.ENUM("NOT_STARTED", "PLACEHOLDER", name="kyc_document_status")
+    kyc_document_status = postgresql.ENUM(
+        "NOT_STARTED", "PLACEHOLDER", name="kyc_document_status", create_type=False
+    )
     employment_status = postgresql.ENUM(
         "EMPLOYED",
         "SELF_EMPLOYED",
@@ -26,9 +28,18 @@ def upgrade() -> None:
         "RETIRED",
         "OTHER",
         name="employment_status",
+        create_type=False,
     )
-    kyc_document_status.create(op.get_bind(), checkfirst=True)
-    employment_status.create(op.get_bind(), checkfirst=True)
+    # create_type=False above: the two explicit .create() calls here are the
+    # only place these types get created. Without it, op.create_table() below
+    # tries to auto-create them again as a column side-effect and crashes
+    # with DuplicateObject since they already exist by then.
+    postgresql.ENUM("NOT_STARTED", "PLACEHOLDER", name="kyc_document_status").create(
+        op.get_bind(), checkfirst=True
+    )
+    postgresql.ENUM(
+        "EMPLOYED", "SELF_EMPLOYED", "STUDENT", "UNEMPLOYED", "RETIRED", "OTHER", name="employment_status"
+    ).create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "user_onboarding_states",
