@@ -3,9 +3,10 @@ from decimal import Decimal
 
 import pytest
 
-from app.core.exceptions import ConflictError, NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.users.schemas import UserCreate
 from app.users.service import UserService
+from app.wallets.models import WalletStatus
 from app.wallets.schemas import WalletCreate
 from app.wallets.service import WalletService
 
@@ -70,3 +71,61 @@ def test_set_main_wallet_unknown_wallet_raises(db_session, seeded_user):
 
     with pytest.raises(NotFoundError):
         service.set_main_wallet(seeded_user.id, uuid.uuid4())
+
+
+def test_close_wallet_sweeps_cross_currency_balance_into_main(db_session, seeded_user):
+    service = WalletService(db_session)
+    main = service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    eur = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    eur.available_balance = Decimal("100.00")
+    db_session.flush()
+
+    closed = service.close_wallet(seeded_user.id, eur.id)
+
+    assert closed.status == WalletStatus.CLOSED
+    assert closed.available_balance == Decimal("0.00")
+    refreshed_main = service.repository.get_by_id(main.id)
+    # 100 EUR * 4.97 RON/EUR, minus the standard 0.5% fee, same as any other quote.
+    assert refreshed_main.available_balance == Decimal("494.52")
+
+
+def test_close_wallet_rejects_the_main_wallet(db_session, seeded_user):
+    service = WalletService(db_session)
+    main = service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+
+    with pytest.raises(ValidationError):
+        service.close_wallet(seeded_user.id, main.id)
+
+
+def test_close_wallet_rejects_wallet_with_funds_on_hold(db_session, seeded_user):
+    service = WalletService(db_session)
+    service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    eur = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    eur.reserved_balance = Decimal("10.00")
+    db_session.flush()
+
+    with pytest.raises(ValidationError):
+        service.close_wallet(seeded_user.id, eur.id)
+
+
+def test_close_wallet_rejects_already_closed_wallet(db_session, seeded_user):
+    service = WalletService(db_session)
+    service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    eur = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    service.close_wallet(seeded_user.id, eur.id)
+
+    with pytest.raises(ValidationError):
+        service.close_wallet(seeded_user.id, eur.id)
+
+
+def test_currency_can_be_reopened_after_closing(db_session, seeded_user):
+    service = WalletService(db_session)
+    service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    eur = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    service.close_wallet(seeded_user.id, eur.id)
+
+    reopened = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+
+    assert reopened.status == WalletStatus.ACTIVE
+    assert reopened.available_balance == Decimal("0")

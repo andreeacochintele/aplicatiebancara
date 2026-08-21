@@ -41,3 +41,17 @@ def set_main_wallet(
     wallet = WalletService(db).set_main_wallet(current_user.id, wallet_id)
     db.commit()
     return wallet
+
+
+@router.delete("/{wallet_id}", response_model=WalletPublic)
+def close_wallet(
+    wallet_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> WalletPublic:
+    """Closes the wallet, sweeping any remaining balance into the user's
+    main wallet first (same-currency transfer, or a priced FX quote+transfer
+    when currencies differ)."""
+    wallet = WalletService(db).close_wallet(current_user.id, wallet_id)
+    db.commit()
+    return wallet
