@@ -143,7 +143,6 @@ class MerchantService:
         already_earned = self.rewards.get_synced_transaction_ids(user_id)
         tier_cache: dict[uuid.UUID | None, CardTier | None] = {}
 
-        today = datetime.now(timezone.utc).date()
         results: list[PurchaseResult] = []
         for transaction in self.transactions.list_for_user(user_id):
             if transaction.type != TransactionType.CARD_PAYMENT or transaction.status != TransactionStatus.COMPLETED:
@@ -174,7 +173,7 @@ class MerchantService:
                         transaction.id,
                         transaction.amount,
                         transaction.currency,
-                        today,
+                        transaction.created_at.date(),
                         tier,
                         transaction.source_wallet_id,
                     )
@@ -189,7 +188,7 @@ class MerchantService:
                             transaction.id,
                             transaction.amount,
                             transaction.currency,
-                            today,
+                            transaction.created_at.date(),
                             tier,
                             transaction.source_wallet_id,
                         )
@@ -211,7 +210,7 @@ class MerchantService:
         source_transaction_id: uuid.UUID,
         amount: Decimal,
         currency: str,
-        today,
+        payment_date,
         tier: CardTier | None = None,
         wallet_id: uuid.UUID | None = None,
     ) -> PurchaseResult:
@@ -219,7 +218,13 @@ class MerchantService:
         # gated by minimum_spend and capped at maximum_cashback — both in the
         # transaction's own currency (no FX needed: the wallet being
         # credited is always the same currency as the payment).
-        offer = self.repository.active_offer_for_merchant(merchant.id, today)
+        #
+        # payment_date is the transaction's own created_at, not the date the
+        # sync happens to run on — a payment held for fraud review can be
+        # approved days later, and it must still earn whatever offer was
+        # active when the purchase was actually made, not whatever's active
+        # (or expired) by the time an admin clears the hold.
+        offer = self.repository.active_offer_for_merchant(merchant.id, payment_date)
         partner_cashback_percent = Decimal("0")
         partner_cashback_amount = Decimal("0")
         if offer is not None and (offer.minimum_spend is None or amount >= offer.minimum_spend):

@@ -33,7 +33,14 @@ def _active_offer_window() -> tuple[date, date]:
 
 
 def _card_payment(
-    db_session, user_id, amount, description, status=TransactionStatus.COMPLETED, card_id=None, currency="RON"
+    db_session,
+    user_id,
+    amount,
+    description,
+    status=TransactionStatus.COMPLETED,
+    card_id=None,
+    currency="RON",
+    created_at=None,
 ) -> Transaction:
     transaction = Transaction(
         initiator_user_id=user_id,
@@ -43,7 +50,7 @@ def _card_payment(
         currency=currency,
         description=description,
         card_id=card_id,
-        created_at=datetime.now(timezone.utc),
+        created_at=created_at or datetime.now(timezone.utc),
     )
     db_session.add(transaction)
     db_session.flush()
@@ -368,6 +375,58 @@ def test_sync_below_minimum_spend_earns_no_cashback(db_session, seeded_user):
     assert results[0].cashback_percent is None
     assert results[0].cashback_amount == Decimal("0")
     assert results[0].points_earned == 50
+
+
+def test_sync_uses_the_offer_active_when_the_payment_was_made_not_when_it_syncs(db_session, seeded_user):
+    """A payment held for fraud review can be approved (and therefore
+    synced) well after its original date — it must earn whatever offer was
+    active when the purchase actually happened, not whatever's active (or
+    already expired) on the day the sync happens to run."""
+    merchant_service = MerchantService(db_session)
+    merchant = merchant_service.create_merchant(MerchantCreate(name="Nike", category="Retail", verified=True))
+    today = date.today()
+    merchant_service.create_cashback_offer(
+        merchant.id,
+        CashbackOfferCreate(
+            cashback_percent=Decimal("7"),
+            start_date=today - timedelta(days=30),
+            end_date=today - timedelta(days=20),
+        ),
+    )
+    _card_payment(
+        db_session,
+        seeded_user.id,
+        Decimal("100.00"),
+        "Nike - Shopping",
+        created_at=datetime.now(timezone.utc) - timedelta(days=25),
+    )
+
+    result = merchant_service.sync_purchases_from_transactions(seeded_user.id)[0]
+
+    assert result.cashback_percent == Decimal("7")
+    assert result.cashback_amount == Decimal("7.00")
+
+
+def test_sync_does_not_apply_an_offer_that_started_after_the_payment_was_made(db_session, seeded_user):
+    merchant_service = MerchantService(db_session)
+    merchant = merchant_service.create_merchant(MerchantCreate(name="Nike", category="Retail", verified=True))
+    today = date.today()
+    merchant_service.create_cashback_offer(
+        merchant.id,
+        CashbackOfferCreate(cashback_percent=Decimal("7"), start_date=today - timedelta(days=1), end_date=today + timedelta(days=30)),
+    )
+    _card_payment(
+        db_session,
+        seeded_user.id,
+        Decimal("100.00"),
+        "Nike - Shopping",
+        created_at=datetime.now(timezone.utc) - timedelta(days=10),
+    )
+
+    result = merchant_service.sync_purchases_from_transactions(seeded_user.id)[0]
+
+    assert result.cashback_percent is None
+    assert result.cashback_amount == Decimal("0")
 
 
 def test_sync_ignores_unverified_merchants(db_session, seeded_user):
