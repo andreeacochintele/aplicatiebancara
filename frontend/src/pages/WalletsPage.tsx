@@ -9,7 +9,11 @@ import type { FXMarketRate, FXQuote, FXRateHistory, Wallet } from "../types";
 
 const RATE_ACCENT = "#5b5fef"; // same violet as --aurora-accent, kept as one deliberate hue for the trend line
 // matches backend/app/fx/service.py's _RATES_TO_RON — keep both in sync
-const SUPPORTED_CURRENCIES = ["RON", "EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD", "PLN", "TRY"];
+const SUPPORTED_CURRENCIES = [
+  "RON", "EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD", "PLN", "TRY",
+  "BRL", "CNY", "CZK", "DKK", "HKD", "HUF", "IDR", "ILS", "INR", "ISK",
+  "KRW", "MXN", "MYR", "NOK", "NZD", "PHP", "SEK", "SGD", "THB", "ZAR",
+];
 
 function hueFromString(value: string): number {
   return Math.abs([...value].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % 360;

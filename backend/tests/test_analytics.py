@@ -186,6 +186,17 @@ def test_net_worth_with_no_wallets_returns_zero(db_session, user_only):
     assert result.wallets == []
 
 
+def test_net_worth_excludes_closed_wallets(db_session, user_only):
+    wallets = WalletService(db_session)
+    wallets.create_wallet(user_only.id, WalletCreate(currency="RON", is_main=True))
+    eur = wallets.create_wallet(user_only.id, WalletCreate(currency="EUR"))
+    wallets.close_wallet(user_only.id, eur.id)
+
+    result = AnalyticsService(db_session).net_worth(user_only.id, base_currency=None)
+
+    assert [item.currency for item in result.wallets] == ["RON"]
+
+
 def test_forecast_projects_from_net_ledger_change(db_session, seeded_user_with_wallet):
     user, wallet = seeded_user_with_wallet
     wallet.available_balance = Decimal("1000.00")

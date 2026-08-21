@@ -147,7 +147,9 @@ export function DashboardPage() {
             )}
           </div>
           <div className="aurora-hero-wallets">
-            {netWorth?.wallets.map((wallet) => (
+            {netWorth?.wallets
+              .filter((wallet) => wallet.is_main || Number(wallet.available_balance) !== 0)
+              .map((wallet) => (
               <button
                 type="button"
                 key={wallet.wallet_id}

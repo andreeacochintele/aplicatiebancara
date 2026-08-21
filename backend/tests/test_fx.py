@@ -55,7 +55,7 @@ def test_quote_rejects_unsupported_currency(db_session, seeded_user):
     service = FXService(db_session)
     with pytest.raises(ValidationError):
         service.get_quote(
-            seeded_user.id, FXQuoteRequest(source_currency="KRW", target_currency="RON", source_amount=Decimal("10"))
+            seeded_user.id, FXQuoteRequest(source_currency="XXX", target_currency="RON", source_amount=Decimal("10"))
         )
 
 
@@ -121,7 +121,7 @@ def test_market_rate_rejects_unsupported_currency(db_session, monkeypatch):
     service = FXService(db_session)
 
     with pytest.raises(ValidationError):
-        service.get_market_rate("KRW", "RON")
+        service.get_market_rate("XXX", "RON")
 
 
 def test_rate_history_falls_back_to_a_single_static_point_when_offline(db_session, monkeypatch):
@@ -156,4 +156,4 @@ def test_rate_history_rejects_unsupported_currency(db_session, monkeypatch):
     service = FXService(db_session)
 
     with pytest.raises(ValidationError):
-        service.get_market_rate_history("KRW", "RON", days=14)
+        service.get_market_rate_history("XXX", "RON", days=14)
