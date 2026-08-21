@@ -187,6 +187,41 @@ def test_bill_split_does_not_persist_when_a_participant_fails_to_resolve(client)
     assert listed.json() == []
 
 
+def test_listing_bill_splits_keeps_each_splits_own_participants(client):
+    # Regression check for the batched participant fetch in list_bill_splits:
+    # each split's participants must stay attached to the right split_id
+    # after grouping, not get mixed up or dropped.
+    owner = _register(client, "split-list-owner@example.com", "+40770333340")
+    friend_a = _register(client, "split-list-friend-a@example.com", "+40770333341")
+    friend_b = _register(client, "split-list-friend-b@example.com", "+40770333342")
+
+    client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Lunch",
+            "total_amount": "40.00",
+            "currency": "RON",
+            "participants": [{"participant_user_id": friend_a["user"]["id"], "name": "A", "amount": "40.00"}],
+        },
+    )
+    client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Dinner",
+            "total_amount": "60.00",
+            "currency": "RON",
+            "participants": [{"participant_user_id": friend_b["user"]["id"], "name": "B", "amount": "60.00"}],
+        },
+    )
+
+    listed = client.get("/api/v1/payments/bill-splits", headers=_auth_header(owner)).json()
+    by_title = {split["title"]: split for split in listed}
+    assert [p["name"] for p in by_title["Lunch"]["participants"]] == ["A"]
+    assert [p["name"] for p in by_title["Dinner"]["participants"]] == ["B"]
+
+
 def test_bill_split_rejects_non_completed_transaction_as_source(client, db_session):
     owner = _register(client, "split-pending-owner@example.com", "+40770333338")
     owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))

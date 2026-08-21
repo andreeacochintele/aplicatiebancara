@@ -544,7 +544,9 @@ class BillSplitService:
         return self._to_public(bill_split)
 
     def list_bill_splits(self, user_id: uuid.UUID) -> list[BillSplitPublic]:
-        return [self._to_public(bill_split) for bill_split in self.repository.list_for_user(user_id)]
+        bill_splits = self.repository.list_for_user(user_id)
+        participants_by_split = self.repository.list_participants_for_splits([split.id for split in bill_splits])
+        return [self._to_public(split, participants_by_split[split.id]) for split in bill_splits]
 
     def get_bill_split(self, user_id: uuid.UUID, bill_split_id: uuid.UUID) -> BillSplitPublic:
         return self._to_public(self._get_visible(user_id, bill_split_id))
@@ -657,7 +659,9 @@ class BillSplitService:
         if participants and all(participant.status == BillSplitParticipantStatus.PAID for participant in participants):
             bill_split.status = BillSplitStatus.SETTLED
 
-    def _to_public(self, bill_split: BillSplit) -> BillSplitPublic:
+    def _to_public(
+        self, bill_split: BillSplit, participants: list[BillSplitParticipant] | None = None
+    ) -> BillSplitPublic:
         return BillSplitPublic(
             id=bill_split.id,
             owner_user_id=bill_split.owner_user_id,
@@ -669,7 +673,7 @@ class BillSplitService:
             description=bill_split.description,
             created_at=bill_split.created_at,
             updated_at=bill_split.updated_at,
-            participants=self.repository.list_participants(bill_split.id),
+            participants=participants if participants is not None else self.repository.list_participants(bill_split.id),
         )
 
 
@@ -693,7 +697,9 @@ class TransactionFolderService:
         return self._to_public(folder)
 
     def list_folders(self, owner_user_id: uuid.UUID) -> list[TransactionFolderPublic]:
-        return [self._to_public(folder) for folder in self.repository.list_for_owner(owner_user_id)]
+        folders = self.repository.list_for_owner(owner_user_id)
+        items_by_folder = self.repository.list_items_for_folders([folder.id for folder in folders])
+        return [self._to_public(folder, items_by_folder[folder.id]) for folder in folders]
 
     def get_folder(self, owner_user_id: uuid.UUID, folder_id: uuid.UUID) -> TransactionFolderPublic:
         return self._to_public(self._get_owned(owner_user_id, folder_id))
@@ -749,7 +755,9 @@ class TransactionFolderService:
             raise NotFoundError("Transaction folder not found")
         return folder
 
-    def _to_public(self, folder: TransactionFolder) -> TransactionFolderPublic:
+    def _to_public(
+        self, folder: TransactionFolder, items: list[TransactionFolderItem] | None = None
+    ) -> TransactionFolderPublic:
         return TransactionFolderPublic(
             id=folder.id,
             owner_user_id=folder.owner_user_id,
@@ -758,5 +766,5 @@ class TransactionFolderService:
             description=folder.description,
             created_at=folder.created_at,
             updated_at=folder.updated_at,
-            items=self.repository.list_items(folder.id),
+            items=items if items is not None else self.repository.list_items(folder.id),
         )
