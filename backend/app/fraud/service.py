@@ -17,7 +17,11 @@ Flag signals and their data sources:
     user's own recent transaction history via the existing
     TransactionRepository.list_for_user (no changes to transactions/
     needed) — averages/window counts are all done in Python over Decimal
-    amounts, never floats.
+    amounts, never floats. HIGH_VELOCITY deliberately excludes whatever
+    transactions REWARD_ABUSE_PATTERN already counted (see
+    _velocity_and_abuse_flags) — a burst of near-identical repeats to one
+    merchant is a single underlying behavior, not two independent signals,
+    so it's scored once rather than double-counted under both flags.
 
 UNUSUAL_TIME is intentionally not implemented (dropped from scope).
 """
@@ -155,17 +159,11 @@ class FraudService:
             if t.id != transaction.id
         ]
 
-        velocity_count = sum(1 for t in recent if _as_aware_utc(t.created_at) >= now - HIGH_VELOCITY_WINDOW)
-        if velocity_count + 1 >= HIGH_VELOCITY_MIN_COUNT:
-            minutes = HIGH_VELOCITY_WINDOW.seconds // 60
-            flags.append(
-                (
-                    FraudFlagCode.HIGH_VELOCITY,
-                    HIGH_VELOCITY_POINTS,
-                    f"{velocity_count + 1} transactions within {minutes} minutes",
-                )
-            )
-
+        # Computed first and excluded from HIGH_VELOCITY below: a burst of
+        # near-identical repeats to the same merchant is one underlying
+        # behavior, not two independent pieces of evidence — without this,
+        # every REWARD_ABUSE_PATTERN case also double-counted as HIGH_VELOCITY
+        # off the exact same transactions.
         matching = [
             t
             for t in recent
@@ -175,6 +173,23 @@ class FraudService:
             and _as_aware_utc(t.created_at) >= now - REWARD_ABUSE_WINDOW
             and abs(t.amount - transaction.amount) < Decimal("0.01")
         ]
+        matching_ids = {t.id for t in matching}
+
+        velocity_count = sum(
+            1
+            for t in recent
+            if t.id not in matching_ids and _as_aware_utc(t.created_at) >= now - HIGH_VELOCITY_WINDOW
+        )
+        if velocity_count + 1 >= HIGH_VELOCITY_MIN_COUNT:
+            minutes = HIGH_VELOCITY_WINDOW.seconds // 60
+            flags.append(
+                (
+                    FraudFlagCode.HIGH_VELOCITY,
+                    HIGH_VELOCITY_POINTS,
+                    f"{velocity_count + 1} other transactions within {minutes} minutes",
+                )
+            )
+
         if len(matching) + 1 >= REWARD_ABUSE_MIN_COUNT:
             minutes = REWARD_ABUSE_WINDOW.seconds // 60
             flags.append(

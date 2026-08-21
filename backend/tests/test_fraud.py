@@ -211,6 +211,44 @@ def test_reward_abuse_pattern_flags_three_near_identical_payments(db_session, se
     assert decision.score == Decimal("35")
 
 
+def test_identical_payment_burst_scores_abuse_pattern_only_not_velocity_too(db_session, seeded_user):
+    """A burst of near-identical repeats to one merchant is a single
+    underlying behavior — HIGH_VELOCITY must not also fire off the exact
+    same transactions REWARD_ABUSE_PATTERN already counted."""
+    wallet = _wallet(db_session, seeded_user.id)
+    merchant = _merchant(db_session)
+    now = datetime.now(timezone.utc)
+    for _ in range(4):
+        _completed_card_payment(
+            db_session, seeded_user.id, Decimal("37.00"), merchant_id=merchant.id, created_at=now - timedelta(minutes=1)
+        )
+    transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("37.00"), merchant_id=merchant.id, created_at=now)
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
+
+    assert decision.score == Decimal("35")
+
+
+def test_velocity_still_flags_the_non_matching_activity_around_a_repeat_pattern(db_session, seeded_user):
+    wallet = _wallet(db_session, seeded_user.id)
+    merchant = _merchant(db_session)
+    now = datetime.now(timezone.utc)
+    for _ in range(2):
+        _completed_card_payment(
+            db_session, seeded_user.id, Decimal("37.00"), merchant_id=merchant.id, created_at=now - timedelta(minutes=1)
+        )
+    for i in range(4):
+        _completed_card_payment(db_session, seeded_user.id, Decimal(f"{5 + i}.00"), created_at=now - timedelta(minutes=1))
+    transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("37.00"), merchant_id=merchant.id, created_at=now)
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
+
+    # matching = 2 prior + this one = 3 -> REWARD_ABUSE_PATTERN (35).
+    # velocity = the 4 unrelated transactions (2 matching ones excluded) + this
+    # one = 5 -> HIGH_VELOCITY (25) still fires on the genuinely separate activity.
+    assert decision.score == Decimal("60")
+
+
 def test_transactions_with_no_merchant_never_match_each_other_for_abuse_pattern(db_session, seeded_user):
     wallet = _wallet(db_session, seeded_user.id)
     now = datetime.now(timezone.utc)
