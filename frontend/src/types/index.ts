@@ -92,6 +92,14 @@ export interface OnboardingStep4Payload {
   account_purpose?: string | null;
 }
 
+export interface ProfileUpdatePayload {
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  step_2?: OnboardingStep2Payload;
+  employment?: OnboardingStep4Payload;
+}
+
 export interface Wallet {
   id: string;
   user_id: string;

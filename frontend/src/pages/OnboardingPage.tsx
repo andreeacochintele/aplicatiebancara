@@ -82,7 +82,7 @@ function SelectField({
 const todayIso = new Date().toISOString().slice(0, 10);
 
 export function OnboardingPage() {
-  const { accessToken, logout } = useAuth();
+  const { accessToken, logout, markOnboardingCompleted } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<UserFullProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -297,6 +297,7 @@ export function OnboardingPage() {
         account_purpose: cleanOptional(step4.account_purpose ?? ""),
       });
       setProfile(response);
+      markOnboardingCompleted();
       navigate("/dashboard", { replace: true });
     } catch (err) {
       handleApiError(err, "Could not finish onboarding");
@@ -311,6 +312,7 @@ export function OnboardingPage() {
     setError(null);
     try {
       await skipOnboardingStep4(accessToken);
+      markOnboardingCompleted();
       navigate("/dashboard", { replace: true });
     } catch (err) {
       handleApiError(err, "Could not skip financial profile");

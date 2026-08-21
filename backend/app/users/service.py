@@ -1,4 +1,5 @@
 """Business logic for user creation. Enforces uniqueness of email/phone."""
+import uuid
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -45,22 +46,7 @@ class UserService:
 
     def update_onboarding_step_2(self, user: User, data: OnboardingStep2Update) -> UserFullProfilePublic:
         state, profile, address, _employment = self.ensure_profile_records(user)
-        existing = self.repository.get_profile_by_cnp(data.cnp)
-        if existing and existing.user_id != user.id:
-            raise ConflictError("CNP is already registered")
-
-        profile.cnp = data.cnp
-        profile.date_of_birth = data.date_of_birth
-        profile.citizenship = data.citizenship
-        address.country = data.country
-        address.county = data.county
-        address.city = data.city
-        address.street = data.street
-        address.street_number = data.street_number
-        address.building = data.building
-        address.staircase = data.staircase
-        address.apartment = data.apartment
-        address.postal_code = data.postal_code
+        self._apply_step_2(user.id, profile, address, data)
         state.pending_step = 3
         state.completed = False
         self.repository.flush()
@@ -102,7 +88,8 @@ class UserService:
                 raise ConflictError(f"Phone '{data.phone}' is already registered")
             user.phone = data.phone
         if data.step_2 is not None:
-            self.update_onboarding_step_2(user, data.step_2)
+            _state, profile, address, _employment = self.ensure_profile_records(user)
+            self._apply_step_2(user.id, profile, address, data.step_2)
         if data.employment is not None:
             _state, _profile, _address, employment = self.ensure_profile_records(user)
             self._apply_employment(employment, data.employment)
@@ -139,6 +126,26 @@ class UserService:
             employment = self.repository.add_employment_profile(UserEmploymentProfile(user_id=user.id))
 
         return state, profile, address, employment
+
+    def _apply_step_2(
+        self, user_id: uuid.UUID, profile: UserProfile, address: UserAddress, data: OnboardingStep2Update
+    ) -> None:
+        existing = self.repository.get_profile_by_cnp(data.cnp)
+        if existing and existing.user_id != user_id:
+            raise ConflictError("CNP is already registered")
+
+        profile.cnp = data.cnp
+        profile.date_of_birth = data.date_of_birth
+        profile.citizenship = data.citizenship
+        address.country = data.country
+        address.county = data.county
+        address.city = data.city
+        address.street = data.street
+        address.street_number = data.street_number
+        address.building = data.building
+        address.staircase = data.staircase
+        address.apartment = data.apartment
+        address.postal_code = data.postal_code
 
     def _apply_employment(self, employment: UserEmploymentProfile, data: OnboardingStep4Update) -> None:
         employment.occupation = data.occupation

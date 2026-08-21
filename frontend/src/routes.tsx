@@ -26,7 +26,7 @@ export const routes: RouteObject[] = [
   {
     path: "/onboarding",
     element: (
-      <ProtectedRoute>
+      <ProtectedRoute requireOnboarding={false}>
         <OnboardingPage />
       </ProtectedRoute>
     ),

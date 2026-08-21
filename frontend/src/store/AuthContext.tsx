@@ -1,12 +1,13 @@
-import { createContext, useCallback, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { loginUser, registerUser, type AuthResponse, type AuthTokens } from "../features/auth";
+import { getMyFullProfile, loginUser, registerUser, type AuthResponse, type AuthTokens } from "../features/auth";
 import type { User } from "../types";
 
 interface AuthContextValue {
   user: User | null;
   accessToken: string | null;
   isAuthenticated: boolean;
+  onboardingCompleted: boolean | null;
   login: (email: string, password: string) => Promise<AuthResponse>;
   register: (payload: {
     first_name: string;
@@ -16,6 +17,7 @@ interface AuthContextValue {
     password: string;
   }) => Promise<AuthResponse>;
   logout: () => void;
+  markOnboardingCompleted: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -39,6 +41,7 @@ function loadStoredAuth(): StoredAuth | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [stored, setStored] = useState<StoredAuth | null>(loadStoredAuth);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
   const storeAuth = useCallback((response: StoredAuth) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(response));
@@ -71,16 +74,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStored(null);
   }, []);
 
+  const markOnboardingCompleted = useCallback(() => {
+    setOnboardingCompleted(true);
+  }, []);
+
+  const accessToken = stored?.tokens.access_token ?? null;
+
+  useEffect(() => {
+    if (!accessToken) {
+      setOnboardingCompleted(null);
+      return;
+    }
+    let cancelled = false;
+    getMyFullProfile(accessToken)
+      .then((profile) => {
+        if (!cancelled) setOnboardingCompleted(profile.onboarding.completed);
+      })
+      .catch(() => {
+        if (!cancelled) setOnboardingCompleted(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user: stored?.user ?? null,
-      accessToken: stored?.tokens.access_token ?? null,
+      accessToken,
       isAuthenticated: stored !== null,
+      onboardingCompleted,
       login,
       register,
       logout,
+      markOnboardingCompleted,
     }),
-    [stored, login, register, logout],
+    [stored, accessToken, onboardingCompleted, login, register, logout, markOnboardingCompleted],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -2,6 +2,7 @@ import { apiRequest } from "../../api/apiClient";
 import type {
   OnboardingStep2Payload,
   OnboardingStep4Payload,
+  ProfileUpdatePayload,
   RegisterPayload,
   User,
   UserFullProfile,
@@ -33,6 +34,14 @@ export function loginUser(email: string, password: string) {
 
 export function getMyFullProfile(token: string) {
   return apiRequest<UserFullProfile>("/users/me/profile", { token });
+}
+
+export function updateMyProfile(token: string, payload: ProfileUpdatePayload) {
+  return apiRequest<UserFullProfile>("/users/me/profile", {
+    method: "PATCH",
+    token,
+    body: payload,
+  });
 }
 
 export function updateOnboardingStep2(token: string, payload: OnboardingStep2Payload) {

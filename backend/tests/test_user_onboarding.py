@@ -357,3 +357,44 @@ def test_authenticated_profile_can_be_read_and_updated(client):
     profile = client.get("/api/v1/users/me/profile", headers=_headers(token))
     assert profile.status_code == 200
     assert profile.json()["user"]["phone"] == "+40710000007"
+
+
+@pytest.mark.parametrize("invalid_first_name", ["Ana2", "Ana!", "A"])
+def test_authenticated_profile_update_rejects_invalid_first_name(client, invalid_first_name):
+    token = _register(client, "invalid-profile-name@example.com", "+40710000019")
+    response = client.patch(
+        "/api/v1/users/me/profile",
+        headers=_headers(token),
+        json={"first_name": invalid_first_name},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("invalid_phone", ["andrei", "0712345678", "+4071234"])
+def test_authenticated_profile_update_rejects_invalid_phone(client, invalid_phone):
+    token = _register(client, "invalid-profile-phone@example.com", "+40710000020")
+    response = client.patch(
+        "/api/v1/users/me/profile",
+        headers=_headers(token),
+        json={"phone": invalid_phone},
+    )
+    assert response.status_code == 422
+
+
+def test_editing_address_after_completion_does_not_reopen_onboarding(client):
+    token = _register(client, "completed-edit@example.com", "+40710000018")
+    client.patch("/api/v1/users/me/onboarding/step-2", headers=_headers(token), json=_step_2_payload())
+    client.post("/api/v1/users/me/onboarding/step-3/identity-document-placeholder", headers=_headers(token))
+    skip = client.post("/api/v1/users/me/onboarding/step-4/skip", headers=_headers(token))
+    assert skip.json()["onboarding"]["completed"] is True
+
+    update = client.patch(
+        "/api/v1/users/me/profile",
+        headers=_headers(token),
+        json={"step_2": {**_step_2_payload(), "city": "Cluj-Napoca"}},
+    )
+    assert update.status_code == 200
+    body = update.json()
+    assert body["address"]["city"] == "Cluj-Napoca"
+    assert body["onboarding"]["completed"] is True
+    assert body["onboarding"]["pending_step"] is None
