@@ -186,7 +186,7 @@ class FraudService:
                 (
                     FraudFlagCode.HIGH_VELOCITY,
                     HIGH_VELOCITY_POINTS,
-                    f"{velocity_count + 1} other transactions within {minutes} minutes",
+                    f"{velocity_count} other transactions within {minutes} minutes",
                 )
             )
 
