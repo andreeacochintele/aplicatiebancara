@@ -13,6 +13,93 @@ export interface User {
   created_at: string;
 }
 
+export type KycDocumentStatus = "NOT_STARTED" | "PLACEHOLDER";
+export type EmploymentStatus = "EMPLOYED" | "SELF_EMPLOYED" | "STUDENT" | "UNEMPLOYED" | "RETIRED" | "OTHER";
+
+export interface OnboardingState {
+  pending_step: number | null;
+  completed: boolean;
+  step_4_skipped: boolean;
+  identity_document_status: KycDocumentStatus;
+}
+
+export interface UserProfileDetails {
+  cnp: string | null;
+  date_of_birth: string | null;
+  citizenship: string | null;
+}
+
+export interface UserAddress {
+  country: string | null;
+  county: string | null;
+  city: string | null;
+  street: string | null;
+  street_number: string | null;
+  building: string | null;
+  staircase: string | null;
+  apartment: string | null;
+  postal_code: string | null;
+}
+
+export interface UserEmploymentProfile {
+  occupation: string | null;
+  employer: string | null;
+  industry: string | null;
+  employment_status: EmploymentStatus | null;
+  income_source: string | null;
+  approximate_monthly_income: string | null;
+  account_purpose: string | null;
+}
+
+export interface UserFullProfile {
+  user: User;
+  onboarding: OnboardingState;
+  profile: UserProfileDetails;
+  address: UserAddress;
+  employment: UserEmploymentProfile;
+}
+
+export interface RegisterPayload {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  password: string;
+}
+
+export interface OnboardingStep2Payload {
+  cnp: string;
+  date_of_birth: string;
+  citizenship: string;
+  country: string;
+  county: string;
+  city: string;
+  street: string;
+  street_number: string;
+  building?: string | null;
+  staircase?: string | null;
+  apartment?: string | null;
+  postal_code?: string | null;
+}
+
+export interface OnboardingStep4Payload {
+  occupation?: string | null;
+  employer?: string | null;
+  industry?: string | null;
+  employment_status?: EmploymentStatus | null;
+  income_source?: string | null;
+  approximate_monthly_income?: string | null;
+  account_purpose?: string | null;
+}
+
+export interface ProfileUpdatePayload {
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  step_2?: OnboardingStep2Payload;
+  employment?: OnboardingStep4Payload;
+}
+
 export interface Wallet {
   id: string;
   user_id: string;

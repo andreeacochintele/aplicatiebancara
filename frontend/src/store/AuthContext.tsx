@@ -1,19 +1,23 @@
-import { createContext, useCallback, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { apiRequest } from "../api/apiClient";
+import { getMyFullProfile, loginUser, registerUser, type AuthResponse, type AuthTokens } from "../features/auth";
 import type { User } from "../types";
-
-interface AuthTokens {
-  access_token: string;
-  refresh_token: string;
-}
 
 interface AuthContextValue {
   user: User | null;
   accessToken: string | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  onboardingCompleted: boolean | null;
+  login: (email: string, password: string) => Promise<AuthResponse>;
+  register: (payload: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    password: string;
+  }) => Promise<AuthResponse>;
   logout: () => void;
+  markOnboardingCompleted: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -37,30 +41,75 @@ function loadStoredAuth(): StoredAuth | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [stored, setStored] = useState<StoredAuth | null>(loadStoredAuth);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await apiRequest<{ user: User; tokens: AuthTokens }>("/auth/login", {
-      method: "POST",
-      body: { email, password },
-    });
+  const storeAuth = useCallback((response: StoredAuth) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(response));
     setStored(response);
   }, []);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await loginUser(email, password);
+    storeAuth(response);
+    return response;
+  }, [storeAuth]);
+
+  const register = useCallback(
+    async (payload: {
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone: string;
+      password: string;
+    }) => {
+      const response = await registerUser(payload);
+      storeAuth(response);
+      return response;
+    },
+    [storeAuth],
+  );
 
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setStored(null);
   }, []);
 
+  const markOnboardingCompleted = useCallback(() => {
+    setOnboardingCompleted(true);
+  }, []);
+
+  const accessToken = stored?.tokens.access_token ?? null;
+
+  useEffect(() => {
+    if (!accessToken) {
+      setOnboardingCompleted(null);
+      return;
+    }
+    let cancelled = false;
+    getMyFullProfile(accessToken)
+      .then((profile) => {
+        if (!cancelled) setOnboardingCompleted(profile.onboarding.completed);
+      })
+      .catch(() => {
+        if (!cancelled) setOnboardingCompleted(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user: stored?.user ?? null,
-      accessToken: stored?.tokens.access_token ?? null,
+      accessToken,
       isAuthenticated: stored !== null,
+      onboardingCompleted,
       login,
+      register,
       logout,
+      markOnboardingCompleted,
     }),
-    [stored, login, logout],
+    [stored, accessToken, onboardingCompleted, login, register, logout, markOnboardingCompleted],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
