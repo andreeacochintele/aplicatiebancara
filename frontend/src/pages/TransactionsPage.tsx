@@ -638,7 +638,9 @@ export function TransactionsPage() {
                     <div className="transaction-actions">
                       {tx.status === "COMPLETED" && (
                         <>
-                          {!isIncomingOnly(tx, userWalletIds) && (
+                          {isIncomingOnly(tx, userWalletIds) ? (
+                            <span />
+                          ) : (
                             <button className="button--ghost button--wide" onClick={() => openSplit(tx)} type="button">
                               Split bill
                             </button>

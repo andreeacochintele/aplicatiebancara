@@ -685,8 +685,8 @@ th {
 }
 
 .transaction-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 116px 116px;
   gap: 0.45rem;
 }
 
