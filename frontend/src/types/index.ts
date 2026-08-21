@@ -430,8 +430,16 @@ export interface MonthlyTrendItem {
   transaction_count: number;
 }
 
+export interface MonthlyTrendTotal {
+  year: number;
+  month: number;
+  total_amount: string;
+}
+
 export interface MonthlyTrendResponse {
+  base_currency: string;
   items: MonthlyTrendItem[];
+  totals_by_month: MonthlyTrendTotal[];
 }
 
 export interface WalletBalanceItem {
@@ -449,6 +457,11 @@ export interface NetWorthResponse {
   wallets: WalletBalanceItem[];
 }
 
+export interface ForecastPoint {
+  date: string;
+  projected_balance: string;
+}
+
 export interface ForecastResponse {
   wallet_id: string;
   currency: string;
@@ -457,6 +470,18 @@ export interface ForecastResponse {
   days_remaining: number;
   average_daily_net_change: string;
   projected_month_end_balance: string;
+  projected_series: ForecastPoint[];
+  note: string;
+}
+
+export interface NetWorthHistoryPoint {
+  date: string;
+  value: string;
+}
+
+export interface NetWorthHistoryResponse {
+  base_currency: string;
+  history: NetWorthHistoryPoint[];
   note: string;
 }
 
