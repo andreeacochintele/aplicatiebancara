@@ -65,6 +65,7 @@ export interface RegisterPayload {
   email: string;
   phone: string;
   password: string;
+  referral_code?: string;
 }
 
 export interface OnboardingStep2Payload {

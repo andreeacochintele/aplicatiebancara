@@ -1,7 +1,7 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { getMyFullProfile, loginUser, registerUser, type AuthResponse, type AuthTokens } from "../features/auth";
-import type { User } from "../types";
+import type { RegisterPayload, User } from "../types";
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const IDLE_WARNING_MS = 30 * 1000;
@@ -14,13 +14,7 @@ interface AuthContextValue {
   idleWarningSeconds: number | null;
   onboardingCompleted: boolean | null;
   login: (email: string, password: string) => Promise<AuthResponse>;
-  register: (payload: {
-    first_name: string;
-    last_name: string;
-    email: string;
-    phone: string;
-    password: string;
-  }) => Promise<AuthResponse>;
+  register: (payload: RegisterPayload) => Promise<AuthResponse>;
   logout: () => void;
   markOnboardingCompleted: () => void;
 }
@@ -61,13 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [storeAuth]);
 
   const register = useCallback(
-    async (payload: {
-      first_name: string;
-      last_name: string;
-      email: string;
-      phone: string;
-      password: string;
-    }) => {
+    async (payload: RegisterPayload) => {
       const response = await registerUser(payload);
       storeAuth(response);
       return response;

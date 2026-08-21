@@ -1,5 +1,5 @@
 """Pydantic schemas for authentication endpoints."""
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 from app.core.validation import PersonName, PhoneNumber, StrongPassword
 from app.users.schemas import UserPublic
@@ -11,6 +11,7 @@ class RegisterRequest(BaseModel):
     password: StrongPassword
     first_name: PersonName
     last_name: PersonName
+    referral_code: str | None = Field(default=None, max_length=20)
 
 
 class LoginRequest(BaseModel):

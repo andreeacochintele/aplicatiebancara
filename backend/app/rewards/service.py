@@ -52,6 +52,9 @@ CARD_TIER_RANK: dict[CardTier, int] = {
 # expires — a fixed demo rule, not configurable per benefit yet.
 REDEMPTION_VALIDITY = timedelta(days=30)
 
+# Points credited to the referrer when someone registers with their code.
+REFERRAL_BONUS_POINTS = 500
+
 
 def _as_aware_utc(value: datetime) -> datetime:
     """SQLite (used in tests) drops tzinfo on round-trip even for
@@ -82,6 +85,12 @@ class RewardsService:
     def get_account(self, user_id: uuid.UUID) -> RewardAccountPublic:
         account = self.get_or_create_account(user_id)
         return self._account_to_public(account)
+
+    def get_referrer_user_id(self, referral_code: str) -> uuid.UUID | None:
+        """Looks up who a referral code belongs to, case/whitespace-insensitive
+        since a person typing someone else's code by hand is the whole point."""
+        account = self.repository.get_account_by_referral_code(referral_code.strip().upper())
+        return account.user_id if account is not None else None
 
     def earn_points(
         self,
