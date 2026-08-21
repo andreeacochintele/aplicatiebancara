@@ -686,8 +686,12 @@ th {
 
 .transaction-actions {
   display: grid;
-  grid-template-columns: 116px 116px;
-  gap: 0.45rem;
+  grid-template-columns: 140px 140px;
+  gap: 0.6rem;
+}
+
+.transaction-actions button {
+  white-space: nowrap;
 }
 
 .folder-modal-backdrop {
