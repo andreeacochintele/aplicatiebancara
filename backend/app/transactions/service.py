@@ -161,6 +161,8 @@ class TransactionService:
         card = self.cards.get_by_id(data.card_id)
         if card is None or card.user_id != initiator_user_id:
             raise NotFoundError("Card not found")
+        if data.cvv != card.mock_cvv:
+            raise ValidationError("Incorrect CVV")
         if card.status != CardStatus.ACTIVE:
             raise ValidationError(f"Card is {card.status.value}, payments require an ACTIVE card")
 

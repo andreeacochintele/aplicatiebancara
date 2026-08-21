@@ -43,6 +43,10 @@ class SupabaseRestSession:
             "Content-Type": "application/json",
         }
         self._tracked: dict[tuple[str, str], Any] = {}
+        # A snapshot of each tracked row's payload as of the last time we
+        # fetched or wrote it — lets flush() skip PATCHing rows nothing
+        # actually changed on (see flush() below).
+        self._snapshots: dict[tuple[str, str], dict[str, object]] = {}
 
     def get(self, model: type[ModelT], row_id: uuid.UUID) -> ModelT | None:
         primary_key = self._primary_key_name(model)
@@ -96,28 +100,42 @@ class SupabaseRestSession:
             return
         table = self._table_name(type(model))
         self.request("DELETE", table, params={primary_key: f"eq.{row_id}"}, prefer="return=minimal")
-        self._tracked.pop((table, str(row_id)), None)
+        key = (table, str(row_id))
+        self._tracked.pop(key, None)
+        self._snapshots.pop(key, None)
 
     def flush(self) -> None:
-        for model in list(self._tracked.values()):
+        # Every fetched row is "tracked" (see _track), but most of them were
+        # only ever read — re-PATCHing all of them on every flush() (and
+        # flush() runs more than once per request) is what made a handful of
+        # real writes balloon into 50+ HTTP round-trips. Comparing against
+        # the snapshot taken at fetch/write time skips the ones nothing
+        # actually changed on; this never alters what gets written, only
+        # skips writes that would be a no-op anyway.
+        for key, model in list(self._tracked.items()):
             primary_key = self._primary_key_name(type(model))
             row_id = getattr(model, primary_key, None)
             if row_id is None:
+                continue
+            payload = self._model_payload(model, excluded_columns={primary_key})
+            if payload == self._snapshots.get(key):
                 continue
             table = self._table_name(type(model))
             self.request(
                 "PATCH",
                 table,
                 params={primary_key: f"eq.{row_id}"},
-                body=self._model_payload(model, excluded_columns={primary_key}),
+                body=payload,
                 prefer="return=minimal",
             )
+            self._snapshots[key] = payload
 
     def commit(self) -> None:
         self.flush()
 
     def close(self) -> None:
         self._tracked.clear()
+        self._snapshots.clear()
 
     def _hydrate(self, model: type[ModelT], row: Mapping[str, Any]) -> ModelT:
         values = {
@@ -133,7 +151,9 @@ class SupabaseRestSession:
         primary_key = self._primary_key_name(type(model))
         row_id = getattr(model, primary_key, None)
         if row_id is not None:
-            self._tracked[(self._table_name(type(model)), str(row_id))] = model
+            key = (self._table_name(type(model)), str(row_id))
+            self._tracked[key] = model
+            self._snapshots[key] = self._model_payload(model, excluded_columns={primary_key})
 
     def _ensure_defaults(self, model: object) -> None:
         if hasattr(model, "id") and getattr(model, "id", None) is None:

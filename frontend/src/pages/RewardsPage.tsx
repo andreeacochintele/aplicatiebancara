@@ -136,12 +136,15 @@ export function RewardsPage() {
   const [confirmBenefit, setConfirmBenefit] = useState<RewardBenefit | null>(null);
   const [redeemCardId, setRedeemCardId] = useState("");
   const [selectedMerchant, setSelectedMerchant] = useState<Merchant | null>(null);
+  const [cvvInput, setCvvInput] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [showFullHistory, setShowFullHistory] = useState(false);
   const [areCardsExpanded, setAreCardsExpanded] = useState(true);
   const [areVouchersExpanded, setAreVouchersExpanded] = useState(false);
+  const [isInviteExpanded, setIsInviteExpanded] = useState(false);
   const [codeReveal, setCodeReveal] = useState<{ title: string; subtitle: string; code: string } | null>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [inviteCopyFeedback, setInviteCopyFeedback] = useState(false);
   const [markingUsedId, setMarkingUsedId] = useState<string | null>(null);
 
   function loadRewards() {
@@ -243,6 +246,12 @@ export function RewardsPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [confirmBenefit, selectedMerchant, codeReveal]);
 
+  function openPayConfirm(merchant: Merchant) {
+    setError(null);
+    setCvvInput("");
+    setSelectedMerchant(merchant);
+  }
+
   async function handlePay(merchant: Merchant) {
     if (!accessToken || !payCardId) return;
     setError(null);
@@ -251,8 +260,15 @@ export function RewardsPage() {
       const transaction = await apiRequest<{ id: string }>("/transactions/card-payment", {
         method: "POST",
         token: accessToken,
-        body: { card_id: payCardId, merchant_id: merchant.id, amount: payAmount },
+        body: { card_id: payCardId, merchant_id: merchant.id, amount: payAmount, cvv: cvvInput },
       });
+      // Confirmed and debited — close the confirmation and clear the CVV
+      // field. A failed attempt (wrong CVV, insufficient balance, etc.)
+      // falls through to the catch block instead, which deliberately does
+      // NOT close the modal, so the user can just retry without re-picking
+      // the merchant and card.
+      setSelectedMerchant(null);
+      setCvvInput("");
       const receipt = `Receipt #${transaction.id.slice(0, 8).toUpperCase()}`;
       const earned = await syncRewards();
       const match = earned.find((p) => p.merchant_id === merchant.id);
@@ -342,19 +358,21 @@ export function RewardsPage() {
     }
   }
 
-  async function inviteFriends() {
-    // The code itself is real and persistent (RewardAccount.referral_code,
-    // generated once server-side and reused). Only what happens with it
-    // afterwards — validating a friend signed up, crediting 500 pts — is
-    // still mock, per the same "informational only" pattern already used
-    // for cashback amounts.
-    if (!rewards?.referral_code) return;
-    const link = `${window.location.origin}/invite/${rewards.referral_code}`;
+  // The code itself is real and persistent (RewardAccount.referral_code,
+  // generated once server-side and reused). Only what happens with it
+  // afterwards — validating a friend signed up, crediting 500 pts — is
+  // still mock, per the same "informational only" pattern already used
+  // for cashback amounts.
+  const inviteLink = rewards?.referral_code ? `${window.location.origin}/invite/${rewards.referral_code}` : "";
+
+  async function copyInviteLink() {
+    if (!inviteLink) return;
     try {
-      await navigator.clipboard.writeText(link);
-      setToast(`Referral link copied — ${link}`);
+      await navigator.clipboard.writeText(inviteLink);
+      setInviteCopyFeedback(true);
+      setTimeout(() => setInviteCopyFeedback(false), 1800);
     } catch {
-      setToast(`Your referral code: ${rewards.referral_code} (copy failed — clipboard blocked)`);
+      // Clipboard blocked — the link stays visible in the panel either way.
     }
   }
 
@@ -651,7 +669,7 @@ export function RewardsPage() {
                   <article className="card-panel" key={merchant.id}>
                     <button
                       type="button"
-                      onClick={() => setSelectedMerchant(merchant)}
+                      onClick={() => openPayConfirm(merchant)}
                       style={{
                         all: "unset",
                         cursor: "pointer",
@@ -683,7 +701,7 @@ export function RewardsPage() {
                       )}
                     </button>
                     <div className="card-panel__actions">
-                      <button onClick={() => handlePay(merchant)} disabled={busy || !payCardId}>
+                      <button onClick={() => openPayConfirm(merchant)} disabled={busy || !payCardId}>
                         Pay {payAmount || 0} {effectiveWallet(selectedCard)?.currency ?? "RON"}
                       </button>
                     </div>
@@ -706,7 +724,7 @@ export function RewardsPage() {
                 ))}
               </div>
             )}
-            {error && <p role="alert">{error}</p>}
+            {error && !selectedMerchant && <p role="alert">{error}</p>}
           </div>
         </div>
 
@@ -740,26 +758,62 @@ export function RewardsPage() {
 
           {/* 6. Referral / earn more points */}
           <div className="tile" style={{ background: "var(--aurora-gradient, #5b5fef)", color: "#fff", border: "none" }}>
-            <div className="eyebrow" style={{ color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-              <Users size={14} strokeWidth={2.2} />
-              Want more points?
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="eyebrow" style={{ color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <Users size={14} strokeWidth={2.2} />
+                Want more points?
+              </div>
+              {isInviteExpanded && (
+                <button
+                  type="button"
+                  className="button--ghost"
+                  onClick={() => setIsInviteExpanded(false)}
+                  aria-expanded={isInviteExpanded}
+                  style={{ color: "#fff", borderColor: "rgba(255,255,255,0.5)" }}
+                >
+                  Retract
+                </button>
+              )}
             </div>
             <p style={{ margin: "0.5rem 0 0.85rem", fontSize: "0.9rem" }}>
               Invite friends and earn 500 pts for each successful referral.
             </p>
-            {rewards?.referral_code && (
-              <p style={{ margin: "0 0 0.6rem", fontSize: "0.8rem", opacity: 0.85 }}>
-                Your code: <strong>{rewards.referral_code}</strong>
-              </p>
+            {isInviteExpanded ? (
+              <div>
+                <p style={{ margin: "0 0 0.4rem", fontSize: "0.8rem", opacity: 0.85 }}>Your invite link:</p>
+                <div
+                  style={{
+                    background: "rgba(255,255,255,0.16)",
+                    border: "1px dashed rgba(255,255,255,0.5)",
+                    borderRadius: "0.6rem",
+                    padding: "0.6rem",
+                    fontFamily: "monospace",
+                    fontSize: "0.8rem",
+                    wordBreak: "break-all",
+                    marginBottom: "0.75rem",
+                  }}
+                >
+                  {inviteLink}
+                </div>
+                <button
+                  type="button"
+                  onClick={copyInviteLink}
+                  style={{ background: "#fff", color: "#4548c9", border: "none" }}
+                >
+                  {inviteCopyFeedback ? "Copied!" : "Copy link"}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsInviteExpanded(true)}
+                disabled={!rewards?.referral_code}
+                aria-expanded={isInviteExpanded}
+                style={{ background: "#fff", color: "#4548c9", border: "none" }}
+              >
+                Invite friends
+              </button>
             )}
-            <button
-              type="button"
-              onClick={inviteFriends}
-              disabled={!rewards?.referral_code}
-              style={{ background: "#fff", color: "#4548c9", border: "none" }}
-            >
-              Invite friends
-            </button>
           </div>
 
           {/* 7. Rewards points history */}
@@ -769,29 +823,31 @@ export function RewardsPage() {
             </div>
             {history.length > 0 ? (
               <>
-                <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.5rem" }}>
-                  {history.map((tx) => (
-                    <li key={tx.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
-                      <span style={{ fontSize: "0.85rem" }}>
-                        {tx.description ?? tx.type}
-                        {tx.proof_code && (
-                          <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
-                            Code: {tx.proof_code}
-                          </div>
-                        )}
-                      </span>
-                      <span
-                        style={{
-                          fontWeight: 700,
-                          color: tx.points >= 0 ? "var(--aurora-green, #2e9e5b)" : "var(--color-text-muted)",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {tx.points > 0 ? `+${tx.points}` : tx.points}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <div style={{ maxHeight: "360px", overflowY: "auto", paddingRight: "0.25rem" }}>
+                  <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.5rem" }}>
+                    {history.map((tx) => (
+                      <li key={tx.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+                        <span style={{ fontSize: "0.85rem" }}>
+                          {tx.description ?? tx.type}
+                          {tx.proof_code && (
+                            <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
+                              Code: {tx.proof_code}
+                            </div>
+                          )}
+                        </span>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            color: tx.points >= 0 ? "var(--aurora-green, #2e9e5b)" : "var(--color-text-muted)",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {tx.points > 0 ? `+${tx.points}` : tx.points}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
                 {rewards && rewards.transactions.length > 5 && (
                   <button
                     type="button"
@@ -825,6 +881,7 @@ export function RewardsPage() {
                 </button>
               </div>
               {areVouchersExpanded ? (
+                <div style={{ maxHeight: "360px", overflowY: "auto", paddingRight: "0.25rem" }}>
                 <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.6rem" }}>
                   {rewards.redemptions.map((redemption) => (
                     <li
@@ -883,6 +940,7 @@ export function RewardsPage() {
                     </li>
                   ))}
                 </ul>
+                </div>
               ) : (
                 <p className="eyebrow">
                   {rewards.redemptions.length} voucher{rewards.redemptions.length === 1 ? "" : "s"} — expand to view.
@@ -907,31 +965,69 @@ export function RewardsPage() {
           <p className="eyebrow">
             Balance after redemption: {rewards.points_balance - (confirmBenefit.points_cost ?? 0)} points
           </p>
-          <label style={{ display: "block", marginTop: "0.75rem" }}>
-            Pay with card
-            <select value={redeemCardId} onChange={(e) => setRedeemCardId(e.target.value)} style={{ width: "100%" }}>
-              {cards.map((card) => (
-                <option key={card.id} value={card.id}>
-                  {formatCardLabel(card)}
-                </option>
-              ))}
-            </select>
-          </label>
         </ConfirmModal>
       )}
 
       {selectedMerchant && (
         <ConfirmModal
-          title={selectedMerchant.name}
-          onCancel={() => setSelectedMerchant(null)}
-          onConfirm={() => {
+          title="Confirm payment"
+          onCancel={() => {
             setSelectedMerchant(null);
-            handlePay(selectedMerchant);
+            setCvvInput("");
           }}
-          confirmLabel={`Pay ${payAmount || 0} ${effectiveWallet(selectedCard)?.currency ?? "RON"}`}
-          busy={busy || !payCardId}
+          onConfirm={() => handlePay(selectedMerchant)}
+          confirmLabel={busy ? "Paying…" : `Pay ${payAmount || 0} ${effectiveWallet(selectedCard)?.currency ?? "RON"}`}
+          busy={busy || !payCardId || cvvInput.length !== 3}
         >
-          <p className="eyebrow">{selectedMerchant.category}</p>
+          {selectedCard && (
+            <div className={cardToneClass(selectedCard)} style={{ marginBottom: "0.85rem" }}>
+              <div className="bank-card__top">
+                <div className="bank-card__identity">
+                  <span className="bank-card__brand">AURORA</span>
+                  <span className="bank-card__product">
+                    {selectedCard.tier
+                      ? `${formatCardTierLabel(selectedCard.tier)} ${formatCardTypeLabel(selectedCard.type)}`
+                      : "One-time"}
+                  </span>
+                </div>
+              </div>
+              <div className="bank-card__middle">
+                <div className="bank-card__chip" aria-hidden="true" />
+                <span className="bank-card__mark">{selectedCard.type === "ONE_TIME" ? "1x" : selectedCard.type}</span>
+              </div>
+              <div className="bank-card__number-row">
+                <div className="bank-card__number">{selectedCard.masked_pan}</div>
+              </div>
+              <div className="bank-card__holder">
+                <span>Card holder</span>
+                <strong>{cardholderName}</strong>
+              </div>
+              <div className="bank-card__footer">
+                <span>
+                  {selectedCard.tier
+                    ? `${formatCardTierLabel(selectedCard.tier)} ${formatCardTypeLabel(selectedCard.type)}`
+                    : formatCardTypeLabel(selectedCard.type)}
+                </span>
+                <span className="bank-card__security">
+                  <span>
+                    EXP {String(selectedCard.expiration_month).padStart(2, "0")}/{selectedCard.expiration_year}
+                  </span>
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "space-between", margin: "0.3rem 0" }}>
+            <span className="eyebrow">Merchant</span>
+            <strong>{selectedMerchant.name}</strong>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", margin: "0.3rem 0" }}>
+            <span className="eyebrow">Amount</span>
+            <strong>
+              {payAmount || 0} {effectiveWallet(selectedCard)?.currency ?? "RON"}
+            </strong>
+          </div>
+
           {selectedMerchant.active_offer ? (
             <>
               <p style={{ margin: "0.4rem 0" }}>{selectedMerchant.active_offer.cashback_percent}% cashback</p>
@@ -946,13 +1042,30 @@ export function RewardsPage() {
             <p className="eyebrow">No active cashback offer right now.</p>
           )}
           {selectedCard && (
-            <p className="eyebrow" style={{ marginTop: "0.5rem" }}>
+            <p className="eyebrow" style={{ marginTop: "0.3rem" }}>
               With your {formatCardLabel(selectedCard)}:{" "}
               {combinedRateLabel(selectedCard, Number(selectedMerchant.active_offer?.cashback_percent ?? 0))}
             </p>
           )}
           {!selectedMerchant.verified && (
             <p className="eyebrow">Not verified yet — purchases here don't earn points.</p>
+          )}
+
+          <label style={{ display: "block", marginTop: "0.75rem" }}>
+            CVV (on the back of your {selectedCard ? formatCardLabel(selectedCard) : "card"})
+            <input
+              value={cvvInput}
+              onChange={(e) => setCvvInput(e.target.value.replace(/\D/g, "").slice(0, 3))}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="•••"
+              style={{ width: "6rem", letterSpacing: "0.3em" }}
+            />
+          </label>
+          {error && (
+            <p role="alert" style={{ color: "var(--aurora-danger, #d1435b)", marginTop: "0.5rem" }}>
+              {error}
+            </p>
           )}
         </ConfirmModal>
       )}

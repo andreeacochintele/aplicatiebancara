@@ -113,6 +113,19 @@ class RewardsService:
     def has_earned_for_transaction(self, source_transaction_id: uuid.UUID) -> bool:
         return self.repository.has_transaction_for_source(source_transaction_id)
 
+    def get_synced_transaction_ids(self, user_id: uuid.UUID) -> set[uuid.UUID]:
+        """All source_transaction_ids already earning-recorded for this user,
+        fetched in one call — used by MerchantService.sync_purchases_from_transactions
+        to filter its transaction list in memory instead of doing one
+        has_earned_for_transaction REST round-trip per transaction, which is
+        what made sync scale O(transaction count) network calls."""
+        account = self.get_or_create_account(user_id)
+        return {
+            tx.source_transaction_id
+            for tx in self.repository.list_transactions(account.id)
+            if tx.source_transaction_id is not None
+        }
+
     def redeem_points(self, user_id: uuid.UUID, points: int) -> RewardAccountPublic:
         if points <= 0:
             raise ValidationError("points must be positive")
@@ -170,14 +183,41 @@ class RewardsService:
         if card is None or card.user_id != user_id:
             raise NotFoundError("Card not found")
 
-        if benefit.min_card_tier is not None and not self._meets_card_tier(card.tier, benefit.min_card_tier):
+        # Eligibility is about which cards the user owns overall, not which
+        # one happens to be selected in this redemption's "pay with" dropdown
+        # (that field is receipt/audit only — see BenefitRedemption.card_id).
+        # A Platinum-card owner can redeem a Gold-gated benefit even while
+        # this dropdown has a Regular card selected; list_benefits() already
+        # gates the same way via _best_owned_card_tier.
+        if benefit.min_card_tier is not None and not self._meets_card_tier(
+            self._best_owned_card_tier(user_id), benefit.min_card_tier
+        ):
             raise ValidationError(f"Requires a {benefit.min_card_tier.value.title()} card")
 
         points_cost = benefit.points_cost or 0
-        reward_transaction = None
+        if points_cost > 0 and account.points_balance < points_cost:
+            raise ConflictError("Insufficient reward points balance")
+
+        # Create the redemption row before touching the points balance: under
+        # SupabaseRestSession there's no real transaction to roll back, so if
+        # this insert fails (e.g. the shared DB's schema is behind), nothing
+        # else has been mutated yet — no dangling SPEND transaction with a
+        # balance that was never actually decremented.
+        now = utcnow()
+        redemption = self.repository.add_redemption(
+            BenefitRedemption(
+                reward_account_id=account.id,
+                benefit_id=benefit.id,
+                reward_transaction_id=None,
+                card_id=card.id,
+                redemption_code=self._generate_redemption_code(),
+                points_spent=points_cost,
+                redeemed_at=now,
+                expires_at=now + REDEMPTION_VALIDITY,
+            )
+        )
+
         if points_cost > 0:
-            if account.points_balance < points_cost:
-                raise ConflictError("Insufficient reward points balance")
             account.points_balance -= points_cost
             reward_transaction = self.repository.add_transaction(
                 RewardTransaction(
@@ -187,20 +227,8 @@ class RewardsService:
                     description=f"Redeemed: {benefit.name}",
                 )
             )
+            redemption.reward_transaction_id = reward_transaction.id
 
-        now = utcnow()
-        self.repository.add_redemption(
-            BenefitRedemption(
-                reward_account_id=account.id,
-                benefit_id=benefit.id,
-                reward_transaction_id=reward_transaction.id if reward_transaction is not None else None,
-                card_id=card.id,
-                redemption_code=self._generate_redemption_code(),
-                points_spent=points_cost,
-                redeemed_at=now,
-                expires_at=now + REDEMPTION_VALIDITY,
-            )
-        )
         self.db.flush()
         return self.get_account(user_id)
 
