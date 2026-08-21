@@ -22,7 +22,7 @@ Supabase REST cannot run Alembic migrations. When direct database ports are
 blocked, generate SQL locally and run it in the Supabase SQL Editor:
 
 ```powershell
-docker compose exec backend alembic upgrade head --sql > supabase_schema.sql
+docker compose exec backend alembic upgrade head --sql > supabase/sql/supabase_schema.sql
 ```
 
 Then paste the SQL into:
@@ -32,8 +32,9 @@ Supabase Dashboard -> SQL Editor
 ```
 
 If the shared Supabase database was already created before the rewards and
-merchants migrations landed, run only `supabase_rewards_merchants_schema.sql`
-instead of replaying the full schema.
+merchants migrations landed, run only
+`supabase/sql/supabase_rewards_merchants_schema.sql` instead of replaying the
+full schema.
 
 ## Seed Data
 
