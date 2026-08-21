@@ -22,6 +22,7 @@ class CardPaymentCreate(BaseModel):
     card_id: uuid.UUID
     merchant_id: uuid.UUID
     amount: Decimal
+    cvv: str
     description: str | None = None
 
 
@@ -32,6 +33,7 @@ class TransactionPublic(BaseModel):
     initiator_user_id: uuid.UUID
     source_wallet_id: uuid.UUID | None
     destination_wallet_id: uuid.UUID | None
+    card_id: uuid.UUID | None
     type: TransactionType
     status: TransactionStatus
     amount: Decimal

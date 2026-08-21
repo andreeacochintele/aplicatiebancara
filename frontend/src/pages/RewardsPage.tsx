@@ -136,6 +136,7 @@ export function RewardsPage() {
   const [confirmBenefit, setConfirmBenefit] = useState<RewardBenefit | null>(null);
   const [redeemCardId, setRedeemCardId] = useState("");
   const [selectedMerchant, setSelectedMerchant] = useState<Merchant | null>(null);
+  const [cvvInput, setCvvInput] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [showFullHistory, setShowFullHistory] = useState(false);
   const [areCardsExpanded, setAreCardsExpanded] = useState(true);
@@ -245,6 +246,12 @@ export function RewardsPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [confirmBenefit, selectedMerchant, codeReveal]);
 
+  function openPayConfirm(merchant: Merchant) {
+    setError(null);
+    setCvvInput("");
+    setSelectedMerchant(merchant);
+  }
+
   async function handlePay(merchant: Merchant) {
     if (!accessToken || !payCardId) return;
     setError(null);
@@ -253,8 +260,15 @@ export function RewardsPage() {
       const transaction = await apiRequest<{ id: string }>("/transactions/card-payment", {
         method: "POST",
         token: accessToken,
-        body: { card_id: payCardId, merchant_id: merchant.id, amount: payAmount },
+        body: { card_id: payCardId, merchant_id: merchant.id, amount: payAmount, cvv: cvvInput },
       });
+      // Confirmed and debited — close the confirmation and clear the CVV
+      // field. A failed attempt (wrong CVV, insufficient balance, etc.)
+      // falls through to the catch block instead, which deliberately does
+      // NOT close the modal, so the user can just retry without re-picking
+      // the merchant and card.
+      setSelectedMerchant(null);
+      setCvvInput("");
       const receipt = `Receipt #${transaction.id.slice(0, 8).toUpperCase()}`;
       const earned = await syncRewards();
       const match = earned.find((p) => p.merchant_id === merchant.id);
@@ -655,7 +669,7 @@ export function RewardsPage() {
                   <article className="card-panel" key={merchant.id}>
                     <button
                       type="button"
-                      onClick={() => setSelectedMerchant(merchant)}
+                      onClick={() => openPayConfirm(merchant)}
                       style={{
                         all: "unset",
                         cursor: "pointer",
@@ -687,7 +701,7 @@ export function RewardsPage() {
                       )}
                     </button>
                     <div className="card-panel__actions">
-                      <button onClick={() => handlePay(merchant)} disabled={busy || !payCardId}>
+                      <button onClick={() => openPayConfirm(merchant)} disabled={busy || !payCardId}>
                         Pay {payAmount || 0} {effectiveWallet(selectedCard)?.currency ?? "RON"}
                       </button>
                     </div>
@@ -710,7 +724,7 @@ export function RewardsPage() {
                 ))}
               </div>
             )}
-            {error && <p role="alert">{error}</p>}
+            {error && !selectedMerchant && <p role="alert">{error}</p>}
           </div>
         </div>
 
@@ -956,16 +970,64 @@ export function RewardsPage() {
 
       {selectedMerchant && (
         <ConfirmModal
-          title={selectedMerchant.name}
-          onCancel={() => setSelectedMerchant(null)}
-          onConfirm={() => {
+          title="Confirm payment"
+          onCancel={() => {
             setSelectedMerchant(null);
-            handlePay(selectedMerchant);
+            setCvvInput("");
           }}
-          confirmLabel={`Pay ${payAmount || 0} ${effectiveWallet(selectedCard)?.currency ?? "RON"}`}
-          busy={busy || !payCardId}
+          onConfirm={() => handlePay(selectedMerchant)}
+          confirmLabel={busy ? "Paying…" : `Pay ${payAmount || 0} ${effectiveWallet(selectedCard)?.currency ?? "RON"}`}
+          busy={busy || !payCardId || cvvInput.length !== 3}
         >
-          <p className="eyebrow">{selectedMerchant.category}</p>
+          {selectedCard && (
+            <div className={cardToneClass(selectedCard)} style={{ marginBottom: "0.85rem" }}>
+              <div className="bank-card__top">
+                <div className="bank-card__identity">
+                  <span className="bank-card__brand">AURORA</span>
+                  <span className="bank-card__product">
+                    {selectedCard.tier
+                      ? `${formatCardTierLabel(selectedCard.tier)} ${formatCardTypeLabel(selectedCard.type)}`
+                      : "One-time"}
+                  </span>
+                </div>
+              </div>
+              <div className="bank-card__middle">
+                <div className="bank-card__chip" aria-hidden="true" />
+                <span className="bank-card__mark">{selectedCard.type === "ONE_TIME" ? "1x" : selectedCard.type}</span>
+              </div>
+              <div className="bank-card__number-row">
+                <div className="bank-card__number">{selectedCard.masked_pan}</div>
+              </div>
+              <div className="bank-card__holder">
+                <span>Card holder</span>
+                <strong>{cardholderName}</strong>
+              </div>
+              <div className="bank-card__footer">
+                <span>
+                  {selectedCard.tier
+                    ? `${formatCardTierLabel(selectedCard.tier)} ${formatCardTypeLabel(selectedCard.type)}`
+                    : formatCardTypeLabel(selectedCard.type)}
+                </span>
+                <span className="bank-card__security">
+                  <span>
+                    EXP {String(selectedCard.expiration_month).padStart(2, "0")}/{selectedCard.expiration_year}
+                  </span>
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "space-between", margin: "0.3rem 0" }}>
+            <span className="eyebrow">Merchant</span>
+            <strong>{selectedMerchant.name}</strong>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", margin: "0.3rem 0" }}>
+            <span className="eyebrow">Amount</span>
+            <strong>
+              {payAmount || 0} {effectiveWallet(selectedCard)?.currency ?? "RON"}
+            </strong>
+          </div>
+
           {selectedMerchant.active_offer ? (
             <>
               <p style={{ margin: "0.4rem 0" }}>{selectedMerchant.active_offer.cashback_percent}% cashback</p>
@@ -980,13 +1042,30 @@ export function RewardsPage() {
             <p className="eyebrow">No active cashback offer right now.</p>
           )}
           {selectedCard && (
-            <p className="eyebrow" style={{ marginTop: "0.5rem" }}>
+            <p className="eyebrow" style={{ marginTop: "0.3rem" }}>
               With your {formatCardLabel(selectedCard)}:{" "}
               {combinedRateLabel(selectedCard, Number(selectedMerchant.active_offer?.cashback_percent ?? 0))}
             </p>
           )}
           {!selectedMerchant.verified && (
             <p className="eyebrow">Not verified yet — purchases here don't earn points.</p>
+          )}
+
+          <label style={{ display: "block", marginTop: "0.75rem" }}>
+            CVV (on the back of your {selectedCard ? formatCardLabel(selectedCard) : "card"})
+            <input
+              value={cvvInput}
+              onChange={(e) => setCvvInput(e.target.value.replace(/\D/g, "").slice(0, 3))}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="•••"
+              style={{ width: "6rem", letterSpacing: "0.3em" }}
+            />
+          </label>
+          {error && (
+            <p role="alert" style={{ color: "var(--aurora-danger, #d1435b)", marginTop: "0.5rem" }}>
+              {error}
+            </p>
           )}
         </ConfirmModal>
       )}

@@ -245,7 +245,7 @@ def test_card_payment_debits_wallet_and_tags_merchant(db_session, payer_with_wal
     card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
 
     transaction = TransactionService(db_session).create_card_payment(
-        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("120.00"))
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("120.00"), cvv=card.mock_cvv)
     )
 
     assert transaction.status == TransactionStatus.COMPLETED
@@ -257,6 +257,37 @@ def test_card_payment_debits_wallet_and_tags_merchant(db_session, payer_with_wal
     assert transaction.ledger_entries[0].entry_type.value == "DEBIT"
 
 
+def test_card_payment_rejects_wrong_cvv(db_session, payer_with_wallet_and_merchant):
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+    wrong_cvv = "000" if card.mock_cvv != "000" else "111"
+
+    with pytest.raises(ValidationError):
+        TransactionService(db_session).create_card_payment(
+            payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"), cvv=wrong_cvv)
+        )
+    assert wallet.available_balance == Decimal("500.00")
+
+
+def test_card_payment_rejects_another_cards_cvv(db_session, payer_with_wallet_and_merchant):
+    """A CVV that's valid for a different card the same user owns must not
+    authorize a payment on this one — the check is card-specific, not just
+    "any CVV this user has"."""
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card_service = CardService(db_session)
+    card = card_service.create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+    other_wallet = WalletService(db_session).create_wallet(payer.id, WalletCreate(currency="EUR"))
+    other_card = card_service.create_card(payer.id, CardCreate(default_wallet_id=other_wallet.id))
+    assert other_card.mock_cvv != card.mock_cvv
+
+    with pytest.raises(ValidationError):
+        TransactionService(db_session).create_card_payment(
+            payer.id,
+            CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"), cvv=other_card.mock_cvv),
+        )
+    assert wallet.available_balance == Decimal("500.00")
+
+
 def test_card_payment_rejects_frozen_card(db_session, payer_with_wallet_and_merchant):
     payer, wallet, merchant = payer_with_wallet_and_merchant
     card_service = CardService(db_session)
@@ -265,7 +296,8 @@ def test_card_payment_rejects_frozen_card(db_session, payer_with_wallet_and_merc
 
     with pytest.raises(ValidationError):
         TransactionService(db_session).create_card_payment(
-            payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"))
+            payer.id,
+            CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"), cvv=card.mock_cvv),
         )
     assert wallet.available_balance == Decimal("500.00")
 
@@ -276,7 +308,8 @@ def test_card_payment_rejects_insufficient_balance(db_session, payer_with_wallet
 
     with pytest.raises(ConflictError):
         TransactionService(db_session).create_card_payment(
-            payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("999999.00"))
+            payer.id,
+            CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("999999.00"), cvv=card.mock_cvv),
         )
 
 
@@ -288,7 +321,8 @@ def test_card_payment_rejects_unknown_merchant(db_session, payer_with_wallet_and
 
     with pytest.raises(NotFoundError):
         TransactionService(db_session).create_card_payment(
-            payer.id, CardPaymentCreate(card_id=card.id, merchant_id=uuid.uuid4(), amount=Decimal("10.00"))
+            payer.id,
+            CardPaymentCreate(card_id=card.id, merchant_id=uuid.uuid4(), amount=Decimal("10.00"), cvv=card.mock_cvv),
         )
 
 
@@ -300,7 +334,7 @@ def test_one_time_card_is_cancelled_after_its_single_payment(db_session, payer_w
     assert card.one_time_remaining == 1
 
     TransactionService(db_session).create_card_payment(
-        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("30.00"))
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("30.00"), cvv=card.mock_cvv)
     )
 
     assert card.one_time_remaining == 0
@@ -321,7 +355,7 @@ def test_card_payment_uses_preferred_wallet_over_default(db_session, payer_with_
     )
 
     transaction = TransactionService(db_session).create_card_payment(
-        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("40.00"))
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("40.00"), cvv=card.mock_cvv)
     )
 
     assert transaction.source_wallet_id == preferred_wallet.id

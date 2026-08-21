@@ -116,6 +116,7 @@ export interface Transaction {
   initiator_user_id: string;
   source_wallet_id: string | null;
   destination_wallet_id: string | null;
+  card_id: string | null;
   type: string;
   status: string;
   amount: string;
@@ -544,4 +545,14 @@ export interface RewardAccount {
   referral_code: string | null;
   transactions: RewardTransaction[];
   redemptions: BenefitRedemption[];
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  related_transaction_id: string | null;
+  is_read: boolean;
+  created_at: string;
 }

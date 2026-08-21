@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Eye, EyeOff, Lock, Trash2, Unlock } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, Lock, Trash2, Unlock } from "lucide-react";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { cardTierRewardBullets } from "../config/rewardPolicy";
 import { useAuth } from "../hooks/useAuth";
-import type { Card, CardTier, CardType, Wallet } from "../types";
+import type { Card, CardTier, CardType, Transaction, Wallet } from "../types";
 
 const CARD_TYPES: CardType[] = ["DEBIT", "CREDIT", "ONE_TIME"];
 const MAX_CARDS = 5;
@@ -48,6 +48,17 @@ const CARD_TIER_PRODUCT_LIST = [
     rewards: CARD_TIER_REWARDS.PLATINUM,
   },
 ];
+const MOCK_CARD_MERCHANTS = ["Carrefour", "Netflix", "OMV", "Starbucks", "eMAG", "Uber"];
+type CreditPaymentSourceType = "ACCOUNT" | "DEBIT_CARD";
+
+interface CardTransactionDisplay {
+  id: string;
+  description: string;
+  created_at: string;
+  amount: string;
+  currency: string;
+  status: string;
+}
 
 function formatCardType(type: CardType): string {
   return type
@@ -83,8 +94,16 @@ function formatWalletBalance(wallet: Wallet): string {
   })} ${wallet.currency}`;
 }
 
-function creditAvailableAmount(card: Card): string {
-  return formatCurrencyAmount(CREDIT_CARD_LIMITS[card.tier ?? "REGULAR"]);
+function creditStatementBalance(card: Card): number {
+  const limit = CREDIT_CARD_LIMITS[card.tier ?? "REGULAR"];
+  const seed = Number(card.last_four) || card.id.length;
+  const baseRatio = card.tier === "PLATINUM" ? 0.28 : card.tier === "GOLD" ? 0.34 : 0.42;
+  const seededExtra = (seed % 9) / 100;
+  return Math.min(limit * 0.72, Math.round(limit * (baseRatio + seededExtra)));
+}
+
+function creditAvailableBalance(card: Card, balanceDue: number): number {
+  return Math.max(0, CREDIT_CARD_LIMITS[card.tier ?? "REGULAR"] - balanceDue);
 }
 
 function walletDisplayName(wallet: Wallet): string {
@@ -107,10 +126,45 @@ function selectedTierDetails(type: CardType | "", tier: CardTier): string {
   return "";
 }
 
+function formatTransactionType(type: string): string {
+  return type
+    .split("_")
+    .map((part) => part[0] + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function formatTransactionDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function mockCardTransactions(card: Card, wallet?: Wallet): CardTransactionDisplay[] {
+  const seed = Number(card.last_four) || card.id.length;
+  const currency = wallet?.currency ?? "RON";
+  const multiplier = card.tier === "PLATINUM" ? 1.35 : card.tier === "GOLD" ? 1.15 : 1;
+  const count = card.type === "ONE_TIME" ? 1 : 3;
+
+  return Array.from({ length: count }, (_, index) => {
+    const merchant = MOCK_CARD_MERCHANTS[(seed + index) % MOCK_CARD_MERCHANTS.length];
+    const amount = ((18 + ((seed + index * 17) % 140)) * multiplier).toFixed(2);
+    const date = new Date();
+    date.setDate(date.getDate() - (index * 3 + 1));
+
+    return {
+      id: `mock-${card.id}-${index}`,
+      description: `${merchant} card payment`,
+      created_at: date.toISOString(),
+      amount,
+      currency,
+      status: index === 0 ? "COMPLETED" : "SETTLED",
+    };
+  });
+}
+
 export function CardsPage() {
   const { accessToken, logout, user } = useAuth();
   const [cards, setCards] = useState<Card[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [selectedType, setSelectedType] = useState<CardType | "">("");
   const [selectedTier, setSelectedTier] = useState<CardTier>("REGULAR");
   const [selectedWalletId, setSelectedWalletId] = useState("");
@@ -119,9 +173,30 @@ export function CardsPage() {
   const [actionCardId, setActionCardId] = useState<string | null>(null);
   const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
   const [revealedCardIds, setRevealedCardIds] = useState<Set<string>>(() => new Set());
+  const [expandedTransactionCardIds, setExpandedTransactionCardIds] = useState<Set<string>>(() => new Set());
+  const [paymentPanelCardId, setPaymentPanelCardId] = useState<string | null>(null);
+  const [paymentSourceType, setPaymentSourceType] = useState<CreditPaymentSourceType>("ACCOUNT");
+  const [paymentSourceId, setPaymentSourceId] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [creditBalanceOverrides, setCreditBalanceOverrides] = useState<Record<string, number>>({});
+  const [localCardActivity, setLocalCardActivity] = useState<Record<string, CardTransactionDisplay[]>>({});
   const [error, setError] = useState<string | null>(null);
 
   const activeWallets = useMemo(() => wallets.filter((wallet) => wallet.status === "ACTIVE"), [wallets]);
+  const activeDebitCards = useMemo(
+    () => cards.filter((card) => card.type === "DEBIT" && card.status === "ACTIVE" && card.default_wallet_id),
+    [cards],
+  );
+  const debitRepresentedWalletIds = useMemo(
+    () => new Set(activeDebitCards.map((card) => card.default_wallet_id).filter((walletId): walletId is string => Boolean(walletId))),
+    [activeDebitCards],
+  );
+  const directPaymentWallets = useMemo(
+    () => activeWallets.filter((wallet) => !debitRepresentedWalletIds.has(wallet.id)),
+    [activeWallets, debitRepresentedWalletIds],
+  );
   const cardholderName = user ? `${user.first_name} ${user.last_name}`.trim() : "Card holder";
   const selectedReusableCardType = selectedType === "DEBIT" || selectedType === "CREDIT";
   const selectedAccountLinkedCard = selectedType === "DEBIT" || selectedType === "ONE_TIME";
@@ -160,6 +235,12 @@ export function CardsPage() {
       setWallets(walletsResponse);
       const mainWallet = walletsResponse.find((wallet) => wallet.is_main && wallet.status === "ACTIVE");
       setSelectedWalletId((current) => current || mainWallet?.id || "");
+      try {
+        const transactionsResponse = await apiRequest<Transaction[]>("/transactions", { token });
+        setTransactions(transactionsResponse);
+      } catch {
+        setTransactions([]);
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -167,6 +248,7 @@ export function CardsPage() {
       }
       setCards([]);
       setWallets([]);
+      setTransactions([]);
       setError(err instanceof ApiError ? err.message : "Could not load cards.");
     } finally {
       setIsLoading(false);
@@ -177,6 +259,23 @@ export function CardsPage() {
     if (!accessToken) return;
     void loadCardsData(accessToken);
   }, [accessToken, logout]);
+
+  useEffect(() => {
+    if (!paymentPanelCardId || paymentSourceId === "") return;
+    const sourceStillExists =
+      paymentSourceType === "ACCOUNT"
+        ? directPaymentWallets.some((wallet) => wallet.id === paymentSourceId)
+        : activeDebitCards.some((card) => card.id === paymentSourceId);
+
+    if (!sourceStillExists) {
+      const nextAccount = directPaymentWallets[0];
+      const nextDebitCard = activeDebitCards[0];
+      setPaymentSourceType(nextAccount ? "ACCOUNT" : "DEBIT_CARD");
+      setPaymentSourceId(nextAccount?.id ?? nextDebitCard?.id ?? "");
+      setPaymentMessage(null);
+      setPaymentError(null);
+    }
+  }, [activeDebitCards, directPaymentWallets, paymentPanelCardId, paymentSourceId, paymentSourceType]);
 
   async function createCard() {
     if (!accessToken || isSaving || !canCreateCard) return;
@@ -244,6 +343,11 @@ export function CardsPage() {
         next.delete(card.id);
         return next;
       });
+      setExpandedTransactionCardIds((current) => {
+        const next = new Set(current);
+        next.delete(card.id);
+        return next;
+      });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -267,13 +371,121 @@ export function CardsPage() {
     });
   }
 
+  function toggleCardTransactions(cardId: string) {
+    setExpandedTransactionCardIds((current) => {
+      const next = new Set(current);
+      if (next.has(cardId)) {
+        next.delete(cardId);
+      } else {
+        next.add(cardId);
+      }
+      return next;
+    });
+  }
+
+  function resetPaymentForm(nextCardId: string | null) {
+    const nextAccount = directPaymentWallets[0];
+    const nextDebitCard = activeDebitCards[0];
+    setPaymentPanelCardId(nextCardId);
+    setPaymentSourceType(nextAccount ? "ACCOUNT" : "DEBIT_CARD");
+    setPaymentSourceId(nextAccount?.id ?? nextDebitCard?.id ?? "");
+    setPaymentAmount("");
+    setPaymentMessage(null);
+    setPaymentError(null);
+  }
+
+  function togglePaymentPanel(cardId: string) {
+    resetPaymentForm(paymentPanelCardId === cardId ? null : cardId);
+  }
+
+  function paymentSourceWalletId(): string {
+    if (paymentSourceType === "ACCOUNT") return paymentSourceId;
+    return activeDebitCards.find((card) => card.id === paymentSourceId)?.default_wallet_id ?? "";
+  }
+
+  function paymentSourceLabel(): string {
+    if (paymentSourceType === "ACCOUNT") {
+      const wallet = wallets.find((item) => item.id === paymentSourceId);
+      return wallet ? walletDisplayName(wallet) : "selected account";
+    }
+    const debitCard = activeDebitCards.find((card) => card.id === paymentSourceId);
+    const wallet = debitCard ? wallets.find((item) => item.id === debitCard.default_wallet_id) : undefined;
+    return debitCard ? `Debit **** ${debitCard.last_four}${wallet ? ` from ${walletDisplayName(wallet)}` : ""}` : "selected debit card";
+  }
+
+  function submitCreditCardPayment(card: Card) {
+    const amount = Number(paymentAmount);
+    const sourceWalletId = paymentSourceWalletId();
+    const sourceWallet = wallets.find((wallet) => wallet.id === sourceWalletId);
+    const sourceDebitCard = paymentSourceType === "DEBIT_CARD" ? activeDebitCards.find((sourceCard) => sourceCard.id === paymentSourceId) : null;
+    const currentBalanceDue = creditBalanceOverrides[card.id] ?? creditStatementBalance(card);
+
+    setPaymentMessage(null);
+    setPaymentError(null);
+
+    if (!sourceWallet) {
+      setPaymentError("Choose a payment source.");
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPaymentError("Enter a valid payment amount.");
+      return;
+    }
+    if (amount > Number(sourceWallet.available_balance)) {
+      setPaymentError("The selected source does not have enough available balance.");
+      return;
+    }
+    if (amount > currentBalanceDue) {
+      setPaymentError("Payment is higher than the current card balance.");
+      return;
+    }
+
+    const nextBalanceDue = Math.max(0, currentBalanceDue - amount);
+    setWallets((current) =>
+      current.map((wallet) =>
+        wallet.id === sourceWallet.id
+          ? { ...wallet, available_balance: Math.max(0, Number(wallet.available_balance) - amount).toFixed(2) }
+          : wallet,
+      ),
+    );
+    setCreditBalanceOverrides((current) => ({ ...current, [card.id]: nextBalanceDue }));
+    setLocalCardActivity((current) => {
+      const paidAt = new Date().toISOString();
+      const creditActivity: CardTransactionDisplay = {
+        id: `payment-${card.id}-${paidAt}`,
+        description: "Credit card payment received",
+        created_at: paidAt,
+        amount: amount.toFixed(2),
+        currency: "RON",
+        status: "COMPLETED",
+      };
+      const next = { ...current, [card.id]: [creditActivity, ...(current[card.id] ?? [])] };
+
+      if (sourceDebitCard) {
+        const debitActivity: CardTransactionDisplay = {
+          id: `payment-source-${sourceDebitCard.id}-${paidAt}`,
+          description: `Payment to credit card **** ${card.last_four}`,
+          created_at: paidAt,
+          amount: amount.toFixed(2),
+          currency: sourceWallet.currency,
+          status: "COMPLETED",
+        };
+        next[sourceDebitCard.id] = [debitActivity, ...(current[sourceDebitCard.id] ?? [])];
+      }
+
+      return next;
+    });
+    setPaymentAmount("");
+    setPaymentMessage(`${formatCurrencyAmount(amount, sourceWallet.currency)} paid from ${paymentSourceLabel()}.`);
+  }
+
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       <div className="tile">
         <div className="tile__header">
           <span className="eyebrow">Card controls</span>
         </div>
-        <div className="card-control-layout">
+        <div className={`card-control-layout${selectedReusableCardType ? "" : " card-control-layout--single"}`}>
           <div className="card-control-form">
             <label>
               Card type
@@ -334,13 +546,6 @@ export function CardsPage() {
                 </div>
               </div>
             )}
-            {selectedType === "" && (
-              <div className="selected-tier-overview">
-                <span className="eyebrow">Card setup</span>
-                <strong>Select a card type</strong>
-                <span>Account selection appears only for debit and one-time payment cards.</span>
-              </div>
-            )}
             <button type="button" onClick={createCard} disabled={isSaving || !canCreateCard}>
               {isSaving
                 ? "Creating..."
@@ -360,7 +565,7 @@ export function CardsPage() {
             </button>
           </div>
 
-          {selectedReusableCardType ? (
+          {selectedReusableCardType && (
             <aside className="card-choice-explainer">
               <span className="eyebrow">Selection details</span>
               <strong>
@@ -378,15 +583,6 @@ export function CardsPage() {
                   : `Available credit preview: ${formatCurrencyAmount(CREDIT_CARD_LIMITS[selectedTier])}`}
               </small>
             </aside>
-          ) : selectedType === "ONE_TIME" ? (
-            <aside className="card-choice-explainer">
-              <span className="eyebrow">Selection details</span>
-              <strong>One-time payment card</strong>
-              <p>Single-use payment card linked to the selected account. It is intended for temporary or one-off payments.</p>
-              <small>One-time cards do not use tier levels.</small>
-            </aside>
-          ) : (
-            <div />
           )}
         </div>
         {cardLimitReached && (
@@ -408,8 +604,49 @@ export function CardsPage() {
             {cards.map((card) => {
               const wallet = wallets.find((item) => item.id === card.default_wallet_id);
               const isRevealed = revealedCardIds.has(card.id);
+              const isTransactionsExpanded = expandedTransactionCardIds.has(card.id);
+              const cardTransactions = transactions
+                .filter((transaction) => transaction.card_id === card.id)
+                .sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime());
+              const cardTransactionRows =
+                cardTransactions.length > 0
+                  ? cardTransactions.map((transaction) => ({
+                      id: transaction.id,
+                      description: transaction.description || formatTransactionType(transaction.type),
+                      created_at: transaction.created_at,
+                      amount: transaction.amount,
+                      currency: transaction.currency,
+                      status: transaction.status,
+                    }))
+                  : mockCardTransactions(card, wallet);
+              const cardActivityRows = [...(localCardActivity[card.id] ?? []), ...cardTransactionRows];
+              const isShowingPlaceholderTransactions = cardTransactions.length === 0 && !localCardActivity[card.id]?.length;
               const isAccountLinkedCard = card.type === "DEBIT" || card.type === "ONE_TIME";
               const isCreditCard = card.type === "CREDIT";
+              const creditBalanceDue = creditBalanceOverrides[card.id] ?? creditStatementBalance(card);
+              const creditAvailable = creditAvailableBalance(card, creditBalanceDue);
+              const isPaymentPanelOpen = paymentPanelCardId === card.id;
+              const paymentSourceOptions = [
+                ...directPaymentWallets.map((sourceWallet) => ({
+                  value: `ACCOUNT:${sourceWallet.id}`,
+                  walletId: sourceWallet.id,
+                  label: `${walletDisplayName(sourceWallet)} account`,
+                })),
+                ...activeDebitCards.map((debitCard) => {
+                  const linkedWallet = wallets.find((item) => item.id === debitCard.default_wallet_id);
+                  return {
+                    value: `DEBIT_CARD:${debitCard.id}`,
+                    walletId: debitCard.default_wallet_id ?? "",
+                    label: `Debit **** ${debitCard.last_four}${linkedWallet ? ` - ${walletDisplayName(linkedWallet)}` : ""}`,
+                  };
+                }),
+              ];
+              const selectedPaymentWalletId =
+                paymentSourceType === "ACCOUNT"
+                  ? paymentSourceId
+                  : activeDebitCards.find((debitCard) => debitCard.id === paymentSourceId)?.default_wallet_id;
+              const selectedPaymentWallet = wallets.find((item) => item.id === selectedPaymentWalletId);
+              const selectedPaymentSourceValue = paymentSourceId ? `${paymentSourceType}:${paymentSourceId}` : "";
               return (
                 <article className="card-panel" key={card.id}>
                   <div className={cardToneClass(card)}>
@@ -476,7 +713,7 @@ export function CardsPage() {
                       <div className="eyebrow">{isCreditCard ? "Available credit" : "Linked account"}</div>
                       <div className="card-panel__value">
                         {isCreditCard
-                          ? creditAvailableAmount(card)
+                          ? formatCurrencyAmount(creditAvailable)
                           : isAccountLinkedCard
                             ? wallet
                               ? walletDisplayName(wallet)
@@ -485,6 +722,11 @@ export function CardsPage() {
                       </div>
                       {wallet && isAccountLinkedCard && (
                         <div className="card-panel__subvalue">Wallet balance {formatWalletBalance(wallet)}</div>
+                      )}
+                      {isCreditCard && (
+                        <div className="card-panel__subvalue">
+                          Balance due {formatCurrencyAmount(creditBalanceDue)}
+                        </div>
                       )}
                     </div>
                     <div className="card-panel__actions">
@@ -500,6 +742,130 @@ export function CardsPage() {
                       </button>
                     </div>
                   </div>
+
+                  {isCreditCard && (
+                    <>
+                      <button
+                        type="button"
+                        className="card-panel__payment-toggle"
+                        onClick={() => togglePaymentPanel(card.id)}
+                        aria-expanded={isPaymentPanelOpen}
+                      >
+                        {isPaymentPanelOpen ? "Close payment" : "Make a payment"}
+                      </button>
+
+                      {isPaymentPanelOpen && (
+                        <div className="credit-card-payment">
+                          <div className="credit-card-payment__summary">
+                            <div>
+                              <span>Card balance</span>
+                              <strong>{formatCurrencyAmount(creditBalanceDue)}</strong>
+                            </div>
+                            <div>
+                              <span>Available after payment</span>
+                              <strong>
+                                {formatCurrencyAmount(
+                                  creditAvailableBalance(card, Math.max(0, creditBalanceDue - (Number(paymentAmount) || 0))),
+                                )}
+                              </strong>
+                            </div>
+                          </div>
+
+                          <div className="credit-card-payment__grid">
+                            <label>
+                              Pay from
+                              <select
+                                value={selectedPaymentSourceValue}
+                                disabled={paymentSourceOptions.length === 0}
+                                onChange={(event) => {
+                                  const [nextType, nextId] = event.target.value.split(":") as [CreditPaymentSourceType, string];
+                                  setPaymentSourceType(nextType);
+                                  setPaymentSourceId(nextId ?? "");
+                                  setPaymentError(null);
+                                  setPaymentMessage(null);
+                                }}
+                              >
+                                {paymentSourceOptions.length === 0 ? (
+                                  <option value="">No payment source available</option>
+                                ) : (
+                                  paymentSourceOptions.map((source) => (
+                                    <option key={source.value} value={source.value}>
+                                      {source.label}
+                                    </option>
+                                  ))
+                                )}
+                              </select>
+                              {selectedPaymentWallet && (
+                                <small className="credit-card-payment__source-balance">
+                                  Available {formatWalletBalance(selectedPaymentWallet)}
+                                </small>
+                              )}
+                            </label>
+
+                            <label>
+                              Amount
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={paymentAmount}
+                                onChange={(event) => {
+                                  setPaymentAmount(event.target.value);
+                                  setPaymentError(null);
+                                  setPaymentMessage(null);
+                                }}
+                                placeholder="0.00"
+                              />
+                            </label>
+                          </div>
+
+                          <button type="button" className="credit-card-payment__submit" onClick={() => submitCreditCardPayment(card)}>
+                            Pay credit card
+                          </button>
+                          {paymentError && <div className="credit-card-payment__error">{paymentError}</div>}
+                          {paymentMessage && <div className="credit-card-payment__message">{paymentMessage}</div>}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    className="card-panel__details-toggle"
+                    onClick={() => toggleCardTransactions(card.id)}
+                    aria-expanded={isTransactionsExpanded}
+                  >
+                    <span>{isTransactionsExpanded ? "Retract" : "Show more"}</span>
+                    <span className="card-panel__details-icon">
+                      {isTransactionsExpanded ? <ChevronUp size={16} strokeWidth={2.2} /> : <ChevronDown size={16} strokeWidth={2.2} />}
+                    </span>
+                  </button>
+
+                  {isTransactionsExpanded && (
+                    <div className="card-transactions">
+                      {isShowingPlaceholderTransactions && (
+                        <div className="card-transactions__note">Recent card activity</div>
+                      )}
+                      {cardActivityRows.slice(0, 5).map((transaction) => (
+                          <div className="card-transaction-row" key={transaction.id}>
+                            <div>
+                              <strong>{transaction.description}</strong>
+                              <span>{formatTransactionDate(transaction.created_at)}</span>
+                            </div>
+                            <div>
+                              <strong>
+                                {Number(transaction.amount).toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}{" "}
+                                {transaction.currency}
+                              </strong>
+                              <span>{transaction.status}</span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </article>
               );
             })}
