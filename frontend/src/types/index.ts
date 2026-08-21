@@ -458,3 +458,13 @@ export interface RewardAccount {
   transactions: RewardTransaction[];
   redemptions: BenefitRedemption[];
 }
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  related_transaction_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}

@@ -57,6 +57,7 @@ from app.merchants.schemas import (
     MerchantPublic,
     PurchaseResult,
 )
+from app.notifications.service import NotificationsService
 from app.rewards.service import RewardsService
 from app.supabase import is_supabase_session
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
@@ -90,6 +91,7 @@ class MerchantService:
         self.transactions = TransactionRepository(db)
         self.cards = CardRepository(db)
         self.wallets = WalletRepository(db)
+        self.notifications = NotificationsService(db)
         self.fx = FXService(db)
 
     def create_merchant(self, data: MerchantCreate) -> MerchantPublic:
@@ -317,7 +319,26 @@ class MerchantService:
                 balance_after=wallet.available_balance,
             )
         )
+        # Flush the actual money movement before doing anything else — a
+        # failure past this point (e.g. a notification write on a shared DB
+        # that's behind on migrations) must never leave the wallet's balance
+        # mutation sitting unflushed while its ledger entry already exists.
         self.db.flush()
+
+        # Best-effort: a notification is never allowed to make the cashback
+        # itself look like it failed (which is what happens if an exception
+        # here propagates up into sync_purchases_from_transactions' race
+        # guard and the transaction gets silently skipped/retried).
+        try:
+            self.notifications.create(
+                wallet.user_id,
+                type="CASHBACK",
+                title="Cashback earned",
+                message=f"You earned {cashback_amount} {wallet.currency} cashback from {merchant_name}.",
+                related_transaction_id=cashback_transaction.id,
+            )
+        except Exception:
+            pass
 
     @staticmethod
     def _generate_proof_code() -> str:

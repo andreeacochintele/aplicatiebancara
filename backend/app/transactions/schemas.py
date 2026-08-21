@@ -22,6 +22,7 @@ class CardPaymentCreate(BaseModel):
     card_id: uuid.UUID
     merchant_id: uuid.UUID
     amount: Decimal
+    cvv: str
     description: str | None = None
 
 
