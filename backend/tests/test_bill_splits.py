@@ -1,6 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
+from app.notifications.service import NotificationsService
 from app.payments.models import BillSplitParticipantStatus, BillSplitStatus
 from app.wallets.models import Wallet
 from app.wallets.schemas import WalletCreate
@@ -65,6 +66,29 @@ def test_create_and_list_bill_split(client, db_session):
     participant_list = client.get("/api/v1/payments/bill-splits", headers=_auth_header(participant))
     assert [item["id"] for item in owner_list.json()] == [created["id"]]
     assert [item["id"] for item in participant_list.json()] == [created["id"]]
+
+
+def test_create_bill_split_notifies_the_participant(client, db_session):
+    owner = _register(client, "split-notify-owner@example.com", "+40770666601")
+    participant = _register(client, "split-notify-participant@example.com", "+40770666602")
+
+    client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Movie night",
+            "total_amount": "60.00",
+            "currency": "RON",
+            "participants": [
+                {"participant_user_id": participant["user"]["id"], "name": "Friend", "amount": "60.00"}
+            ],
+        },
+    )
+
+    notifications = NotificationsService(db_session).list_for_user(UUID(participant["user"]["id"]))
+    split_notifications = [n for n in notifications if n.type == "SPLIT_BILL"]
+    assert len(split_notifications) == 1
+    assert "Movie night" in split_notifications[0].message
 
 
 def test_create_bill_split_from_percent_share(client):
@@ -173,6 +197,11 @@ def test_participant_can_pay_bill_split(client, db_session):
     assert paid["participants"][0]["paid_transaction_id"] is not None
     assert participant_wallet.available_balance == Decimal("120.00")
     assert owner_wallet.available_balance == Decimal("90.00")
+
+    owner_notifications = NotificationsService(db_session).list_for_user(UUID(owner["user"]["id"]))
+    split_notifications = [n for n in owner_notifications if n.type == "SPLIT_BILL"]
+    assert len(split_notifications) == 1
+    assert "Groceries" in split_notifications[0].message
 
 
 def test_participant_can_decline_bill_split(client):
