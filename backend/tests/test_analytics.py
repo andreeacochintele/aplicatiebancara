@@ -283,3 +283,142 @@ def test_forecast_raises_not_found_for_no_wallets_or_unknown_wallet(db_session, 
 
     with pytest.raises(NotFoundError):
         AnalyticsService(db_session).forecast_month_end_balance(user_only.id, wallet_id=uuid.uuid4())
+
+
+def test_forecast_includes_a_daily_projected_series(db_session, seeded_user_with_wallet):
+    user, wallet = seeded_user_with_wallet
+    wallet.available_balance = Decimal("1000.00")
+    db_session.flush()
+
+    result = AnalyticsService(db_session).forecast_month_end_balance(user.id, wallet_id=None)
+
+    assert len(result.projected_series) == result.days_remaining + 1
+    assert result.projected_series[0].date == datetime.now(timezone.utc).date()
+    assert result.projected_series[0].projected_balance == wallet.available_balance
+    assert result.projected_series[-1].projected_balance == result.projected_month_end_balance
+
+
+def test_spending_by_type_excludes_internal_transfer_between_own_wallets(db_session, user_only):
+    wallets = WalletService(db_session)
+    ron = wallets.create_wallet(user_only.id, WalletCreate(currency="RON", is_main=True))
+    eur = wallets.create_wallet(user_only.id, WalletCreate(currency="EUR"))
+    db_session.flush()
+    now = datetime.now(timezone.utc)
+
+    internal = Transaction(
+        initiator_user_id=user_only.id,
+        source_wallet_id=ron.id,
+        destination_wallet_id=eur.id,
+        type=TransactionType.TRANSFER,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("200.00"),
+        currency="RON",
+        created_at=now,
+    )
+    db_session.add(internal)
+    db_session.flush()
+
+    result = AnalyticsService(db_session).spending_by_type(user_only.id, year=None, month=None)
+
+    assert result.items == []
+
+
+def test_spending_by_type_still_counts_transfer_to_another_users_wallet(db_session, user_only):
+    wallets = WalletService(db_session)
+    other = UserService(db_session).create_user(
+        UserCreate(
+            email="other-transfer-recipient@example.com",
+            phone="+40747777777",
+            password="Sup3rSecret!",
+            first_name="Other",
+            last_name="User",
+        )
+    )
+    mine = wallets.create_wallet(user_only.id, WalletCreate(currency="RON", is_main=True))
+    theirs = wallets.create_wallet(other.id, WalletCreate(currency="RON", is_main=True))
+    db_session.flush()
+    now = datetime.now(timezone.utc)
+
+    external = Transaction(
+        initiator_user_id=user_only.id,
+        source_wallet_id=mine.id,
+        destination_wallet_id=theirs.id,
+        counterparty_user_id=other.id,
+        type=TransactionType.TRANSFER,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("75.00"),
+        currency="RON",
+        created_at=now,
+    )
+    db_session.add(external)
+    db_session.flush()
+
+    result = AnalyticsService(db_session).spending_by_type(user_only.id, year=None, month=None)
+
+    assert result.items[0].total_amount == Decimal("75.00")
+
+
+def test_spending_by_type_excludes_cashback(db_session, seeded_user_with_wallet):
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "40.00", TransactionStatus.COMPLETED, now)
+    _add_transaction(db_session, user, wallet, TransactionType.CASHBACK, "5.00", TransactionStatus.COMPLETED, now)
+
+    result = AnalyticsService(db_session).spending_by_type(user.id, year=None, month=None)
+
+    by_type = {item.type: item for item in result.items}
+    assert TransactionType.CASHBACK not in by_type
+    assert by_type[TransactionType.CARD_PAYMENT].total_amount == Decimal("40.00")
+
+
+def test_monthly_trend_converts_totals_to_base_currency(db_session, user_only):
+    wallets = WalletService(db_session)
+    ron = wallets.create_wallet(user_only.id, WalletCreate(currency="RON", is_main=True))
+    eur = wallets.create_wallet(user_only.id, WalletCreate(currency="EUR"))
+    db_session.flush()
+    now = datetime.now(timezone.utc)
+    _add_transaction(db_session, user_only, ron, TransactionType.CARD_PAYMENT, "100.00", TransactionStatus.COMPLETED, now)
+    _add_transaction(db_session, user_only, eur, TransactionType.CARD_PAYMENT, "10.00", TransactionStatus.COMPLETED, now)
+
+    result = AnalyticsService(db_session).monthly_trend(user_only.id, months=1)
+
+    assert result.base_currency == "RON"
+    assert len(result.totals_by_month) == 1
+    total = result.totals_by_month[0]
+    assert total.year == now.year and total.month == now.month
+    # 100 RON + 10 EUR converted at the mock FX rate (RON/EUR ~= 4.97, see FXService)
+    assert total.total_amount > Decimal("100.00")
+
+
+def test_net_worth_history_reconstructs_daily_balances_from_ledger(db_session, seeded_user_with_wallet):
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    three_days_ago = now - timedelta(days=3)
+    wallet.created_at = three_days_ago - timedelta(days=5)
+    wallet.available_balance = Decimal("300.00")
+    db_session.flush()
+    tx = _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", TransactionStatus.COMPLETED, three_days_ago)
+    entry = WalletLedgerEntry(
+        wallet_id=wallet.id,
+        transaction_id=tx.id,
+        entry_type=LedgerEntryType.DEBIT,
+        amount=Decimal("100.00"),
+        currency=wallet.currency,
+        balance_after=Decimal("300.00"),
+        created_at=three_days_ago,
+    )
+    db_session.add(entry)
+    db_session.flush()
+
+    result = AnalyticsService(db_session).net_worth_history(user.id, period="3m", base_currency=None)
+
+    assert result.base_currency == "RON"
+    by_date = {point.date: point.value for point in result.history}
+    assert by_date[now.date()] == Decimal("300.00")
+    day_before_debit = (three_days_ago - timedelta(days=1)).date()
+    assert by_date[day_before_debit] == Decimal("400.00")
+
+
+def test_net_worth_history_rejects_unknown_period(db_session, user_only):
+    with pytest.raises(ValidationError):
+        AnalyticsService(db_session).net_worth_history(user_only.id, period="bogus", base_currency=None)
