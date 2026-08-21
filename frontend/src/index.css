@@ -687,7 +687,7 @@ th {
 .transaction-actions {
   display: grid;
   grid-template-columns: 140px 140px;
-  gap: 0.6rem;
+  gap: 1.5rem;
 }
 
 .transaction-actions button {
