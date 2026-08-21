@@ -1,6 +1,5 @@
 """Wallet business rules: one wallet per currency per user, exactly one main wallet."""
 import uuid
-from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +20,7 @@ class WalletService:
         if existing is not None and existing.status != WalletStatus.CLOSED:
             raise ConflictError(f"Wallet for currency '{currency}' already exists")
 
+        was_closed = existing is not None
         active_wallets = [w for w in self.repository.list_for_user(user_id) if w.status != WalletStatus.CLOSED]
         make_main = data.is_main
         if make_main:
@@ -30,14 +30,18 @@ class WalletService:
             # first (non-closed) wallet for a user is automatically the main wallet
             make_main = True
 
-        if existing is not None:
+        if was_closed:
             # Reopening a previously closed currency reuses its row: the
             # (user_id, currency) DB constraint means a second insert for the
-            # same pair fails even after the old wallet was closed.
+            # same pair fails even after the old wallet was closed. Re-fetch:
+            # list_for_user() above re-hydrated this same row under the
+            # Supabase REST shim (no SQLAlchemy identity map there), so
+            # `existing` is no longer the tracked instance for it.
+            existing = self.repository.get_by_user_and_currency(user_id, currency)
+            if existing is None:
+                raise NotFoundError("Wallet not found")
             existing.status = WalletStatus.ACTIVE
             existing.is_main = make_main
-            existing.available_balance = Decimal("0")
-            existing.reserved_balance = Decimal("0")
             self.db.flush()
             return existing
 
