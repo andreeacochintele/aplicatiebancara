@@ -586,3 +586,39 @@ export interface Notification {
   is_read: boolean;
   created_at: string;
 }
+
+export type FraudCaseStatus = "PENDING_REVIEW" | "APPROVED" | "REJECTED";
+export type FraudFlagCode =
+  | "NEW_DEVICE"
+  | "HIGH_AMOUNT"
+  | "UNUSUAL_COUNTRY"
+  | "REWARD_ABUSE_PATTERN"
+  | "HIGH_VELOCITY";
+
+export interface FraudFlag {
+  id: string;
+  code: FraudFlagCode;
+  points: string;
+  description: string;
+}
+
+export interface FraudCaseSummary {
+  id: string;
+  transaction_id: string;
+  user_id: string;
+  risk_score: string;
+  status: FraudCaseStatus;
+  hold_amount: string;
+  created_at: string;
+  flag_codes: FraudFlagCode[];
+}
+
+export interface FraudCaseDetail extends FraudCaseSummary {
+  decided_by_admin_id: string | null;
+  decided_at: string | null;
+  flags: FraudFlag[];
+  transaction_amount: string;
+  transaction_currency: string;
+  transaction_description: string | null;
+  transaction_created_at: string;
+}
