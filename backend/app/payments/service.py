@@ -470,8 +470,15 @@ class BillSplitService:
         self.notifications = NotificationsService(db)
 
     def create_bill_split(self, owner_user_id: uuid.UUID, data: BillSplitCreate) -> BillSplitPublic:
-        if data.source_transaction_id is not None and self.transactions.get_for_user(owner_user_id, data.source_transaction_id) is None:
-            raise NotFoundError("Source transaction not found")
+        if data.source_transaction_id is not None:
+            source_transaction = self.transactions.get_for_user(owner_user_id, data.source_transaction_id)
+            if source_transaction is None:
+                raise NotFoundError("Source transaction not found")
+            owner_wallet_ids = {wallet.id for wallet in self.wallets.list_for_user(owner_user_id)}
+            is_incoming = source_transaction.destination_wallet_id in owner_wallet_ids
+            is_outgoing = source_transaction.source_wallet_id in owner_wallet_ids
+            if is_incoming and not is_outgoing:
+                raise ValidationError("Cannot split a transaction that brought money in")
 
         bill_split = self.repository.add(
             BillSplit(

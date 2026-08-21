@@ -3,6 +3,8 @@ from uuid import UUID
 
 from app.notifications.service import NotificationsService
 from app.payments.models import BillSplitParticipantStatus, BillSplitStatus
+from app.transactions.schemas import InternalTransferCreate
+from app.transactions.service import TransactionService
 from app.wallets.models import Wallet
 from app.wallets.schemas import WalletCreate
 from app.wallets.service import WalletService
@@ -154,6 +156,38 @@ def test_bill_split_rejects_participant_amounts_above_total(client):
             "total_amount": "100.00",
             "currency": "RON",
             "participants": [{"name": "Friend", "phone": "+40779999999", "amount": "140.00"}],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_bill_split_rejects_incoming_transaction_as_source(client, db_session):
+    payer = _register(client, "split-incoming-payer@example.com", "+40770999993")
+    owner = _register(client, "split-incoming-owner@example.com", "+40770999994")
+    payer_wallet = _create_wallet(db_session, payer["user"]["id"], "RON", Decimal("500.00"))
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("0.00"))
+
+    incoming_transaction = TransactionService(db_session).create_internal_transfer(
+        UUID(payer["user"]["id"]),
+        InternalTransferCreate(
+            source_wallet_id=payer_wallet.id,
+            destination_wallet_id=owner_wallet.id,
+            amount=Decimal("50.00"),
+            description="Cashback",
+        ),
+    )
+    db_session.flush()
+
+    response = client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Should fail",
+            "total_amount": "50.00",
+            "currency": "RON",
+            "source_transaction_id": str(incoming_transaction.id),
+            "participants": [{"name": "Friend", "phone": "+40770999995", "amount": "50.00"}],
         },
     )
 

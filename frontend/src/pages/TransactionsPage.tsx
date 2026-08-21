@@ -17,10 +17,17 @@ interface SplitParticipantDraft {
   percent: string;
 }
 
-function formatAmount(transaction: Transaction, userWalletIds: Set<string>): string {
+// Money coming in only (not a self-transfer between the user's own
+// wallets, which is both incoming and outgoing) -- salary, cashback,
+// received transfers, etc. There's no bill to split for money you received.
+function isIncomingOnly(transaction: Transaction, userWalletIds: Set<string>): boolean {
   const isIncoming = transaction.destination_wallet_id ? userWalletIds.has(transaction.destination_wallet_id) : false;
   const isOutgoing = transaction.source_wallet_id ? userWalletIds.has(transaction.source_wallet_id) : false;
-  const sign = isIncoming && !isOutgoing ? "+" : "-";
+  return isIncoming && !isOutgoing;
+}
+
+function formatAmount(transaction: Transaction, userWalletIds: Set<string>): string {
+  const sign = isIncomingOnly(transaction, userWalletIds) ? "+" : "-";
   return `${sign}${transaction.amount} ${transaction.currency}`;
 }
 
@@ -629,9 +636,11 @@ export function TransactionsPage() {
                   <td>{tx.status}</td>
                   <td>
                     <div className="transaction-actions">
-                      <button className="button--ghost button--wide" onClick={() => openSplit(tx)} type="button">
-                        Split bill
-                      </button>
+                      {!isIncomingOnly(tx, userWalletIds) && (
+                        <button className="button--ghost button--wide" onClick={() => openSplit(tx)} type="button">
+                          Split bill
+                        </button>
+                      )}
                       <button className="button--ghost button--wide" onClick={() => openFolderModal(tx)} type="button">
                         Add to folder
                       </button>
