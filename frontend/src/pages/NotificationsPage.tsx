@@ -4,7 +4,9 @@ import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { Notification } from "../types";
 
-const TYPE_LABEL: Record<Notification["type"], string> = {
+// type is free-text on the backend (any module can add its own) — labels for
+// the ones we know about, humanized fallback for anything else.
+const TYPE_LABEL: Record<string, string> = {
   TRANSACTION: "Transaction",
   FRAUD: "Fraud",
   PAYMENT_REMINDER: "Payment reminder",
@@ -13,6 +15,10 @@ const TYPE_LABEL: Record<Notification["type"], string> = {
   SPLIT_BILL: "Split bill",
   SYSTEM: "System",
 };
+
+function typeLabel(type: string): string {
+  return TYPE_LABEL[type] ?? type.charAt(0) + type.slice(1).toLowerCase().replace(/_/g, " ");
+}
 
 export function NotificationsPage() {
   const { accessToken } = useAuth();
@@ -36,7 +42,7 @@ export function NotificationsPage() {
     setError(null);
     try {
       const updated = await apiRequest<Notification>(`/notifications/${notification.id}/read`, {
-        method: "PATCH",
+        method: "POST",
         token: accessToken,
       });
       setNotifications((current) => current.map((item) => (item.id === updated.id ? updated : item)));
@@ -49,13 +55,19 @@ export function NotificationsPage() {
 
   async function markAllRead() {
     if (!accessToken) return;
+    const unread = notifications.filter((n) => !n.is_read);
+    if (unread.length === 0) return;
     setMarkingAll(true);
     setError(null);
     try {
-      await apiRequest("/notifications/read-all", { method: "PATCH", token: accessToken });
+      // No bulk endpoint — mark each unread notification individually.
+      await Promise.all(
+        unread.map((n) => apiRequest<Notification>(`/notifications/${n.id}/read`, { method: "POST", token: accessToken })),
+      );
       setNotifications((current) => current.map((item) => ({ ...item, is_read: true })));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not mark notifications as read");
+      loadNotifications();
     } finally {
       setMarkingAll(false);
     }
@@ -93,7 +105,7 @@ export function NotificationsPage() {
             >
               <div>
                 <span className={`tag ${notification.is_read ? "tag--neutral" : "tag--accent"}`}>
-                  {TYPE_LABEL[notification.type]}
+                  {typeLabel(notification.type)}
                 </span>
                 <div style={{ fontWeight: 600, marginTop: "0.4rem" }}>{notification.title}</div>
                 <div style={{ color: "var(--color-text-muted)" }}>{notification.message}</div>

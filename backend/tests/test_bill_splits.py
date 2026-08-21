@@ -1,8 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from app.notifications.models import NotificationType
-from app.notifications.service import NotificationService
+from app.notifications.service import NotificationsService
 from app.payments.models import BillSplitParticipantStatus, BillSplitStatus
 from app.wallets.models import Wallet
 from app.wallets.schemas import WalletCreate
@@ -86,8 +85,8 @@ def test_create_bill_split_notifies_the_participant(client, db_session):
         },
     )
 
-    notifications = NotificationService(db_session).list_for_user(UUID(participant["user"]["id"]))
-    split_notifications = [n for n in notifications if n.type == NotificationType.SPLIT_BILL]
+    notifications = NotificationsService(db_session).list_for_user(UUID(participant["user"]["id"]))
+    split_notifications = [n for n in notifications if n.type == "SPLIT_BILL"]
     assert len(split_notifications) == 1
     assert "Movie night" in split_notifications[0].message
 
@@ -199,8 +198,8 @@ def test_participant_can_pay_bill_split(client, db_session):
     assert participant_wallet.available_balance == Decimal("120.00")
     assert owner_wallet.available_balance == Decimal("90.00")
 
-    owner_notifications = NotificationService(db_session).list_for_user(UUID(owner["user"]["id"]))
-    split_notifications = [n for n in owner_notifications if n.type == NotificationType.SPLIT_BILL]
+    owner_notifications = NotificationsService(db_session).list_for_user(UUID(owner["user"]["id"]))
+    split_notifications = [n for n in owner_notifications if n.type == "SPLIT_BILL"]
     assert len(split_notifications) == 1
     assert "Groceries" in split_notifications[0].message
 

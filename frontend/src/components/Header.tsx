@@ -1,11 +1,11 @@
 import { Bell } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
-import type { BillSplit, Wallet } from "../types";
+import type { BillSplit, Notification, Wallet } from "../types";
 
 const PAGE_INFO: Record<string, { title: string; subtitle: string }> = {
   "/dashboard": { title: "Dashboard", subtitle: "Personal banking overview" },
@@ -33,10 +33,11 @@ export function Header() {
   const page = PAGE_INFO[location.pathname];
   const [billSplits, setBillSplits] = useState<BillSplit[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
 
   const pendingSplitRequests = billSplits.flatMap((split) =>
     split.participants
@@ -52,19 +53,39 @@ export function Header() {
   async function loadNotifications() {
     if (!accessToken) return;
     try {
-      const [nextSplits, nextWallets, nextUnread] = await Promise.all([
+      const [nextSplits, nextWallets] = await Promise.all([
         apiRequest<BillSplit[]>("/payments/bill-splits", { token: accessToken }),
         apiRequest<Wallet[]>("/wallets", { token: accessToken }),
-        apiRequest<{ unread_count: number }>("/notifications/unread-count", { token: accessToken }).catch(() => ({
-          unread_count: 0,
-        })),
       ]);
       setBillSplits(nextSplits);
       setWallets(nextWallets);
-      setUnreadNotifications(nextUnread.unread_count);
       setNotificationError(null);
     } catch {
       setBillSplits([]);
+    }
+    try {
+      const nextNotifications = await apiRequest<Notification[]>("/notifications?unread_only=true", {
+        token: accessToken,
+      });
+      setNotifications(nextNotifications);
+    } catch {
+      setNotifications([]);
+    }
+  }
+
+  async function dismissNotification(notificationId: string) {
+    if (!accessToken) return;
+    setDismissingId(notificationId);
+    try {
+      await apiRequest<Notification>(`/notifications/${notificationId}/read`, {
+        method: "POST",
+        token: accessToken,
+      });
+      setNotifications((current) => current.filter((n) => n.id !== notificationId));
+    } catch (err) {
+      setNotificationError(err instanceof ApiError ? err.message : "Could not dismiss notification");
+    } finally {
+      setDismissingId(null);
     }
   }
 
@@ -125,8 +146,8 @@ export function Header() {
           type="button"
         >
           <Bell size={16} />
-          {pendingSplitRequests.length + unreadNotifications > 0 && (
-            <span className="notification-badge">{pendingSplitRequests.length + unreadNotifications}</span>
+          {pendingSplitRequests.length + notifications.length > 0 && (
+            <span className="notification-badge">{pendingSplitRequests.length + notifications.length}</span>
           )}
         </button>
         {notificationsOpen && (
@@ -137,39 +158,58 @@ export function Header() {
                 Refresh
               </button>
             </div>
-            <Link to="/notifications" className="button--ghost" onClick={() => setNotificationsOpen(false)}>
-              View all notifications{unreadNotifications > 0 ? ` (${unreadNotifications} unread)` : ""}
-            </Link>
             {notificationError && <p className="status-line status-line--error">{notificationError}</p>}
-            {pendingSplitRequests.length === 0 ? (
+            {pendingSplitRequests.length === 0 && notifications.length === 0 ? (
               <p className="empty-state">No pending requests.</p>
             ) : (
-              pendingSplitRequests.map(({ split, participant }) => (
-                <div className="notification-item" key={participant.id}>
-                  <span className="eyebrow">Split bill</span>
-                  <strong>{split.title}</strong>
-                  <span>
-                    {participant.amount} {split.currency}
-                  </span>
-                  <div className="notification-item__actions">
-                    <button
-                      disabled={actionId === participant.id}
-                      onClick={() => payRequest(split, participant.id)}
-                      type="button"
-                    >
-                      Pay
-                    </button>
-                    <button
-                      className="button--ghost"
-                      disabled={actionId === participant.id}
-                      onClick={() => refuseRequest(split, participant.id)}
-                      type="button"
-                    >
-                      Refuse
-                    </button>
+              <>
+                {notifications.map((notification) => (
+                  <div className="notification-item" key={notification.id}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
+                      <div>
+                        <span className="eyebrow">{notification.title}</span>
+                        <strong style={{ display: "block", fontWeight: 400 }}>{notification.message}</strong>
+                      </div>
+                      <button
+                        className="button--ghost"
+                        aria-label="Dismiss notification"
+                        disabled={dismissingId === notification.id}
+                        onClick={() => dismissNotification(notification.id)}
+                        type="button"
+                        style={{ flexShrink: 0 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+                {pendingSplitRequests.map(({ split, participant }) => (
+                  <div className="notification-item" key={participant.id}>
+                    <span className="eyebrow">Split bill</span>
+                    <strong>{split.title}</strong>
+                    <span>
+                      {participant.amount} {split.currency}
+                    </span>
+                    <div className="notification-item__actions">
+                      <button
+                        disabled={actionId === participant.id}
+                        onClick={() => payRequest(split, participant.id)}
+                        type="button"
+                      >
+                        Pay
+                      </button>
+                      <button
+                        className="button--ghost"
+                        disabled={actionId === participant.id}
+                        onClick={() => refuseRequest(split, participant.id)}
+                        type="button"
+                      >
+                        Refuse
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
           </div>
         )}

@@ -9,8 +9,7 @@ from app.cards.service import CardService
 from app.core.exceptions import NotFoundError, ValidationError
 from app.merchants.schemas import CashbackOfferCreate, MerchantCreate
 from app.merchants.service import MerchantService
-from app.notifications.models import NotificationType
-from app.notifications.service import NotificationService
+from app.notifications.service import NotificationsService
 from app.rewards.service import RewardsService
 from app.transactions.models import Transaction, TransactionStatus, TransactionType
 from app.transactions.schemas import CardPaymentCreate
@@ -134,12 +133,6 @@ def test_sync_awards_points_and_computes_cashback_from_real_transaction(db_sessi
     assert rewards_account.points_balance == 400
     assert rewards_account.transactions[0].proof_code == result.proof_code
 
-    cashback_notifications = [
-        n for n in NotificationService(db_session).list_for_user(seeded_user.id) if n.type == NotificationType.CASHBACK
-    ]
-    assert len(cashback_notifications) == 1
-    assert "Nike" in cashback_notifications[0].message
-
 
 def test_sync_scales_points_by_card_tier(db_session, seeded_user):
     merchant_service = MerchantService(db_session)
@@ -246,7 +239,8 @@ def test_sync_credits_cashback_to_the_debited_wallet_as_real_money(db_session, s
     card = CardService(db_session).create_card(seeded_user.id, CardCreate(default_wallet_id=wallet.id))
 
     TransactionService(db_session).create_card_payment(
-        seeded_user.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"))
+        seeded_user.id,
+        CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"), cvv=card.mock_cvv),
     )
     assert wallet.available_balance == Decimal("450.00")  # debited at payment time
 
@@ -274,6 +268,50 @@ def test_sync_credits_cashback_to_the_debited_wallet_as_real_money(db_session, s
     assert cashback_tx.description == "Cashback - Nike"
     assert len(cashback_tx.ledger_entries) == 1
     assert cashback_tx.ledger_entries[0].entry_type.value == "CREDIT"
+
+    notifications = [
+        n for n in NotificationsService(db_session).list_for_user(seeded_user.id) if n.type == "CASHBACK"
+    ]
+    assert len(notifications) == 1
+    assert notifications[0].type == "CASHBACK"
+    assert notifications[0].message == "You earned 5.00 RON cashback from Nike."
+    assert notifications[0].related_transaction_id == cashback_tx.id
+    assert notifications[0].is_read is False
+
+
+def test_sync_credits_cashback_even_if_the_notification_write_fails(db_session, seeded_user, monkeypatch):
+    """A notification is best-effort — if creating it blows up (e.g. a
+    shared DB that's behind on migrations, exactly what happened live), the
+    cashback money and the points already earned must not be rolled back or
+    silently dropped from the sync result."""
+    wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("500.00")
+    db_session.flush()
+
+    merchant_service = MerchantService(db_session)
+    merchant = merchant_service.create_merchant(MerchantCreate(name="Nike", category="Retail", verified=True))
+    start, end = _active_offer_window()
+    merchant_service.create_cashback_offer(
+        merchant.id, CashbackOfferCreate(cashback_percent=Decimal("10"), start_date=start, end_date=end)
+    )
+    card = CardService(db_session).create_card(seeded_user.id, CardCreate(default_wallet_id=wallet.id))
+    TransactionService(db_session).create_card_payment(
+        seeded_user.id,
+        CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"), cvv=card.mock_cvv),
+    )
+
+    monkeypatch.setattr(NotificationsService, "create", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError))
+
+    results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
+
+    assert len(results) == 1
+    assert results[0].points_earned == 50
+    assert results[0].cashback_amount == Decimal("5.00")
+    assert wallet.available_balance == Decimal("455.00")
+    cashback_notifications = [
+        n for n in NotificationsService(db_session).list_for_user(seeded_user.id) if n.type == "CASHBACK"
+    ]
+    assert cashback_notifications == []
 
 
 def test_sync_without_a_known_card_uses_base_rate(db_session, seeded_user):

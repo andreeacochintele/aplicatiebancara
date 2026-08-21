@@ -3,8 +3,7 @@ import uuid
 import pytest
 
 from app.core.exceptions import NotFoundError
-from app.notifications.models import NotificationType
-from app.notifications.service import NotificationService
+from app.notifications.service import NotificationsService
 from app.users.schemas import UserCreate
 from app.users.service import UserService
 
@@ -12,103 +11,59 @@ from app.users.service import UserService
 @pytest.fixture()
 def seeded_user(db_session):
     return UserService(db_session).create_user(
-        UserCreate(
-            email="notif-owner@example.com",
-            phone="+40755555555",
-            password="Sup3rSecret!",
-            first_name="Notif",
-            last_name="Owner",
-        )
+        UserCreate(email="notif-user@example.com", password="Sup3rSecret!", first_name="Notif", last_name="User")
     )
 
 
-def test_notify_creates_unread_notification(db_session, seeded_user):
-    service = NotificationService(db_session)
-    # Registration itself already raised the unread count by one (welcome notification).
-    baseline = service.unread_count(seeded_user.id)
+def test_create_and_list_notification(db_session, seeded_user):
+    service = NotificationsService(db_session)
+    service.create(seeded_user.id, type="CASHBACK", title="Cashback earned", message="You earned 4.00 RON cashback.")
 
-    notification = service.notify(seeded_user.id, NotificationType.SYSTEM, "Welcome", "Thanks for joining.")
-
-    assert notification.is_read is False
-    assert service.unread_count(seeded_user.id) == baseline + 1
-    assert service.list_for_user(seeded_user.id)[0].id == notification.id
-
-
-def test_mark_read_flips_the_flag(db_session, seeded_user):
-    service = NotificationService(db_session)
-    baseline = service.unread_count(seeded_user.id)
-    notification = service.notify(seeded_user.id, NotificationType.TRANSACTION, "Money received", "You received 10 RON.")
-
-    updated = service.mark_read(seeded_user.id, notification.id)
-
-    assert updated.is_read is True
-    assert service.unread_count(seeded_user.id) == baseline
-
-
-def test_mark_read_wrong_user_raises(db_session, seeded_user):
-    service = NotificationService(db_session)
-    notification = service.notify(seeded_user.id, NotificationType.SYSTEM, "Welcome", "Thanks for joining.")
-
-    with pytest.raises(NotFoundError):
-        service.mark_read(uuid.uuid4(), notification.id)
-
-
-def test_mark_all_read_clears_unread_count(db_session, seeded_user):
-    service = NotificationService(db_session)
-    baseline = service.unread_count(seeded_user.id)
-    service.notify(seeded_user.id, NotificationType.CASHBACK, "Cashback earned", "You earned 5 RON cashback.")
-    service.notify(seeded_user.id, NotificationType.SPLIT_BILL, "Split bill request", "Andrei requested 80 RON.")
-
-    marked = service.mark_all_read(seeded_user.id)
-
-    assert marked == baseline + 2
-    assert service.unread_count(seeded_user.id) == 0
-
-
-def test_registration_sends_a_welcome_notification(db_session):
-    user = UserService(db_session).create_user(
-        UserCreate(
-            email="welcome-test@example.com",
-            phone="+40777777777",
-            password="Sup3rSecret!",
-            first_name="Welcome",
-            last_name="Test",
-        )
-    )
-
-    notifications = NotificationService(db_session).list_for_user(user.id)
+    notifications = [n for n in service.list_for_user(seeded_user.id) if n.type == "CASHBACK"]
 
     assert len(notifications) == 1
-    assert notifications[0].type == NotificationType.SYSTEM
+    assert notifications[0].type == "CASHBACK"
+    assert notifications[0].title == "Cashback earned"
+    assert notifications[0].is_read is False
 
 
-def test_transfer_notifies_the_destination_wallet_owner(db_session, seeded_user):
-    from app.wallets.schemas import WalletCreate
-    from app.wallets.service import WalletService
-
-    payer = UserService(db_session).create_user(
-        UserCreate(
-            email="payer@example.com",
-            phone="+40766666666",
-            password="Sup3rSecret!",
-            first_name="Payer",
-            last_name="User",
-        )
+def test_list_for_user_only_returns_that_users_notifications(db_session, seeded_user):
+    other_user = UserService(db_session).create_user(
+        UserCreate(email="notif-other@example.com", password="Sup3rSecret!", first_name="Other", last_name="User")
     )
-    wallets = WalletService(db_session)
-    payer_wallet = wallets.create_wallet(payer.id, WalletCreate(currency="RON"))
-    payer_wallet.available_balance = 100
-    owner_wallet = wallets.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    service = NotificationsService(db_session)
+    service.create(seeded_user.id, type="CASHBACK", title="Mine", message="...")
+    service.create(other_user.id, type="CASHBACK", title="Not mine", message="...")
 
-    from app.transactions.schemas import InternalTransferCreate
-    from app.transactions.service import TransactionService
+    notifications = service.list_for_user(seeded_user.id)
 
-    TransactionService(db_session).create_internal_transfer(
-        payer.id,
-        InternalTransferCreate(source_wallet_id=payer_wallet.id, destination_wallet_id=owner_wallet.id, amount=40),
+    assert [n.title for n in notifications if n.type == "CASHBACK"] == ["Mine"]
+
+
+def test_mark_read_hides_it_from_unread_only_listing(db_session, seeded_user):
+    service = NotificationsService(db_session)
+    notification = service.create(seeded_user.id, type="CASHBACK", title="Cashback earned", message="...")
+
+    service.mark_read(seeded_user.id, notification.id)
+
+    unread_cashback = [n for n in service.list_for_user(seeded_user.id, unread_only=True) if n.type == "CASHBACK"]
+    assert unread_cashback == []
+    all_cashback = [n for n in service.list_for_user(seeded_user.id) if n.type == "CASHBACK"]
+    assert len(all_cashback) == 1
+    assert all_cashback[0].is_read is True
+
+
+def test_mark_read_rejects_someone_elses_notification(db_session, seeded_user):
+    other_user = UserService(db_session).create_user(
+        UserCreate(email="notif-other2@example.com", password="Sup3rSecret!", first_name="Other", last_name="User")
     )
+    service = NotificationsService(db_session)
+    notification = service.create(seeded_user.id, type="CASHBACK", title="Mine", message="...")
 
-    notifications = NotificationService(db_session).list_for_user(seeded_user.id)
-    transfer_notifications = [n for n in notifications if n.type == NotificationType.TRANSACTION]
-    assert len(transfer_notifications) == 1
-    assert "40" in transfer_notifications[0].message
+    with pytest.raises(NotFoundError):
+        service.mark_read(other_user.id, notification.id)
+
+
+def test_mark_read_rejects_unknown_notification(db_session, seeded_user):
+    with pytest.raises(NotFoundError):
+        NotificationsService(db_session).mark_read(seeded_user.id, uuid.uuid4())

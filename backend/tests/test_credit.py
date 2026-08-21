@@ -20,8 +20,7 @@ from app.credit.schemas import (
 )
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.credit.service import CreditService
-from app.notifications.models import NotificationType
-from app.notifications.service import NotificationService
+from app.notifications.service import NotificationsService
 from app.users.schemas import UserCreate
 from app.users.service import UserService
 from app.wallets.schemas import WalletCreate
@@ -276,8 +275,8 @@ def test_create_personal_loan_application_captures_current_score(db_session):
     assert application.credit_score_at_application == 644
     assert application.currency == "RON"
 
-    notifications = NotificationService(db_session).list_for_user(user.id)
-    credit_notifications = [n for n in notifications if n.type == NotificationType.CREDIT]
+    notifications = NotificationsService(db_session).list_for_user(user.id)
+    credit_notifications = [n for n in notifications if n.type == "CREDIT"]
     assert len(credit_notifications) == 1
     assert "approved" in credit_notifications[0].title.lower()
 
@@ -515,7 +514,7 @@ def test_admin_decides_credit_application(db_session):
     assert decided.resolved_at is not None
 
     credit_notifications = [
-        n for n in NotificationService(db_session).list_for_user(user.id) if n.type == NotificationType.CREDIT
+        n for n in NotificationsService(db_session).list_for_user(user.id) if n.type == "CREDIT"
     ]
     assert len(credit_notifications) == 1
     assert "approved" in credit_notifications[0].title.lower()
@@ -532,7 +531,7 @@ def test_admin_rejection_notifies_the_applicant(db_session):
     service.decide_application(application.id, CreditApplicationDecision(status=CreditApplicationStatus.REJECTED))
 
     credit_notifications = [
-        n for n in NotificationService(db_session).list_for_user(user.id) if n.type == NotificationType.CREDIT
+        n for n in NotificationsService(db_session).list_for_user(user.id) if n.type == "CREDIT"
     ]
     assert len(credit_notifications) == 1
     assert "rejected" in credit_notifications[0].title.lower()

@@ -1,72 +1,62 @@
-"""Notification Center — architecture.md §26.
+"""Notification center (architecture.md §26).
 
-`notify()` is the extension point other domains call to raise a notification
-(e.g. a completed transfer, a fraud hold, an earned cashback). It only ever
-writes a row here; it never reaches into another domain's tables.
-
-Every read/write here is best-effort: `notifications` is a table that has to
-be applied by hand on the shared Supabase project (see
-supabase_notifications_table.sql — Supabase REST can't run Alembic
-migrations), so it can legitimately not exist yet in some environments. A
-missing table must never break the primary flow it's attached to (register,
-pay a bill split, decide a credit application, ...), so failures here are
-swallowed rather than raised.
+`create` is called from other modules when something notification-worthy
+happens — e.g. app/merchants/service.py after crediting cashback — the same
+cross-module pattern already used for reading cards/transactions elsewhere
+in this codebase, just for writing here instead.
 """
 import uuid
 
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
-from app.notifications.models import Notification, NotificationType
+from app.notifications.models import Notification
 from app.notifications.repository import NotificationRepository
+from app.notifications.schemas import NotificationPublic
 
 
-class NotificationService:
+class NotificationsService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repository = NotificationRepository(db)
 
-    def list_for_user(self, user_id: uuid.UUID) -> list[Notification]:
-        try:
-            return self.repository.list_for_user(user_id)
-        except Exception:
-            return []
+    def create(
+        self,
+        user_id: uuid.UUID,
+        type: str,
+        title: str,
+        message: str,
+        related_transaction_id: uuid.UUID | None = None,
+    ) -> Notification:
+        return self.repository.add(
+            Notification(
+                user_id=user_id,
+                type=type,
+                title=title,
+                message=message,
+                related_transaction_id=related_transaction_id,
+            )
+        )
 
-    def unread_count(self, user_id: uuid.UUID) -> int:
-        return sum(1 for notification in self.list_for_user(user_id) if not notification.is_read)
+    def list_for_user(self, user_id: uuid.UUID, unread_only: bool = False) -> list[NotificationPublic]:
+        return [self._to_public(n) for n in self.repository.list_for_user(user_id, unread_only)]
 
-    def mark_read(self, user_id: uuid.UUID, notification_id: uuid.UUID) -> Notification:
+    def mark_read(self, user_id: uuid.UUID, notification_id: uuid.UUID) -> NotificationPublic:
         notification = self.repository.get_by_id(notification_id)
         if notification is None or notification.user_id != user_id:
             raise NotFoundError("Notification not found")
         notification.is_read = True
         self.db.flush()
-        return notification
+        return self._to_public(notification)
 
-    def mark_all_read(self, user_id: uuid.UUID) -> int:
-        unread = [n for n in self.list_for_user(user_id) if not n.is_read]
-        for notification in unread:
-            notification.is_read = True
-        self.db.flush()
-        return len(unread)
-
-    def notify(
-        self,
-        user_id: uuid.UUID,
-        type: NotificationType,
-        title: str,
-        message: str,
-        related_transaction_id: uuid.UUID | None = None,
-    ) -> Notification | None:
-        try:
-            return self.repository.add(
-                Notification(
-                    user_id=user_id,
-                    type=type,
-                    title=title,
-                    message=message,
-                    related_transaction_id=related_transaction_id,
-                )
-            )
-        except Exception:
-            return None
+    @staticmethod
+    def _to_public(notification: Notification) -> NotificationPublic:
+        return NotificationPublic(
+            id=notification.id,
+            type=notification.type,
+            title=notification.title,
+            message=notification.message,
+            related_transaction_id=notification.related_transaction_id,
+            is_read=notification.is_read,
+            created_at=notification.created_at,
+        )

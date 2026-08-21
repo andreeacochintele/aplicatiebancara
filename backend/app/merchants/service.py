@@ -57,8 +57,7 @@ from app.merchants.schemas import (
     MerchantPublic,
     PurchaseResult,
 )
-from app.notifications.models import NotificationType
-from app.notifications.service import NotificationService
+from app.notifications.service import NotificationsService
 from app.rewards.service import RewardsService
 from app.supabase import is_supabase_session
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
@@ -92,8 +91,8 @@ class MerchantService:
         self.transactions = TransactionRepository(db)
         self.cards = CardRepository(db)
         self.wallets = WalletRepository(db)
+        self.notifications = NotificationsService(db)
         self.fx = FXService(db)
-        self.notifications = NotificationService(db)
 
     def create_merchant(self, data: MerchantCreate) -> MerchantPublic:
         merchant = Merchant(name=data.name, category=data.category, logo_url=data.logo_url, verified=data.verified)
@@ -277,20 +276,6 @@ class MerchantService:
         if cashback_amount > 0 and wallet_id is not None:
             self._credit_cashback_to_wallet(wallet_id, cashback_amount, merchant.name)
 
-        if points_earned > 0 or cashback_amount > 0:
-            parts = []
-            if points_earned > 0:
-                parts.append(f"{points_earned} points")
-            if cashback_amount > 0:
-                parts.append(f"{cashback_amount} {currency} cashback")
-            self.notifications.notify(
-                user_id,
-                NotificationType.CASHBACK,
-                "Cashback earned",
-                f"You earned {' and '.join(parts)} at {merchant.name}.",
-                related_transaction_id=source_transaction_id,
-            )
-
         return PurchaseResult(
             merchant_id=merchant.id,
             proof_code=proof_code,
@@ -334,7 +319,26 @@ class MerchantService:
                 balance_after=wallet.available_balance,
             )
         )
+        # Flush the actual money movement before doing anything else — a
+        # failure past this point (e.g. a notification write on a shared DB
+        # that's behind on migrations) must never leave the wallet's balance
+        # mutation sitting unflushed while its ledger entry already exists.
         self.db.flush()
+
+        # Best-effort: a notification is never allowed to make the cashback
+        # itself look like it failed (which is what happens if an exception
+        # here propagates up into sync_purchases_from_transactions' race
+        # guard and the transaction gets silently skipped/retried).
+        try:
+            self.notifications.create(
+                wallet.user_id,
+                type="CASHBACK",
+                title="Cashback earned",
+                message=f"You earned {cashback_amount} {wallet.currency} cashback from {merchant_name}.",
+                related_transaction_id=cashback_transaction.id,
+            )
+        except Exception:
+            pass
 
     @staticmethod
     def _generate_proof_code() -> str:

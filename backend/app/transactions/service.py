@@ -21,8 +21,7 @@ from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.fx.service import FXService
 from app.merchants.models import MerchantStatus
 from app.merchants.repository import MerchantRepository
-from app.notifications.models import NotificationType
-from app.notifications.service import NotificationService
+from app.notifications.service import NotificationsService
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
 from app.transactions.schemas import CardPaymentCreate, InternalTransferCreate
@@ -38,7 +37,7 @@ class TransactionService:
         self.fx = FXService(db)
         self.cards = CardRepository(db)
         self.merchants = MerchantRepository(db)
-        self.notifications = NotificationService(db)
+        self.notifications = NotificationsService(db)
 
     def create_internal_transfer(self, initiator_user_id: uuid.UUID, data: InternalTransferCreate) -> Transaction:
         if data.amount <= 0:
@@ -149,14 +148,20 @@ class TransactionService:
 
         transaction.status = TransactionStatus.COMPLETED
         transaction.completed_at = datetime.now(timezone.utc)
-        self.notifications.notify(
-            destination.user_id,
-            NotificationType.TRANSACTION,
-            "Money received",
-            f"You received {destination_amount} {destination.currency}.",
-            related_transaction_id=transaction.id,
-        )
         self.db.flush()
+
+        # Best-effort: a notification failure must never make an otherwise-
+        # successful transfer look like it failed.
+        try:
+            self.notifications.create(
+                destination.user_id,
+                type="TRANSACTION",
+                title="Money received",
+                message=f"You received {destination_amount} {destination.currency}.",
+                related_transaction_id=transaction.id,
+            )
+        except Exception:
+            pass
 
     def create_card_payment(self, initiator_user_id: uuid.UUID, data: CardPaymentCreate) -> Transaction:
         """A card payment to a merchant — unlike a transfer, money leaves the
@@ -171,6 +176,8 @@ class TransactionService:
         card = self.cards.get_by_id(data.card_id)
         if card is None or card.user_id != initiator_user_id:
             raise NotFoundError("Card not found")
+        if data.cvv != card.mock_cvv:
+            raise ValidationError("Incorrect CVV")
         if card.status != CardStatus.ACTIVE:
             raise ValidationError(f"Card is {card.status.value}, payments require an ACTIVE card")
 
