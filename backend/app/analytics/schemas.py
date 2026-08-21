@@ -29,8 +29,19 @@ class MonthlyTrendItem(BaseModel):
     transaction_count: int
 
 
+class MonthlyTrendTotal(BaseModel):
+    """One month's spend across all currencies, converted to base_currency —
+    the FX-comparable series the trend chart plots by default."""
+
+    year: int
+    month: int
+    total_amount: Decimal
+
+
 class MonthlyTrendResponse(BaseModel):
+    base_currency: str
     items: list[MonthlyTrendItem]
+    totals_by_month: list[MonthlyTrendTotal]
 
 
 class WalletBalanceItem(BaseModel):
@@ -48,6 +59,11 @@ class NetWorthResponse(BaseModel):
     wallets: list[WalletBalanceItem]
 
 
+class ForecastPoint(BaseModel):
+    date: date
+    projected_balance: Decimal
+
+
 class ForecastResponse(BaseModel):
     wallet_id: uuid.UUID
     currency: str
@@ -56,4 +72,16 @@ class ForecastResponse(BaseModel):
     days_remaining: int
     average_daily_net_change: Decimal
     projected_month_end_balance: Decimal
+    projected_series: list[ForecastPoint]
+    note: str
+
+
+class NetWorthHistoryPoint(BaseModel):
+    date: date
+    value: Decimal
+
+
+class NetWorthHistoryResponse(BaseModel):
+    base_currency: str
+    history: list[NetWorthHistoryPoint]
     note: str
