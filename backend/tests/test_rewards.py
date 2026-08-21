@@ -211,6 +211,41 @@ def test_redeem_benefit_rejects_below_required_card_tier(db_session, seeded_user
         service.redeem_benefit(seeded_user.id, lounge.id, card.id)
 
 
+def test_redeem_benefit_uses_best_owned_card_tier_not_the_selected_receipt_card(db_session, seeded_user):
+    """Eligibility must be global (any card the user owns), not scoped to
+    whichever card happens to be selected in the redemption's "pay with"
+    dropdown — that field is receipt-only. A Platinum owner picking their
+    Regular card as the receipt card should still be able to redeem a
+    Gold-gated benefit."""
+    regular_card = _regular_card(db_session, seeded_user.id)
+    # A second debit card needs its own wallet now (one debit card per
+    # wallet) — a different currency avoids colliding with the RON wallet
+    # _regular_card already attached.
+    eur_wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    CardService(db_session).create_card(
+        seeded_user.id, CardCreate(tier=CardTier.PLATINUM, default_wallet_id=eur_wallet.id)
+    )  # owned, but not the one passed below
+    lounge = RewardBenefit(
+        name="Priority Pass Lounge Access",
+        category=BenefitCategory.LOUNGE_ACCESS,
+        description="One lounge visit",
+        points_cost=1500,
+        min_card_tier=CardTier.GOLD,
+        partner_name="Priority Pass",
+    )
+    db_session.add(lounge)
+    db_session.flush()
+
+    service = RewardsService(db_session)
+    service.earn_points(seeded_user.id, 1500)
+
+    account = service.redeem_benefit(seeded_user.id, lounge.id, regular_card.id)
+
+    assert account.points_balance == 0
+    assert len(account.redemptions) == 1
+    assert account.redemptions[0].card_id == regular_card.id  # receipt card, unchanged
+
+
 def test_redeem_benefit_rejects_insufficient_points(db_session, seeded_user):
     card = _gold_card(db_session, seeded_user.id)
     discount = RewardBenefit(

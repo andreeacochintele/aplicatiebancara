@@ -140,8 +140,10 @@ export function RewardsPage() {
   const [showFullHistory, setShowFullHistory] = useState(false);
   const [areCardsExpanded, setAreCardsExpanded] = useState(true);
   const [areVouchersExpanded, setAreVouchersExpanded] = useState(false);
+  const [isInviteExpanded, setIsInviteExpanded] = useState(false);
   const [codeReveal, setCodeReveal] = useState<{ title: string; subtitle: string; code: string } | null>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [inviteCopyFeedback, setInviteCopyFeedback] = useState(false);
   const [markingUsedId, setMarkingUsedId] = useState<string | null>(null);
 
   function loadRewards() {
@@ -342,19 +344,21 @@ export function RewardsPage() {
     }
   }
 
-  async function inviteFriends() {
-    // The code itself is real and persistent (RewardAccount.referral_code,
-    // generated once server-side and reused). Only what happens with it
-    // afterwards — validating a friend signed up, crediting 500 pts — is
-    // still mock, per the same "informational only" pattern already used
-    // for cashback amounts.
-    if (!rewards?.referral_code) return;
-    const link = `${window.location.origin}/invite/${rewards.referral_code}`;
+  // The code itself is real and persistent (RewardAccount.referral_code,
+  // generated once server-side and reused). Only what happens with it
+  // afterwards — validating a friend signed up, crediting 500 pts — is
+  // still mock, per the same "informational only" pattern already used
+  // for cashback amounts.
+  const inviteLink = rewards?.referral_code ? `${window.location.origin}/invite/${rewards.referral_code}` : "";
+
+  async function copyInviteLink() {
+    if (!inviteLink) return;
     try {
-      await navigator.clipboard.writeText(link);
-      setToast(`Referral link copied — ${link}`);
+      await navigator.clipboard.writeText(inviteLink);
+      setInviteCopyFeedback(true);
+      setTimeout(() => setInviteCopyFeedback(false), 1800);
     } catch {
-      setToast(`Your referral code: ${rewards.referral_code} (copy failed — clipboard blocked)`);
+      // Clipboard blocked — the link stays visible in the panel either way.
     }
   }
 
@@ -740,26 +744,62 @@ export function RewardsPage() {
 
           {/* 6. Referral / earn more points */}
           <div className="tile" style={{ background: "var(--aurora-gradient, #5b5fef)", color: "#fff", border: "none" }}>
-            <div className="eyebrow" style={{ color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-              <Users size={14} strokeWidth={2.2} />
-              Want more points?
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div className="eyebrow" style={{ color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <Users size={14} strokeWidth={2.2} />
+                Want more points?
+              </div>
+              {isInviteExpanded && (
+                <button
+                  type="button"
+                  className="button--ghost"
+                  onClick={() => setIsInviteExpanded(false)}
+                  aria-expanded={isInviteExpanded}
+                  style={{ color: "#fff", borderColor: "rgba(255,255,255,0.5)" }}
+                >
+                  Retract
+                </button>
+              )}
             </div>
             <p style={{ margin: "0.5rem 0 0.85rem", fontSize: "0.9rem" }}>
               Invite friends and earn 500 pts for each successful referral.
             </p>
-            {rewards?.referral_code && (
-              <p style={{ margin: "0 0 0.6rem", fontSize: "0.8rem", opacity: 0.85 }}>
-                Your code: <strong>{rewards.referral_code}</strong>
-              </p>
+            {isInviteExpanded ? (
+              <div>
+                <p style={{ margin: "0 0 0.4rem", fontSize: "0.8rem", opacity: 0.85 }}>Your invite link:</p>
+                <div
+                  style={{
+                    background: "rgba(255,255,255,0.16)",
+                    border: "1px dashed rgba(255,255,255,0.5)",
+                    borderRadius: "0.6rem",
+                    padding: "0.6rem",
+                    fontFamily: "monospace",
+                    fontSize: "0.8rem",
+                    wordBreak: "break-all",
+                    marginBottom: "0.75rem",
+                  }}
+                >
+                  {inviteLink}
+                </div>
+                <button
+                  type="button"
+                  onClick={copyInviteLink}
+                  style={{ background: "#fff", color: "#4548c9", border: "none" }}
+                >
+                  {inviteCopyFeedback ? "Copied!" : "Copy link"}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsInviteExpanded(true)}
+                disabled={!rewards?.referral_code}
+                aria-expanded={isInviteExpanded}
+                style={{ background: "#fff", color: "#4548c9", border: "none" }}
+              >
+                Invite friends
+              </button>
             )}
-            <button
-              type="button"
-              onClick={inviteFriends}
-              disabled={!rewards?.referral_code}
-              style={{ background: "#fff", color: "#4548c9", border: "none" }}
-            >
-              Invite friends
-            </button>
           </div>
 
           {/* 7. Rewards points history */}
@@ -769,29 +809,31 @@ export function RewardsPage() {
             </div>
             {history.length > 0 ? (
               <>
-                <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.5rem" }}>
-                  {history.map((tx) => (
-                    <li key={tx.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
-                      <span style={{ fontSize: "0.85rem" }}>
-                        {tx.description ?? tx.type}
-                        {tx.proof_code && (
-                          <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
-                            Code: {tx.proof_code}
-                          </div>
-                        )}
-                      </span>
-                      <span
-                        style={{
-                          fontWeight: 700,
-                          color: tx.points >= 0 ? "var(--aurora-green, #2e9e5b)" : "var(--color-text-muted)",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {tx.points > 0 ? `+${tx.points}` : tx.points}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <div style={{ maxHeight: "360px", overflowY: "auto", paddingRight: "0.25rem" }}>
+                  <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.5rem" }}>
+                    {history.map((tx) => (
+                      <li key={tx.id} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+                        <span style={{ fontSize: "0.85rem" }}>
+                          {tx.description ?? tx.type}
+                          {tx.proof_code && (
+                            <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
+                              Code: {tx.proof_code}
+                            </div>
+                          )}
+                        </span>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            color: tx.points >= 0 ? "var(--aurora-green, #2e9e5b)" : "var(--color-text-muted)",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {tx.points > 0 ? `+${tx.points}` : tx.points}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
                 {rewards && rewards.transactions.length > 5 && (
                   <button
                     type="button"
@@ -825,6 +867,7 @@ export function RewardsPage() {
                 </button>
               </div>
               {areVouchersExpanded ? (
+                <div style={{ maxHeight: "360px", overflowY: "auto", paddingRight: "0.25rem" }}>
                 <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: "0.6rem" }}>
                   {rewards.redemptions.map((redemption) => (
                     <li
@@ -883,6 +926,7 @@ export function RewardsPage() {
                     </li>
                   ))}
                 </ul>
+                </div>
               ) : (
                 <p className="eyebrow">
                   {rewards.redemptions.length} voucher{rewards.redemptions.length === 1 ? "" : "s"} — expand to view.
@@ -907,16 +951,6 @@ export function RewardsPage() {
           <p className="eyebrow">
             Balance after redemption: {rewards.points_balance - (confirmBenefit.points_cost ?? 0)} points
           </p>
-          <label style={{ display: "block", marginTop: "0.75rem" }}>
-            Pay with card
-            <select value={redeemCardId} onChange={(e) => setRedeemCardId(e.target.value)} style={{ width: "100%" }}>
-              {cards.map((card) => (
-                <option key={card.id} value={card.id}>
-                  {formatCardLabel(card)}
-                </option>
-              ))}
-            </select>
-          </label>
         </ConfirmModal>
       )}
 

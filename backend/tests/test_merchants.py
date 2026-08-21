@@ -250,6 +250,23 @@ def test_sync_credits_cashback_to_the_debited_wallet_as_real_money(db_session, s
     # Net effect vs. the original 500: -45, matching the worked example exactly.
     assert Decimal("500.00") - wallet.available_balance == Decimal("45.00")
 
+    # Cashback must be a real, standalone Transaction (not just a balance
+    # tweak) so it shows up in the Transactions list and in analytics'
+    # spending-by-type breakdown — same as the existing CASHBACK seed
+    # example ("Cashback - Nike") already does.
+    cashback_tx = (
+        db_session.query(Transaction)
+        .filter(Transaction.type == TransactionType.CASHBACK, Transaction.destination_wallet_id == wallet.id)
+        .one()
+    )
+    assert cashback_tx.amount == Decimal("5.00")
+    assert cashback_tx.currency == "RON"
+    assert cashback_tx.status == TransactionStatus.COMPLETED
+    assert cashback_tx.source_wallet_id is None
+    assert cashback_tx.description == "Cashback - Nike"
+    assert len(cashback_tx.ledger_entries) == 1
+    assert cashback_tx.ledger_entries[0].entry_type.value == "CREDIT"
+
 
 def test_sync_without_a_known_card_uses_base_rate(db_session, seeded_user):
     merchant_service = MerchantService(db_session)
