@@ -1,17 +1,57 @@
-"""Placeholder router for the fraud module.
+"""Admin fraud review endpoints (architecture.md §32).
 
-This module is structured (router/service/repository/models/schemas) but not
-yet implemented — see architecture.md for its target scope. Wired into
-/api/v1 now so the route table and dev split are stable across the team.
+The Fraud Investigation Agent's POST /fraud/cases/{id}/investigate isn't
+added yet — it belongs with the rest of ai/* on feature/dev4/ai-agents,
+which doesn't exist yet either. Cases are scored and held automatically by
+FraudService.evaluate_transaction (called from
+TransactionService.create_card_payment); an admin only ever approves or
+rejects an already-created case here.
 """
-from fastapi import APIRouter, HTTPException, status
+import uuid
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.auth.dependencies import require_admin
+from app.database import get_db
+from app.fraud.schemas import FraudCaseDetail, FraudCaseSummary, FraudDecisionRequest
+from app.fraud.service import FraudService
+from app.users.models import User
 
 router = APIRouter(prefix="/fraud", tags=["fraud"])
 
 
-@router.get("", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def not_implemented() -> dict:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="'fraud' module is not implemented yet (Phase 1 skeleton only)",
-    )
+@router.get("/cases", response_model=list[FraudCaseSummary])
+def list_fraud_cases(
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[FraudCaseSummary]:
+    return FraudService(db).list_pending()
+
+
+@router.get("/cases/{case_id}", response_model=FraudCaseDetail)
+def get_fraud_case(
+    case_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> FraudCaseDetail:
+    service = FraudService(db)
+    case = service.get_case(case_id)
+    return service.to_detail(case)
+
+
+@router.post("/cases/{case_id}/decision", response_model=FraudCaseDetail)
+def decide_fraud_case(
+    case_id: uuid.UUID,
+    payload: FraudDecisionRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> FraudCaseDetail:
+    service = FraudService(db)
+    case = service.get_case(case_id)
+    if payload.action == "APPROVE":
+        case = service.approve(case, admin)
+    else:
+        case = service.reject(case, admin)
+    db.commit()
+    return service.to_detail(case)
