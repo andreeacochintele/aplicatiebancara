@@ -1,6 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
+from app.transactions.models import Transaction, TransactionStatus, TransactionType
 from app.transactions.schemas import InternalTransferCreate
 from app.transactions.service import TransactionService
 from app.wallets.models import Wallet
@@ -121,6 +122,36 @@ def test_add_and_remove_transaction_from_folder(client, db_session):
         headers=_auth_header(owner),
     )
     assert remove_response.status_code == 204
+
+
+def test_transaction_folder_rejects_non_completed_transaction(client, db_session):
+    owner = _register(client, "folder-pending-owner@example.com", "+40771555555")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    pending_transaction = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        source_wallet_id=owner_wallet.id,
+        type=TransactionType.CARD_PAYMENT,
+        status=TransactionStatus.PROCESSING,
+        amount=Decimal("40.00"),
+        currency="RON",
+        description="Still processing",
+    )
+    db_session.add(pending_transaction)
+    db_session.flush()
+
+    folder = client.post(
+        "/api/v1/payments/transaction-folders",
+        headers=_auth_header(owner),
+        json={"name": "Pending costs"},
+    ).json()
+
+    response = client.post(
+        f"/api/v1/payments/transaction-folders/{folder['id']}/transactions",
+        headers=_auth_header(owner),
+        json={"transaction_id": str(pending_transaction.id)},
+    )
+
+    assert response.status_code == 422
 
 
 def test_transaction_folder_rejects_other_users_transaction(client, db_session):

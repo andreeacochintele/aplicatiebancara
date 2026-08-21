@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
@@ -196,6 +196,14 @@ function folderSplitMarker(folderId: string): string {
   return `[folder:${folderId}]`;
 }
 
+// Money coming in only (not a self-transfer between the user's own wallets).
+// Mirrors TransactionsPage's isIncomingOnly.
+function isIncomingOnly(transaction: Transaction, userWalletIds: Set<string>): boolean {
+  const isIncoming = transaction.destination_wallet_id ? userWalletIds.has(transaction.destination_wallet_id) : false;
+  const isOutgoing = transaction.source_wallet_id ? userWalletIds.has(transaction.source_wallet_id) : false;
+  return isIncoming && !isOutgoing;
+}
+
 function sortBeneficiaries(list: Beneficiary[]): Beneficiary[] {
   return [...list].sort((left, right) => {
     if (left.is_favorite !== right.is_favorite) {
@@ -257,6 +265,10 @@ export function PaymentsPage() {
   const [folderActionId, setFolderActionId] = useState<string | null>(null);
   const [folderSplitTarget, setFolderSplitTarget] = useState<TransactionFolder | null>(null);
   const [folderSplitParticipants, setFolderSplitParticipants] = useState<FolderSplitParticipantDraft[]>([]);
+  // Guards createFolderBillSplit against a double submit -- a ref updates
+  // synchronously, unlike folderActionId state, which can lag a render
+  // behind a fast double-click/double-Enter and let two requests through.
+  const folderSplitSubmittingRef = useRef(false);
 
   async function loadBeneficiaries() {
     if (!accessToken) return;
@@ -793,6 +805,8 @@ export function PaymentsPage() {
     }
   }
 
+  const userWalletIds = new Set(wallets.map((wallet) => wallet.id));
+
   function folderTransactions(folder: TransactionFolder): Transaction[] {
     const ids = new Set(folder.items.map((item) => item.transaction_id));
     return transactions.filter((transaction) => ids.has(transaction.id));
@@ -802,7 +816,12 @@ export function PaymentsPage() {
     const relatedTransactions = folderTransactions(folder);
     const currencies = Array.from(new Set(relatedTransactions.map((transaction) => transaction.currency)));
     const currency = currencies.length === 1 ? currencies[0] : "";
-    const total = relatedTransactions.reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+    // Money received (cashback, refunds, etc.) reduces what's actually owed,
+    // rather than adding to the bill.
+    const total = relatedTransactions.reduce((sum, transaction) => {
+      const amount = Number(transaction.amount);
+      return isIncomingOnly(transaction, userWalletIds) ? sum - amount : sum + amount;
+    }, 0);
     const folderSplits = billSplits.filter(
       (candidate) => candidate.owner_user_id === user?.id && candidate.description?.includes(folderSplitMarker(folder.id)),
     );
@@ -866,6 +885,7 @@ export function PaymentsPage() {
   async function createFolderBillSplit(event: FormEvent) {
     event.preventDefault();
     if (!accessToken || !folderSplitTarget) return;
+    if (folderSplitSubmittingRef.current) return;
     const data = folderSplitData(folderSplitTarget);
     const participants = folderSplitParticipants
       .map((participant) => ({
@@ -894,7 +914,12 @@ export function PaymentsPage() {
       setFolderError("Folder split participants cannot exceed 100% of the folder total.");
       return;
     }
+    if (Number(data.total) <= 0) {
+      setFolderError("This folder's net total (after money received) isn't positive, so there's nothing to split.");
+      return;
+    }
 
+    folderSplitSubmittingRef.current = true;
     setFolderActionId(folderSplitTarget.id);
     setFolderError(null);
     setSplitNotice(null);
@@ -922,6 +947,7 @@ export function PaymentsPage() {
       setFolderError(err instanceof ApiError ? err.message : "Could not split this folder");
     } finally {
       setFolderActionId(null);
+      folderSplitSubmittingRef.current = false;
     }
   }
 
@@ -2039,6 +2065,16 @@ export function PaymentsPage() {
                         >
                           {folderActionId === folder.id && !data.split ? "Working..." : splitButtonLabel}
                         </button>
+                        {data.split?.status === "OPEN" && (
+                          <button
+                            className="button--danger"
+                            disabled={splitActionId === data.split.id}
+                            onClick={() => data.split && cancelBillSplit(data.split)}
+                            type="button"
+                          >
+                            {splitActionId === data.split.id ? "Cancelling..." : "Cancel split"}
+                          </button>
+                        )}
                         <button
                           className="button--danger"
                           disabled={folderActionId === folder.id}
@@ -2054,6 +2090,12 @@ export function PaymentsPage() {
                     )}
                     {data.hasDeclinedSplit && (
                       <p className="status-line status-line--error">A participant refused this split. You can split it again.</p>
+                    )}
+                    {data.split?.status === "SETTLED" && (
+                      <p className="status-line">
+                        This folder was already split and every participant paid. It can't be split again or cancelled
+                        -- delete the folder if you want to start over with a new one.
+                      </p>
                     )}
                     <div className="folder-readonly-card__items">
                       {folder.items.map((item) => {

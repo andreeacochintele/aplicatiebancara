@@ -3,6 +3,9 @@ from uuid import UUID
 
 from app.notifications.service import NotificationsService
 from app.payments.models import BillSplitParticipantStatus, BillSplitStatus
+from app.transactions.models import Transaction, TransactionStatus, TransactionType
+from app.transactions.schemas import InternalTransferCreate
+from app.transactions.service import TransactionService
 from app.wallets.models import Wallet
 from app.wallets.schemas import WalletCreate
 from app.wallets.service import WalletService
@@ -154,6 +157,127 @@ def test_bill_split_rejects_participant_amounts_above_total(client):
             "total_amount": "100.00",
             "currency": "RON",
             "participants": [{"name": "Friend", "phone": "+40779999999", "amount": "140.00"}],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_bill_split_does_not_persist_when_a_participant_fails_to_resolve(client):
+    # Under the Supabase REST backend, repository.add() is an immediate
+    # INSERT with no surrounding transaction -- creating the BillSplit
+    # before resolving every participant left an orphaned, participant-less
+    # OPEN split behind whenever one participant's phone/user id didn't
+    # resolve. create_bill_split now resolves all participants first.
+    owner = _register(client, "split-orphan-owner@example.com", "+40770333336")
+
+    response = client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Should not persist",
+            "total_amount": "80.00",
+            "currency": "RON",
+            "participants": [{"name": "Ghost", "phone": "+40770333337", "amount": "80.00"}],
+        },
+    )
+    assert response.status_code == 404
+
+    listed = client.get("/api/v1/payments/bill-splits", headers=_auth_header(owner))
+    assert listed.json() == []
+
+
+def test_listing_bill_splits_keeps_each_splits_own_participants(client):
+    # Regression check for the batched participant fetch in list_bill_splits:
+    # each split's participants must stay attached to the right split_id
+    # after grouping, not get mixed up or dropped.
+    owner = _register(client, "split-list-owner@example.com", "+40770333340")
+    friend_a = _register(client, "split-list-friend-a@example.com", "+40770333341")
+    friend_b = _register(client, "split-list-friend-b@example.com", "+40770333342")
+
+    client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Lunch",
+            "total_amount": "40.00",
+            "currency": "RON",
+            "participants": [{"participant_user_id": friend_a["user"]["id"], "name": "A", "amount": "40.00"}],
+        },
+    )
+    client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Dinner",
+            "total_amount": "60.00",
+            "currency": "RON",
+            "participants": [{"participant_user_id": friend_b["user"]["id"], "name": "B", "amount": "60.00"}],
+        },
+    )
+
+    listed = client.get("/api/v1/payments/bill-splits", headers=_auth_header(owner)).json()
+    by_title = {split["title"]: split for split in listed}
+    assert [p["name"] for p in by_title["Lunch"]["participants"]] == ["A"]
+    assert [p["name"] for p in by_title["Dinner"]["participants"]] == ["B"]
+
+
+def test_bill_split_rejects_non_completed_transaction_as_source(client, db_session):
+    owner = _register(client, "split-pending-owner@example.com", "+40770333338")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    pending_transaction = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        source_wallet_id=owner_wallet.id,
+        type=TransactionType.CARD_PAYMENT,
+        status=TransactionStatus.PROCESSING,
+        amount=Decimal("40.00"),
+        currency="RON",
+        description="Still processing",
+    )
+    db_session.add(pending_transaction)
+    db_session.flush()
+
+    response = client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Should fail",
+            "total_amount": "40.00",
+            "currency": "RON",
+            "source_transaction_id": str(pending_transaction.id),
+            "participants": [{"name": "Friend", "phone": "+40770333339", "amount": "40.00"}],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_bill_split_rejects_incoming_transaction_as_source(client, db_session):
+    payer = _register(client, "split-incoming-payer@example.com", "+40770999993")
+    owner = _register(client, "split-incoming-owner@example.com", "+40770999994")
+    payer_wallet = _create_wallet(db_session, payer["user"]["id"], "RON", Decimal("500.00"))
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("0.00"))
+
+    incoming_transaction = TransactionService(db_session).create_internal_transfer(
+        UUID(payer["user"]["id"]),
+        InternalTransferCreate(
+            source_wallet_id=payer_wallet.id,
+            destination_wallet_id=owner_wallet.id,
+            amount=Decimal("50.00"),
+            description="Cashback",
+        ),
+    )
+    db_session.flush()
+
+    response = client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Should fail",
+            "total_amount": "50.00",
+            "currency": "RON",
+            "source_transaction_id": str(incoming_transaction.id),
+            "participants": [{"name": "Friend", "phone": "+40770999995", "amount": "50.00"}],
         },
     )
 

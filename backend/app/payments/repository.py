@@ -179,11 +179,12 @@ class BillSplitRepository:
             )
             participant_rows = self.db.fetch_many(BillSplitParticipant, {"participant_user_id": f"eq.{user_id}"})
             seen = {item.id for item in owned}
-            for participant in participant_rows:
-                if participant.bill_split_id in seen:
-                    continue
-                bill_split = self.db.get(BillSplit, participant.bill_split_id)
-                if bill_split is not None:
+            missing_ids = {p.bill_split_id for p in participant_rows if p.bill_split_id not in seen}
+            if missing_ids:
+                # One batched fetch instead of one self.db.get() per
+                # participant row -- each was a separate HTTP round-trip.
+                joined = ",".join(str(split_id) for split_id in missing_ids)
+                for bill_split in self.db.fetch_many(BillSplit, {"id": f"in.({joined})"}):
                     owned.append(bill_split)
                     seen.add(bill_split.id)
             return sorted(owned, key=lambda item: item.created_at, reverse=True)[:limit]
@@ -211,6 +212,35 @@ class BillSplitRepository:
                 .order_by(BillSplitParticipant.created_at.asc())
             )
         )
+
+    def list_participants_for_splits(
+        self, bill_split_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, list[BillSplitParticipant]]:
+        """Batched form of list_participants -- one query for every split
+        instead of one query per split. Listing splits used to call
+        list_participants per row, which under the Supabase REST backend
+        means one extra HTTP round-trip per split; an account with a dozen
+        splits took 2+ seconds just to load its list."""
+        grouped: dict[uuid.UUID, list[BillSplitParticipant]] = {split_id: [] for split_id in bill_split_ids}
+        if not bill_split_ids:
+            return grouped
+        if is_supabase_session(self.db):
+            joined = ",".join(str(split_id) for split_id in bill_split_ids)
+            rows = self.db.fetch_many(
+                BillSplitParticipant,
+                {"bill_split_id": f"in.({joined})", "order": "created_at.asc"},
+            )
+        else:
+            rows = list(
+                self.db.scalars(
+                    select(BillSplitParticipant)
+                    .where(BillSplitParticipant.bill_split_id.in_(bill_split_ids))
+                    .order_by(BillSplitParticipant.created_at.asc())
+                )
+            )
+        for row in rows:
+            grouped[row.bill_split_id].append(row)
+        return grouped
 
     def get_participant(self, participant_id: uuid.UUID) -> BillSplitParticipant | None:
         if is_supabase_session(self.db):
@@ -308,6 +338,26 @@ class TransactionFolderRepository:
                 .order_by(TransactionFolderItem.added_at.asc())
             )
         )
+
+    def list_items_for_folders(self, folder_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[TransactionFolderItem]]:
+        """Batched form of list_items -- see list_participants_for_splits."""
+        grouped: dict[uuid.UUID, list[TransactionFolderItem]] = {folder_id: [] for folder_id in folder_ids}
+        if not folder_ids:
+            return grouped
+        if is_supabase_session(self.db):
+            joined = ",".join(str(folder_id) for folder_id in folder_ids)
+            rows = self.db.fetch_many(TransactionFolderItem, {"folder_id": f"in.({joined})", "order": "added_at.asc"})
+        else:
+            rows = list(
+                self.db.scalars(
+                    select(TransactionFolderItem)
+                    .where(TransactionFolderItem.folder_id.in_(folder_ids))
+                    .order_by(TransactionFolderItem.added_at.asc())
+                )
+            )
+        for row in rows:
+            grouped[row.folder_id].append(row)
+        return grouped
 
     def delete_item(self, item: TransactionFolderItem) -> None:
         if is_supabase_session(self.db):
