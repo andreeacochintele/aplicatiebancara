@@ -20,6 +20,7 @@ from app.analytics.schemas import (
 )
 from app.core.exceptions import NotFoundError, ValidationError
 from app.fx.service import FXService
+from app.wallets.models import WalletStatus
 from app.wallets.repository import WalletRepository
 
 _FORECAST_NOTE = (
@@ -89,7 +90,7 @@ class AnalyticsService:
         return MonthlyTrendResponse(items=items)
 
     def net_worth(self, user_id: uuid.UUID, base_currency: str | None) -> NetWorthResponse:
-        wallets = self.wallet_repository.list_for_user(user_id)
+        wallets = [w for w in self.wallet_repository.list_for_user(user_id) if w.status != WalletStatus.CLOSED]
         if base_currency:
             base = base_currency.upper()
         else:

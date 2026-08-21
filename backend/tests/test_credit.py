@@ -20,6 +20,7 @@ from app.credit.schemas import (
 )
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.credit.service import CreditService
+from app.notifications.service import NotificationsService
 from app.users.schemas import UserCreate
 from app.users.service import UserService
 from app.wallets.schemas import WalletCreate
@@ -274,6 +275,11 @@ def test_create_personal_loan_application_captures_current_score(db_session):
     assert application.credit_score_at_application == 644
     assert application.currency == "RON"
 
+    notifications = NotificationsService(db_session).list_for_user(user.id)
+    credit_notifications = [n for n in notifications if n.type == "CREDIT"]
+    assert len(credit_notifications) == 1
+    assert "approved" in credit_notifications[0].title.lower()
+
 
 def test_create_personal_loan_application_accepts_loan_product_type(db_session):
     user = _create_user(db_session)
@@ -506,6 +512,29 @@ def test_admin_decides_credit_application(db_session):
     assert decided.offered_amount == Decimal("20000.00")
     assert decided.offered_interest_rate == Decimal("9.50")
     assert decided.resolved_at is not None
+
+    credit_notifications = [
+        n for n in NotificationsService(db_session).list_for_user(user.id) if n.type == "CREDIT"
+    ]
+    assert len(credit_notifications) == 1
+    assert "approved" in credit_notifications[0].title.lower()
+
+
+def test_admin_rejection_notifies_the_applicant(db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(type=CreditApplicationType.CREDIT_CARD, requested_amount=Decimal("25000.00")),
+    )
+
+    service.decide_application(application.id, CreditApplicationDecision(status=CreditApplicationStatus.REJECTED))
+
+    credit_notifications = [
+        n for n in NotificationsService(db_session).list_for_user(user.id) if n.type == "CREDIT"
+    ]
+    assert len(credit_notifications) == 1
+    assert "rejected" in credit_notifications[0].title.lower()
 
 
 def test_admin_decision_rejects_invalid_status_and_offer(db_session):

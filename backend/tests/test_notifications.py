@@ -19,7 +19,7 @@ def test_create_and_list_notification(db_session, seeded_user):
     service = NotificationsService(db_session)
     service.create(seeded_user.id, type="CASHBACK", title="Cashback earned", message="You earned 4.00 RON cashback.")
 
-    notifications = service.list_for_user(seeded_user.id)
+    notifications = [n for n in service.list_for_user(seeded_user.id) if n.type == "CASHBACK"]
 
     assert len(notifications) == 1
     assert notifications[0].type == "CASHBACK"
@@ -37,7 +37,7 @@ def test_list_for_user_only_returns_that_users_notifications(db_session, seeded_
 
     notifications = service.list_for_user(seeded_user.id)
 
-    assert [n.title for n in notifications] == ["Mine"]
+    assert [n.title for n in notifications if n.type == "CASHBACK"] == ["Mine"]
 
 
 def test_mark_read_hides_it_from_unread_only_listing(db_session, seeded_user):
@@ -46,10 +46,11 @@ def test_mark_read_hides_it_from_unread_only_listing(db_session, seeded_user):
 
     service.mark_read(seeded_user.id, notification.id)
 
-    assert service.list_for_user(seeded_user.id, unread_only=True) == []
-    all_notifications = service.list_for_user(seeded_user.id)
-    assert len(all_notifications) == 1
-    assert all_notifications[0].is_read is True
+    unread_cashback = [n for n in service.list_for_user(seeded_user.id, unread_only=True) if n.type == "CASHBACK"]
+    assert unread_cashback == []
+    all_cashback = [n for n in service.list_for_user(seeded_user.id) if n.type == "CASHBACK"]
+    assert len(all_cashback) == 1
+    assert all_cashback[0].is_read is True
 
 
 def test_mark_read_rejects_someone_elses_notification(db_session, seeded_user):

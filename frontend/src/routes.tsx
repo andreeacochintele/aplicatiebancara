@@ -10,6 +10,7 @@ import { CardsPage } from "./pages/CardsPage";
 import { CreditPage } from "./pages/CreditPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
+import { NotificationsPage } from "./pages/NotificationsPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { PaymentsPage } from "./pages/PaymentsPage";
 import { ProfilePage } from "./pages/ProfilePage";
@@ -48,6 +49,7 @@ export const routes: RouteObject[] = [
       { path: "/rewards", element: <RewardsPage /> },
       { path: "/credit", element: <CreditPage /> },
       { path: "/assistant", element: <AssistantPage /> },
+      { path: "/notifications", element: <NotificationsPage /> },
       { path: "/profile", element: <ProfilePage /> },
       { path: "/admin", element: <AdminDashboardPage /> },
     ],

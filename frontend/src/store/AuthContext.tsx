@@ -1,12 +1,17 @@
-import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { getMyFullProfile, loginUser, registerUser, type AuthResponse, type AuthTokens } from "../features/auth";
 import type { User } from "../types";
+
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const IDLE_WARNING_MS = 30 * 1000;
+const ACTIVITY_EVENTS = ["mousedown", "mousemove", "keydown", "scroll", "touchstart"] as const;
 
 interface AuthContextValue {
   user: User | null;
   accessToken: string | null;
   isAuthenticated: boolean;
+  idleWarningSeconds: number | null;
   onboardingCompleted: boolean | null;
   login: (email: string, password: string) => Promise<AuthResponse>;
   register: (payload: {
@@ -41,6 +46,7 @@ function loadStoredAuth(): StoredAuth | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [stored, setStored] = useState<StoredAuth | null>(loadStoredAuth);
+  const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
   const storeAuth = useCallback((response: StoredAuth) => {
@@ -72,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setStored(null);
+    setIdleWarningSeconds(null);
   }, []);
 
   const markOnboardingCompleted = useCallback(() => {
@@ -98,18 +105,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [accessToken]);
 
+  const logoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warningTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!stored) return;
+
+    function clearTimers() {
+      if (logoutTimer.current) clearTimeout(logoutTimer.current);
+      if (warningTimer.current) clearTimeout(warningTimer.current);
+      if (countdownInterval.current) clearInterval(countdownInterval.current);
+    }
+
+    function startWarningCountdown() {
+      let remaining = Math.round(IDLE_WARNING_MS / 1000);
+      setIdleWarningSeconds(remaining);
+      countdownInterval.current = setInterval(() => {
+        remaining -= 1;
+        setIdleWarningSeconds(Math.max(remaining, 0));
+      }, 1000);
+    }
+
+    function resetIdleTimer() {
+      clearTimers();
+      setIdleWarningSeconds(null);
+      warningTimer.current = setTimeout(startWarningCountdown, IDLE_TIMEOUT_MS - IDLE_WARNING_MS);
+      logoutTimer.current = setTimeout(logout, IDLE_TIMEOUT_MS);
+    }
+
+    resetIdleTimer();
+    for (const event of ACTIVITY_EVENTS) window.addEventListener(event, resetIdleTimer);
+
+    return () => {
+      clearTimers();
+      for (const event of ACTIVITY_EVENTS) window.removeEventListener(event, resetIdleTimer);
+    };
+  }, [stored, logout]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user: stored?.user ?? null,
       accessToken,
       isAuthenticated: stored !== null,
+      idleWarningSeconds,
       onboardingCompleted,
       login,
       register,
       logout,
       markOnboardingCompleted,
     }),
-    [stored, accessToken, onboardingCompleted, login, register, logout, markOnboardingCompleted],
+    [stored, accessToken, idleWarningSeconds, onboardingCompleted, login, register, logout, markOnboardingCompleted],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
