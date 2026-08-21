@@ -1,19 +1,28 @@
-import { createContext, useCallback, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { apiRequest } from "../api/apiClient";
+import { getMyFullProfile, loginUser, registerUser, type AuthResponse, type AuthTokens } from "../features/auth";
 import type { User } from "../types";
 
-interface AuthTokens {
-  access_token: string;
-  refresh_token: string;
-}
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const IDLE_WARNING_MS = 30 * 1000;
+const ACTIVITY_EVENTS = ["mousedown", "mousemove", "keydown", "scroll", "touchstart"] as const;
 
 interface AuthContextValue {
   user: User | null;
   accessToken: string | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  idleWarningSeconds: number | null;
+  onboardingCompleted: boolean | null;
+  login: (email: string, password: string) => Promise<AuthResponse>;
+  register: (payload: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    password: string;
+  }) => Promise<AuthResponse>;
   logout: () => void;
+  markOnboardingCompleted: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -37,30 +46,116 @@ function loadStoredAuth(): StoredAuth | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [stored, setStored] = useState<StoredAuth | null>(loadStoredAuth);
+  const [idleWarningSeconds, setIdleWarningSeconds] = useState<number | null>(null);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await apiRequest<{ user: User; tokens: AuthTokens }>("/auth/login", {
-      method: "POST",
-      body: { email, password },
-    });
+  const storeAuth = useCallback((response: StoredAuth) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(response));
     setStored(response);
   }, []);
 
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await loginUser(email, password);
+    storeAuth(response);
+    return response;
+  }, [storeAuth]);
+
+  const register = useCallback(
+    async (payload: {
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone: string;
+      password: string;
+    }) => {
+      const response = await registerUser(payload);
+      storeAuth(response);
+      return response;
+    },
+    [storeAuth],
+  );
+
   const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setStored(null);
+    setIdleWarningSeconds(null);
   }, []);
+
+  const markOnboardingCompleted = useCallback(() => {
+    setOnboardingCompleted(true);
+  }, []);
+
+  const accessToken = stored?.tokens.access_token ?? null;
+
+  useEffect(() => {
+    if (!accessToken) {
+      setOnboardingCompleted(null);
+      return;
+    }
+    let cancelled = false;
+    getMyFullProfile(accessToken)
+      .then((profile) => {
+        if (!cancelled) setOnboardingCompleted(profile.onboarding.completed);
+      })
+      .catch(() => {
+        if (!cancelled) setOnboardingCompleted(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
+
+  const logoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const warningTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!stored) return;
+
+    function clearTimers() {
+      if (logoutTimer.current) clearTimeout(logoutTimer.current);
+      if (warningTimer.current) clearTimeout(warningTimer.current);
+      if (countdownInterval.current) clearInterval(countdownInterval.current);
+    }
+
+    function startWarningCountdown() {
+      let remaining = Math.round(IDLE_WARNING_MS / 1000);
+      setIdleWarningSeconds(remaining);
+      countdownInterval.current = setInterval(() => {
+        remaining -= 1;
+        setIdleWarningSeconds(Math.max(remaining, 0));
+      }, 1000);
+    }
+
+    function resetIdleTimer() {
+      clearTimers();
+      setIdleWarningSeconds(null);
+      warningTimer.current = setTimeout(startWarningCountdown, IDLE_TIMEOUT_MS - IDLE_WARNING_MS);
+      logoutTimer.current = setTimeout(logout, IDLE_TIMEOUT_MS);
+    }
+
+    resetIdleTimer();
+    for (const event of ACTIVITY_EVENTS) window.addEventListener(event, resetIdleTimer);
+
+    return () => {
+      clearTimers();
+      for (const event of ACTIVITY_EVENTS) window.removeEventListener(event, resetIdleTimer);
+    };
+  }, [stored, logout]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user: stored?.user ?? null,
-      accessToken: stored?.tokens.access_token ?? null,
+      accessToken,
       isAuthenticated: stored !== null,
+      idleWarningSeconds,
+      onboardingCompleted,
       login,
+      register,
       logout,
+      markOnboardingCompleted,
     }),
-    [stored, login, logout],
+    [stored, accessToken, idleWarningSeconds, onboardingCompleted, login, register, logout, markOnboardingCompleted],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

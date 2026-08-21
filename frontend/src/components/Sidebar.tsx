@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Wallet, CreditCard, Send, Receipt, FileText,
-  PieChart, Gift, Landmark, Sparkles, UserRound, ShieldCheck, type LucideIcon,
+  PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldCheck, type LucideIcon,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
@@ -28,7 +28,10 @@ const INTELLIGENCE_ITEMS: NavItem[] = [
   { to: "/assistant", label: "Assistant", icon: Sparkles },
 ];
 
-const ACCOUNT_ITEMS: NavItem[] = [{ to: "/profile", label: "Profile", icon: UserRound }];
+const ACCOUNT_ITEMS: NavItem[] = [
+  { to: "/notifications", label: "Notifications", icon: Bell },
+  { to: "/profile", label: "Profile", icon: UserRound },
+];
 
 function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
   return (

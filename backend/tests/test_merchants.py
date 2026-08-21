@@ -269,7 +269,9 @@ def test_sync_credits_cashback_to_the_debited_wallet_as_real_money(db_session, s
     assert len(cashback_tx.ledger_entries) == 1
     assert cashback_tx.ledger_entries[0].entry_type.value == "CREDIT"
 
-    notifications = NotificationsService(db_session).list_for_user(seeded_user.id)
+    notifications = [
+        n for n in NotificationsService(db_session).list_for_user(seeded_user.id) if n.type == "CASHBACK"
+    ]
     assert len(notifications) == 1
     assert notifications[0].type == "CASHBACK"
     assert notifications[0].message == "You earned 5.00 RON cashback from Nike."
@@ -306,7 +308,10 @@ def test_sync_credits_cashback_even_if_the_notification_write_fails(db_session, 
     assert results[0].points_earned == 50
     assert results[0].cashback_amount == Decimal("5.00")
     assert wallet.available_balance == Decimal("455.00")
-    assert NotificationsService(db_session).list_for_user(seeded_user.id) == []
+    cashback_notifications = [
+        n for n in NotificationsService(db_session).list_for_user(seeded_user.id) if n.type == "CASHBACK"
+    ]
+    assert cashback_notifications == []
 
 
 def test_sync_without_a_known_card_uses_base_rate(db_session, seeded_user):

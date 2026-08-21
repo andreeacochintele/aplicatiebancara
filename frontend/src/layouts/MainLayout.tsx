@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 
 import { Header } from "../components/Header";
+import { IdleWarning } from "../components/IdleWarning";
 import { Sidebar } from "../components/Sidebar";
 
 export function MainLayout() {
@@ -13,6 +14,7 @@ export function MainLayout() {
           <Outlet />
         </main>
       </div>
+      <IdleWarning />
     </div>
   );
 }

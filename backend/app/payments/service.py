@@ -9,6 +9,7 @@ from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.fx.models import FXQuote
 from app.fx.schemas import FXQuoteRequest
 from app.fx.service import FEE_RATE, FXService
+from app.notifications.service import NotificationsService
 from app.payments.models import (
     Beneficiary,
     BillSplit,
@@ -466,6 +467,7 @@ class BillSplitService:
         self.transaction_service = TransactionService(db)
         self.users = UserRepository(db)
         self.wallets = WalletRepository(db)
+        self.notifications = NotificationsService(db)
 
     def create_bill_split(self, owner_user_id: uuid.UUID, data: BillSplitCreate) -> BillSplitPublic:
         if data.source_transaction_id is not None and self.transactions.get_for_user(owner_user_id, data.source_transaction_id) is None:
@@ -508,6 +510,15 @@ class BillSplitService:
                     status=BillSplitParticipantStatus.PENDING,
                 )
             )
+            try:
+                self.notifications.create(
+                    participant_user_id,
+                    type="SPLIT_BILL",
+                    title="Split bill request",
+                    message=f"You were asked to pay {participant_data.amount or Decimal('0')} {bill_split.currency} for '{bill_split.title}'.",
+                )
+            except Exception:
+                pass
 
         self.db.flush()
         return self._to_public(bill_split)
@@ -572,6 +583,17 @@ class BillSplitService:
         self.db.flush()
         self._settle_if_complete(bill_split)
         self.db.flush()
+
+        try:
+            self.notifications.create(
+                bill_split.owner_user_id,
+                type="SPLIT_BILL",
+                title="Split bill payment received",
+                message=f"{participant.name} paid their {participant.amount} {bill_split.currency} share of '{bill_split.title}'.",
+                related_transaction_id=transaction.id,
+            )
+        except Exception:
+            pass
         return self._to_public(bill_split)
 
     def decline_participant(
