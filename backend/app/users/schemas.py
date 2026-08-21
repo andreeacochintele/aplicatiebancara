@@ -133,6 +133,7 @@ class OnboardingStep4Update(BaseModel):
 class ProfileUpdate(BaseModel):
     first_name: PersonName | None = None
     last_name: PersonName | None = None
+    email: EmailStr | None = None
     phone: PhoneNumber | None = None
     step_2: OnboardingStep2Update | None = None
     employment: OnboardingStep4Update | None = None

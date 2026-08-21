@@ -359,6 +359,30 @@ def test_authenticated_profile_can_be_read_and_updated(client):
     assert profile.json()["user"]["phone"] == "+40710000007"
 
 
+def test_authenticated_profile_can_change_email(client):
+    token = _register(client, "email-change-old@example.com", "+40710000021")
+
+    update = client.patch(
+        "/api/v1/users/me/profile",
+        headers=_headers(token),
+        json={"email": "email-change-new@example.com"},
+    )
+    assert update.status_code == 200
+    assert update.json()["user"]["email"] == "email-change-new@example.com"
+
+
+def test_authenticated_profile_rejects_duplicate_email(client):
+    _register(client, "email-taken@example.com", "+40710000022")
+    token = _register(client, "email-change-conflict@example.com", "+40710000023")
+
+    update = client.patch(
+        "/api/v1/users/me/profile",
+        headers=_headers(token),
+        json={"email": "email-taken@example.com"},
+    )
+    assert update.status_code == 409
+
+
 @pytest.mark.parametrize("invalid_first_name", ["Ana2", "Ana!", "A"])
 def test_authenticated_profile_update_rejects_invalid_first_name(client, invalid_first_name):
     token = _register(client, "invalid-profile-name@example.com", "+40710000019")
