@@ -11,6 +11,7 @@ import { CreditPage } from "./pages/CreditPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
+import { OnboardingPage } from "./pages/OnboardingPage";
 import { PaymentsPage } from "./pages/PaymentsPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { RewardsPage } from "./pages/RewardsPage";
@@ -22,6 +23,14 @@ export const routes: RouteObject[] = [
   {
     element: <AuthLayout />,
     children: [{ path: "/login", element: <LoginPage /> }],
+  },
+  {
+    path: "/onboarding",
+    element: (
+      <ProtectedRoute requireOnboarding={false}>
+        <OnboardingPage />
+      </ProtectedRoute>
+    ),
   },
   {
     element: (
