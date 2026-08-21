@@ -186,6 +186,29 @@ def test_net_worth_with_no_wallets_returns_zero(db_session, user_only):
     assert result.wallets == []
 
 
+def test_net_worth_survives_a_wallet_in_an_unsupported_currency(db_session, user_only):
+    """Nothing validates wallet currency against FXService's mock rate table
+    at wallet-creation time, so a wallet in a currency the table doesn't
+    cover is possible. That one wallet used to 422 net worth for every
+    wallet the user has — it should just show up unconverted (rate 1)
+    instead. Uses a fictional code rather than a real one so this test
+    doesn't silently start testing the wrong thing if that currency is
+    ever added to the rate table (already happened once — see git history)."""
+    wallets = WalletService(db_session)
+    ron = wallets.create_wallet(user_only.id, WalletCreate(currency="RON", is_main=True))
+    odd = wallets.create_wallet(user_only.id, WalletCreate(currency="ZZZ"))
+    ron.available_balance = Decimal("1000.00")
+    odd.available_balance = Decimal("5000.00")
+    db_session.flush()
+
+    result = AnalyticsService(db_session).net_worth(user_only.id, base_currency=None)
+
+    by_currency = {item.currency: item for item in result.wallets}
+    assert by_currency["RON"].converted_available_balance == Decimal("1000.00")
+    assert by_currency["ZZZ"].converted_available_balance == Decimal("5000.00")  # rate 1 fallback
+    assert result.total_available_balance == Decimal("6000.00")
+
+
 def test_net_worth_excludes_closed_wallets(db_session, user_only):
     wallets = WalletService(db_session)
     wallets.create_wallet(user_only.id, WalletCreate(currency="RON", is_main=True))

@@ -6,8 +6,9 @@ of internal wallet-to-wallet transfers with paired ledger entries
 (architecture.md §7), same-currency or cross-currency via a priced FX quote
 (architecture.md §5).
 
-Fraud scoring and multi-step review (PENDING_REVIEW) are out of scope for
-Phase 1/2 and are added by the fraud module in a later phase.
+Fraud scoring (app/fraud/service.py) hooks into create_card_payment and can
+route a payment to PENDING_REVIEW + a HOLD instead of completing it — see
+the FraudService call below.
 """
 import uuid
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.cards.models import CardStatus, CardTier, CardType, CreditCardAccount
 from app.cards.repository import CardRepository
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.fraud.service import FraudService
 from app.fx.service import FXService
 from app.merchants.models import MerchantStatus
 from app.merchants.repository import MerchantRepository
@@ -248,6 +250,14 @@ class TransactionService:
                 processed_at=datetime.now(timezone.utc),
             )
         )
+
+        # Fraud scoring happens before the funds actually move: a blocked
+        # transaction gets HOLD'd (and set to PENDING_REVIEW) by
+        # FraudService itself, and this method returns early without ever
+        # reaching the DEBIT below. See app/fraud/service.py.
+        fraud_result = FraudService(self.db).evaluate_transaction(transaction, wallet)
+        if fraud_result.blocked:
+            return transaction
 
         wallet.available_balance -= data.amount
         self.repository.add_ledger_entry(

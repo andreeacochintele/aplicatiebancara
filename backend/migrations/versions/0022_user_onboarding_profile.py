@@ -33,8 +33,11 @@ def upgrade() -> None:
         name="employment_status",
         create_type=False,
     )
-    kyc_document_status.create(op.get_bind(), checkfirst=True)
-    employment_status.create(op.get_bind(), checkfirst=True)
+    # No explicit .create() here: op.create_table() below auto-creates each
+    # Enum-typed column's Postgres type as part of table creation (no
+    # checkfirst), so calling .create() first for the same type collides
+    # with "type already exists" — the same duplicate-CREATE-TYPE bug found
+    # and fixed elsewhere in this project's migration history.
 
     op.create_table(
         "user_onboarding_states",

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiError, apiRequest } from "../../api/apiClient";
 import { useAuth } from "../../hooks/useAuth";
 import type { CreditApplication, CreditApplicationStatus, LoanProductType } from "../../types";
+import { FraudReviewSection } from "./FraudReviewSection";
 
 const PRODUCT_RATE_DEFAULTS: Record<LoanProductType, string> = {
   PERSONAL_LOAN: "9.90",
@@ -235,6 +236,7 @@ export function AdminDashboardPage() {
           </table>
         )}
       </div>
+      <FraudReviewSection />
     </section>
   );
 }

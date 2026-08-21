@@ -100,7 +100,19 @@ class AnalyticsService:
         items = []
         total = Decimal("0")
         for wallet in wallets:
-            rate = Decimal("1") if wallet.currency == base else self.fx_service.get_rate(wallet.currency, base)
+            if wallet.currency == base:
+                rate = Decimal("1")
+            else:
+                try:
+                    rate = self.fx_service.get_rate(wallet.currency, base)
+                except ValidationError:
+                    # FXService's mock rate table doesn't cover every
+                    # currency a wallet could technically be created in
+                    # (nothing validates that at wallet-creation time). One
+                    # unconvertible wallet used to 422 net worth entirely —
+                    # every wallet, every caller — instead of just this one
+                    # being shown unconverted.
+                    rate = Decimal("1")
             converted = (wallet.available_balance * rate).quantize(_CENTS, rounding=ROUND_HALF_UP)
             total += converted
             items.append(
