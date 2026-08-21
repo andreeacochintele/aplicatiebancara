@@ -181,6 +181,79 @@ body {
   font-weight: 700;
 }
 
+.avatar--large {
+  width: 88px;
+  height: 88px;
+  font-size: 1.75rem;
+}
+
+/* ---- Profile page ---- */
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.profile-header__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.profile-header__name {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.profile-header__contact {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.profile-header__contact-edit {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.profile-header__contact-edit input {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.profile-header__contact-edit button {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.profile-section__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.profile-section__toggle:hover {
+  color: var(--color-accent-strong);
+}
+
+.profile-section__body {
+  margin-top: 1rem;
+}
+
 .app-shell__content {
   padding: 1.75rem;
   flex: 1;
@@ -429,8 +502,11 @@ label {
 }
 
 .country-select__flag {
-  font-size: 1.1rem;
-  line-height: 1;
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.05rem;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 .country-select__empty {

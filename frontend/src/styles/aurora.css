@@ -1096,6 +1096,53 @@
   color: var(--aurora-red);
 }
 
+/* ---- Profile page ---- */
+
+.aurora-shell .profile-section__toggle {
+  background: transparent;
+  color: var(--aurora-text);
+}
+
+.aurora-shell .profile-section__toggle:hover {
+  filter: none;
+  color: var(--aurora-accent-dark);
+}
+
+.aurora-shell .country-select__list {
+  background: var(--aurora-surface);
+  border-color: var(--aurora-border);
+  box-shadow: var(--aurora-shadow);
+}
+
+.aurora-shell .country-select__list button {
+  background: transparent;
+  color: var(--aurora-text);
+  font-weight: 500;
+}
+
+.aurora-shell .country-select__list button:hover {
+  filter: none;
+  background: var(--aurora-accent-soft);
+}
+
+.aurora-shell .country-select__empty {
+  color: var(--aurora-text-faint);
+}
+
+.aurora-shell .button-link {
+  background: transparent;
+  color: var(--aurora-accent);
+  font-weight: 700;
+  border: none;
+  padding: 0;
+}
+
+.aurora-shell .button-link:hover {
+  filter: none;
+  background: transparent;
+  color: var(--aurora-accent-dark);
+}
+
 /* ---- Payments ---- */
 
 .aurora-shell .payment-tabs {

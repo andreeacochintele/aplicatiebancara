@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronUp } from "lucide-react";
 import {
   useEffect,
   useState,
@@ -12,11 +13,9 @@ import { getMyFullProfile, updateMyProfile } from "../features/auth";
 import { CountrySearchSelect } from "../features/auth/CountrySearchSelect";
 import { DropdownWithOther } from "../features/auth/DropdownWithOther";
 import { EMPLOYMENT_STATUSES_WITHOUT_EMPLOYER, INCOME_SOURCE_OPTIONS, INDUSTRY_OPTIONS } from "../features/auth/employmentOptions";
+import { NationalitySearchSelect } from "../features/auth/NationalitySearchSelect";
 import {
-  cnpMatchesDateOfBirth,
   validateAddressToken,
-  validateCnp,
-  validateDateOfBirth,
   validateMonthlyIncome,
   validateOccupation,
   validateOptionalFreeText,
@@ -26,15 +25,11 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import type { EmploymentStatus, OnboardingStep2Payload, OnboardingStep4Payload, UserFullProfile } from "../types";
 
-const NAME_PATTERN = /^\p{L}+(?:[ '-]\p{L}+)*$/u;
 const PHONE_PATTERN = /^\+[1-9]\d{7,14}$/;
-const todayIso = new Date().toISOString().slice(0, 10);
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function validateName(value: string, label: string): string | null {
-  const trimmed = value.trim();
-  if (trimmed.length < 2 || trimmed.length > 50) return `${label} must be between 2 and 50 characters`;
-  if (!NAME_PATTERN.test(trimmed)) return `${label} must contain only letters`;
-  return null;
+function initials(firstName?: string, lastName?: string): string {
+  return `${firstName?.[0] ?? ""}${lastName?.[0] ?? ""}`.toUpperCase();
 }
 
 function validatePhone(value: string): string | null {
@@ -44,15 +39,25 @@ function validatePhone(value: string): string | null {
   return null;
 }
 
+function validateEmail(value: string): string | null {
+  if (!EMAIL_PATTERN.test(value.trim())) return "Enter a valid email address";
+  return null;
+}
+
 function cleanOptional(value: string) {
   return value.trim() === "" ? null : value.trim();
 }
 
-function Field({ label, ...props }: { label: string } & InputHTMLAttributes<HTMLInputElement>) {
+function Field({
+  label,
+  hint,
+  ...props
+}: { label: string; hint?: string } & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <label>
       {label}
       <input {...props} />
+      {hint && <small className="auth-field-hint">{hint}</small>}
     </label>
   );
 }
@@ -70,16 +75,30 @@ function SelectField({
   );
 }
 
+function SectionToggle({ label, open, onClick }: { label: string; open: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className="profile-section__toggle" onClick={onClick} aria-expanded={open}>
+      <span>{label}</span>
+      {open ? <ChevronUp size={18} strokeWidth={2.2} /> : <ChevronDown size={18} strokeWidth={2.2} />}
+    </button>
+  );
+}
+
 export function ProfilePage() {
   const { accessToken } = useAuth();
   const [profile, setProfile] = useState<UserFullProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [account, setAccount] = useState({ first_name: "", last_name: "", phone: "" });
-  const [accountError, setAccountError] = useState<string | null>(null);
-  const [accountSaved, setAccountSaved] = useState(false);
-  const [accountSaving, setAccountSaving] = useState(false);
+  const [editingContact, setEditingContact] = useState(false);
+  const [emailDraft, setEmailDraft] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState("");
+  const [contactError, setContactError] = useState<string | null>(null);
+  const [contactSaving, setContactSaving] = useState(false);
+
+  const [personalOpen, setPersonalOpen] = useState(false);
+  const [financialOpen, setFinancialOpen] = useState(false);
+  const [identityOpen, setIdentityOpen] = useState(false);
 
   const [personal, setPersonal] = useState<OnboardingStep2Payload>({
     cnp: "",
@@ -119,7 +138,8 @@ export function ProfilePage() {
       .then((data) => {
         if (cancelled) return;
         setProfile(data);
-        setAccount({ first_name: data.user.first_name, last_name: data.user.last_name, phone: data.user.phone ?? "" });
+        setEmailDraft(data.user.email);
+        setPhoneDraft(data.user.phone ?? "");
         setPersonal({
           cnp: data.profile.cnp ?? "",
           date_of_birth: data.profile.date_of_birth ?? "",
@@ -153,51 +173,38 @@ export function ProfilePage() {
     };
   }, [accessToken]);
 
-  // CNP is a verified government ID once set; only legacy accounts without one yet can fill it in here.
-  const cnpIsLocked = profile !== null && !!profile.profile.cnp;
+  function cancelContactEdit() {
+    setEmailDraft(profile?.user.email ?? "");
+    setPhoneDraft(profile?.user.phone ?? "");
+    setContactError(null);
+    setEditingContact(false);
+  }
 
-  async function submitAccount(event: FormEvent) {
+  async function submitContact(event: FormEvent) {
     event.preventDefault();
     if (!accessToken) return;
-    const nameError = validateName(account.first_name, "First name") ?? validateName(account.last_name, "Last name");
-    if (nameError) {
-      setAccountError(nameError);
-      return;
-    }
-    const phoneError = validatePhone(account.phone);
-    if (phoneError) {
-      setAccountError(phoneError);
+    const validationError = validateEmail(emailDraft) ?? validatePhone(phoneDraft);
+    if (validationError) {
+      setContactError(validationError);
       return;
     }
 
-    setAccountSaving(true);
-    setAccountError(null);
-    setAccountSaved(false);
+    setContactSaving(true);
+    setContactError(null);
     try {
-      const response = await updateMyProfile(accessToken, {
-        first_name: account.first_name.trim(),
-        last_name: account.last_name.trim(),
-        phone: account.phone.trim(),
-      });
+      const response = await updateMyProfile(accessToken, { email: emailDraft.trim(), phone: phoneDraft.trim() });
       setProfile(response);
-      setAccountSaved(true);
+      setEditingContact(false);
     } catch (err) {
-      setAccountError(err instanceof ApiError ? err.message : "Could not save account details");
+      setContactError(err instanceof ApiError ? err.message : "Could not save contact details");
     } finally {
-      setAccountSaving(false);
+      setContactSaving(false);
     }
   }
 
+  // CNP and date of birth are verified identity fields set during onboarding
+  // and can't be self-edited here, same as a real KYC record.
   function validatePersonal(): string | null {
-    if (!cnpIsLocked) {
-      const cnpError = validateCnp(personal.cnp);
-      if (cnpError) return cnpError;
-      const dobError = validateDateOfBirth(personal.date_of_birth);
-      if (dobError) return dobError;
-      if (!cnpMatchesDateOfBirth(personal.cnp, personal.date_of_birth)) {
-        return "CNP does not match the date of birth provided";
-      }
-    }
     const streetError = validateStreet(personal.street);
     if (streetError) return streetError;
     for (const field of ["building", "staircase", "apartment"] as const) {
@@ -311,224 +318,239 @@ export function ProfilePage() {
 
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-      <form onSubmit={submitAccount} className="tile onboarding-form">
-        <div className="auth-form__header">
-          <span className="eyebrow">Account</span>
-          <h2>Basic details</h2>
-        </div>
-        <div className="onboarding-form__grid">
-          <Field
-            label="First name"
-            value={account.first_name}
-            onChange={(e) => setAccount({ ...account, first_name: e.target.value })}
-            required
-            minLength={2}
-            maxLength={50}
-          />
-          <Field
-            label="Last name"
-            value={account.last_name}
-            onChange={(e) => setAccount({ ...account, last_name: e.target.value })}
-            required
-            minLength={2}
-            maxLength={50}
-          />
-          <Field label="Email" value={profile.user.email} disabled />
-          <Field
-            label="Phone"
-            value={account.phone}
-            onChange={(e) => setAccount({ ...account, phone: e.target.value })}
-            placeholder="+40712345678"
-          />
-        </div>
-        {accountError && (
-          <p role="alert" className="status-line status-line--error">
-            {accountError}
-          </p>
-        )}
-        {accountSaved && <p className="status-line">Saved.</p>}
-        <button type="submit" disabled={accountSaving}>
-          {accountSaving ? "Saving..." : "Save"}
-        </button>
-      </form>
-
-      <form onSubmit={submitPersonal} className="tile onboarding-form">
-        <div className="auth-form__header">
-          <span className="eyebrow">Personal</span>
-          <h2>Identity &amp; address</h2>
-        </div>
-        <div className="onboarding-form__grid">
-          <Field
-            label="CNP"
-            value={personal.cnp}
-            onChange={(e) => setPersonal({ ...personal, cnp: e.target.value })}
-            required
-            disabled={cnpIsLocked}
-            inputMode="numeric"
-            maxLength={13}
-          />
-          <Field
-            label="Date of birth"
-            type="date"
-            value={personal.date_of_birth}
-            onChange={(e) => setPersonal({ ...personal, date_of_birth: e.target.value })}
-            required
-            disabled={cnpIsLocked}
-            min="1900-01-01"
-            max={todayIso}
-          />
-          <CountrySearchSelect
-            label="Citizenship"
-            value={personal.citizenship}
-            onChange={(name) => setPersonal({ ...personal, citizenship: name })}
-            required
-            placeholder="Start typing a country..."
-          />
-          <CountrySearchSelect
-            label="Country"
-            value={personal.country}
-            onChange={(name) => setPersonal({ ...personal, country: name })}
-            required
-            placeholder="Start typing a country..."
-          />
-          <Field
-            label="County"
-            value={personal.county}
-            onChange={(e) => setPersonal({ ...personal, county: e.target.value })}
-            required
-          />
-          <Field label="City" value={personal.city} onChange={(e) => setPersonal({ ...personal, city: e.target.value })} required />
-          <Field
-            label="Street"
-            value={personal.street}
-            onChange={(e) => setPersonal({ ...personal, street: e.target.value })}
-            required
-          />
-          <Field
-            label="Street number"
-            value={personal.street_number}
-            onChange={(e) => setPersonal({ ...personal, street_number: e.target.value })}
-            required
-          />
-          <Field
-            label="Building"
-            value={personal.building ?? ""}
-            onChange={(e) => setPersonal({ ...personal, building: e.target.value })}
-            maxLength={32}
-          />
-          <Field
-            label="Staircase"
-            value={personal.staircase ?? ""}
-            onChange={(e) => setPersonal({ ...personal, staircase: e.target.value })}
-            maxLength={32}
-          />
-          <Field
-            label="Apartment"
-            value={personal.apartment ?? ""}
-            onChange={(e) => setPersonal({ ...personal, apartment: e.target.value })}
-            maxLength={32}
-          />
-          <Field
-            label="Postal code"
-            value={personal.postal_code ?? ""}
-            onChange={(e) => setPersonal({ ...personal, postal_code: e.target.value })}
-            maxLength={12}
-          />
-        </div>
-        {personalError && (
-          <p role="alert" className="status-line status-line--error">
-            {personalError}
-          </p>
-        )}
-        {personalSaved && <p className="status-line">Saved.</p>}
-        <button type="submit" disabled={personalSaving}>
-          {personalSaving ? "Saving..." : "Save"}
-        </button>
-      </form>
-
-      <form onSubmit={submitEmployment} className="tile onboarding-form">
-        <div className="auth-form__header">
-          <span className="eyebrow">Financial</span>
-          <h2>Employment &amp; income</h2>
-        </div>
-        <div className="onboarding-form__grid">
-          <Field
-            label="Occupation"
-            value={employment.occupation ?? ""}
-            onChange={(e) => setEmployment({ ...employment, occupation: e.target.value })}
-            maxLength={100}
-          />
-          <SelectField
-            label="Employment status"
-            value={employment.employment_status ?? ""}
-            onChange={(e) => {
-              const nextStatus = e.target.value === "" ? null : (e.target.value as EmploymentStatus);
-              const hides = nextStatus !== null && EMPLOYMENT_STATUSES_WITHOUT_EMPLOYER.has(nextStatus);
-              setEmployment({
-                ...employment,
-                employment_status: nextStatus,
-                employer: hides ? "" : employment.employer,
-                industry: hides ? "" : employment.industry,
-              });
-            }}
-          >
-            <option value="">Select status</option>
-            <option value="EMPLOYED">Employed</option>
-            <option value="SELF_EMPLOYED">Self-employed</option>
-            <option value="STUDENT">Student</option>
-            <option value="UNEMPLOYED">Unemployed</option>
-            <option value="RETIRED">Retired</option>
-            <option value="OTHER">Other</option>
-          </SelectField>
-          {!hidesEmployer && (
+      <div className="tile profile-header">
+        <div className="avatar avatar--large">{initials(profile.user.first_name, profile.user.last_name)}</div>
+        <div className="profile-header__info">
+          <h1 className="profile-header__name">
+            {profile.user.first_name} {profile.user.last_name}
+          </h1>
+          {editingContact ? (
+            <form onSubmit={submitContact} className="profile-header__contact-edit">
+              <input
+                type="email"
+                value={emailDraft}
+                onChange={(e) => setEmailDraft(e.target.value)}
+                placeholder="you@example.com"
+                autoFocus
+              />
+              <input value={phoneDraft} onChange={(e) => setPhoneDraft(e.target.value)} placeholder="+40712345678" />
+              <button type="submit" disabled={contactSaving}>
+                {contactSaving ? "Saving..." : "Save"}
+              </button>
+              <button type="button" className="button--ghost" onClick={cancelContactEdit}>
+                Cancel
+              </button>
+            </form>
+          ) : (
             <>
-              <Field
-                label="Employer"
-                value={employment.employer ?? ""}
-                onChange={(e) => setEmployment({ ...employment, employer: e.target.value })}
-                maxLength={255}
-              />
-              <DropdownWithOther
-                label="Industry"
-                value={employment.industry ?? ""}
-                options={INDUSTRY_OPTIONS}
-                onChange={(value) => setEmployment({ ...employment, industry: value })}
-              />
+              <div className="profile-header__contact">
+                <span>{profile.user.email}</span>
+              </div>
+              <div className="profile-header__contact">
+                <span>{profile.user.phone ?? "No phone on file"}</span>
+                <button type="button" className="button-link" onClick={() => setEditingContact(true)}>
+                  Edit
+                </button>
+              </div>
             </>
           )}
-          <DropdownWithOther
-            label="Income source"
-            value={employment.income_source ?? ""}
-            options={INCOME_SOURCE_OPTIONS}
-            onChange={(value) => setEmployment({ ...employment, income_source: value })}
-          />
-          <Field
-            label="Approximate monthly income"
-            type="number"
-            min="0"
-            max="10000000"
-            step="0.01"
-            value={employment.approximate_monthly_income ?? ""}
-            onChange={(e) => setEmployment({ ...employment, approximate_monthly_income: e.target.value })}
-          />
+          {contactError && (
+            <p role="alert" className="status-line status-line--error">
+              {contactError}
+            </p>
+          )}
         </div>
-        <label>
-          Account purpose
-          <input
-            value={employment.account_purpose ?? ""}
-            onChange={(e) => setEmployment({ ...employment, account_purpose: e.target.value })}
-          />
-        </label>
-        {employmentError && (
-          <p role="alert" className="status-line status-line--error">
-            {employmentError}
-          </p>
+      </div>
+
+      <div className="tile profile-section">
+        <SectionToggle label="Personal & address" open={personalOpen} onClick={() => setPersonalOpen((o) => !o)} />
+        {personalOpen && (
+          <form onSubmit={submitPersonal} className="onboarding-form profile-section__body">
+            <div className="onboarding-form__grid">
+              <Field
+                label="CNP"
+                value={personal.cnp}
+                disabled
+                inputMode="numeric"
+                maxLength={13}
+                hint="This can't be changed here."
+              />
+              <Field
+                label="Date of birth"
+                type="date"
+                value={personal.date_of_birth}
+                disabled
+                hint="This can't be changed here."
+              />
+              <NationalitySearchSelect
+                label="Citizenship"
+                value={personal.citizenship}
+                onChange={(demonym) => setPersonal({ ...personal, citizenship: demonym })}
+                required
+                placeholder="Start typing a nationality..."
+              />
+              <CountrySearchSelect
+                label="Country"
+                value={personal.country}
+                onChange={(name) => setPersonal({ ...personal, country: name })}
+                required
+                placeholder="Start typing a country..."
+              />
+              <Field
+                label="County"
+                value={personal.county}
+                onChange={(e) => setPersonal({ ...personal, county: e.target.value })}
+                required
+              />
+              <Field
+                label="City"
+                value={personal.city}
+                onChange={(e) => setPersonal({ ...personal, city: e.target.value })}
+                required
+              />
+              <Field
+                label="Street"
+                value={personal.street}
+                onChange={(e) => setPersonal({ ...personal, street: e.target.value })}
+                required
+              />
+              <Field
+                label="Street number"
+                value={personal.street_number}
+                onChange={(e) => setPersonal({ ...personal, street_number: e.target.value })}
+                required
+              />
+              <Field
+                label="Building"
+                value={personal.building ?? ""}
+                onChange={(e) => setPersonal({ ...personal, building: e.target.value })}
+                maxLength={32}
+              />
+              <Field
+                label="Staircase"
+                value={personal.staircase ?? ""}
+                onChange={(e) => setPersonal({ ...personal, staircase: e.target.value })}
+                maxLength={32}
+              />
+              <Field
+                label="Apartment"
+                value={personal.apartment ?? ""}
+                onChange={(e) => setPersonal({ ...personal, apartment: e.target.value })}
+                maxLength={32}
+              />
+              <Field
+                label="Postal code"
+                value={personal.postal_code ?? ""}
+                onChange={(e) => setPersonal({ ...personal, postal_code: e.target.value })}
+                maxLength={12}
+              />
+            </div>
+            {personalError && (
+              <p role="alert" className="status-line status-line--error">
+                {personalError}
+              </p>
+            )}
+            {personalSaved && <p className="status-line">Saved.</p>}
+            <button type="submit" disabled={personalSaving}>
+              {personalSaving ? "Saving..." : "Save"}
+            </button>
+          </form>
         )}
-        {employmentSaved && <p className="status-line">Saved.</p>}
-        <button type="submit" disabled={employmentSaving}>
-          {employmentSaving ? "Saving..." : "Save"}
-        </button>
-      </form>
+      </div>
+
+      <div className="tile profile-section">
+        <SectionToggle label="Financial profile" open={financialOpen} onClick={() => setFinancialOpen((o) => !o)} />
+        {financialOpen && (
+          <form onSubmit={submitEmployment} className="onboarding-form profile-section__body">
+            <div className="onboarding-form__grid">
+              <Field
+                label="Occupation"
+                value={employment.occupation ?? ""}
+                onChange={(e) => setEmployment({ ...employment, occupation: e.target.value })}
+                maxLength={100}
+              />
+              <SelectField
+                label="Employment status"
+                value={employment.employment_status ?? ""}
+                onChange={(e) => {
+                  const nextStatus = e.target.value === "" ? null : (e.target.value as EmploymentStatus);
+                  const hides = nextStatus !== null && EMPLOYMENT_STATUSES_WITHOUT_EMPLOYER.has(nextStatus);
+                  setEmployment({
+                    ...employment,
+                    employment_status: nextStatus,
+                    employer: hides ? "" : employment.employer,
+                    industry: hides ? "" : employment.industry,
+                  });
+                }}
+              >
+                <option value="">Select status</option>
+                <option value="EMPLOYED">Employed</option>
+                <option value="SELF_EMPLOYED">Self-employed</option>
+                <option value="STUDENT">Student</option>
+                <option value="UNEMPLOYED">Unemployed</option>
+                <option value="RETIRED">Retired</option>
+                <option value="OTHER">Other</option>
+              </SelectField>
+              {!hidesEmployer && (
+                <>
+                  <Field
+                    label="Employer"
+                    value={employment.employer ?? ""}
+                    onChange={(e) => setEmployment({ ...employment, employer: e.target.value })}
+                    maxLength={255}
+                  />
+                  <DropdownWithOther
+                    label="Industry"
+                    value={employment.industry ?? ""}
+                    options={INDUSTRY_OPTIONS}
+                    onChange={(value) => setEmployment({ ...employment, industry: value })}
+                  />
+                </>
+              )}
+              <DropdownWithOther
+                label="Income source"
+                value={employment.income_source ?? ""}
+                options={INCOME_SOURCE_OPTIONS}
+                onChange={(value) => setEmployment({ ...employment, income_source: value })}
+              />
+              <Field
+                label="Approximate monthly income"
+                type="number"
+                min="0"
+                max="10000000"
+                step="0.01"
+                value={employment.approximate_monthly_income ?? ""}
+                onChange={(e) => setEmployment({ ...employment, approximate_monthly_income: e.target.value })}
+              />
+            </div>
+            <label>
+              Account purpose
+              <input
+                value={employment.account_purpose ?? ""}
+                onChange={(e) => setEmployment({ ...employment, account_purpose: e.target.value })}
+              />
+            </label>
+            {employmentError && (
+              <p role="alert" className="status-line status-line--error">
+                {employmentError}
+              </p>
+            )}
+            {employmentSaved && <p className="status-line">Saved.</p>}
+            <button type="submit" disabled={employmentSaving}>
+              {employmentSaving ? "Saving..." : "Save"}
+            </button>
+          </form>
+        )}
+      </div>
+
+      <div className="tile profile-section">
+        <SectionToggle label="Identity document" open={identityOpen} onClick={() => setIdentityOpen((o) => !o)} />
+        {identityOpen && (
+          <div className="profile-section__body">
+            <p className="status-line">Re-uploading your identity document isn't available yet — coming in a future update.</p>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

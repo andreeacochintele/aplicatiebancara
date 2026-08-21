@@ -96,6 +96,11 @@ class UserService:
             user.first_name = data.first_name
         if data.last_name is not None:
             user.last_name = data.last_name
+        if data.email is not None and data.email != user.email:
+            existing = self.repository.get_by_email(data.email)
+            if existing and existing.id != user.id:
+                raise ConflictError(f"Email '{data.email}' is already registered")
+            user.email = data.email
         if data.phone is not None and data.phone != user.phone:
             existing = self.repository.get_by_phone(data.phone)
             if existing and existing.id != user.id:
