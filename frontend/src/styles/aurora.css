@@ -362,6 +362,19 @@
   cursor: default;
 }
 
+.aurora-wallet-card__delete {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--aurora-red);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.aurora-wallet-card__delete:hover {
+  text-decoration: underline;
+}
+
 .aurora-convert-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -451,12 +464,83 @@
   }
 }
 
+.aurora-add-account {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.aurora-add-account select {
+  padding: 7px 9px;
+  font-size: 13px;
+}
+
+.aurora-add-account button {
+  white-space: nowrap;
+  padding: 8px 14px;
+  font-size: 12.5px;
+}
+
+.aurora-convert-submit {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--aurora-border);
+}
+
+.aurora-convert-submit button {
+  width: 100%;
+  padding: 11px;
+}
+
 .aurora-quote-card {
   margin-top: 16px;
   background: var(--aurora-accent-soft);
   border: 1px solid var(--aurora-accent);
   border-radius: var(--aurora-radius-md);
   padding: 14px 16px;
+}
+
+.aurora-quote-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.aurora-quote-card__close {
+  background: none;
+  border: none;
+  padding: 3px;
+  color: var(--aurora-text-soft);
+  display: flex;
+  border-radius: 50%;
+}
+
+.aurora-quote-card__close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--aurora-text);
+}
+
+.aurora-quote-card__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.aurora-quote-card__actions button {
+  flex: 1;
+}
+
+.aurora-shell button.aurora-btn-ghost {
+  background: transparent;
+  color: var(--aurora-accent-dark);
+  border: 1px solid var(--aurora-border);
+  font-weight: 700;
+}
+
+.aurora-shell button.aurora-btn-ghost:hover {
+  background: var(--aurora-accent-soft);
+  border-color: var(--aurora-accent);
 }
 
 .aurora-quote-row {

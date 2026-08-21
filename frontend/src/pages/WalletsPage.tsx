@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Star, TrendingUp } from "lucide-react";
+import { ArrowLeftRight, Plus, Star, Trash2, TrendingUp, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -8,6 +8,8 @@ import { useAuth } from "../hooks/useAuth";
 import type { FXMarketRate, FXQuote, FXRateHistory, Wallet } from "../types";
 
 const RATE_ACCENT = "#5b5fef"; // same violet as --aurora-accent, kept as one deliberate hue for the trend line
+// matches backend/app/fx/service.py's _RATES_TO_RON — keep both in sync
+const SUPPORTED_CURRENCIES = ["RON", "EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD", "PLN", "TRY"];
 
 function hueFromString(value: string): number {
   return Math.abs([...value].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % 360;
@@ -78,6 +80,10 @@ export function WalletsPage() {
   const [result, setResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [settingMainId, setSettingMainId] = useState<string | null>(null);
+  const [newCurrency, setNewCurrency] = useState("");
+  const [addingAccount, setAddingAccount] = useState(false);
+  const [deletingWallet, setDeletingWallet] = useState<Wallet | null>(null);
+  const [closingAccount, setClosingAccount] = useState(false);
   const [convertRate, setConvertRate] = useState<FXMarketRate | null>(null);
   const [chartSourceId, setChartSourceId] = useState("");
   const [chartTargetId, setChartTargetId] = useState("");
@@ -89,6 +95,42 @@ export function WalletsPage() {
   }
 
   useEffect(loadWallets, [accessToken]);
+
+  const activeWallets = wallets.filter((w) => w.status !== "CLOSED");
+  const mainWallet = activeWallets.find((w) => w.is_main);
+  const missingCurrencies = SUPPORTED_CURRENCIES.filter((c) => !activeWallets.some((w) => w.currency === c));
+
+  async function confirmDeleteAccount() {
+    if (!accessToken || !deletingWallet || closingAccount) return;
+    setClosingAccount(true);
+    setError(null);
+    try {
+      await apiRequest(`/wallets/${deletingWallet.id}`, { method: "DELETE", token: accessToken });
+      setDeletingWallet(null);
+      loadWallets();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not close account");
+    } finally {
+      setClosingAccount(false);
+    }
+  }
+
+  async function addAccount() {
+    if (!accessToken || addingAccount) return;
+    const currency = newCurrency || missingCurrencies[0];
+    if (!currency) return;
+    setAddingAccount(true);
+    setError(null);
+    try {
+      await apiRequest("/wallets", { method: "POST", token: accessToken, body: { currency } });
+      setNewCurrency("");
+      loadWallets();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not add account");
+    } finally {
+      setAddingAccount(false);
+    }
+  }
 
   async function setMainWallet(walletId: string) {
     if (!accessToken || settingMainId) return;
@@ -105,23 +147,23 @@ export function WalletsPage() {
   }
 
   useEffect(() => {
-    if (wallets.length < 2) return;
-    if (!sourceId) setSourceId(wallets[0].id);
+    if (activeWallets.length < 2) return;
+    if (!sourceId) setSourceId(activeWallets[0].id);
     if (!targetId) {
-      const other = wallets.find((w) => w.id !== wallets[0].id);
+      const other = activeWallets.find((w) => w.id !== activeWallets[0].id);
       if (other) setTargetId(other.id);
     }
-    if (!chartSourceId) setChartSourceId(wallets[0].id);
+    if (!chartSourceId) setChartSourceId(activeWallets[0].id);
     if (!chartTargetId) {
-      const other = wallets.find((w) => w.id !== wallets[0].id);
+      const other = activeWallets.find((w) => w.id !== activeWallets[0].id);
       if (other) setChartTargetId(other.id);
     }
-  }, [wallets, sourceId, targetId, chartSourceId, chartTargetId]);
+  }, [activeWallets, sourceId, targetId, chartSourceId, chartTargetId]);
 
-  const source = wallets.find((w) => w.id === sourceId);
-  const target = wallets.find((w) => w.id === targetId);
-  const chartSource = wallets.find((w) => w.id === chartSourceId);
-  const chartTarget = wallets.find((w) => w.id === chartTargetId);
+  const source = activeWallets.find((w) => w.id === sourceId);
+  const target = activeWallets.find((w) => w.id === targetId);
+  const chartSource = activeWallets.find((w) => w.id === chartSourceId);
+  const chartTarget = activeWallets.find((w) => w.id === chartTargetId);
 
   useEffect(() => {
     if (!accessToken || !source || !target || source.currency === target.currency) {
@@ -206,10 +248,25 @@ export function WalletsPage() {
             <div className="aurora-eyebrow">Your accounts</div>
             <h2>Wallets</h2>
           </div>
+          {missingCurrencies.length > 0 && (
+            <div className="aurora-add-account">
+              <select value={newCurrency || missingCurrencies[0]} onChange={(e) => setNewCurrency(e.target.value)}>
+                {missingCurrencies.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <button type="button" onClick={addAccount} disabled={addingAccount}>
+                <Plus size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
+                Add account
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="aurora-wallet-grid">
-          {wallets.map((wallet) => (
+          {activeWallets.map((wallet) => (
             <div
               className="aurora-wallet-card"
               key={wallet.id}
@@ -236,33 +293,43 @@ export function WalletsPage() {
                   {wallet.is_main ? "Main wallet" : wallet.status}
                 </span>
                 {!wallet.is_main && wallet.status === "ACTIVE" && (
-                  <button
-                    type="button"
-                    className="aurora-wallet-card__set-main"
-                    onClick={() => setMainWallet(wallet.id)}
-                    disabled={settingMainId === wallet.id}
-                  >
-                    <Star size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
-                    Set as main
-                  </button>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <button
+                      type="button"
+                      className="aurora-wallet-card__set-main"
+                      onClick={() => setMainWallet(wallet.id)}
+                      disabled={settingMainId === wallet.id}
+                    >
+                      <Star size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
+                      Set as main
+                    </button>
+                    <button
+                      type="button"
+                      className="aurora-wallet-card__delete"
+                      onClick={() => setDeletingWallet(wallet)}
+                    >
+                      <Trash2 size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
+                      Delete
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
           ))}
-          {wallets.length === 0 && <p className="aurora-tx-meta">No wallets yet.</p>}
+          {activeWallets.length === 0 && <p className="aurora-tx-meta">No wallets yet.</p>}
         </div>
         {error && <p role="alert">{error}</p>}
       </div>
 
-      {wallets.length >= 2 && (
+      {activeWallets.length >= 2 && (
         <div className="aurora-exchange-row">
           <div className="aurora-card aurora-exchange-card">
             <div className="aurora-section-header">
               <div>
-                <div className="aurora-eyebrow">Exchange</div>
+                <div className="aurora-eyebrow">Currency</div>
                 <h2>
                   <ArrowLeftRight size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
-                  Convert between your wallets
+                  Exchange
                 </h2>
               </div>
             </div>
@@ -286,7 +353,7 @@ export function WalletsPage() {
               <label>
                 From
                 <select value={sourceId} onChange={(e) => { setSourceId(e.target.value); setQuote(null); }}>
-                  {wallets.map((w) => (
+                  {activeWallets.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.currency} · {w.available_balance}
                     </option>
@@ -296,7 +363,7 @@ export function WalletsPage() {
               <label>
                 To
                 <select value={targetId} onChange={(e) => { setTargetId(e.target.value); setQuote(null); }}>
-                  {wallets
+                  {activeWallets
                     .filter((w) => w.id !== sourceId)
                     .map((w) => (
                       <option key={w.id} value={w.id}>
@@ -310,20 +377,30 @@ export function WalletsPage() {
               Amount ({source?.currency})
               <input value={amount} onChange={(e) => { setAmount(e.target.value); setQuote(null); }} />
             </label>
-            <button onClick={getQuote} disabled={busy || !source || !target} style={{ marginTop: 14 }}>
-              Get quote
-            </button>
+
+            <div className="aurora-convert-submit">
+              <button onClick={getQuote} disabled={busy || !source || !target}>
+                Get quote
+              </button>
+            </div>
 
             {error && <p role="alert">{error}</p>}
             {result && <p>{result}</p>}
 
             {quote && (
               <div className="aurora-quote-card">
-                <div className="aurora-eyebrow">Quote expires {new Date(quote.expires_at).toLocaleTimeString()}</div>
+                <div className="aurora-quote-card__header">
+                  <div className="aurora-eyebrow" style={{ marginBottom: 0 }}>
+                    Quote expires {new Date(quote.expires_at).toLocaleTimeString()}
+                  </div>
+                  <button type="button" className="aurora-quote-card__close" onClick={() => setQuote(null)} aria-label="Cancel this quote">
+                    <X size={14} />
+                  </button>
+                </div>
                 <div className="aurora-quote-row">
                   <span>Rate</span>
                   <span>
-                    1 {quote.source_currency} = {quote.exchange_rate} {quote.target_currency}
+                    1 {quote.source_currency} = {Number(quote.exchange_rate).toFixed(4)} {quote.target_currency}
                   </span>
                 </div>
                 <div className="aurora-quote-row">
@@ -338,9 +415,14 @@ export function WalletsPage() {
                     {quote.target_amount} {quote.target_currency}
                   </span>
                 </div>
-                <button onClick={acceptQuote} disabled={busy} style={{ marginTop: 10, width: "100%" }}>
-                  Accept quote
-                </button>
+                <div className="aurora-quote-card__actions">
+                  <button className="aurora-btn-ghost" onClick={() => setQuote(null)} disabled={busy}>
+                    Cancel
+                  </button>
+                  <button onClick={acceptQuote} disabled={busy}>
+                    Accept quote
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -357,7 +439,7 @@ export function WalletsPage() {
               <label>
                 From
                 <select value={chartSourceId} onChange={(e) => setChartSourceId(e.target.value)}>
-                  {wallets.map((w) => (
+                  {activeWallets.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.currency}
                     </option>
@@ -367,7 +449,7 @@ export function WalletsPage() {
               <label>
                 To
                 <select value={chartTargetId} onChange={(e) => setChartTargetId(e.target.value)}>
-                  {wallets
+                  {activeWallets
                     .filter((w) => w.id !== chartSourceId)
                     .map((w) => (
                       <option key={w.id} value={w.id}>
@@ -385,6 +467,35 @@ export function WalletsPage() {
                 Not enough history for this pair yet.
               </p>
             )}
+          </div>
+        </div>
+      )}
+
+      {deletingWallet && (
+        <div className="folder-modal-backdrop" onClick={() => !closingAccount && setDeletingWallet(null)}>
+          <div className="aurora-card" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+            <div className="aurora-eyebrow">Close account</div>
+            <h2 style={{ marginBottom: 10 }}>{deletingWallet.currency} wallet</h2>
+            <p style={{ fontSize: 13.5, color: "var(--aurora-text-soft)", lineHeight: 1.6 }}>
+              This account currently holds{" "}
+              <strong style={{ color: "var(--aurora-text)" }}>
+                {deletingWallet.available_balance} {deletingWallet.currency}
+              </strong>
+              .{" "}
+              {Number(deletingWallet.available_balance) > 0 && mainWallet
+                ? `It will be converted and transferred into your main ${mainWallet.currency} wallet.`
+                : "The account has no balance to move."}{" "}
+              This can't be undone, but you can reopen a {deletingWallet.currency} account later.
+            </p>
+            {error && <p role="alert">{error}</p>}
+            <div className="aurora-quote-card__actions" style={{ marginTop: 6 }}>
+              <button className="aurora-btn-ghost" onClick={() => setDeletingWallet(null)} disabled={closingAccount}>
+                Cancel
+              </button>
+              <button onClick={confirmDeleteAccount} disabled={closingAccount}>
+                {closingAccount ? "Closing…" : "Close account"}
+              </button>
+            </div>
           </div>
         </div>
       )}
