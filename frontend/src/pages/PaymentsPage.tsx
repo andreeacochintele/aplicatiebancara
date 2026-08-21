@@ -2091,6 +2091,12 @@ export function PaymentsPage() {
                     {data.hasDeclinedSplit && (
                       <p className="status-line status-line--error">A participant refused this split. You can split it again.</p>
                     )}
+                    {data.split?.status === "SETTLED" && (
+                      <p className="status-line">
+                        This folder was already split and every participant paid. It can't be split again or cancelled
+                        -- delete the folder if you want to start over with a new one.
+                      </p>
+                    )}
                     <div className="folder-readonly-card__items">
                       {folder.items.map((item) => {
                         const transaction = transactions.find((candidate) => candidate.id === item.transaction_id);

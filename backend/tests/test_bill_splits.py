@@ -3,6 +3,7 @@ from uuid import UUID
 
 from app.notifications.service import NotificationsService
 from app.payments.models import BillSplitParticipantStatus, BillSplitStatus
+from app.transactions.models import Transaction, TransactionStatus, TransactionType
 from app.transactions.schemas import InternalTransferCreate
 from app.transactions.service import TransactionService
 from app.wallets.models import Wallet
@@ -156,6 +157,60 @@ def test_bill_split_rejects_participant_amounts_above_total(client):
             "total_amount": "100.00",
             "currency": "RON",
             "participants": [{"name": "Friend", "phone": "+40779999999", "amount": "140.00"}],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_bill_split_does_not_persist_when_a_participant_fails_to_resolve(client):
+    # Under the Supabase REST backend, repository.add() is an immediate
+    # INSERT with no surrounding transaction -- creating the BillSplit
+    # before resolving every participant left an orphaned, participant-less
+    # OPEN split behind whenever one participant's phone/user id didn't
+    # resolve. create_bill_split now resolves all participants first.
+    owner = _register(client, "split-orphan-owner@example.com", "+40770333336")
+
+    response = client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Should not persist",
+            "total_amount": "80.00",
+            "currency": "RON",
+            "participants": [{"name": "Ghost", "phone": "+40770333337", "amount": "80.00"}],
+        },
+    )
+    assert response.status_code == 404
+
+    listed = client.get("/api/v1/payments/bill-splits", headers=_auth_header(owner))
+    assert listed.json() == []
+
+
+def test_bill_split_rejects_non_completed_transaction_as_source(client, db_session):
+    owner = _register(client, "split-pending-owner@example.com", "+40770333338")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    pending_transaction = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        source_wallet_id=owner_wallet.id,
+        type=TransactionType.CARD_PAYMENT,
+        status=TransactionStatus.PROCESSING,
+        amount=Decimal("40.00"),
+        currency="RON",
+        description="Still processing",
+    )
+    db_session.add(pending_transaction)
+    db_session.flush()
+
+    response = client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Should fail",
+            "total_amount": "40.00",
+            "currency": "RON",
+            "source_transaction_id": str(pending_transaction.id),
+            "participants": [{"name": "Friend", "phone": "+40770333339", "amount": "40.00"}],
         },
     )
 

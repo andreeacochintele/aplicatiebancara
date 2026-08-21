@@ -34,6 +34,7 @@ from app.payments.schemas import (
     BeneficiaryCreate,
     BeneficiaryUpdate,
     BillSplitCreate,
+    BillSplitParticipantCreate,
     BillSplitPay,
     BillSplitPublic,
     IbanTransferCreate,
@@ -474,24 +475,21 @@ class BillSplitService:
             source_transaction = self.transactions.get_for_user(owner_user_id, data.source_transaction_id)
             if source_transaction is None:
                 raise NotFoundError("Source transaction not found")
+            if source_transaction.status != TransactionStatus.COMPLETED:
+                raise ValidationError("Only completed transactions can be split")
             owner_wallet_ids = {wallet.id for wallet in self.wallets.list_for_user(owner_user_id)}
             is_incoming = source_transaction.destination_wallet_id in owner_wallet_ids
             is_outgoing = source_transaction.source_wallet_id in owner_wallet_ids
             if is_incoming and not is_outgoing:
                 raise ValidationError("Cannot split a transaction that brought money in")
 
-        bill_split = self.repository.add(
-            BillSplit(
-                owner_user_id=owner_user_id,
-                source_transaction_id=data.source_transaction_id,
-                title=data.title,
-                total_amount=data.total_amount,
-                currency=data.currency.upper(),
-                status=BillSplitStatus.OPEN,
-                description=data.description,
-            )
-        )
-
+        # Resolve every participant BEFORE writing anything: under the
+        # Supabase REST backend, self.repository.add() is an immediate
+        # INSERT with no surrounding transaction to roll back, so creating
+        # the BillSplit row first and only then discovering a bad phone
+        # number/user id left an orphaned, participant-less OPEN split
+        # behind on every such failure.
+        resolved_participants: list[tuple[BillSplitParticipantCreate, uuid.UUID | None]] = []
         for participant_data in data.participants:
             participant_user_id = participant_data.participant_user_id
             if participant_user_id is None and participant_data.phone is not None:
@@ -507,6 +505,21 @@ class BillSplitService:
             if participant_user_id == owner_user_id:
                 raise ValidationError("Bill split participant cannot be the owner")
 
+            resolved_participants.append((participant_data, participant_user_id))
+
+        bill_split = self.repository.add(
+            BillSplit(
+                owner_user_id=owner_user_id,
+                source_transaction_id=data.source_transaction_id,
+                title=data.title,
+                total_amount=data.total_amount,
+                currency=data.currency.upper(),
+                status=BillSplitStatus.OPEN,
+                description=data.description,
+            )
+        )
+
+        for participant_data, participant_user_id in resolved_participants:
             self.repository.add_participant(
                 BillSplitParticipant(
                     bill_split_id=bill_split.id,
@@ -713,8 +726,11 @@ class TransactionFolderService:
         transaction_id: uuid.UUID,
     ) -> TransactionFolderPublic:
         folder = self._get_owned(owner_user_id, folder_id)
-        if self.transactions.get_for_user(owner_user_id, transaction_id) is None:
+        transaction = self.transactions.get_for_user(owner_user_id, transaction_id)
+        if transaction is None:
             raise NotFoundError("Transaction not found")
+        if transaction.status != TransactionStatus.COMPLETED:
+            raise ValidationError("Only completed transactions can be added to a folder")
         if self.repository.get_item(folder.id, transaction_id) is not None:
             raise ConflictError("Transaction is already in this folder")
         self.repository.add_item(TransactionFolderItem(folder_id=folder.id, transaction_id=transaction_id))

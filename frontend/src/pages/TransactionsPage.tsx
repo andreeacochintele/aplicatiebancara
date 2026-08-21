@@ -636,14 +636,18 @@ export function TransactionsPage() {
                   <td>{tx.status}</td>
                   <td>
                     <div className="transaction-actions">
-                      {!isIncomingOnly(tx, userWalletIds) && (
-                        <button className="button--ghost button--wide" onClick={() => openSplit(tx)} type="button">
-                          Split bill
-                        </button>
+                      {tx.status === "COMPLETED" && (
+                        <>
+                          {!isIncomingOnly(tx, userWalletIds) && (
+                            <button className="button--ghost button--wide" onClick={() => openSplit(tx)} type="button">
+                              Split bill
+                            </button>
+                          )}
+                          <button className="button--ghost button--wide" onClick={() => openFolderModal(tx)} type="button">
+                            Add to folder
+                          </button>
+                        </>
                       )}
-                      <button className="button--ghost button--wide" onClick={() => openFolderModal(tx)} type="button">
-                        Add to folder
-                      </button>
                     </div>
                   </td>
                 </tr>
