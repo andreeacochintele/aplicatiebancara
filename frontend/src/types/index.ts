@@ -111,6 +111,36 @@ export interface Wallet {
   created_at: string;
 }
 
+export interface FXMarketRate {
+  source_currency: string;
+  target_currency: string;
+  rate: string;
+  fee_rate: string;
+}
+
+export interface FXRatePoint {
+  date: string;
+  rate: string;
+}
+
+export interface FXRateHistory {
+  source_currency: string;
+  target_currency: string;
+  points: FXRatePoint[];
+}
+
+// Free-text on the backend on purpose (app/notifications/models.py) — every
+// module can add its own notification type without touching a shared enum.
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  related_transaction_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
 export interface Transaction {
   id: string;
   initiator_user_id: string;

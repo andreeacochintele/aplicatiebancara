@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError
 from app.core.security import hash_password
+from app.notifications.service import NotificationsService
 from app.users.models import KycDocumentStatus, User, UserAddress, UserEmploymentProfile, UserOnboardingState, UserProfile
 from app.users.repository import UserRepository
 from app.users.schemas import OnboardingStep2Update, OnboardingStep4Update, ProfileUpdate, UserCreate, UserFullProfilePublic
@@ -15,6 +16,7 @@ class UserService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repository = UserRepository(db)
+        self.notifications = NotificationsService(db)
 
     def create_user(self, data: UserCreate) -> User:
         if self.repository.get_by_email(data.email):
@@ -32,6 +34,18 @@ class UserService:
         )
         self.repository.add(user)
         self.ensure_profile_records(user, legacy_completed=False)
+
+        # Best-effort: a notification failure must never make registration
+        # itself look like it failed.
+        try:
+            self.notifications.create(
+                user.id,
+                type="SYSTEM",
+                title="Welcome to Aurora",
+                message=f"Hi {user.first_name}, your account is ready. Set up your first wallet to get started.",
+            )
+        except Exception:
+            pass
         return user
 
     def get_full_profile(self, user: User) -> UserFullProfilePublic:
