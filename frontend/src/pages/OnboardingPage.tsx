@@ -18,6 +18,7 @@ import {
   updateOnboardingStep4,
 } from "../features/auth";
 import { CountrySearchSelect } from "../features/auth/CountrySearchSelect";
+import { NationalitySearchSelect } from "../features/auth/NationalitySearchSelect";
 import { DropdownWithOther } from "../features/auth/DropdownWithOther";
 import { EMPLOYMENT_STATUSES_WITHOUT_EMPLOYER, INCOME_SOURCE_OPTIONS, INDUSTRY_OPTIONS } from "../features/auth/employmentOptions";
 import {
@@ -389,12 +390,12 @@ export function OnboardingPage() {
                 min="1900-01-01"
                 max={todayIso}
               />
-              <CountrySearchSelect
+              <NationalitySearchSelect
                 label="Citizenship"
                 value={step2.citizenship}
-                onChange={(name) => setStep2({ ...step2, citizenship: name })}
+                onChange={(demonym) => setStep2({ ...step2, citizenship: demonym })}
                 required
-                placeholder="Start typing a country..."
+                placeholder="Start typing a nationality..."
               />
               <CountrySearchSelect
                 label="Country"
