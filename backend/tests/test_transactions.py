@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.cards.models import CardStatus, CardType
+from app.cards.models import CardStatus, CardTier, CardType
 from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate
 from app.cards.service import CardService
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
@@ -12,7 +12,7 @@ from app.fx.service import FXService
 from app.merchants.schemas import MerchantCreate
 from app.merchants.service import MerchantService
 from app.transactions.models import TransactionStatus, TransactionType
-from app.transactions.schemas import CardPaymentCreate, InternalTransferCreate
+from app.transactions.schemas import CardPaymentCreate, CreditCardRepaymentCreate, InternalTransferCreate
 from app.transactions.service import TransactionService
 from app.users.schemas import UserCreate
 from app.users.service import UserService
@@ -255,6 +255,67 @@ def test_card_payment_debits_wallet_and_tags_merchant(db_session, payer_with_wal
     assert wallet.available_balance == Decimal("380.00")
     assert len(transaction.ledger_entries) == 1
     assert transaction.ledger_entries[0].entry_type.value == "DEBIT"
+
+
+def test_credit_card_payment_uses_credit_account_not_wallet(db_session, payer_with_wallet_and_merchant):
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(
+        payer.id, CardCreate(type=CardType.CREDIT, tier=CardTier.REGULAR)
+    )
+
+    transaction = TransactionService(db_session).create_card_payment(
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("120.00"), cvv=card.mock_cvv)
+    )
+
+    assert transaction.status == TransactionStatus.COMPLETED
+    assert transaction.type == TransactionType.CARD_PAYMENT
+    assert transaction.source_wallet_id is None
+    assert transaction.merchant_id == merchant.id
+    assert transaction.card_id == card.id
+    assert wallet.available_balance == Decimal("500.00")
+    assert card.credit_account.used_amount == Decimal("120.00")
+    assert card.credit_account.available_credit == Decimal("4880.00")
+    assert transaction.ledger_entries == []
+
+
+def test_credit_card_repayment_debits_wallet_and_restores_credit(db_session, payer_with_wallet_and_merchant):
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(
+        payer.id, CardCreate(type=CardType.CREDIT, tier=CardTier.REGULAR)
+    )
+    service = TransactionService(db_session)
+    service.create_card_payment(
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("120.00"), cvv=card.mock_cvv)
+    )
+
+    transaction = service.create_credit_card_repayment(
+        payer.id, CreditCardRepaymentCreate(card_id=card.id, source_wallet_id=wallet.id, amount=Decimal("50.00"))
+    )
+
+    assert transaction.status == TransactionStatus.COMPLETED
+    assert transaction.type == TransactionType.LOAN_PAYMENT
+    assert transaction.source_wallet_id == wallet.id
+    assert transaction.card_id == card.id
+    assert wallet.available_balance == Decimal("450.00")
+    assert card.credit_account.used_amount == Decimal("70.00")
+    assert card.credit_account.available_credit == Decimal("4930.00")
+    assert len(transaction.ledger_entries) == 1
+    assert transaction.ledger_entries[0].entry_type.value == "DEBIT"
+
+
+def test_credit_card_payment_rejects_over_limit(db_session, payer_with_wallet_and_merchant):
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(
+        payer.id, CardCreate(type=CardType.CREDIT, tier=CardTier.REGULAR)
+    )
+
+    with pytest.raises(ConflictError):
+        TransactionService(db_session).create_card_payment(
+            payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("5000.01"), cvv=card.mock_cvv)
+        )
+
+    assert wallet.available_balance == Decimal("500.00")
+    assert card.credit_account.used_amount == Decimal("0.00")
 
 
 def test_card_payment_rejects_wrong_cvv(db_session, payer_with_wallet_and_merchant):

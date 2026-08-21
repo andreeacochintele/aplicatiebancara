@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.cards.models import CardStatus, CardType
+from app.cards.models import CardStatus, CardTier, CardType, CreditCardAccount
 from app.cards.repository import CardRepository
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.fx.service import FXService
@@ -24,12 +24,23 @@ from app.merchants.repository import MerchantRepository
 from app.notifications.service import NotificationsService
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
-from app.transactions.schemas import CardPaymentCreate, InternalTransferCreate
+from app.transactions.schemas import CardPaymentCreate, CreditCardRepaymentCreate, InternalTransferCreate
 from app.wallets.models import Wallet
 from app.wallets.repository import WalletRepository
 
 
 class TransactionService:
+    CREDIT_LIMITS = {
+        CardTier.REGULAR: Decimal("5000.00"),
+        CardTier.GOLD: Decimal("15000.00"),
+        CardTier.PLATINUM: Decimal("30000.00"),
+    }
+    CREDIT_APRS = {
+        CardTier.REGULAR: Decimal("18.90"),
+        CardTier.GOLD: Decimal("17.50"),
+        CardTier.PLATINUM: Decimal("15.90"),
+    }
+
     def __init__(self, db: Session) -> None:
         self.db = db
         self.repository = TransactionRepository(db)
@@ -165,8 +176,9 @@ class TransactionService:
 
     def create_card_payment(self, initiator_user_id: uuid.UUID, data: CardPaymentCreate) -> Transaction:
         """A card payment to a merchant — unlike a transfer, money leaves the
-        system to an external counterparty, so only one (DEBIT) ledger entry
-        is written, and `merchant_id` is set on the Transaction: it's the
+        system to an external counterparty. Debit and one-time cards write a
+        wallet DEBIT ledger entry; credit cards increase used credit instead.
+        `merchant_id` is set on the Transaction: it's the
         only signal the rewards module (app/merchants) uses to decide
         whether to credit points, via its own read-only sync — this method
         never calls into rewards/merchants itself."""
@@ -184,6 +196,32 @@ class TransactionService:
         merchant = self.merchants.get_by_id(data.merchant_id)
         if merchant is None or merchant.status != MerchantStatus.ACTIVE:
             raise NotFoundError("Merchant not found")
+
+        if card.type == CardType.CREDIT:
+            account = self._get_or_create_credit_account(card)
+            if account.used_amount + data.amount > account.credit_limit:
+                raise ConflictError("Insufficient available credit")
+
+            transaction = self.repository.add(
+                Transaction(
+                    initiator_user_id=initiator_user_id,
+                    source_wallet_id=None,
+                    merchant_id=merchant.id,
+                    card_id=card.id,
+                    type=TransactionType.CARD_PAYMENT,
+                    status=TransactionStatus.PROCESSING,
+                    amount=data.amount,
+                    currency=account.currency,
+                    description=data.description or f"Credit card payment to {merchant.name}",
+                    processed_at=datetime.now(timezone.utc),
+                )
+            )
+            account.used_amount += data.amount
+            account.updated_at = datetime.now(timezone.utc)
+            transaction.status = TransactionStatus.COMPLETED
+            transaction.completed_at = datetime.now(timezone.utc)
+            self.db.flush()
+            return transaction
 
         preferences = self.cards.get_preferences(card.id)
         wallet_id = (preferences.preferred_wallet_id if preferences is not None else None) or card.default_wallet_id
@@ -235,6 +273,75 @@ class TransactionService:
         transaction.completed_at = datetime.now(timezone.utc)
         self.db.flush()
         return transaction
+
+    def create_credit_card_repayment(self, initiator_user_id: uuid.UUID, data: CreditCardRepaymentCreate) -> Transaction:
+        if data.amount <= 0:
+            raise ValidationError("Payment amount must be positive")
+
+        card = self.cards.get_by_id(data.card_id)
+        if card is None or card.user_id != initiator_user_id:
+            raise NotFoundError("Card not found")
+        if card.type != CardType.CREDIT:
+            raise ValidationError("Only credit cards can be repaid")
+        if card.status != CardStatus.ACTIVE:
+            raise ValidationError(f"Card is {card.status.value}, repayments require an ACTIVE card")
+
+        account = self._get_or_create_credit_account(card)
+        if data.amount > account.used_amount:
+            raise ValidationError("Payment is higher than the current card balance")
+
+        wallet = self.wallets.get_by_id(data.source_wallet_id)
+        if wallet is None or wallet.user_id != initiator_user_id:
+            raise NotFoundError("Source wallet not found")
+        if wallet.currency != account.currency:
+            raise ValidationError("Repayment source currency must match the credit card account currency")
+        if wallet.available_balance < data.amount:
+            raise ConflictError("Insufficient available balance")
+
+        transaction = self.repository.add(
+            Transaction(
+                initiator_user_id=initiator_user_id,
+                source_wallet_id=wallet.id,
+                card_id=card.id,
+                type=TransactionType.LOAN_PAYMENT,
+                status=TransactionStatus.PROCESSING,
+                amount=data.amount,
+                currency=wallet.currency,
+                description=f"Credit card repayment for card ending {card.last_four}",
+                processed_at=datetime.now(timezone.utc),
+            )
+        )
+        wallet.available_balance -= data.amount
+        account.used_amount -= data.amount
+        account.updated_at = datetime.now(timezone.utc)
+        self.repository.add_ledger_entry(
+            WalletLedgerEntry(
+                wallet_id=wallet.id,
+                transaction_id=transaction.id,
+                entry_type=LedgerEntryType.DEBIT,
+                amount=data.amount,
+                currency=wallet.currency,
+                balance_after=wallet.available_balance,
+            )
+        )
+        transaction.status = TransactionStatus.COMPLETED
+        transaction.completed_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return transaction
+
+    def _get_or_create_credit_account(self, card) -> CreditCardAccount:
+        account = self.cards.get_credit_account(card.id)
+        if account is not None:
+            return account
+        tier = card.tier or CardTier.REGULAR
+        return self.cards.add_credit_account(
+            CreditCardAccount(
+                card_id=card.id,
+                user_id=card.user_id,
+                credit_limit=self.CREDIT_LIMITS[tier],
+                annual_interest_rate=self.CREDIT_APRS[tier],
+            )
+        )
 
     def list_for_user(self, user_id: uuid.UUID) -> list[Transaction]:
         return self.repository.list_for_user(user_id)

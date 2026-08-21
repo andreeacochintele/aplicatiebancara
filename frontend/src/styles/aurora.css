@@ -1557,6 +1557,7 @@
 .aurora-shell .credit-factor,
 .aurora-shell .loan-product-panel,
 .aurora-shell .loan-estimate-card,
+.aurora-shell .down-payment-breakdown,
 .aurora-shell .approved-offers__header,
 .aurora-shell .approved-offer-card {
   border: 1px solid var(--aurora-border);
@@ -1566,6 +1567,7 @@
 
 .aurora-shell .loan-estimate-card__figures > div,
 .aurora-shell .loan-estimate-card__schedule > div,
+.aurora-shell .down-payment-breakdown div,
 .aurora-shell .approved-offer-card__main-payment,
 .aurora-shell .approved-offer-card__figures > div,
 .aurora-shell .approved-offer-card__schedule > div {
@@ -1583,6 +1585,7 @@
 .aurora-shell .loan-estimate-card > strong,
 .aurora-shell .loan-estimate-card__figures strong,
 .aurora-shell .loan-estimate-card__schedule strong,
+.aurora-shell .down-payment-breakdown strong,
 .aurora-shell .approved-offers__header strong,
 .aurora-shell .approved-offer-card__summary h3,
 .aurora-shell .approved-offer-card__main-payment strong,
@@ -1599,6 +1602,7 @@
 .aurora-shell .loan-estimate-card__figures span,
 .aurora-shell .loan-estimate-card__schedule span,
 .aurora-shell .loan-estimate-card__empty,
+.aurora-shell .down-payment-breakdown span,
 .aurora-shell .approved-offer-card__summary p,
 .aurora-shell .approved-offer-card__main-payment > span:not(.eyebrow),
 .aurora-shell .approved-offer-card__schedule span,
@@ -1608,7 +1612,8 @@
 }
 
 .aurora-shell .loan-product-metrics div,
-.aurora-shell .loan-product-callouts > div {
+.aurora-shell .loan-product-callouts > div,
+.aurora-shell .down-payment-breakdown div {
   border-color: var(--aurora-border);
 }
 

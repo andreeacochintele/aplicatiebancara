@@ -1,6 +1,7 @@
 """Pydantic schemas for the cards module."""
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -11,6 +12,19 @@ class CardCreate(BaseModel):
     type: CardType = CardType.DEBIT
     tier: CardTier | None = None
     default_wallet_id: uuid.UUID | None = None
+
+
+class CreditCardAccountPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    card_id: uuid.UUID
+    user_id: uuid.UUID
+    currency: str
+    credit_limit: Decimal
+    used_amount: Decimal
+    available_credit: Decimal
+    annual_interest_rate: Decimal
+    updated_at: datetime
 
 
 class CardPublic(BaseModel):
@@ -29,6 +43,7 @@ class CardPublic(BaseModel):
     expiration_month: int
     expiration_year: int
     one_time_remaining: int | None
+    credit_account: CreditCardAccountPublic | None = None
     created_at: datetime
     updated_at: datetime
 

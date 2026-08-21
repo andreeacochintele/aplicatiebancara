@@ -194,6 +194,29 @@ export function RewardsPage() {
     return wallets.find((w) => w.id === walletId);
   }
 
+  function paymentCurrency(card: Card | undefined): string {
+    if (!card) return "RON";
+    if (card.type === "CREDIT") return card.credit_account?.currency ?? "RON";
+    return effectiveWallet(card)?.currency ?? "RON";
+  }
+
+  function cardFundingLabel(card: Card): string {
+    if (card.type === "CREDIT") {
+      const availableCredit = Number(card.credit_account?.available_credit ?? 0).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      return `${availableCredit} ${card.credit_account?.currency ?? "RON"} available credit`;
+    }
+    return `${effectiveWallet(card)?.currency ?? "unknown"} wallet`;
+  }
+
+  function selectedCardFundingLabel(card: Card | undefined): string {
+    if (!card) return "Pick a card below";
+    if (card.type === "CREDIT") return "Uses available credit - pick a merchant below";
+    return `Pays from ${effectiveWallet(card)?.currency ?? "unknown"} wallet - pick a merchant below`;
+  }
+
   function refreshAfterChange() {
     loadRewards();
     loadBenefits();
@@ -270,6 +293,7 @@ export function RewardsPage() {
       setSelectedMerchant(null);
       setCvvInput("");
       const receipt = `Receipt #${transaction.id.slice(0, 8).toUpperCase()}`;
+      loadCards();
       const earned = await syncRewards();
       const match = earned.find((p) => p.merchant_id === merchant.id);
       if (match) {
@@ -623,14 +647,14 @@ export function RewardsPage() {
                     >
                       {cards.map((card) => (
                         <option key={card.id} value={card.id}>
-                          {formatCardLabel(card)} — {effectiveWallet(card)?.currency ?? "…"} wallet
+                          {formatCardLabel(card)} - {cardFundingLabel(card)}
                         </option>
                       ))}
                     </select>
                   </div>
                   <div style={{ flex: "1 1 110px" }}>
                     <label className="eyebrow" style={{ display: "block", marginBottom: "0.3rem" }}>
-                      Amount ({effectiveWallet(selectedCard)?.currency ?? "RON"})
+                      Amount ({paymentCurrency(selectedCard)})
                     </label>
                     <input
                       value={payAmount}
@@ -658,7 +682,7 @@ export function RewardsPage() {
                   </div>
                 )}
                 <p className="eyebrow" style={{ marginTop: "0.6rem", marginBottom: 0 }}>
-                  Pays from {effectiveWallet(selectedCard)?.currency ?? "unknown"} wallet · pick a merchant below
+                  {selectedCardFundingLabel(selectedCard)}
                 </p>
               </div>
             )}

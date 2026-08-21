@@ -26,6 +26,12 @@ class CardPaymentCreate(BaseModel):
     description: str | None = None
 
 
+class CreditCardRepaymentCreate(BaseModel):
+    card_id: uuid.UUID
+    source_wallet_id: uuid.UUID
+    amount: Decimal
+
+
 class TransactionPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -4,7 +4,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.cards.models import Card, CardPaymentPreferences
+from app.cards.models import Card, CardPaymentPreferences, CreditCardAccount
 from app.supabase import is_supabase_session
 
 
@@ -34,6 +34,9 @@ class CardRepository:
         preferences = self.get_preferences(card.id)
         if preferences is not None:
             self.db.delete(preferences)
+        credit_account = self.get_credit_account(card.id)
+        if credit_account is not None:
+            self.db.delete(credit_account)
         self.db.delete(card)
         self.db.flush()
 
@@ -48,3 +51,15 @@ class CardRepository:
         self.db.add(preferences)
         self.db.flush()
         return preferences
+
+    def get_credit_account(self, card_id: uuid.UUID) -> CreditCardAccount | None:
+        if is_supabase_session(self.db):
+            return self.db.get(CreditCardAccount, card_id)
+        return self.db.get(CreditCardAccount, card_id)
+
+    def add_credit_account(self, account: CreditCardAccount) -> CreditCardAccount:
+        if is_supabase_session(self.db):
+            return self.db.add(account)
+        self.db.add(account)
+        self.db.flush()
+        return account

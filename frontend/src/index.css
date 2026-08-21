@@ -1736,6 +1736,60 @@ th {
   font-weight: 700;
 }
 
+.credit-card-payment__amount {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.credit-card-payment__amount > span {
+  color: #4f5b75;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.credit-card-payment__amount-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.credit-card-payment__amount-options label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 36px;
+  padding: 0.42rem 0.55rem;
+  border: 1px solid #dfe4ee;
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+  color: #1f2a44;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.credit-card-payment__amount-options input {
+  width: 14px;
+  min-width: 14px;
+  max-width: 14px;
+  min-height: 14px;
+  padding: 0;
+  accent-color: var(--color-accent);
+}
+
+.credit-card-payment__amount > strong {
+  display: block;
+  min-height: 36px;
+  padding: 0.48rem 0.55rem;
+  border: 1px solid #dfe4ee;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: #050b1f;
+  font-size: 0.9rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
 .credit-card-payment__source-balance {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2095,6 +2149,52 @@ th {
 
 .loan-application-documents {
   grid-column: 1 / -1;
+}
+
+.down-payment-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.down-payment-breakdown div {
+  min-width: 0;
+  padding: 0.55rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.down-payment-breakdown span {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.down-payment-breakdown strong {
+  display: block;
+  margin-top: 0.18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.down-payment-breakdown p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--color-warning);
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 .loan-application-workspace {
@@ -2848,6 +2948,10 @@ th {
   }
 
   .loan-product-callouts {
+    grid-template-columns: 1fr;
+  }
+
+  .down-payment-breakdown {
     grid-template-columns: 1fr;
   }
 }

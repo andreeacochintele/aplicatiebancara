@@ -277,7 +277,19 @@ export interface Card {
   expiration_month: number;
   expiration_year: number;
   one_time_remaining: number | null;
+  credit_account: CreditCardAccount | null;
   created_at: string;
+  updated_at: string;
+}
+
+export interface CreditCardAccount {
+  card_id: string;
+  user_id: string;
+  currency: string;
+  credit_limit: string;
+  used_amount: string;
+  available_credit: string;
+  annual_interest_rate: string;
   updated_at: string;
 }
 
