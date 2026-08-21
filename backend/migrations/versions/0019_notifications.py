@@ -24,6 +24,9 @@ NOTIFICATION_TYPE = postgresql.ENUM(
     "SPLIT_BILL",
     "SYSTEM",
     name="notification_type",
+    create_type=False,  # created explicitly below; without this, create_table()
+    # tries to emit CREATE TYPE a second time and the migration fails with
+    # "type notification_type already exists".
 )
 
 
