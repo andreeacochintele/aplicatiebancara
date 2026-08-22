@@ -112,12 +112,19 @@ class SupabaseRestSession:
         # the snapshot taken at fetch/write time skips the ones nothing
         # actually changed on; this never alters what gets written, only
         # skips writes that would be a no-op anyway.
+        #
+        # include_nulls=True here (and in the matching _track() snapshot
+        # below) is deliberate: unlike add()'s INSERT, a tracked row already
+        # exists, so a column holding None in memory means "the app wants
+        # this cleared", not "let the DB default apply" — omitting it would
+        # silently no-op the clear against PostgREST, which only touches
+        # keys present in the PATCH body.
         for key, model in list(self._tracked.items()):
             primary_key = self._primary_key_name(type(model))
             row_id = getattr(model, primary_key, None)
             if row_id is None:
                 continue
-            payload = self._model_payload(model, excluded_columns={primary_key})
+            payload = self._model_payload(model, excluded_columns={primary_key}, include_nulls=True)
             if payload == self._snapshots.get(key):
                 continue
             table = self._table_name(type(model))
@@ -153,7 +160,7 @@ class SupabaseRestSession:
         if row_id is not None:
             key = (self._table_name(type(model)), str(row_id))
             self._tracked[key] = model
-            self._snapshots[key] = self._model_payload(model, excluded_columns={primary_key})
+            self._snapshots[key] = self._model_payload(model, excluded_columns={primary_key}, include_nulls=True)
 
     def _ensure_defaults(self, model: object) -> None:
         if hasattr(model, "id") and getattr(model, "id", None) is None:
@@ -173,6 +180,7 @@ class SupabaseRestSession:
         model: object,
         *,
         excluded_columns: set[str] | None = None,
+        include_nulls: bool = False,
     ) -> dict[str, object]:
         excluded_columns = excluded_columns or set()
         payload: dict[str, object] = {}
@@ -180,7 +188,7 @@ class SupabaseRestSession:
             if column.name in excluded_columns:
                 continue
             value = getattr(model, column.name)
-            if value is not None:
+            if value is not None or include_nulls:
                 payload[column.name] = self._json_value(value)
         return payload
 

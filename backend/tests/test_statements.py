@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -6,6 +6,7 @@ import pytest
 from app.core.exceptions import NotFoundError, ValidationError
 from app.statements.schemas import StatementRequest
 from app.statements.service import StatementService
+from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.schemas import InternalTransferCreate
 from app.transactions.service import TransactionService
 from app.users.schemas import UserCreate
@@ -63,6 +64,55 @@ def test_statement_computes_balances_and_totals(db_session, wallets_with_transfe
     assert len(statement.transactions) == 1
     assert statement.transactions[0].direction == "OUT"
     assert statement.transactions[0].amount == Decimal("120.00")
+
+
+def test_statement_type_filter_does_not_distort_balances(db_session, wallets_with_transfer):
+    """Regression test: opening/closing balance must reflect the wallet's
+    real balance at the period boundaries, not just the balance_after of the
+    last entry that happens to match the type filter — a later, different-
+    typed transaction in the period must still count."""
+    sender, sender_wallet, _receiver, _receiver_wallet = wallets_with_transfer
+    date_from, date_to = _today_range()
+
+    later_card_payment = Transaction(
+        initiator_user_id=sender.id,
+        source_wallet_id=sender_wallet.id,
+        type=TransactionType.CARD_PAYMENT,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("30.00"),
+        currency="RON",
+        description="Coffee",
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add(later_card_payment)
+    db_session.flush()
+    db_session.add(
+        WalletLedgerEntry(
+            wallet_id=sender_wallet.id,
+            transaction_id=later_card_payment.id,
+            entry_type=LedgerEntryType.DEBIT,
+            amount=Decimal("30.00"),
+            currency="RON",
+            balance_after=Decimal("350.00"),
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    db_session.flush()
+
+    statement = StatementService(db_session).generate(
+        sender.id,
+        StatementRequest(
+            wallet_id=sender_wallet.id, date_from=date_from, date_to=date_to, transaction_type=TransactionType.TRANSFER
+        ),
+    )
+
+    # The real wallet balance envelope, unaffected by the type filter.
+    assert statement.opening_balance == Decimal("500.00")
+    assert statement.closing_balance == Decimal("350.00")
+    # But only the filtered (TRANSFER) activity is displayed.
+    assert statement.total_outgoing == Decimal("120.00")
+    assert len(statement.transactions) == 1
+    assert statement.transactions[0].type == TransactionType.TRANSFER
 
 
 def test_statement_for_receiver_shows_incoming(db_session, wallets_with_transfer):
