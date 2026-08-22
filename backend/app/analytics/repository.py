@@ -46,8 +46,7 @@ class AnalyticsRepository:
                 {
                     "initiator_user_id": f"eq.{user_id}",
                     "status": f"eq.{TransactionStatus.COMPLETED.value}",
-                    "created_at": f"gte.{period_start.isoformat()}",
-                    "created_at": f"lt.{period_end.isoformat()}",
+                    "and": f"(created_at.gte.{period_start.isoformat()},created_at.lt.{period_end.isoformat()})",
                 },
             )
             totals: dict[tuple[object, str], dict[str, object]] = {}

@@ -24,7 +24,12 @@ def get_my_rewards(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> RewardAccountPublic:
-    return RewardsService(db).get_account(current_user.id)
+    # get_account() can backfill a missing referral_code as a side effect
+    # (RewardsService.get_or_create_account) — must commit or the generated
+    # code never persists and a different one gets generated on every call.
+    result = RewardsService(db).get_account(current_user.id)
+    db.commit()
+    return result
 
 
 @router.post("/redeem", response_model=RewardAccountPublic)
