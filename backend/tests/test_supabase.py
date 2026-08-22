@@ -93,3 +93,44 @@ def test_add_does_not_get_repatched_by_a_later_unrelated_flush(session, record_r
     session.flush()
 
     assert record_requests == [("POST", "merchants")]  # still just the one POST, no follow-up PATCH
+
+
+@pytest.fixture()
+def record_bodies(monkeypatch, session):
+    calls: list[tuple[str, str, object]] = []
+
+    def fake_request(method, table, *, params=None, body=None, prefer=None):
+        calls.append((method, table, body))
+        return None
+
+    monkeypatch.setattr(session, "request", fake_request)
+    return calls
+
+
+def test_flush_persists_a_field_explicitly_cleared_to_none(session, record_bodies):
+    """Regression test: PATCH must send an explicit null for a field the app
+    cleared, not omit it — PostgREST only touches keys present in the body,
+    so omitting it silently leaves the old value in place forever."""
+    row = _merchant_row(uuid.uuid4())
+    row["logo_url"] = "https://example.com/logo.png"
+    merchant = session._hydrate(Merchant, row)
+
+    merchant.logo_url = None
+    session.flush()
+
+    method, table, body = record_bodies[0]
+    assert (method, table) == ("PATCH", "merchants")
+    assert body["logo_url"] is None
+
+
+def test_add_still_omits_an_unset_none_field_from_the_insert_payload(session, record_bodies):
+    """INSERT keeps the old omit-when-None behavior on purpose: a brand-new
+    row's unset nullable columns should fall through to the DB's own
+    server_default, not get pinned to null by the client."""
+    new_merchant = Merchant(id=uuid.uuid4(), name="Zara", category="Retail", status=MerchantStatus.ACTIVE, verified=True)
+
+    session.add(new_merchant)
+
+    method, table, body = record_bodies[0]
+    assert (method, table) == ("POST", "merchants")
+    assert "logo_url" not in body

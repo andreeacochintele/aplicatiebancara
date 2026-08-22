@@ -32,12 +32,27 @@ class StatementService:
 
         period_start = datetime.combine(data.date_from, time.min, tzinfo=timezone.utc)
         period_end = datetime.combine(data.date_to, time.max, tzinfo=timezone.utc)
-        entries = self.repository.list_entries(wallet.id, period_start, period_end, data.transaction_type)
 
+        # Opening/closing balance must reflect the wallet's real balance at
+        # the period boundaries regardless of the type filter below — a
+        # transaction_type filter narrows which activity is *displayed*, it
+        # doesn't change what the wallet's balance actually was. Computing
+        # closing_balance from a type-filtered entry list picks the wrong
+        # "last" entry whenever a different-typed transaction happened after
+        # the last matching one in the period.
+        all_entries = self.repository.list_entries(wallet.id, period_start, period_end)
+        closing_balance = all_entries[-1].balance_after if all_entries else wallet.available_balance
+        full_incoming = sum((e.amount for e in all_entries if e.entry_type == LedgerEntryType.CREDIT), Decimal("0"))
+        full_outgoing = sum((e.amount for e in all_entries if e.entry_type == LedgerEntryType.DEBIT), Decimal("0"))
+        opening_balance = closing_balance - full_incoming + full_outgoing
+
+        entries = (
+            [e for e in all_entries if e.transaction.type == data.transaction_type]
+            if data.transaction_type is not None
+            else all_entries
+        )
         total_incoming = sum((e.amount for e in entries if e.entry_type == LedgerEntryType.CREDIT), Decimal("0"))
         total_outgoing = sum((e.amount for e in entries if e.entry_type == LedgerEntryType.DEBIT), Decimal("0"))
-        closing_balance = entries[-1].balance_after if entries else wallet.available_balance
-        opening_balance = closing_balance - total_incoming + total_outgoing
 
         transactions = [
             StatementTransaction(
