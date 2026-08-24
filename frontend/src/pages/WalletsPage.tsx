@@ -89,8 +89,8 @@ export function WalletsPage() {
   const [deletingWallet, setDeletingWallet] = useState<Wallet | null>(null);
   const [closingAccount, setClosingAccount] = useState(false);
   const [convertRate, setConvertRate] = useState<FXMarketRate | null>(null);
-  const [chartSourceId, setChartSourceId] = useState("");
-  const [chartTargetId, setChartTargetId] = useState("");
+  const [chartSourceCurrency, setChartSourceCurrency] = useState("");
+  const [chartTargetCurrency, setChartTargetCurrency] = useState("");
   const [rateHistory, setRateHistory] = useState<FXRateHistory | null>(null);
 
   function loadWallets() {
@@ -157,50 +157,56 @@ export function WalletsPage() {
       const other = activeWallets.find((w) => w.id !== activeWallets[0].id);
       if (other) setTargetId(other.id);
     }
-    if (!chartSourceId) setChartSourceId(activeWallets[0].id);
-    if (!chartTargetId) {
-      const other = activeWallets.find((w) => w.id !== activeWallets[0].id);
-      if (other) setChartTargetId(other.id);
+  }, [activeWallets, sourceId, targetId]);
+
+  useEffect(() => {
+    if (activeWallets.length === 0) return;
+    if (!chartSourceCurrency) setChartSourceCurrency(activeWallets[0].currency);
+    if (!chartTargetCurrency) {
+      const other = activeWallets.find((w) => w.currency !== activeWallets[0].currency);
+      setChartTargetCurrency(other?.currency ?? (activeWallets[0].currency === "EUR" ? "USD" : "EUR"));
     }
-  }, [activeWallets, sourceId, targetId, chartSourceId, chartTargetId]);
+  }, [activeWallets, chartSourceCurrency, chartTargetCurrency]);
 
   const source = activeWallets.find((w) => w.id === sourceId);
   const target = activeWallets.find((w) => w.id === targetId);
-  const chartSource = activeWallets.find((w) => w.id === chartSourceId);
-  const chartTarget = activeWallets.find((w) => w.id === chartTargetId);
+  // targetId can also be a "new:<currency>" sentinel for a currency the user
+  // doesn't hold a wallet in yet (see the "To" <select> below) — Exchange
+  // shouldn't require pre-creating an account just to convert into it.
+  const targetCurrency = target?.currency ?? (targetId.startsWith("new:") ? targetId.slice(4) : undefined);
 
   useEffect(() => {
-    if (!accessToken || !source || !target || source.currency === target.currency) {
+    if (!accessToken || !source || !targetCurrency || source.currency === targetCurrency) {
       setConvertRate(null);
       return;
     }
     apiRequest<FXMarketRate>(
-      `/fx/rate?source_currency=${source.currency}&target_currency=${target.currency}`,
+      `/fx/rate?source_currency=${source.currency}&target_currency=${targetCurrency}`,
       { token: accessToken },
     )
       .then(setConvertRate)
       .catch(() => setConvertRate(null));
-  }, [accessToken, source?.currency, target?.currency]);
+  }, [accessToken, source?.currency, targetCurrency]);
 
   useEffect(() => {
-    if (!accessToken || !chartSource || !chartTarget || chartSource.currency === chartTarget.currency) {
+    if (!accessToken || !chartSourceCurrency || !chartTargetCurrency || chartSourceCurrency === chartTargetCurrency) {
       setRateHistory(null);
       return;
     }
     apiRequest<FXRateHistory>(
-      `/fx/rate/history?source_currency=${chartSource.currency}&target_currency=${chartTarget.currency}&days=14`,
+      `/fx/rate/history?source_currency=${chartSourceCurrency}&target_currency=${chartTargetCurrency}&days=14`,
       { token: accessToken },
     )
       .then(setRateHistory)
       .catch(() => setRateHistory(null));
-  }, [accessToken, chartSource?.currency, chartTarget?.currency]);
+  }, [accessToken, chartSourceCurrency, chartTargetCurrency]);
 
   const bankRate = convertRate ? Number(convertRate.rate) * (1 - Number(convertRate.fee_rate)) : null;
   const convertedAmount =
     bankRate !== null && amount && !Number.isNaN(Number(amount)) ? Number(amount) * bankRate : null;
 
   async function getQuote() {
-    if (!accessToken || !source || !target) return;
+    if (!accessToken || !source || !targetCurrency) return;
     setError(null);
     setResult(null);
     setBusy(true);
@@ -208,7 +214,7 @@ export function WalletsPage() {
       const newQuote = await apiRequest<FXQuote>("/fx/quote", {
         method: "POST",
         token: accessToken,
-        body: { source_currency: source.currency, target_currency: target.currency, source_amount: amount },
+        body: { source_currency: source.currency, target_currency: targetCurrency, source_amount: amount },
       });
       setQuote(newQuote);
     } catch (err) {
@@ -219,23 +225,36 @@ export function WalletsPage() {
   }
 
   async function acceptQuote() {
-    if (!accessToken || !source || !target || !quote) return;
+    if (!accessToken || !source || !targetCurrency || !quote) return;
     setError(null);
     setBusy(true);
     try {
+      // Exchange doesn't require the destination currency to already have an
+      // account — create it on the fly (zero-balance) so users can convert
+      // into any supported currency, not just ones they set up beforehand.
+      let destinationWalletId = target?.id;
+      if (!destinationWalletId) {
+        const newWallet = await apiRequest<Wallet>("/wallets", {
+          method: "POST",
+          token: accessToken,
+          body: { currency: targetCurrency },
+        });
+        destinationWalletId = newWallet.id;
+      }
       await apiRequest("/transactions/transfer", {
         method: "POST",
         token: accessToken,
         body: {
           source_wallet_id: source.id,
-          destination_wallet_id: target.id,
+          destination_wallet_id: destinationWalletId,
           amount: quote.source_amount,
           fx_quote_id: quote.id,
-          description: `FX conversion ${source.currency} -> ${target.currency}`,
+          description: `FX conversion ${source.currency} -> ${targetCurrency}`,
         },
       });
-      setResult(`Converted ${quote.source_amount} ${source.currency} to ${quote.target_amount} ${target.currency}.`);
+      setResult(`Converted ${quote.source_amount} ${source.currency} to ${quote.target_amount} ${targetCurrency}.`);
       setQuote(null);
+      setTargetId(destinationWalletId);
       loadWallets();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Conversion failed");
@@ -374,6 +393,13 @@ export function WalletsPage() {
                         {w.currency}
                       </option>
                     ))}
+                  {SUPPORTED_CURRENCIES.filter(
+                    (c) => c !== source?.currency && !activeWallets.some((w) => w.currency === c),
+                  ).map((c) => (
+                    <option key={`new:${c}`} value={`new:${c}`}>
+                      {c} (new account)
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>
@@ -383,7 +409,7 @@ export function WalletsPage() {
             </label>
 
             <div className="aurora-convert-submit">
-              <button onClick={getQuote} disabled={busy || !source || !target}>
+              <button onClick={getQuote} disabled={busy || !source || !targetCurrency}>
                 Get quote
               </button>
             </div>
@@ -442,24 +468,22 @@ export function WalletsPage() {
             <div className="aurora-convert-grid">
               <label>
                 From
-                <select value={chartSourceId} onChange={(e) => setChartSourceId(e.target.value)}>
-                  {activeWallets.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.currency}
+                <select value={chartSourceCurrency} onChange={(e) => setChartSourceCurrency(e.target.value)}>
+                  {SUPPORTED_CURRENCIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
                     </option>
                   ))}
                 </select>
               </label>
               <label>
                 To
-                <select value={chartTargetId} onChange={(e) => setChartTargetId(e.target.value)}>
-                  {activeWallets
-                    .filter((w) => w.id !== chartSourceId)
-                    .map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {w.currency}
-                      </option>
-                    ))}
+                <select value={chartTargetCurrency} onChange={(e) => setChartTargetCurrency(e.target.value)}>
+                  {SUPPORTED_CURRENCIES.filter((c) => c !== chartSourceCurrency).map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
                 </select>
               </label>
             </div>

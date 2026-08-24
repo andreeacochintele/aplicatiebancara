@@ -348,30 +348,38 @@
   border-top: 1px solid var(--aurora-border);
 }
 
-.aurora-wallet-card__set-main {
+/* Scoped to .aurora-wallet-card__footer (two classes) on purpose: these are
+   meant to be flat ghost text-links, but the plain .aurora-wallet-card__set-main
+   / __delete selector (one class) loses on specificity to .aurora-shell button
+   (one class + one element), which repaints them with its gradient/pill button
+   look and no padding to match — that's what was causing the squeezed,
+   overlapping-looking "Set as main" / "Delete" text. */
+.aurora-wallet-card__footer .aurora-wallet-card__set-main {
   background: none;
   border: none;
+  border-radius: 0;
   padding: 0;
   color: var(--aurora-accent-dark);
   font-weight: 700;
   font-size: 12px;
 }
 
-.aurora-wallet-card__set-main:disabled {
+.aurora-wallet-card__footer .aurora-wallet-card__set-main:disabled {
   color: var(--aurora-text-faint);
   cursor: default;
 }
 
-.aurora-wallet-card__delete {
+.aurora-wallet-card__footer .aurora-wallet-card__delete {
   background: none;
   border: none;
+  border-radius: 0;
   padding: 0;
   color: var(--aurora-red);
   font-weight: 700;
   font-size: 12px;
 }
 
-.aurora-wallet-card__delete:hover {
+.aurora-wallet-card__footer .aurora-wallet-card__delete:hover {
   text-decoration: underline;
 }
 
