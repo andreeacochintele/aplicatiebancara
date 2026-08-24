@@ -101,3 +101,22 @@ def test_handle_propagates_azure_not_configured_from_explain(db_session, monkeyp
 
     with pytest.raises(AzureFoundryNotConfiguredError):
         agent.handle("is a payment from a new device risky?", uuid.uuid4(), db_session)
+
+
+# ---- proactive-answering fix: a clearly-scoped question should be answered
+# directly rather than met with "which topic did you mean?". Whether a real
+# model actually stops hedging can't be asserted from a mocked test (support
+# has no tools/dispatch to check either — see agent.py's module docstring)
+# — that's what the live smoke test in the task report covers; this protects
+# the fix itself from being silently removed from the prompt.
+
+
+def test_system_prompt_instructs_answering_directly_without_asking_which_topic():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "be direct" in lowered
+    assert "don't ask which topic they meant" in lowered
+
+
+def test_system_prompt_still_allows_clarifying_questions_when_genuinely_ambiguous():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "genuinely ambiguous between multiple different topics" in lowered

@@ -197,3 +197,28 @@ def test_handle_propagates_azure_not_configured_from_explain(db_session, seeded_
 
     with pytest.raises(AzureFoundryNotConfiguredError):
         agent.handle("what's my balance?", seeded_user.id, db_session)
+
+
+# ---- proactive-answering fix: a clearly-scoped question calls its tool in the
+# same turn (dispatch is deterministic Python — see agent.py's module
+# docstring), and the system prompt tells the LLM to answer confidently
+# with that data rather than ask for confirmation first. Whether a real
+# model actually stops hedging can't be asserted from a mocked test — that's
+# what the live smoke test in the task report covers; these tests protect
+# the fix itself from being silently removed and confirm the dispatch these
+# examples rely on.
+
+
+def test_select_tool_dispatches_a_clearly_scoped_spending_question_to_spending_by_type():
+    assert agent._select_tool("how much did I spend on groceries this month") == "spending_by_type"
+
+
+def test_system_prompt_instructs_answering_directly_without_asking_for_confirmation():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "do not ask for confirmation first" in lowered
+    assert "present it confidently" in lowered
+
+
+def test_system_prompt_still_allows_clarifying_questions_when_genuinely_ambiguous():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "genuinely ambiguous" in lowered
