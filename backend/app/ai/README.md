@@ -23,10 +23,11 @@ All future agents call [`ai/client/azure_foundry_client.py`](client/azure_foundr
 ```
 ai/
 ├── client/           # shared Azure AI Foundry GPT-5-mini client (implemented)
-├── orchestrator/      # future: intent routing, multi-agent aggregation
-├── personal_finance/  # future: spending analysis, budgets, savings recommendations
-├── credit/             # future: credit score explanation, early repayment simulation
-├── fraud/               # future: fraud case investigation support
+├── orchestrator/      # intent routing (skeleton, single-agent routing only)
+├── personal_finance/  # stub agent — future: spending analysis, budgets, savings
+├── credit/             # stub agent — future: credit score explanation, early repayment
+├── support/            # stub agent — general account/app help (not in architecture.md)
+├── fraud/               # future: fraud case investigation support (untouched, out of scope)
 └── tools/              # future: typed tool functions agents call — each tool
                         # calls a backend SERVICE, never the database directly
 ```
