@@ -17,6 +17,11 @@ simulate_early_repayment is the one tool that needs an input beyond "the
 current user" (an extra-payment amount), so it's dispatched separately
 from the other four rather than through the uniform ctx-only _SUMMARIZERS
 table.
+
+`history` (from ai/orchestrator/service.py's short-term conversation
+memory) is passed through to the LLM explanation call as prior context —
+it never affects which tool gets picked; tool selection is keyword-only
+on the current message, same as before history existed.
 """
 import uuid
 from decimal import Decimal
@@ -53,7 +58,7 @@ _DISPATCH: list[tuple[str, tuple[str, ...]]] = [
 _DEFAULT_TOOL = "credit_score"
 
 
-def handle(message: str, user_id: uuid.UUID, db: Session) -> str:
+def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str, str]] | None = None) -> str:
     ctx = ToolContext(user_id=user_id, db=db)
     tool_name = _select_tool(message)
 
@@ -68,7 +73,7 @@ def handle(message: str, user_id: uuid.UUID, db: Session) -> str:
     else:
         summary = _SUMMARIZERS[tool_name](ctx)
 
-    explanation = _explain(message, summary)
+    explanation = _explain(message, summary, history)
     return f"{explanation}\n\n{summary}"
 
 
@@ -80,10 +85,11 @@ def _select_tool(message: str) -> str:
     return _DEFAULT_TOOL
 
 
-def _explain(message: str, data_summary: str) -> str:
+def _explain(message: str, data_summary: str, history: list[dict[str, str]] | None = None) -> str:
     client = get_azure_foundry_client()
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
+        *(history or []),
         {"role": "user", "content": f"User asked: {message}\n\nData:\n{data_summary}"},
     ]
     log_debug("llm_call.request", agent="credit", messages=messages)

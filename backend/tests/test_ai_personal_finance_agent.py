@@ -165,7 +165,7 @@ def test_handle_combines_llm_explanation_with_exact_deterministic_figures(db_ses
     wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))
     wallet.available_balance = Decimal("777.10")
     db_session.flush()
-    monkeypatch.setattr(agent, "_explain", lambda message, data_summary: "Mocked explanation.")
+    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None: "Mocked explanation.")
 
     reply = agent.handle("what's my balance?", seeded_user.id, db_session)
 
@@ -189,7 +189,7 @@ def test_handle_returns_the_unavailable_message_without_calling_the_llm(db_sessi
 
 
 def test_handle_propagates_azure_not_configured_from_explain(db_session, seeded_user, monkeypatch):
-    def _raise_not_configured(message, data_summary):
+    def _raise_not_configured(message, data_summary, history=None):
         raise AzureFoundryNotConfiguredError("Azure AI Foundry is not configured.")
 
     WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))

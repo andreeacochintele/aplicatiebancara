@@ -24,7 +24,9 @@ def chat(
     db: Session = Depends(get_db),
 ) -> OrchestratorChatResponse:
     try:
-        return OrchestratorService(db).chat(current_user.id, payload.message)
+        response = OrchestratorService(db).chat(current_user.id, payload.message)
+        db.commit()
+        return response
     except AzureFoundryNotConfiguredError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     except APIError as exc:

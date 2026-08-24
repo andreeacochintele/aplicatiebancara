@@ -13,6 +13,11 @@ Multi-tool aggregation (e.g. "what did I spend and can I afford a 1500 RON
 instalment" spanning Personal Finance + Credit, per architecture.md §29's
 orchestrator example) is not implemented — this picks exactly one tool per
 message. That's a scope decision for this pass, not an oversight.
+
+`history` (from ai/orchestrator/service.py's short-term conversation
+memory) is passed through to the LLM explanation call as prior context —
+it never affects which tool gets picked; tool selection is keyword-only
+on the current message, same as before history existed.
 """
 import uuid
 
@@ -48,7 +53,7 @@ _DISPATCH: list[tuple[str, tuple[str, ...]]] = [
 _DEFAULT_TOOL = "wallet_balances"
 
 
-def handle(message: str, user_id: uuid.UUID, db: Session) -> str:
+def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str, str]] | None = None) -> str:
     ctx = ToolContext(user_id=user_id, db=db)
     tool_name = _select_tool(message)
 
@@ -57,7 +62,7 @@ def handle(message: str, user_id: uuid.UUID, db: Session) -> str:
     except ToolDataUnavailableError as exc:
         return str(exc)
 
-    explanation = _explain(message, summary)
+    explanation = _explain(message, summary, history)
     return f"{explanation}\n\n{summary}"
 
 
@@ -69,10 +74,11 @@ def _select_tool(message: str) -> str:
     return _DEFAULT_TOOL
 
 
-def _explain(message: str, data_summary: str) -> str:
+def _explain(message: str, data_summary: str, history: list[dict[str, str]] | None = None) -> str:
     client = get_azure_foundry_client()
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
+        *(history or []),
         {"role": "user", "content": f"User asked: {message}\n\nData:\n{data_summary}"},
     ]
     log_debug("llm_call.request", agent="personal_finance", messages=messages)

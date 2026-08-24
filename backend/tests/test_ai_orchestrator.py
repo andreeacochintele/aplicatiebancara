@@ -41,7 +41,7 @@ def test_chat_propagates_azure_not_configured_instead_of_swallowing_it(db_sessio
     # lru_cache'd process-wide, so env-var patching here wouldn't reliably
     # affect them, and a developer's real local .env (if configured) would
     # otherwise make this test hit the live Azure endpoint.
-    def _raise_not_configured(message: str) -> IntentCategory:
+    def _raise_not_configured(message: str, history: list[dict[str, str]] | None = None) -> IntentCategory:
         raise AzureFoundryNotConfiguredError("Azure AI Foundry is not configured.")
 
     monkeypatch.setattr(orchestrator_service, "classify_intent", _raise_not_configured)
@@ -50,14 +50,16 @@ def test_chat_propagates_azure_not_configured_instead_of_swallowing_it(db_sessio
 
 
 def test_chat_answers_greeting_directly_without_touching_the_registry(db_session, monkeypatch):
-    monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message: IntentCategory.GREETING)
+    monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message, history=None: IntentCategory.GREETING)
     response = OrchestratorService(db_session).chat(uuid.uuid4(), "hi there")
     assert response.intent == IntentCategory.GREETING
     assert response.reply
 
 
 def test_chat_answers_out_of_scope_directly_without_touching_the_registry(db_session, monkeypatch):
-    monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message: IntentCategory.OUT_OF_SCOPE)
+    monkeypatch.setattr(
+        orchestrator_service, "classify_intent", lambda message, history=None: IntentCategory.OUT_OF_SCOPE
+    )
     response = OrchestratorService(db_session).chat(uuid.uuid4(), "write me a poem")
     assert response.intent == IntentCategory.OUT_OF_SCOPE
     assert response.reply
@@ -72,10 +74,12 @@ def test_chat_routes_each_routable_intent_to_its_agent_handler(db_session, monke
     # call (see each agent.py's _explain) — mocked here too so this stays a
     # routing test, not a live-network test; each agent's own test file
     # covers that call's behavior.
-    monkeypatch.setattr(personal_finance_agent, "_explain", lambda message, data_summary: "mocked explanation")
-    monkeypatch.setattr(credit_agent, "_explain", lambda message, data_summary: "mocked explanation")
-    monkeypatch.setattr(support_agent, "_explain", lambda message: "mocked explanation")
-    monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message: intent)
+    monkeypatch.setattr(
+        personal_finance_agent, "_explain", lambda message, data_summary, history=None: "mocked explanation"
+    )
+    monkeypatch.setattr(credit_agent, "_explain", lambda message, data_summary, history=None: "mocked explanation")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "mocked explanation")
+    monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message, history=None: intent)
     response = OrchestratorService(db_session).chat(uuid.uuid4(), "some message")
     assert response.intent == intent
     assert response.reply == AGENT_REGISTRY[intent]("some message", uuid.uuid4(), db_session)

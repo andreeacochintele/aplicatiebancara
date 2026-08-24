@@ -12,6 +12,9 @@ tool call — so ai/tools/base.py's ToolContext isn't used here.
 No `temperature=` kwarg: this GPT-5-mini deployment is a reasoning model
 that only accepts the default and 400s otherwise (see
 ai/client/azure_foundry_client.py's module docstring).
+
+`history` (from ai/orchestrator/service.py's short-term conversation
+memory) is passed through as prior context for the reply.
 """
 import uuid
 from pathlib import Path
@@ -57,16 +60,13 @@ rather than answering it yourself.
 """
 
 
-def handle(message: str, user_id: uuid.UUID, db: Session) -> str:
-    return _explain(message)
+def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str, str]] | None = None) -> str:
+    return _explain(message, history)
 
 
-def _explain(message: str) -> str:
+def _explain(message: str, history: list[dict[str, str]] | None = None) -> str:
     client = get_azure_foundry_client()
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": message},
-    ]
+    messages = [{"role": "system", "content": _SYSTEM_PROMPT}, *(history or []), {"role": "user", "content": message}]
     log_debug("llm_call.request", agent="support", messages=messages)
     with timed_event("llm_call", agent="support"):
         response = client.chat_completion(messages=messages)

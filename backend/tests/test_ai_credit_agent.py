@@ -141,7 +141,7 @@ def test_simulate_early_repayment_full_payoff_is_exact(db_session, seeded_user, 
 
 
 def test_handle_combines_llm_explanation_with_exact_deterministic_figures(db_session, seeded_user, seeded_loan, monkeypatch):
-    monkeypatch.setattr(agent, "_explain", lambda message, data_summary: "Mocked explanation.")
+    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None: "Mocked explanation.")
 
     reply = agent.handle("what's my remaining principal?", seeded_user.id, db_session)
 
@@ -162,7 +162,7 @@ def test_handle_asks_for_an_amount_without_calling_the_llm_when_none_is_given(db
 
 
 def test_handle_simulates_early_repayment_when_an_amount_is_given(db_session, seeded_user, seeded_loan, monkeypatch):
-    monkeypatch.setattr(agent, "_explain", lambda message, data_summary: "Mocked explanation.")
+    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None: "Mocked explanation.")
 
     reply = agent.handle("can I pay off my loan early with an extra 500 RON?", seeded_user.id, db_session)
 
@@ -172,7 +172,7 @@ def test_handle_simulates_early_repayment_when_an_amount_is_given(db_session, se
 
 
 def test_handle_propagates_azure_not_configured_from_explain(db_session, seeded_user, seeded_loan, monkeypatch):
-    def _raise_not_configured(message, data_summary):
+    def _raise_not_configured(message, data_summary, history=None):
         raise AzureFoundryNotConfiguredError("Azure AI Foundry is not configured.")
 
     monkeypatch.setattr(agent, "_explain", _raise_not_configured)

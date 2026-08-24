@@ -81,7 +81,7 @@ def test_system_prompt_instructs_redirecting_real_financial_data_questions():
 def test_handle_is_a_thin_passthrough_to_explain(db_session, monkeypatch):
     captured = {}
 
-    def _fake_explain(message: str) -> str:
+    def _fake_explain(message: str, history: list[dict[str, str]] | None = None) -> str:
         captured["message"] = message
         return "Mocked support reply."
 
@@ -94,7 +94,7 @@ def test_handle_is_a_thin_passthrough_to_explain(db_session, monkeypatch):
 
 
 def test_handle_propagates_azure_not_configured_from_explain(db_session, monkeypatch):
-    def _raise_not_configured(message: str) -> str:
+    def _raise_not_configured(message: str, history: list[dict[str, str]] | None = None) -> str:
         raise AzureFoundryNotConfiguredError("Azure AI Foundry is not configured.")
 
     monkeypatch.setattr(agent, "_explain", _raise_not_configured)
