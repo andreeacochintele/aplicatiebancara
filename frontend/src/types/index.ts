@@ -661,3 +661,10 @@ export interface FraudCaseDetail extends FraudCaseSummary {
   transaction_description: string | null;
   transaction_created_at: string;
 }
+
+export type OrchestratorIntent = "personal_finance" | "credit" | "support" | "greeting" | "out_of_scope";
+
+export interface OrchestratorChatResponse {
+  intent: OrchestratorIntent;
+  reply: string;
+}

@@ -1,8 +1,8 @@
 # AI module
 
-This module is a **structural placeholder** for Phase 5 (Agentic AI). No agent
-logic is implemented yet — only the shared client abstraction and the folder
-layout every future agent will use.
+Phase 5 (Agentic AI). The Orchestrator and the Personal Finance Agent are
+implemented; Credit and Support are still stubs, Fraud is untouched/out of
+scope for the orchestrator.
 
 ## Constraint: single model, single provider
 
@@ -23,13 +23,13 @@ All future agents call [`ai/client/azure_foundry_client.py`](client/azure_foundr
 ```
 ai/
 ├── client/           # shared Azure AI Foundry GPT-5-mini client (implemented)
-├── orchestrator/      # intent routing (skeleton, single-agent routing only)
-├── personal_finance/  # stub agent — future: spending analysis, budgets, savings
+├── orchestrator/      # intent routing (single-agent routing only)
+├── personal_finance/  # implemented — spending/budgets/savings/cashback/forecast
 ├── credit/             # stub agent — future: credit score explanation, early repayment
 ├── support/            # stub agent — general account/app help (not in architecture.md)
 ├── fraud/               # future: fraud case investigation support (untouched, out of scope)
-└── tools/              # future: typed tool functions agents call — each tool
-                        # calls a backend SERVICE, never the database directly
+└── tools/              # base.py: shared ToolContext/ToolDataUnavailableError contract —
+                        # each agent's own tools.py wraps that agent's backend services
 ```
 
 ## Non-negotiable rules (architecture.md §28, §33, §44)

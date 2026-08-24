@@ -1,0 +1,104 @@
+"""Typed tools for the Personal Finance Agent (dev4-context.md §8 contract).
+
+Every tool below only calls an existing backend SERVICE and returns its
+result unmodified — never touches the DB/SQLAlchemy directly, never
+recalculates or reimplements a service's logic:
+
+    Agent -> Tool -> Backend Service -> Database
+
+Two tools from the original contract have no backing data yet and raise
+`ToolDataUnavailableError` instead of inventing a figure — see their
+docstrings below for exactly what's missing.
+"""
+from datetime import datetime, timezone
+
+from app.ai.tools.base import ToolContext, ToolDataUnavailableError
+from app.analytics.schemas import ForecastResponse, SpendingByTypeResponse
+from app.analytics.service import AnalyticsService
+from app.budgets.schemas import BudgetPublic
+from app.budgets.service import BudgetService
+from app.merchants.schemas import MerchantPublic
+from app.merchants.service import MerchantService
+from app.savings.schemas import SavingsGoalPublic
+from app.savings.service import SavingsService
+from app.transactions.schemas import TransactionPublic
+from app.transactions.service import TransactionService
+from app.wallets.schemas import WalletPublic
+from app.wallets.service import WalletService
+
+
+def get_transactions(ctx: ToolContext) -> list[TransactionPublic]:
+    transactions = TransactionService(ctx.db).list_for_user(ctx.user_id)
+    return [TransactionPublic.model_validate(t) for t in transactions]
+
+
+def get_spending_by_category(ctx: ToolContext) -> SpendingByTypeResponse:
+    """Closest real substitute for "by category": `transaction_categories`
+    (Payments/Dev2 module) doesn't exist yet, so this groups the current
+    month's spend by TransactionType instead of a real category — same
+    limitation analytics/service.py already documents, and the same data
+    budgets/service.py's spend tracking is blocked on (dev4-context.md
+    §10). Present this to the user as "by type", not "by category"."""
+    now = datetime.now(timezone.utc)
+    return AnalyticsService(ctx.db).spending_by_type(ctx.user_id, now.year, now.month)
+
+
+def get_monthly_income(ctx: ToolContext) -> None:
+    """GAP — not implemented on purpose, see agent.py README/report.
+
+    No TransactionType represents incoming/income funds (transactions/
+    models.py's TransactionType is TRANSFER/CARD_PAYMENT/FX/CASHBACK/
+    LOAN_PAYMENT/SCHEDULED_PAYMENT/BILL_SPLIT_PAYMENT — nothing income-
+    shaped), and no service isolates credit-only wallet-ledger movement for
+    a period (analytics/repository.py's net_ledger_change() only returns
+    the net of credits minus debits, not credits alone). Computing "monthly
+    income" here would mean inventing a new aggregate outside the service
+    layer, which is exactly what this tool must not do.
+    """
+    raise ToolDataUnavailableError(
+        "Monthly income isn't available yet: there's no transaction type or "
+        "service aggregate for incoming funds in the backend."
+    )
+
+
+def get_recurring_payments(ctx: ToolContext) -> None:
+    """GAP — not implemented on purpose, see agent.py README/report.
+
+    No recurring/subscription detection or storage exists anywhere in the
+    codebase (checked transactions/, payments/, scheduled_payments-related
+    modules) — this would require new deterministic detection logic in a
+    backend service, not something to invent in the AI layer.
+    """
+    raise ToolDataUnavailableError(
+        "Recurring payments aren't available yet: no recurring/subscription "
+        "detection exists in the backend."
+    )
+
+
+def get_wallet_balances(ctx: ToolContext) -> list[WalletPublic]:
+    wallets = WalletService(ctx.db).list_wallets(ctx.user_id)
+    return [WalletPublic.model_validate(w) for w in wallets]
+
+
+def get_budgets(ctx: ToolContext) -> list[BudgetPublic]:
+    return BudgetService(ctx.db).list_budgets(ctx.user_id)
+
+
+def get_savings_goals(ctx: ToolContext) -> list[SavingsGoalPublic]:
+    return SavingsService(ctx.db).list_goals(ctx.user_id)
+
+
+def get_cashback_offers(ctx: ToolContext) -> list[MerchantPublic]:
+    """MerchantService has no dedicated "list all offers" method — offers
+    are embedded per-merchant (`MerchantPublic.active_offer`) by
+    list_merchants(), so this reuses that and filters down to merchants
+    that currently have one, rather than adding a new service method."""
+    merchants = MerchantService(ctx.db).list_merchants()
+    return [merchant for merchant in merchants if merchant.active_offer is not None]
+
+
+def forecast_month_end_balance(ctx: ToolContext) -> ForecastResponse:
+    """Reuses analytics/service.py's forecast as-is (wallet_ledger_entries
+    based, ignores HOLD/RELEASE, already carries its own "simplified"
+    disclaimer in `.note`) — not rebuilt here."""
+    return AnalyticsService(ctx.db).forecast_month_end_balance(ctx.user_id, wallet_id=None)

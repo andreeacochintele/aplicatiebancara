@@ -1,14 +1,20 @@
 import uuid
+from types import SimpleNamespace
 
+import httpx
 import pytest
+from fastapi import HTTPException
+from openai import APIConnectionError
 
 from app.ai.client.azure_foundry_client import AzureFoundryNotConfiguredError
 from app.ai.credit.agent import handle as credit_handle
+from app.ai.orchestrator import router as orchestrator_router
 from app.ai.orchestrator import service as orchestrator_service
 from app.ai.orchestrator.intent import IntentCategory, _parse_category
 from app.ai.orchestrator.registry import AGENT_REGISTRY
+from app.ai.orchestrator.schemas import OrchestratorChatRequest
 from app.ai.orchestrator.service import OrchestratorService
-from app.ai.personal_finance.agent import handle as personal_finance_handle
+from app.ai.personal_finance import agent as personal_finance_agent
 from app.ai.support.agent import handle as support_handle
 
 
@@ -29,9 +35,11 @@ def test_registry_has_no_fraud_entry_and_exactly_the_three_routable_agents():
     }
 
 
-def test_agent_stubs_return_a_mock_string_reply(db_session):
+def test_remaining_agent_stubs_return_a_mock_string_reply(db_session):
+    # personal_finance is fully implemented now (see test_ai_personal_finance_agent.py) —
+    # only credit/support are still plain stubs here.
     user_id = uuid.uuid4()
-    for handle in (personal_finance_handle, credit_handle, support_handle):
+    for handle in (credit_handle, support_handle):
         reply = handle("any message", user_id, db_session)
         assert isinstance(reply, str)
         assert reply
@@ -69,8 +77,36 @@ def test_chat_answers_out_of_scope_directly_without_touching_the_registry(db_ses
     "intent",
     [IntentCategory.PERSONAL_FINANCE, IntentCategory.CREDIT, IntentCategory.SUPPORT],
 )
-def test_chat_routes_each_routable_intent_to_its_agent_stub(db_session, monkeypatch, intent):
+def test_chat_routes_each_routable_intent_to_its_agent_handler(db_session, monkeypatch, intent):
+    # personal_finance's handle() makes its own azure_foundry_client call
+    # (see agent.py's _explain) — mocked here too so this stays a routing
+    # test, not a live-network test; test_ai_personal_finance_agent.py
+    # covers that call's own behavior.
+    monkeypatch.setattr(personal_finance_agent, "_explain", lambda message, data_summary: "mocked explanation")
     monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message: intent)
     response = OrchestratorService(db_session).chat(uuid.uuid4(), "some message")
     assert response.intent == intent
     assert response.reply == AGENT_REGISTRY[intent]("some message", uuid.uuid4(), db_session)
+
+
+def test_chat_route_maps_azure_api_errors_to_a_clean_503_without_leaking_details(db_session, monkeypatch):
+    # Covers credentials-configured-but-the-call-fails (wrong deployment name,
+    # auth rejected, Azure-side outage, ...) — distinct from
+    # AzureFoundryNotConfiguredError (credentials missing entirely). Found via
+    # a real E2E check against this env's .env, which has Azure configured
+    # but pointing at a deployment that 404s.
+    def _raise_api_error(self, user_id, message):
+        raise APIConnectionError(request=httpx.Request("POST", "https://example.invalid"))
+
+    monkeypatch.setattr(OrchestratorService, "chat", _raise_api_error)
+
+    with pytest.raises(HTTPException) as exc_info:
+        orchestrator_router.chat(
+            OrchestratorChatRequest(message="hello"),
+            current_user=SimpleNamespace(id=uuid.uuid4()),
+            db=db_session,
+        )
+
+    assert exc_info.value.status_code == 503
+    assert "temporarily unavailable" in exc_info.value.detail
+    assert "example.invalid" not in exc_info.value.detail

@@ -1,9 +1,11 @@
-"""Maps a routable intent to its specialized agent stub.
+"""Maps a routable intent to its specialized agent handler.
 
-`greeting` and `out_of_scope` are NOT registered here — the orchestrator
-answers those directly (see service.py) without calling any agent. Fraud is
-intentionally absent: the Fraud Investigation Agent is out of scope for
-this orchestrator (see ai/README.md and CLAUDE.md §13).
+personal_finance is fully implemented (ai/personal_finance/agent.py);
+credit and support are still stubs. `greeting` and `out_of_scope` are NOT
+registered here — the orchestrator answers those directly (see service.py)
+without calling any agent. Fraud is intentionally absent: the Fraud
+Investigation Agent is out of scope for this orchestrator (see
+ai/README.md and CLAUDE.md §13).
 """
 import uuid
 from typing import Callable
