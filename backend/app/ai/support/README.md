@@ -1,7 +1,39 @@
-# Support Agent (placeholder — Phase 5)
+# Support Agent (implemented — Phase 5)
 
-Not one of the originally planned agents in architecture.md §29-32 — added
-as a 5th orchestrator intent category (alongside personal_finance, credit,
-greeting, out_of_scope) to hold general account/app help that isn't
-personal_finance or credit. Not implemented; `agent.py` is a stub that
-returns a fixed mock reply.
+Not one of the originally planned agents in architecture.md §29-32 —
+added as a 5th orchestrator intent category (alongside personal_finance,
+credit, greeting, out_of_scope) to hold general account/app help and
+fraud-awareness questions that aren't personal_finance or credit. Routed
+to from the Orchestrator for the `support` intent (`registry.py`).
+
+## Files
+
+```
+knowledge/fraud_policy.md -> qualitative-only fraud-pattern knowledge, based
+                              on fraud/service.py's real flag categories but
+                              rewritten with NO numbers/weights/windows
+knowledge/app_faq.md      -> short, high-level description of what the app
+                              actually has (wallets, transactions, budgets,
+                              savings, rewards, credit, cards, notifications)
+agent.py                  -> handle(): loads both files as static system-
+                              prompt context, then one azure_foundry_client
+                              call. No tools — see agent.py's own docstring
+                              for why. No `temperature=` kwarg (this
+                              deployment 400s on non-default values).
+```
+
+## Zero financial-data access, by design
+
+This agent never touches analytics/, budgets/, credit/, transactions/, or
+fraud/ data — no tool exists here to call any of them. It:
+
+- Explains fraud-awareness patterns qualitatively (see
+  `knowledge/fraud_policy.md`'s own header for why no numbers are ever
+  included).
+- Never confirms or denies whether a specific transaction was flagged —
+  it has no way to look one up, and its system prompt explicitly
+  instructs it to redirect specific-case questions to support/an admin.
+- Redirects real personal-finance/credit questions back to the user
+  rather than guessing — normally the Orchestrator's intent classifier
+  routes those away from this agent in the first place; this is a safety
+  net for ambiguous phrasing that still lands here.

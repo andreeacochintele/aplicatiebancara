@@ -15,7 +15,7 @@ from app.ai.orchestrator.registry import AGENT_REGISTRY
 from app.ai.orchestrator.schemas import OrchestratorChatRequest
 from app.ai.orchestrator.service import OrchestratorService
 from app.ai.personal_finance import agent as personal_finance_agent
-from app.ai.support.agent import handle as support_handle
+from app.ai.support import agent as support_agent
 
 
 def test_parse_category_matches_each_known_value():
@@ -33,14 +33,6 @@ def test_registry_has_no_fraud_entry_and_exactly_the_three_routable_agents():
         IntentCategory.CREDIT,
         IntentCategory.SUPPORT,
     }
-
-
-def test_remaining_agent_stub_returns_a_mock_string_reply(db_session):
-    # personal_finance and credit are fully implemented now (see their own
-    # test files) — only support is still a plain stub here.
-    reply = support_handle("any message", uuid.uuid4(), db_session)
-    assert isinstance(reply, str)
-    assert reply
 
 
 def test_chat_propagates_azure_not_configured_instead_of_swallowing_it(db_session, monkeypatch):
@@ -76,12 +68,13 @@ def test_chat_answers_out_of_scope_directly_without_touching_the_registry(db_ses
     [IntentCategory.PERSONAL_FINANCE, IntentCategory.CREDIT, IntentCategory.SUPPORT],
 )
 def test_chat_routes_each_routable_intent_to_its_agent_handler(db_session, monkeypatch, intent):
-    # personal_finance's and credit's handle() each make their own
-    # azure_foundry_client call (see their agent.py's _explain) — mocked
-    # here too so this stays a routing test, not a live-network test;
-    # their own test files cover that call's behavior.
+    # Every registered agent's handle() makes its own azure_foundry_client
+    # call (see each agent.py's _explain) — mocked here too so this stays a
+    # routing test, not a live-network test; each agent's own test file
+    # covers that call's behavior.
     monkeypatch.setattr(personal_finance_agent, "_explain", lambda message, data_summary: "mocked explanation")
     monkeypatch.setattr(credit_agent, "_explain", lambda message, data_summary: "mocked explanation")
+    monkeypatch.setattr(support_agent, "_explain", lambda message: "mocked explanation")
     monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message: intent)
     response = OrchestratorService(db_session).chat(uuid.uuid4(), "some message")
     assert response.intent == intent

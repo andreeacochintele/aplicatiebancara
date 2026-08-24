@@ -1,8 +1,8 @@
 # AI module
 
-Phase 5 (Agentic AI). The Orchestrator, Personal Finance Agent, and Credit
-Agent are implemented; Support is still a stub, Fraud is untouched/out of
-scope for the orchestrator.
+Phase 5 (Agentic AI). The Orchestrator and all three registered agents
+(Personal Finance, Credit, Support) are implemented. Fraud is
+untouched/out of scope for the orchestrator.
 
 ## Constraint: single model, single provider
 
@@ -26,7 +26,8 @@ ai/
 ├── orchestrator/      # intent routing (single-agent routing only)
 ├── personal_finance/  # implemented — spending/budgets/savings/cashback/forecast
 ├── credit/             # implemented — score/loans/payment/principal/early-repayment (approx.)
-├── support/            # stub agent — general account/app help (not in architecture.md)
+├── support/            # implemented — app FAQ + qualitative fraud awareness, no tools/data access
+│   └── knowledge/       # static .md files loaded into the system prompt (not tool-called)
 ├── fraud/               # future: fraud case investigation support (untouched, out of scope)
 └── tools/              # base.py: shared ToolContext/ToolDataUnavailableError contract —
                         # each agent's own tools.py wraps that agent's backend services

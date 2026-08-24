@@ -1,7 +1,7 @@
 """Maps a routable intent to its specialized agent handler.
 
-personal_finance and credit are fully implemented (ai/personal_finance/
-agent.py, ai/credit/agent.py); support is still a stub. `greeting` and
+All three registered agents are fully implemented (ai/personal_finance/
+agent.py, ai/credit/agent.py, ai/support/agent.py). `greeting` and
 `out_of_scope` are NOT registered here — the orchestrator answers those
 directly (see service.py) without calling any agent. Fraud is
 intentionally absent: the Fraud Investigation Agent is out of scope for
