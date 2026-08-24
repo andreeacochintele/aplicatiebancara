@@ -41,12 +41,14 @@ def classify_intent(message: str) -> IntentCategory:
     turns it into a 503).
     """
     client = get_azure_foundry_client()
+    # No temperature override: this GPT-5-mini deployment is a reasoning
+    # model that only accepts the default (1) — confirmed live, see
+    # azure_foundry_client.py's module docstring.
     response = client.chat_completion(
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": message},
         ],
-        temperature=0,
     )
     raw = response.choices[0].message.content.strip().lower()
     return _parse_category(raw)
