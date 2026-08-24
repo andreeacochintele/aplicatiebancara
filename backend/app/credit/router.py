@@ -12,6 +12,10 @@ from app.credit.schemas import (
     CreditProfilePublic,
     CreditScorePublic,
     CreditScoreRecalculateRequest,
+    EarlyRepaymentPaymentRequest,
+    EarlyRepaymentPaymentResult,
+    EarlyRepaymentResult,
+    EarlyRepaymentSimulationRequest,
     LoanCalculatorRequest,
     LoanCalculatorResult,
     LoanInstallmentPublic,
@@ -147,6 +151,38 @@ def list_loan_installments(
     db: Session = Depends(get_db),
 ) -> list[LoanInstallmentPublic]:
     return CreditService(db).list_installments_for_loan(current_user.id, loan_id)
+
+
+@router.post("/loans/{loan_id}/early-repayment-simulation", response_model=EarlyRepaymentResult)
+def simulate_early_repayment(
+    loan_id: uuid.UUID,
+    payload: EarlyRepaymentSimulationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EarlyRepaymentResult:
+    return CreditService(db).simulate_early_repayment(
+        current_user.id,
+        loan_id,
+        payload.extra_payment_amount,
+    )
+
+
+@router.post("/loans/{loan_id}/early-repayment", response_model=EarlyRepaymentPaymentResult)
+def make_early_repayment(
+    loan_id: uuid.UUID,
+    payload: EarlyRepaymentPaymentRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EarlyRepaymentPaymentResult:
+    result = CreditService(db).make_early_repayment(
+        current_user.id,
+        loan_id,
+        payload.source_wallet_id,
+        payload.amount,
+        payload.source_card_id,
+    )
+    db.commit()
+    return result
 
 
 @router.get("/applications/{application_id}", response_model=CreditApplicationPublic)

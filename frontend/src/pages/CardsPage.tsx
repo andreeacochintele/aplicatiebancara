@@ -548,7 +548,9 @@ export function CardsPage() {
                   }
                 }}
               >
-                <option value="">Select card type</option>
+                <option value="" disabled hidden>
+                  Select card type
+                </option>
                 {CARD_TYPES.map((type) => (
                   <option key={type} value={type}>
                     {formatCardType(type)}
@@ -798,8 +800,8 @@ export function CardsPage() {
                     </div>
                   </div>
 
-                  {isCreditCard && (
-                    <>
+                  <div className={`card-panel__control-row${isCreditCard ? "" : " card-panel__control-row--single"}`}>
+                    {isCreditCard && (
                       <button
                         type="button"
                         className="card-panel__payment-toggle"
@@ -808,129 +810,129 @@ export function CardsPage() {
                       >
                         {isPaymentPanelOpen ? "Close payment" : "Make a payment"}
                       </button>
+                    )}
 
-                      {isPaymentPanelOpen && (
-                        <div className="credit-card-payment">
-                          <div className="credit-card-payment__summary">
-                            <div>
-                              <span>Card balance</span>
-                              <strong>{formatCurrencyAmount(creditBalanceDue, creditAccountCurrency)}</strong>
-                            </div>
-                            <div>
-                              <span>Available after payment</span>
-                              <strong>
-                                {formatCurrencyAmount(
-                                  creditAvailableBalance(
-                                    card,
-                                    Math.max(0, creditBalanceDue - (paymentAmountMode === "FULL_BALANCE" ? creditBalanceDue : Number(paymentAmount) || 0)),
-                                  ),
-                                  creditAccountCurrency,
-                                )}
-                              </strong>
-                            </div>
-                          </div>
+                    <button
+                      type="button"
+                      className="card-panel__details-toggle"
+                      onClick={() => toggleCardTransactions(card.id)}
+                      aria-expanded={isTransactionsExpanded}
+                    >
+                      <span>{isTransactionsExpanded ? "Retract" : "Show more"}</span>
+                      <span className="card-panel__details-icon">
+                        {isTransactionsExpanded ? <ChevronUp size={16} strokeWidth={2.2} /> : <ChevronDown size={16} strokeWidth={2.2} />}
+                      </span>
+                    </button>
+                  </div>
 
-                          <div className="credit-card-payment__grid">
+                  {isCreditCard && isPaymentPanelOpen && (
+                    <div className="credit-card-payment">
+                      <div className="credit-card-payment__summary">
+                        <div>
+                          <span>Card balance</span>
+                          <strong>{formatCurrencyAmount(creditBalanceDue, creditAccountCurrency)}</strong>
+                        </div>
+                        <div>
+                          <span>Available after payment</span>
+                          <strong>
+                            {formatCurrencyAmount(
+                              creditAvailableBalance(
+                                card,
+                                Math.max(0, creditBalanceDue - (paymentAmountMode === "FULL_BALANCE" ? creditBalanceDue : Number(paymentAmount) || 0)),
+                              ),
+                              creditAccountCurrency,
+                            )}
+                          </strong>
+                        </div>
+                      </div>
+
+                      <div className="credit-card-payment__grid">
+                        <label>
+                          Pay from
+                          <select
+                            value={selectedPaymentSourceValue}
+                            disabled={paymentSourceOptions.length === 0}
+                            onChange={(event) => {
+                              const [nextType, nextId] = event.target.value.split(":") as [CreditPaymentSourceType, string];
+                              setPaymentSourceType(nextType);
+                              setPaymentSourceId(nextId ?? "");
+                              setPaymentError(null);
+                              setPaymentMessage(null);
+                            }}
+                          >
+                            {paymentSourceOptions.length === 0 ? (
+                              <option value="">No payment source available</option>
+                            ) : (
+                              paymentSourceOptions.map((source) => (
+                                <option key={source.value} value={source.value}>
+                                  {source.label}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                          {selectedPaymentWallet && (
+                            <small className="credit-card-payment__source-balance">
+                              Available {formatWalletBalance(selectedPaymentWallet)}
+                            </small>
+                          )}
+                        </label>
+
+                        <div className="credit-card-payment__amount">
+                          <span>Amount</span>
+                          <div className="credit-card-payment__amount-options">
                             <label>
-                              Pay from
-                              <select
-                                value={selectedPaymentSourceValue}
-                                disabled={paymentSourceOptions.length === 0}
-                                onChange={(event) => {
-                                  const [nextType, nextId] = event.target.value.split(":") as [CreditPaymentSourceType, string];
-                                  setPaymentSourceType(nextType);
-                                  setPaymentSourceId(nextId ?? "");
+                              <input
+                                type="radio"
+                                name={`credit-payment-amount-${card.id}`}
+                                checked={paymentAmountMode === "FULL_BALANCE"}
+                                onChange={() => {
+                                  setPaymentAmountMode("FULL_BALANCE");
                                   setPaymentError(null);
                                   setPaymentMessage(null);
                                 }}
-                              >
-                                {paymentSourceOptions.length === 0 ? (
-                                  <option value="">No payment source available</option>
-                                ) : (
-                                  paymentSourceOptions.map((source) => (
-                                    <option key={source.value} value={source.value}>
-                                      {source.label}
-                                    </option>
-                                  ))
-                                )}
-                              </select>
-                              {selectedPaymentWallet && (
-                                <small className="credit-card-payment__source-balance">
-                                  Available {formatWalletBalance(selectedPaymentWallet)}
-                                </small>
-                              )}
+                              />
+                              Whole balance
                             </label>
-
-                            <div className="credit-card-payment__amount">
-                              <span>Amount</span>
-                              <div className="credit-card-payment__amount-options">
-                                <label>
-                                  <input
-                                    type="radio"
-                                    name={`credit-payment-amount-${card.id}`}
-                                    checked={paymentAmountMode === "FULL_BALANCE"}
-                                    onChange={() => {
-                                      setPaymentAmountMode("FULL_BALANCE");
-                                      setPaymentError(null);
-                                      setPaymentMessage(null);
-                                    }}
-                                  />
-                                  Whole balance
-                                </label>
-                                <label>
-                                  <input
-                                    type="radio"
-                                    name={`credit-payment-amount-${card.id}`}
-                                    checked={paymentAmountMode === "CUSTOM"}
-                                    onChange={() => {
-                                      setPaymentAmountMode("CUSTOM");
-                                      setPaymentError(null);
-                                      setPaymentMessage(null);
-                                    }}
-                                  />
-                                  Enter amount
-                                </label>
-                              </div>
-                              {paymentAmountMode === "CUSTOM" ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={paymentAmount}
-                                  onChange={(event) => {
-                                    setPaymentAmount(event.target.value);
-                                    setPaymentError(null);
-                                    setPaymentMessage(null);
-                                  }}
-                                  placeholder="0.00"
-                                />
-                              ) : (
-                                <strong>{formatCurrencyAmount(creditBalanceDue, creditAccountCurrency)}</strong>
-                              )}
-                            </div>
+                            <label>
+                              <input
+                                type="radio"
+                                name={`credit-payment-amount-${card.id}`}
+                                checked={paymentAmountMode === "CUSTOM"}
+                                onChange={() => {
+                                  setPaymentAmountMode("CUSTOM");
+                                  setPaymentError(null);
+                                  setPaymentMessage(null);
+                                }}
+                              />
+                              Enter amount
+                            </label>
                           </div>
-
-                          <button type="button" className="credit-card-payment__submit" onClick={() => submitCreditCardPayment(card)}>
-                            Pay credit card
-                          </button>
-                          {paymentError && <div className="credit-card-payment__error">{paymentError}</div>}
-                          {paymentMessage && <div className="credit-card-payment__message">{paymentMessage}</div>}
+                          {paymentAmountMode === "CUSTOM" ? (
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={paymentAmount}
+                              onChange={(event) => {
+                                setPaymentAmount(event.target.value);
+                                setPaymentError(null);
+                                setPaymentMessage(null);
+                              }}
+                              placeholder="0.00"
+                            />
+                          ) : (
+                            <strong>{formatCurrencyAmount(creditBalanceDue, creditAccountCurrency)}</strong>
+                          )}
                         </div>
-                      )}
-                    </>
-                  )}
+                      </div>
 
-                  <button
-                    type="button"
-                    className="card-panel__details-toggle"
-                    onClick={() => toggleCardTransactions(card.id)}
-                    aria-expanded={isTransactionsExpanded}
-                  >
-                    <span>{isTransactionsExpanded ? "Retract" : "Show more"}</span>
-                    <span className="card-panel__details-icon">
-                      {isTransactionsExpanded ? <ChevronUp size={16} strokeWidth={2.2} /> : <ChevronDown size={16} strokeWidth={2.2} />}
-                    </span>
-                  </button>
+                      <button type="button" className="credit-card-payment__submit" onClick={() => submitCreditCardPayment(card)}>
+                        Pay credit card
+                      </button>
+                      {paymentError && <div className="credit-card-payment__error">{paymentError}</div>}
+                      {paymentMessage && <div className="credit-card-payment__message">{paymentMessage}</div>}
+                    </div>
+                  )}
 
                   {isTransactionsExpanded && (
                     <div className="card-transactions">

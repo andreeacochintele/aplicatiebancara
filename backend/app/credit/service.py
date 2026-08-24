@@ -1,11 +1,13 @@
 """Credit profile and score business rules."""
 import uuid
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundError, ValidationError
+from app.cards.models import CardStatus, CardType
+from app.cards.repository import CardRepository
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.database import utcnow
 from app.credit.loan_calculator import calculate_loan_schedule
 from app.credit.models import (
@@ -16,13 +18,19 @@ from app.credit.models import (
     CreditScoreHistory,
     Loan,
     LoanInstallment,
+    LoanInstallmentStatus,
+    LoanPayment,
+    LoanPaymentType,
     LoanProductType,
+    LoanStatus,
 )
 from app.credit.products import get_loan_product, list_loan_products
 from app.credit.repository import CreditRepository
 from app.credit.schemas import (
     CreditApplicationCreate,
     CreditApplicationDecision,
+    EarlyRepaymentPaymentResult,
+    EarlyRepaymentResult,
     LoanProductPublic,
     CreditScorePublic,
     CreditScoreRecalculateRequest,
@@ -31,6 +39,8 @@ from app.credit.schemas import (
 )
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.notifications.service import NotificationsService
+from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
+from app.transactions.repository import TransactionRepository
 from app.wallets.repository import WalletRepository
 
 
@@ -39,6 +49,8 @@ class CreditService:
         self.db = db
         self.repository = CreditRepository(db)
         self.wallets = WalletRepository(db)
+        self.cards = CardRepository(db)
+        self.transactions = TransactionRepository(db)
         self.notifications = NotificationsService(db)
 
     def get_or_create_profile(self, user_id: uuid.UUID) -> CreditProfile:
@@ -209,6 +221,147 @@ class CreditService:
         loan = self.get_loan_for_user(user_id, loan_id)
         return self.repository.list_installments_for_loan(loan.id)
 
+    def simulate_early_repayment(
+        self,
+        user_id: uuid.UUID,
+        loan_id: uuid.UUID,
+        extra_payment_amount: Decimal,
+    ) -> EarlyRepaymentResult:
+        if extra_payment_amount <= 0:
+            raise ValidationError("Extra payment amount must be positive")
+
+        loan = self.get_loan_for_user(user_id, loan_id)
+        if loan.status != LoanStatus.ACTIVE:
+            raise ValidationError("Only active loans can be simulated")
+
+        installments = self.repository.list_installments_for_loan(loan.id)
+        pending_installments = [
+            installment for installment in installments if installment.status == LoanInstallmentStatus.PENDING
+        ]
+        remaining_term_months = len(pending_installments) or loan.term_months
+        total_interest_before = _money(
+            sum((installment.interest_amount for installment in pending_installments), Decimal("0.00"))
+        )
+        if not pending_installments:
+            total_interest_before = _remaining_interest_for_fixed_payment(
+                loan.outstanding_principal,
+                loan.interest_rate,
+                loan.monthly_payment,
+            )
+
+        original_outstanding = _money(loan.outstanding_principal)
+        applied_extra_payment = min(_money(extra_payment_amount), original_outstanding)
+        new_outstanding = _money(original_outstanding - applied_extra_payment)
+        revised_term_months, total_interest_after = _simulate_fixed_payment_payoff(
+            new_outstanding,
+            loan.interest_rate,
+            loan.monthly_payment,
+        )
+
+        term_months_reduced = max(0, remaining_term_months - revised_term_months)
+        total_interest_saved = max(Decimal("0.00"), _money(total_interest_before - total_interest_after))
+
+        return EarlyRepaymentResult(
+            loan_id=loan.id,
+            currency=loan.currency,
+            original_outstanding_principal=original_outstanding,
+            extra_payment_amount=_money(extra_payment_amount),
+            applied_extra_payment_amount=applied_extra_payment,
+            new_outstanding_principal=new_outstanding,
+            remaining_term_months=remaining_term_months,
+            revised_term_months=revised_term_months,
+            term_months_reduced=term_months_reduced,
+            total_interest_before=total_interest_before,
+            total_interest_after=total_interest_after,
+            total_interest_saved=total_interest_saved,
+        )
+
+    def make_early_repayment(
+        self,
+        user_id: uuid.UUID,
+        loan_id: uuid.UUID,
+        source_wallet_id: uuid.UUID,
+        amount: Decimal,
+        source_card_id: uuid.UUID | None = None,
+    ) -> EarlyRepaymentPaymentResult:
+        simulation = self.simulate_early_repayment(user_id, loan_id, amount)
+        loan = self.get_loan_for_user(user_id, loan_id)
+        wallet = self.wallets.get_by_id(source_wallet_id)
+        if wallet is None or wallet.user_id != user_id:
+            raise NotFoundError("Source wallet not found")
+        if wallet.currency != loan.currency:
+            raise ValidationError("Payment source currency must match the loan currency")
+        if wallet.available_balance < simulation.applied_extra_payment_amount:
+            raise ConflictError("Insufficient available balance")
+
+        source_card = None
+        if source_card_id is not None:
+            source_card = self.cards.get_by_id(source_card_id)
+            if source_card is None or source_card.user_id != user_id:
+                raise NotFoundError("Source card not found")
+            if source_card.type != CardType.DEBIT:
+                raise ValidationError("Only debit cards can be used as a loan payment card source")
+            if source_card.status != CardStatus.ACTIVE:
+                raise ValidationError("Source debit card must be active")
+            if source_card.default_wallet_id != wallet.id:
+                raise ValidationError("Source debit card must be linked to the selected wallet")
+
+        paid_at = utcnow()
+        transaction = self.transactions.add(
+            Transaction(
+                initiator_user_id=user_id,
+                source_wallet_id=wallet.id,
+                card_id=source_card.id if source_card is not None else None,
+                type=TransactionType.LOAN_PAYMENT,
+                status=TransactionStatus.PROCESSING,
+                amount=simulation.applied_extra_payment_amount,
+                currency=loan.currency,
+                description=f"Early repayment for loan {loan.id}",
+                processed_at=paid_at,
+            )
+        )
+
+        wallet.available_balance = _money(wallet.available_balance - simulation.applied_extra_payment_amount)
+        self.transactions.add_ledger_entry(
+            WalletLedgerEntry(
+                wallet_id=wallet.id,
+                transaction_id=transaction.id,
+                entry_type=LedgerEntryType.DEBIT,
+                amount=simulation.applied_extra_payment_amount,
+                currency=wallet.currency,
+                balance_after=wallet.available_balance,
+            )
+        )
+
+        loan.outstanding_principal = simulation.new_outstanding_principal
+        if loan.outstanding_principal == Decimal("0.00"):
+            loan.status = LoanStatus.PAID
+            loan.closed_at = paid_at
+            for installment in self.repository.list_installments_for_loan(loan.id):
+                if installment.status == LoanInstallmentStatus.PENDING:
+                    installment.status = LoanInstallmentStatus.PAID
+
+        self.repository.add_loan_payment(
+            LoanPayment(
+                loan_id=loan.id,
+                transaction_id=transaction.id,
+                amount=simulation.applied_extra_payment_amount,
+                principal_paid=simulation.applied_extra_payment_amount,
+                interest_paid=Decimal("0.00"),
+                payment_type=LoanPaymentType.EARLY_REPAYMENT,
+            )
+        )
+
+        transaction.status = TransactionStatus.COMPLETED
+        transaction.completed_at = paid_at
+        self.db.flush()
+
+        return EarlyRepaymentPaymentResult(
+            **simulation.model_dump(),
+            transaction_id=transaction.id,
+            loan_status=loan.status,
+        )
+
     def list_applications(self, user_id: uuid.UUID) -> list[CreditApplication]:
         return self.repository.list_applications_for_user(user_id)
 
@@ -300,6 +453,45 @@ def _days_in_month(year: int, month: int) -> int:
     if month in {4, 6, 9, 11}:
         return 30
     return 31
+
+
+def _simulate_fixed_payment_payoff(
+    principal: Decimal,
+    annual_interest_rate: Decimal,
+    monthly_payment: Decimal,
+) -> tuple[int, Decimal]:
+    remaining = _money(principal)
+    if remaining == 0:
+        return 0, Decimal("0.00")
+    if monthly_payment <= 0:
+        raise ValidationError("Loan monthly payment must be positive")
+
+    monthly_rate = annual_interest_rate / Decimal("100") / Decimal("12")
+    total_interest = Decimal("0.00")
+    months = 0
+    while remaining > 0:
+        interest_amount = _money(remaining * monthly_rate)
+        principal_amount = _money(monthly_payment - interest_amount)
+        if principal_amount <= 0:
+            raise ValidationError("Monthly payment is too low to reduce principal")
+        if principal_amount > remaining:
+            principal_amount = remaining
+        remaining = _money(remaining - principal_amount)
+        total_interest = _money(total_interest + interest_amount)
+        months += 1
+    return months, total_interest
+
+
+def _remaining_interest_for_fixed_payment(
+    principal: Decimal,
+    annual_interest_rate: Decimal,
+    monthly_payment: Decimal,
+) -> Decimal:
+    return _simulate_fixed_payment_payoff(principal, annual_interest_rate, monthly_payment)[1]
+
+
+def _money(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _normalize_currency(value: str) -> str:
