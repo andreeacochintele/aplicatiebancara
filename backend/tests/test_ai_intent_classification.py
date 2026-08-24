@@ -40,6 +40,7 @@ class _FakeClient:
         self._content = content
 
     def chat_completion(self, **kwargs) -> _FakeResponse:
+        self.last_kwargs = kwargs
         return _FakeResponse(self._content)
 
 
@@ -84,3 +85,23 @@ def test_classify_intent_returns_the_correct_category_when_the_model_answers_cor
 ):
     monkeypatch.setattr(intent, "get_azure_foundry_client", lambda: _FakeClient(model_reply))
     assert classify_intent(message) == expected
+
+
+# ---- latency fix: reasoning_effort="minimal" on classify_intent's own call only ----
+#
+# Live-verified separately (task report, not asserted here — no live Azure
+# calls in the suite): accepted by this deployment with no error (unlike
+# temperature), ~32% average latency reduction across the 4 canonical test
+# questions, and no accuracy change across every case in this file. This
+# test protects the plumbing: the parameter is actually sent, and it never
+# leaks into an agent's response-generation call (checked by grep over
+# backend/app in the task report - reasoning_effort appears only here).
+
+
+def test_classify_intent_passes_reasoning_effort_minimal(monkeypatch):
+    fake = _FakeClient("support")
+    monkeypatch.setattr(intent, "get_azure_foundry_client", lambda: fake)
+
+    classify_intent("how do budgets work?")
+
+    assert fake.last_kwargs["reasoning_effort"] == "minimal"

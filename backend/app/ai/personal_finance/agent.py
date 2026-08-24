@@ -34,7 +34,15 @@ _SYSTEM_PROMPT = (
     "services and quoted to the user verbatim right after your reply — do "
     "not restate, recalculate, round, or invent any figure yourself. Write "
     "only a short (1-3 sentence), friendly answer to the user's message "
-    "using that data as context."
+    "using that data as context.\n"
+    "Be direct and proactive: if the data below clearly answers the user's "
+    "question, present it confidently right away in this same reply — do "
+    "not ask for confirmation first or offer it as an optional follow-up "
+    "('would you like me to also show...?'). Only ask a clarifying question "
+    "if the request is genuinely ambiguous about which figure, category, or "
+    "time period is needed, or if the data below doesn't actually cover "
+    "what they asked. Don't invent a need for clarification on a request "
+    "that's already clear just to be cautious."
 )
 
 # First keyword match wins; order encodes priority for overlapping words

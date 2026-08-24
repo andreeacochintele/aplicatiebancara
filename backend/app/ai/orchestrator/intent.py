@@ -81,8 +81,18 @@ def classify_intent(message: str, history: list[dict[str, str]] | None = None) -
     # No temperature override: this GPT-5-mini deployment is a reasoning
     # model that only accepts the default (1) — confirmed live, see
     # azure_foundry_client.py's module docstring.
+    #
+    # reasoning_effort="minimal" IS accepted here (unlike temperature) —
+    # confirmed live with a multi-trial comparison (minimal ~1030ms avg vs
+    # medium ~1430ms avg vs baseline/no-override ~1538ms avg over 4 trials
+    # each) and re-verified against every case in
+    # test_ai_intent_classification.py plus credit/greeting/out_of_scope
+    # (11/11 correct) before applying it here. Classification is a simple
+    # fixed-category task; deep reasoning isn't needed for it. Intent
+    # classification only — never set this on an agent's response-generation
+    # call, where full reasoning quality matters.
     with timed_event("llm_call", agent="orchestrator"):
-        response = client.chat_completion(messages=messages)
+        response = client.chat_completion(messages=messages, reasoning_effort="minimal")
     raw = response.choices[0].message.content.strip().lower()
     log_debug("llm_call.response", agent="orchestrator", content=raw)
 

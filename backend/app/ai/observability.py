@@ -26,6 +26,13 @@ Everything above is logged at INFO. Full LLM prompt/response bodies are
 logged separately at DEBUG (see each agent's `_explain()`) since they're
 verbose and not needed for normal manual QA — turn `LOG_LEVEL=DEBUG` on
 only when you need to see raw model output.
+
+Every llm_call event also carries prompt_tokens/completion_tokens,
+confirmed live to be populated by this Azure Foundry endpoint. See
+`record_usage()` and `_last_usage` below for how token counts reach this
+module from ai/client/azure_foundry_client.py without any agent's own
+code (personal_finance, credit, support, or the orchestrator's intent
+classifier) needing to extract or pass them.
 """
 import functools
 import inspect
@@ -59,11 +66,43 @@ if not logger.handlers:
 
 _correlation_id: ContextVar[str] = ContextVar("ai_correlation_id", default="-")
 
+# Token usage for the llm_call event. Set by
+# ai/client/azure_foundry_client.py's chat_completion() right after every
+# response, read (and cleared) by timed_event()'s own exit. This is the one
+# non-self-contained piece of this module: a `with timed_event("llm_call",
+# ...): response = client.chat_completion(...)` block is a Python context
+# manager wrapping arbitrary code, so it has no way to see `response` — a
+# local variable created inside its own body — without the call inside that
+# body reporting it back somehow. Every llm_call call site (orchestrator's
+# classify_intent, and every agent's response-generation call, including
+# ai/credit/'s) already follows exactly that one-call-per-block shape, so
+# routing it through the shared client this way gets token counts onto
+# every llm_call log line without editing any of those call sites.
+_last_usage: ContextVar[Any | None] = ContextVar("ai_last_usage", default=None)
+
 F = TypeVar("F", bound=Callable[..., Any])
 
 
 def new_correlation_id() -> str:
     return uuid.uuid4().hex[:8]
+
+
+def record_usage(usage: Any | None) -> None:
+    """Called by azure_foundry_client.py's chat_completion() with the SDK
+    response's `.usage` (or None if the response didn't have one) — see
+    `_last_usage`'s comment above for why this exists."""
+    _last_usage.set(usage)
+
+
+def _consume_usage_fields() -> dict[str, Any]:
+    usage = _last_usage.get()
+    _last_usage.set(None)  # consumed once so a stale value can't leak into a later event
+    if usage is None:
+        return {}
+    return {
+        "prompt_tokens": getattr(usage, "prompt_tokens", None),
+        "completion_tokens": getattr(usage, "completion_tokens", None),
+    }
 
 
 def bind_correlation_id(correlation_id: str) -> None:
@@ -86,7 +125,13 @@ def log_debug(event: str, **fields: Any) -> None:
 def timed_event(event: str, **fields: Any) -> Iterator[None]:
     """Logs `event` once the wrapped block finishes: duration_ms and
     status=ok, or status=error + error_type on an exception (re-raised
-    unchanged — this never swallows or alters what the caller sees)."""
+    unchanged — this never swallows or alters what the caller sees). For
+    event="llm_call", also attaches prompt_tokens/completion_tokens if a
+    chat_completion() call happened inside the block (see
+    record_usage()) — any stale value from a previous block is cleared
+    before this one starts, so token counts always belong to the actual
+    call this specific block wraps, never a leftover from elsewhere."""
+    _last_usage.set(None)
     start = time.perf_counter()
     try:
         yield
@@ -96,7 +141,8 @@ def timed_event(event: str, **fields: Any) -> Iterator[None]:
         raise
     else:
         duration_ms = round((time.perf_counter() - start) * 1000, 1)
-        log_event(event, duration_ms=duration_ms, status="ok", **fields)
+        usage_fields = _consume_usage_fields() if event == "llm_call" else {}
+        log_event(event, duration_ms=duration_ms, status="ok", **fields, **usage_fields)
 
 
 def log_tool_call(func: F) -> F:

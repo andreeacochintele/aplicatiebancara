@@ -70,3 +70,49 @@ def test_chat_completion_strips_a_trailing_slash_from_the_endpoint_to_avoid_a_do
     client.chat_completion(messages=[])
 
     assert _FakeOpenAI.last_instance.base_url == "https://example-resource.services.ai.azure.com/openai/v1/"
+
+
+# ---- token usage reporting: chat_completion() forwards response.usage to
+# ai/observability.py's record_usage() — see that module for why (a
+# `with timed_event("llm_call", ...):` block can't see a local variable
+# created inside its own body any other way).
+
+
+class _FakeUsage:
+    def __init__(self, prompt_tokens: int, completion_tokens: int) -> None:
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+
+
+def test_chat_completion_reports_the_response_usage_to_observability(monkeypatch):
+    fake_usage = _FakeUsage(prompt_tokens=23, completion_tokens=141)
+
+    class _FakeResponseWithUsage:
+        def __init__(self, usage) -> None:
+            self.usage = usage
+
+    class _FakeCompletionsWithUsage:
+        def create(self, **kwargs):
+            return _FakeResponseWithUsage(fake_usage)
+
+    class _FakeOpenAIWithUsage:
+        def __init__(self, *, base_url: str, api_key: str) -> None:
+            self.chat = type("Chat", (), {"completions": _FakeCompletionsWithUsage()})()
+
+    monkeypatch.setattr("openai.OpenAI", _FakeOpenAIWithUsage)
+    recorded: dict = {}
+    monkeypatch.setattr("app.ai.client.azure_foundry_client.record_usage", lambda u: recorded.update(usage=u))
+
+    AzureFoundryClient(_settings()).chat_completion(messages=[{"role": "user", "content": "hi"}])
+
+    assert recorded["usage"] is fake_usage
+
+
+def test_chat_completion_reports_none_when_the_response_has_no_usage_attribute(monkeypatch):
+    monkeypatch.setattr("openai.OpenAI", _FakeOpenAI)
+    recorded: dict = {}
+    monkeypatch.setattr("app.ai.client.azure_foundry_client.record_usage", lambda u: recorded.update(usage=u))
+
+    AzureFoundryClient(_settings()).chat_completion(messages=[{"role": "user", "content": "hi"}])
+
+    assert recorded["usage"] is None
