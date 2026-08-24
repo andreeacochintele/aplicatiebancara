@@ -453,9 +453,13 @@ Configuration must come from environment variables such as:
 ```text
 AZURE_OPENAI_ENDPOINT
 AZURE_OPENAI_API_KEY
-AZURE_OPENAI_API_VERSION
 AZURE_OPENAI_DEPLOYMENT_NAME
 ```
+
+ENDPOINT is the bare Foundry resource root (e.g. `https://<resource>.services.ai.azure.com`,
+no `/models`, no `/openai/v1/`) — the shared client targets the `/openai/v1/`
+compatibility route, which is implicitly versioned, so there's no
+api-version setting.
 
 The application must remain runnable without Azure credentials when AI functionality is not being used.
 
