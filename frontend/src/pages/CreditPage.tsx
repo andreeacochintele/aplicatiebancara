@@ -3,13 +3,17 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { ApiError, apiRequest } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type {
+  Card,
   CreditApplication,
   CreditProfile,
   CreditScore,
+  EarlyRepaymentPaymentResult,
+  EarlyRepaymentResult,
   Loan,
   LoanCalculatorResult,
   LoanProduct,
   LoanProductType,
+  Wallet,
 } from "../types";
 
 const CREDIT_CURRENCIES = ["RON", "EUR", "USD", "GBP"];
@@ -94,6 +98,10 @@ function parseAmount(value: string): number {
   return Number.isFinite(amount) ? amount : 0;
 }
 
+function walletDisplayName(wallet: Wallet): string {
+  return `${wallet.currency}${wallet.is_main ? " - Main" : ""}`;
+}
+
 function ListPreview({ items }: { items: string[] }) {
   return (
     <ul>
@@ -110,7 +118,14 @@ export function CreditPage() {
   const [score, setScore] = useState<CreditScore | null>(null);
   const [applications, setApplications] = useState<CreditApplication[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [cards, setCards] = useState<Card[]>([]);
   const [applicationBreakdowns, setApplicationBreakdowns] = useState<Record<string, LoanCalculatorResult>>({});
+  const [earlyRepaymentAmounts, setEarlyRepaymentAmounts] = useState<Record<string, string>>({});
+  const [earlyRepaymentSourceIds, setEarlyRepaymentSourceIds] = useState<Record<string, string>>({});
+  const [earlyRepaymentResults, setEarlyRepaymentResults] = useState<Record<string, EarlyRepaymentResult>>({});
+  const [earlyRepaymentErrors, setEarlyRepaymentErrors] = useState<Record<string, string>>({});
+  const [earlyRepaymentMessages, setEarlyRepaymentMessages] = useState<Record<string, string>>({});
   const [loanProducts, setLoanProducts] = useState<LoanProduct[]>(DEFAULT_LOAN_PRODUCTS);
   const [income, setIncome] = useState("");
   const [existingDebt, setExistingDebt] = useState("");
@@ -132,6 +147,8 @@ export function CreditPage() {
   const [isApplying, setIsApplying] = useState(false);
   const [isEstimatingApplication, setIsEstimatingApplication] = useState(false);
   const [activatingApplicationId, setActivatingApplicationId] = useState<string | null>(null);
+  const [simulatingLoanId, setSimulatingLoanId] = useState<string | null>(null);
+  const [payingLoanId, setPayingLoanId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
 
@@ -148,6 +165,19 @@ export function CreditPage() {
   const visibleLoanApplications = useMemo(
     () => applications.filter((application) => application.status === "APPROVED" || application.status === "PENDING"),
     [applications],
+  );
+  const activeWallets = useMemo(() => wallets.filter((wallet) => wallet.status === "ACTIVE"), [wallets]);
+  const activeDebitCards = useMemo(
+    () => cards.filter((card) => card.type === "DEBIT" && card.status === "ACTIVE" && card.default_wallet_id),
+    [cards],
+  );
+  const debitRepresentedWalletIds = useMemo(
+    () => new Set(activeDebitCards.map((card) => card.default_wallet_id).filter((walletId): walletId is string => Boolean(walletId))),
+    [activeDebitCards],
+  );
+  const directPaymentWallets = useMemo(
+    () => activeWallets.filter((wallet) => !debitRepresentedWalletIds.has(wallet.id)),
+    [activeWallets, debitRepresentedWalletIds],
   );
   const supportsDownPayment = DOWN_PAYMENT_LOAN_TYPES.has(loanProductType);
   const assetPriceAmount = parseAmount(assetPrice);
@@ -173,10 +203,12 @@ export function CreditPage() {
       setExistingDebt(profileResponse.existing_debt);
       setProfileCurrency(profileResponse.currency);
 
-      const [applicationsResult, loansResult, loanProductsResult] = await Promise.allSettled([
+      const [applicationsResult, loansResult, loanProductsResult, walletsResult, cardsResult] = await Promise.allSettled([
         apiRequest<CreditApplication[]>("/credit/applications", { token }),
         apiRequest<Loan[]>("/credit/loans", { token }),
         apiRequest<LoanProduct[]>("/credit/loan-products", { token }),
+        apiRequest<Wallet[]>("/wallets", { token }),
+        apiRequest<Card[]>("/cards", { token }),
       ]);
 
       if (applicationsResult.status === "fulfilled") {
@@ -195,6 +227,18 @@ export function CreditPage() {
 
       if (loanProductsResult.status === "fulfilled" && loanProductsResult.value.length > 0) {
         setLoanProducts(loanProductsResult.value);
+      }
+
+      if (walletsResult.status === "fulfilled") {
+        setWallets(walletsResult.value);
+      } else {
+        setWallets([]);
+      }
+
+      if (cardsResult.status === "fulfilled") {
+        setCards(cardsResult.value);
+      } else {
+        setCards([]);
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -296,6 +340,183 @@ export function CreditPage() {
       }
       return next;
     });
+  }
+
+  function loanPaymentSourceOptions(currency: string) {
+    return [
+      ...activeDebitCards
+        .map((card) => {
+          const wallet = wallets.find((item) => item.id === card.default_wallet_id);
+          return {
+            value: `DEBIT_CARD:${card.id}`,
+            walletId: wallet?.id ?? "",
+            cardId: card.id,
+            label: `Debit **** ${card.last_four}${wallet ? ` - ${walletDisplayName(wallet)}` : ""}`,
+            currency: wallet?.currency,
+            availableBalance: wallet?.available_balance ?? "0.00",
+          };
+        })
+        .filter((source) => source.walletId && source.currency === currency),
+      ...directPaymentWallets
+        .filter((wallet) => wallet.currency === currency)
+        .map((wallet) => ({
+          value: `ACCOUNT:${wallet.id}`,
+          walletId: wallet.id,
+          cardId: null,
+          label: `${walletDisplayName(wallet)} account`,
+          currency: wallet.currency,
+          availableBalance: wallet.available_balance,
+        })),
+    ];
+  }
+
+  async function simulateEarlyRepayment(loan: Loan) {
+    if (!accessToken || simulatingLoanId) return;
+
+    const extraPaymentAmount = earlyRepaymentAmounts[loan.id] ?? "";
+    if (parseAmount(extraPaymentAmount) <= 0) {
+      setEarlyRepaymentErrors((current) => ({
+        ...current,
+        [loan.id]: "Enter a positive extra payment amount.",
+      }));
+      return;
+    }
+
+    setSimulatingLoanId(loan.id);
+    setEarlyRepaymentErrors((current) => {
+      const next = { ...current };
+      delete next[loan.id];
+      return next;
+    });
+
+    try {
+      const result = await apiRequest<EarlyRepaymentResult>(`/credit/loans/${loan.id}/early-repayment-simulation`, {
+        method: "POST",
+        token: accessToken,
+        body: {
+          extra_payment_amount: extraPaymentAmount,
+        },
+      });
+      setEarlyRepaymentResults((current) => ({
+        ...current,
+        [loan.id]: result,
+      }));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setEarlyRepaymentErrors((current) => ({
+        ...current,
+        [loan.id]: err instanceof ApiError ? err.message : "Could not simulate early repayment.",
+      }));
+    } finally {
+      setSimulatingLoanId(null);
+    }
+  }
+
+  async function makeEarlyRepayment(loan: Loan, sourceOptions: ReturnType<typeof loanPaymentSourceOptions>) {
+    if (!accessToken || payingLoanId) return;
+
+    const amount = earlyRepaymentAmounts[loan.id] ?? "";
+    const selectedSourceValue = earlyRepaymentSourceIds[loan.id] || sourceOptions[0]?.value || "";
+    const source = sourceOptions.find((option) => option.value === selectedSourceValue);
+    if (parseAmount(amount) <= 0) {
+      setEarlyRepaymentErrors((current) => ({
+        ...current,
+        [loan.id]: "Enter a positive payment amount.",
+      }));
+      return;
+    }
+    if (!source) {
+      setEarlyRepaymentErrors((current) => ({
+        ...current,
+        [loan.id]: "No payment source is available in this loan currency.",
+      }));
+      return;
+    }
+    if (parseAmount(amount) > Number(source.availableBalance)) {
+      setEarlyRepaymentErrors((current) => ({
+        ...current,
+        [loan.id]: "The selected source does not have enough available balance.",
+      }));
+      return;
+    }
+
+    setPayingLoanId(loan.id);
+    setEarlyRepaymentErrors((current) => {
+      const next = { ...current };
+      delete next[loan.id];
+      return next;
+    });
+    setEarlyRepaymentMessages((current) => {
+      const next = { ...current };
+      delete next[loan.id];
+      return next;
+    });
+
+    try {
+      const result = await apiRequest<EarlyRepaymentPaymentResult>(`/credit/loans/${loan.id}/early-repayment`, {
+        method: "POST",
+        token: accessToken,
+        body: {
+          source_wallet_id: source.walletId,
+          source_card_id: source.cardId,
+          amount,
+        },
+      });
+      setEarlyRepaymentResults((current) => ({
+        ...current,
+        [loan.id]: result,
+      }));
+      setLoans((current) =>
+        current.map((item) =>
+          item.id === loan.id
+            ? {
+                ...item,
+                outstanding_principal: result.new_outstanding_principal,
+                status: result.loan_status,
+                closed_at: result.loan_status === "PAID" ? new Date().toISOString() : item.closed_at,
+              }
+            : item,
+        ),
+      );
+      setWallets((current) =>
+        current.map((wallet) =>
+          wallet.id === source.walletId
+            ? {
+                ...wallet,
+                available_balance: (Number(wallet.available_balance) - Number(result.applied_extra_payment_amount)).toFixed(2),
+              }
+            : wallet,
+        ),
+      );
+      const [freshLoans, freshWallets] = await Promise.all([
+        apiRequest<Loan[]>("/credit/loans", { token: accessToken }),
+        apiRequest<Wallet[]>("/wallets", { token: accessToken }),
+      ]);
+      setLoans(freshLoans);
+      setWallets(freshWallets);
+      setEarlyRepaymentMessages((current) => ({
+        ...current,
+        [loan.id]: `${formatMoney(result.applied_extra_payment_amount, result.currency)} paid from ${source.label}.`,
+      }));
+      setEarlyRepaymentAmounts((current) => ({
+        ...current,
+        [loan.id]: "",
+      }));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setEarlyRepaymentErrors((current) => ({
+        ...current,
+        [loan.id]: err instanceof ApiError ? err.message : "Could not make early repayment.",
+      }));
+    } finally {
+      setPayingLoanId(null);
+    }
   }
 
   async function recalculateScore() {
@@ -750,6 +971,15 @@ export function CreditPage() {
                   const canActivate = application.type === "PERSONAL_LOAN" && isApproved && !existingLoan;
                   const isOfferExpanded = expandedOfferIds.has(application.id);
                   const breakdownId = `approved-offer-breakdown-${application.id}`;
+                  const earlyRepaymentAmount = existingLoan ? earlyRepaymentAmounts[existingLoan.id] ?? "" : "";
+                  const earlyRepaymentError = existingLoan ? earlyRepaymentErrors[existingLoan.id] : null;
+                  const earlyRepaymentMessage = existingLoan ? earlyRepaymentMessages[existingLoan.id] : null;
+                  const earlyRepaymentResult = existingLoan ? earlyRepaymentResults[existingLoan.id] : null;
+                  const repaymentSources = existingLoan ? loanPaymentSourceOptions(existingLoan.currency) : [];
+                  const selectedRepaymentSource = existingLoan
+                    ? earlyRepaymentSourceIds[existingLoan.id] || repaymentSources[0]?.value || ""
+                    : "";
+                  const selectedRepaymentSourceDetails = repaymentSources.find((source) => source.value === selectedRepaymentSource);
                   return (
                     <article
                       className={`approved-offer-card${isOfferExpanded ? "" : " approved-offer-card--collapsed"}`}
@@ -808,6 +1038,109 @@ export function CreditPage() {
                               {isOfferExpanded ? "Retract" : "Show details"}
                             </button>
                           </div>
+                          {existingLoan && (
+                            <div className="early-repayment-card">
+                              <div className="early-repayment-card__top">
+                                <div>
+                                  <span className="eyebrow">Early repayment</span>
+                                  <strong>Simulate or make an extra principal payment</strong>
+                                </div>
+                                <span className="tag tag--neutral">
+                                  {formatMoney(existingLoan.outstanding_principal, existingLoan.currency)} left
+                                </span>
+                              </div>
+                              <div className="early-repayment-card__form">
+                                <label>
+                                  Amount
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={earlyRepaymentAmount}
+                                    onChange={(event) =>
+                                      setEarlyRepaymentAmounts((current) => ({
+                                        ...current,
+                                        [existingLoan.id]: event.target.value,
+                                      }))
+                                    }
+                                    placeholder={`0.00 ${existingLoan.currency}`}
+                                  />
+                                </label>
+                                <label>
+                                  Pay from
+                                  <select
+                                    value={selectedRepaymentSource}
+                                    onChange={(event) =>
+                                      setEarlyRepaymentSourceIds((current) => ({
+                                        ...current,
+                                        [existingLoan.id]: event.target.value,
+                                      }))
+                                    }
+                                    disabled={repaymentSources.length === 0}
+                                  >
+                                    {repaymentSources.length === 0 ? (
+                                      <option value="">No source available</option>
+                                    ) : (
+                                      repaymentSources.map((source) => (
+                                        <option key={source.value} value={source.value}>
+                                          {source.label}
+                                        </option>
+                                      ))
+                                    )}
+                                  </select>
+                                </label>
+                                <button
+                                  type="button"
+                                  className="button--ghost early-repayment-card__simulate"
+                                  onClick={() => simulateEarlyRepayment(existingLoan)}
+                                  disabled={simulatingLoanId === existingLoan.id}
+                                >
+                                  {simulatingLoanId === existingLoan.id ? "Simulating..." : "Simulate"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="credit-card-payment__submit"
+                                  onClick={() => makeEarlyRepayment(existingLoan, repaymentSources)}
+                                  disabled={payingLoanId === existingLoan.id || repaymentSources.length === 0}
+                                >
+                                  {payingLoanId === existingLoan.id ? "Paying..." : "Make payment"}
+                                </button>
+                              </div>
+                              {selectedRepaymentSource && (
+                                <p className="early-repayment-card__source-balance">
+                                  Available{" "}
+                                  {selectedRepaymentSourceDetails
+                                    ? `${Number(selectedRepaymentSourceDetails.availableBalance).toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })} ${existingLoan.currency}`
+                                    : `0.00 ${existingLoan.currency}`}
+                                </p>
+                              )}
+                              {earlyRepaymentError && <p className="early-repayment-card__error">{earlyRepaymentError}</p>}
+                              {earlyRepaymentMessage && <p className="early-repayment-card__message">{earlyRepaymentMessage}</p>}
+                              {earlyRepaymentResult && (
+                                <div className="early-repayment-card__result">
+                                  <div>
+                                    <span>Interest saved</span>
+                                    <strong>
+                                      {formatMoney(earlyRepaymentResult.total_interest_saved, earlyRepaymentResult.currency)}
+                                    </strong>
+                                  </div>
+                                  <div>
+                                    <span>Shorter by</span>
+                                    <strong>{earlyRepaymentResult.term_months_reduced} months</strong>
+                                  </div>
+                                  <div>
+                                    <span>New balance</span>
+                                    <strong>
+                                      {formatMoney(earlyRepaymentResult.new_outstanding_principal, earlyRepaymentResult.currency)}
+                                    </strong>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {isOfferExpanded && (
                             <div className="approved-offer-card__details" id={breakdownId}>
                               <div className="approved-offer-card__figures">

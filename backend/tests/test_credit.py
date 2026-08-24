@@ -1,7 +1,10 @@
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 
+from app.cards.schemas import CardCreate
+from app.cards.service import CardService
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.enums import UserRole
 from app.credit.loan_calculator import calculate_loan_schedule
@@ -21,6 +24,7 @@ from app.credit.schemas import (
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.credit.service import CreditService
 from app.notifications.service import NotificationsService
+from app.transactions.models import Transaction, TransactionType, WalletLedgerEntry
 from app.users.schemas import UserCreate
 from app.users.service import UserService
 from app.wallets.schemas import WalletCreate
@@ -491,6 +495,118 @@ def test_create_loan_from_approved_application(db_session):
     assert installments[-1].remaining_principal == Decimal("0.00")
 
 
+def test_simulate_early_repayment_shortens_term_and_saves_interest(db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    application.status = CreditApplicationStatus.APPROVED
+    application.offered_amount = Decimal("10000.00")
+    application.offered_interest_rate = Decimal("12.00")
+    loan = service.create_loan_from_application(user.id, application.id)
+
+    result = service.simulate_early_repayment(user.id, loan.id, Decimal("1000.00"))
+
+    assert result.loan_id == loan.id
+    assert result.currency == "RON"
+    assert result.original_outstanding_principal == Decimal("10000.00")
+    assert result.extra_payment_amount == Decimal("1000.00")
+    assert result.applied_extra_payment_amount == Decimal("1000.00")
+    assert result.new_outstanding_principal == Decimal("9000.00")
+    assert result.remaining_term_months == 12
+    assert result.revised_term_months < result.remaining_term_months
+    assert result.term_months_reduced == result.remaining_term_months - result.revised_term_months
+    assert result.total_interest_saved > Decimal("0.00")
+    assert result.total_interest_after < result.total_interest_before
+
+
+def test_simulate_early_repayment_rejects_invalid_amount(db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    loan = service.create_loan_from_application(user.id, application.id)
+
+    with pytest.raises(ValidationError):
+        service.simulate_early_repayment(user.id, loan.id, Decimal("0.00"))
+
+
+def test_make_early_repayment_debits_wallet_and_reduces_loan(db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    loan = service.create_loan_from_application(user.id, application.id)
+
+    result = service.make_early_repayment(user.id, loan.id, wallet.id, Decimal("1000.00"))
+
+    assert result.loan_id == loan.id
+    assert result.transaction_id is not None
+    assert result.loan_status == LoanStatus.ACTIVE
+    assert result.applied_extra_payment_amount == Decimal("1000.00")
+    assert result.new_outstanding_principal == Decimal("9000.00")
+    assert loan.outstanding_principal == Decimal("9000.00")
+    assert wallet.available_balance == Decimal("4000.00")
+
+    transaction = db_session.get(Transaction, result.transaction_id)
+    assert transaction is not None
+    assert transaction.type == TransactionType.LOAN_PAYMENT
+    assert transaction.source_wallet_id == wallet.id
+
+    ledger_entry = db_session.query(WalletLedgerEntry).filter_by(transaction_id=result.transaction_id).one()
+    assert ledger_entry.amount == Decimal("1000.00")
+    assert ledger_entry.balance_after == Decimal("4000.00")
+
+
+def test_make_early_repayment_from_debit_card_tags_card_transaction(db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    debit_card = CardService(db_session).create_card(
+        user.id,
+        CardCreate(type="DEBIT", tier="REGULAR", default_wallet_id=wallet.id),
+    )
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    loan = service.create_loan_from_application(user.id, application.id)
+
+    result = service.make_early_repayment(user.id, loan.id, wallet.id, Decimal("1000.00"), debit_card.id)
+
+    transaction = db_session.get(Transaction, result.transaction_id)
+    assert transaction is not None
+    assert transaction.card_id == debit_card.id
+    assert transaction.source_wallet_id == wallet.id
+    assert transaction.type == TransactionType.LOAN_PAYMENT
+    assert wallet.available_balance == Decimal("4000.00")
+
+
 def test_admin_decides_credit_application(db_session):
     user = _create_user(db_session)
     service = CreditService(db_session)
@@ -710,6 +826,120 @@ def test_create_loan_endpoint_creates_installments(client, db_session):
     assert len(installments) == 12
     assert installments[0]["payment_amount"] == "878.69"
     assert installments[-1]["remaining_principal"] == "0.00"
+
+
+def test_early_repayment_simulation_endpoint_returns_contract(client, db_session):
+    user = _create_user(db_session)
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    loan = service.create_loan_from_application(user.id, application.id)
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "credit-owner@example.com", "password": "Sup3rSecret!"},
+    )
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.post(
+        f"/api/v1/credit/loans/{loan.id}/early-repayment-simulation",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"extra_payment_amount": "1000.00"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["loan_id"] == str(loan.id)
+    assert body["currency"] == "RON"
+    assert body["original_outstanding_principal"] == "10000.00"
+    assert body["extra_payment_amount"] == "1000.00"
+    assert body["applied_extra_payment_amount"] == "1000.00"
+    assert body["new_outstanding_principal"] == "9000.00"
+    assert body["remaining_term_months"] == 12
+    assert body["revised_term_months"] < body["remaining_term_months"]
+    assert body["term_months_reduced"] == body["remaining_term_months"] - body["revised_term_months"]
+
+
+def test_early_repayment_endpoint_pays_from_wallet(client, db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    loan = service.create_loan_from_application(user.id, application.id)
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "credit-owner@example.com", "password": "Sup3rSecret!"},
+    )
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.post(
+        f"/api/v1/credit/loans/{loan.id}/early-repayment",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"source_wallet_id": str(wallet.id), "amount": "1000.00"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["transaction_id"]
+    assert body["loan_id"] == str(loan.id)
+    assert body["loan_status"] == "ACTIVE"
+    assert body["applied_extra_payment_amount"] == "1000.00"
+    assert body["new_outstanding_principal"] == "9000.00"
+
+    db_session.refresh(wallet)
+    db_session.refresh(loan)
+    assert wallet.available_balance == Decimal("4000.00")
+    assert loan.outstanding_principal == Decimal("9000.00")
+
+
+def test_early_repayment_endpoint_records_source_debit_card(client, db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    debit_card = CardService(db_session).create_card(
+        user.id,
+        CardCreate(type="DEBIT", tier="REGULAR", default_wallet_id=wallet.id),
+    )
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    loan = service.create_loan_from_application(user.id, application.id)
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "credit-owner@example.com", "password": "Sup3rSecret!"},
+    )
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.post(
+        f"/api/v1/credit/loans/{loan.id}/early-repayment",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"source_wallet_id": str(wallet.id), "source_card_id": str(debit_card.id), "amount": "1000.00"},
+    )
+
+    assert response.status_code == 200
+    transaction = db_session.get(Transaction, UUID(response.json()["transaction_id"]))
+    assert transaction is not None
+    assert transaction.card_id == debit_card.id
+    assert transaction.source_wallet_id == wallet.id
 
 
 def test_admin_credit_application_endpoints_require_admin(client, db_session):

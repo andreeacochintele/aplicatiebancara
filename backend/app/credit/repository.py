@@ -4,7 +4,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.credit.models import CreditApplication, CreditProfile, CreditScoreHistory, Loan, LoanInstallment
+from app.credit.models import CreditApplication, CreditProfile, CreditScoreHistory, Loan, LoanInstallment, LoanPayment
 from app.supabase import is_supabase_session
 
 
@@ -91,6 +91,13 @@ class CreditRepository:
         self.db.add_all(installments)
         self.db.flush()
         return installments
+
+    def add_loan_payment(self, payment: LoanPayment) -> LoanPayment:
+        if is_supabase_session(self.db):
+            return self.db.add(payment)
+        self.db.add(payment)
+        self.db.flush()
+        return payment
 
     def get_loan_by_id(self, loan_id: uuid.UUID) -> Loan | None:
         if is_supabase_session(self.db):

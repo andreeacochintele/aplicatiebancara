@@ -95,6 +95,36 @@ class LoanCalculatorResult(BaseModel):
     schedule: list[LoanInstallmentPreview]
 
 
+class EarlyRepaymentSimulationRequest(BaseModel):
+    extra_payment_amount: Decimal
+
+
+class EarlyRepaymentPaymentRequest(BaseModel):
+    source_wallet_id: uuid.UUID
+    amount: Decimal
+    source_card_id: uuid.UUID | None = None
+
+
+class EarlyRepaymentResult(BaseModel):
+    loan_id: uuid.UUID
+    currency: str
+    original_outstanding_principal: Decimal
+    extra_payment_amount: Decimal
+    applied_extra_payment_amount: Decimal
+    new_outstanding_principal: Decimal
+    remaining_term_months: int
+    revised_term_months: int
+    term_months_reduced: int
+    total_interest_before: Decimal
+    total_interest_after: Decimal
+    total_interest_saved: Decimal
+
+
+class EarlyRepaymentPaymentResult(EarlyRepaymentResult):
+    transaction_id: uuid.UUID
+    loan_status: LoanStatus
+
+
 class LoanPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
