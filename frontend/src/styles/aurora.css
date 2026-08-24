@@ -283,20 +283,35 @@
 
 .aurora-wallet-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+/* Fixed column counts (not auto-fill) on purpose: with 1fr tracks, a
+   partial last row keeps each card at its normal width and just leaves
+   the remaining columns empty, instead of stretching to fill the row. */
+@media (max-width: 1180px) {
+  .aurora-wallet-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .aurora-wallet-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .aurora-wallet-card {
   position: relative;
   overflow: hidden;
   background:
-    linear-gradient(165deg, color-mix(in srgb, var(--wallet-accent, var(--aurora-accent)) 10%, transparent), transparent 60%),
+    linear-gradient(165deg, color-mix(in srgb, var(--wallet-accent, var(--aurora-accent)) 18%, transparent), transparent 68%),
     var(--aurora-surface);
-  border: 1px solid var(--aurora-border);
+  border: 1px solid color-mix(in srgb, var(--wallet-accent, var(--aurora-border)) 40%, var(--aurora-border));
   border-radius: var(--aurora-radius-md);
   box-shadow: var(--aurora-shadow);
-  padding: 18px 18px 14px;
+  padding: 24px 24px 18px;
 }
 
 .aurora-wallet-card::before {
@@ -305,7 +320,7 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 4px;
+  height: 6px;
   background: var(--wallet-accent, var(--aurora-gradient));
 }
 
@@ -314,13 +329,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 18px;
 }
 
 .aurora-wallet-card__code {
   font-family: "Manrope", sans-serif;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 16px;
   letter-spacing: 0.02em;
   color: var(--wallet-accent, var(--aurora-text));
 }
@@ -328,16 +343,16 @@
 .aurora-wallet-card__amount {
   font-family: "Manrope", sans-serif;
   font-weight: 800;
-  font-size: 27px;
+  font-size: 32px;
   letter-spacing: -0.01em;
   color: var(--aurora-text);
 }
 
 .aurora-wallet-card__sub {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--aurora-text-soft);
-  margin-top: 3px;
-  margin-bottom: 14px;
+  margin-top: 4px;
+  margin-bottom: 16px;
 }
 
 .aurora-wallet-card__footer {
