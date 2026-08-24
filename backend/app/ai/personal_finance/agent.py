@@ -19,6 +19,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
+from app.ai.observability import log_debug, timed_event
 from app.ai.personal_finance import tools
 from app.ai.tools.base import ToolContext, ToolDataUnavailableError
 
@@ -70,16 +71,19 @@ def _select_tool(message: str) -> str:
 
 def _explain(message: str, data_summary: str) -> str:
     client = get_azure_foundry_client()
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": f"User asked: {message}\n\nData:\n{data_summary}"},
+    ]
+    log_debug("llm_call.request", agent="personal_finance", messages=messages)
     # No temperature override: this GPT-5-mini deployment is a reasoning
     # model that only accepts the default (1) — confirmed live, see
     # azure_foundry_client.py's module docstring.
-    response = client.chat_completion(
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": f"User asked: {message}\n\nData:\n{data_summary}"},
-        ],
-    )
-    return response.choices[0].message.content.strip()
+    with timed_event("llm_call", agent="personal_finance"):
+        response = client.chat_completion(messages=messages)
+    content = response.choices[0].message.content.strip()
+    log_debug("llm_call.response", agent="personal_finance", content=content)
+    return content
 
 
 def _wallet_balances(ctx: ToolContext) -> str:

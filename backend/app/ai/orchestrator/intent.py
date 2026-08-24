@@ -10,6 +10,7 @@ the Fraud Investigation Agent is out of scope for this orchestrator.
 from enum import Enum
 
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
+from app.ai.observability import log_debug, log_event, timed_event
 
 _SYSTEM_PROMPT = (
     "You are the intent classifier for a banking assistant. Classify the "
@@ -41,17 +42,22 @@ def classify_intent(message: str) -> IntentCategory:
     turns it into a 503).
     """
     client = get_azure_foundry_client()
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": message},
+    ]
+    log_debug("llm_call.request", agent="orchestrator", messages=messages)
     # No temperature override: this GPT-5-mini deployment is a reasoning
     # model that only accepts the default (1) — confirmed live, see
     # azure_foundry_client.py's module docstring.
-    response = client.chat_completion(
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": message},
-        ],
-    )
+    with timed_event("llm_call", agent="orchestrator"):
+        response = client.chat_completion(messages=messages)
     raw = response.choices[0].message.content.strip().lower()
-    return _parse_category(raw)
+    log_debug("llm_call.response", agent="orchestrator", content=raw)
+
+    category = _parse_category(raw)
+    log_event("intent_classified", intent=category.value, confidence="n/a")
+    return category
 
 
 def _parse_category(raw: str) -> IntentCategory:

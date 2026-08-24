@@ -33,6 +33,48 @@ ai/
                         # each agent's own tools.py wraps that agent's backend services
 ```
 
+## Watching the orchestration flow live
+
+Every chat request logs one line per step — request received, intent
+classified, agent dispatched, each tool call, each LLM call, final
+response — tagged with a short per-request `correlation_id` (see
+`observability.py`). Format is a single grep-friendly line, not JSON:
+
+```
+[a1b2c3d4] event=request_received user_id=8cd73020… message_length=42
+[a1b2c3d4] event=intent_classified intent=personal_finance confidence=n/a
+[a1b2c3d4] event=agent_dispatched agent=personal_finance intent=personal_finance
+[a1b2c3d4] event=tool_call tool=get_wallet_balances duration_ms=4.1 status=ok
+[a1b2c3d4] event=llm_call agent=personal_finance duration_ms=612.3 status=ok
+[a1b2c3d4] event=final_response intent=personal_finance duration_ms=618.9
+```
+
+Watch it live while testing manually from the UI:
+
+```bash
+docker compose logs backend -f
+```
+
+Isolate one conversation — the `correlation_id` is also returned in the
+chat response body (`OrchestratorChatResponse.correlation_id`), so you can
+copy it from there (or from the log line itself) and filter:
+
+```bash
+docker compose logs backend -f | grep a1b2c3d4          # bash
+docker compose logs backend -f | Select-String a1b2c3d4  # PowerShell
+```
+
+Filter by event type across all conversations the same way, e.g.
+`grep event=tool_call` or `Select-String "event=tool_call"`.
+
+Full LLM prompt/response bodies are logged separately at DEBUG (not INFO,
+since they're verbose) — set `AI_LOG_LEVEL=DEBUG` in the environment to
+see them; default is INFO.
+
+`confidence=n/a` on `intent_classified` isn't a bug — `classify_intent()`
+only returns a category today, no confidence score, so this is logged
+honestly rather than inventing one.
+
 ## Non-negotiable rules (architecture.md §28, §33, §44)
 
 1. **Agents never access the database directly.** Flow is always

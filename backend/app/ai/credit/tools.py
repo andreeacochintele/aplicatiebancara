@@ -21,6 +21,7 @@ import re
 from decimal import Decimal, InvalidOperation
 
 from app.ai.credit.schemas import EarlyRepaymentSimulation
+from app.ai.observability import log_tool_call
 from app.ai.tools.base import ToolContext
 from app.core.exceptions import ValidationError
 from app.credit.models import LoanInstallmentStatus, LoanStatus
@@ -30,15 +31,18 @@ from app.credit.service import CreditService
 _NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 
+@log_tool_call
 def get_credit_score(ctx: ToolContext) -> CreditScorePublic:
     return CreditService(ctx.db).get_score(ctx.user_id)
 
 
+@log_tool_call
 def get_loan_details(ctx: ToolContext) -> list[LoanPublic]:
     loans = CreditService(ctx.db).list_loans(ctx.user_id)
     return [LoanPublic.model_validate(loan) for loan in loans]
 
 
+@log_tool_call
 def calculate_monthly_payment(ctx: ToolContext) -> list[LoanPublic]:
     """The user's current fixed monthly payment per active loan — already
     computed and stored at loan creation (Loan.monthly_payment), not
@@ -46,6 +50,7 @@ def calculate_monthly_payment(ctx: ToolContext) -> list[LoanPublic]:
     return [loan for loan in get_loan_details(ctx) if loan.status == LoanStatus.ACTIVE]
 
 
+@log_tool_call
 def get_remaining_principal(ctx: ToolContext) -> list[LoanPublic]:
     """Loan.outstanding_principal per active loan — maintained by
     CreditService as payments are made, not recalculated here."""
@@ -68,6 +73,7 @@ def extract_amount(message: str) -> Decimal | None:
     return max(candidates) if candidates else None
 
 
+@log_tool_call
 def simulate_early_repayment(ctx: ToolContext, extra_payment_amount: Decimal) -> EarlyRepaymentSimulation | None:
     """Best-effort approximation — credit/service.py has no
     simulate_early_repayment() yet. Builds the closest sound estimate from

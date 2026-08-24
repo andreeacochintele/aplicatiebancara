@@ -667,4 +667,5 @@ export type OrchestratorIntent = "personal_finance" | "credit" | "support" | "gr
 export interface OrchestratorChatResponse {
   intent: OrchestratorIntent;
   reply: string;
+  correlation_id: string;
 }

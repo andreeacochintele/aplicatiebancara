@@ -12,6 +12,7 @@ docstrings below for exactly what's missing.
 """
 from datetime import datetime, timezone
 
+from app.ai.observability import log_tool_call
 from app.ai.tools.base import ToolContext, ToolDataUnavailableError
 from app.analytics.schemas import ForecastResponse, SpendingByTypeResponse
 from app.analytics.service import AnalyticsService
@@ -27,11 +28,13 @@ from app.wallets.schemas import WalletPublic
 from app.wallets.service import WalletService
 
 
+@log_tool_call
 def get_transactions(ctx: ToolContext) -> list[TransactionPublic]:
     transactions = TransactionService(ctx.db).list_for_user(ctx.user_id)
     return [TransactionPublic.model_validate(t) for t in transactions]
 
 
+@log_tool_call
 def get_spending_by_category(ctx: ToolContext) -> SpendingByTypeResponse:
     """Closest real substitute for "by category": `transaction_categories`
     (Payments/Dev2 module) doesn't exist yet, so this groups the current
@@ -43,6 +46,7 @@ def get_spending_by_category(ctx: ToolContext) -> SpendingByTypeResponse:
     return AnalyticsService(ctx.db).spending_by_type(ctx.user_id, now.year, now.month)
 
 
+@log_tool_call
 def get_monthly_income(ctx: ToolContext) -> None:
     """GAP — not implemented on purpose, see agent.py README/report.
 
@@ -61,6 +65,7 @@ def get_monthly_income(ctx: ToolContext) -> None:
     )
 
 
+@log_tool_call
 def get_recurring_payments(ctx: ToolContext) -> None:
     """GAP — not implemented on purpose, see agent.py README/report.
 
@@ -75,19 +80,23 @@ def get_recurring_payments(ctx: ToolContext) -> None:
     )
 
 
+@log_tool_call
 def get_wallet_balances(ctx: ToolContext) -> list[WalletPublic]:
     wallets = WalletService(ctx.db).list_wallets(ctx.user_id)
     return [WalletPublic.model_validate(w) for w in wallets]
 
 
+@log_tool_call
 def get_budgets(ctx: ToolContext) -> list[BudgetPublic]:
     return BudgetService(ctx.db).list_budgets(ctx.user_id)
 
 
+@log_tool_call
 def get_savings_goals(ctx: ToolContext) -> list[SavingsGoalPublic]:
     return SavingsService(ctx.db).list_goals(ctx.user_id)
 
 
+@log_tool_call
 def get_cashback_offers(ctx: ToolContext) -> list[MerchantPublic]:
     """MerchantService has no dedicated "list all offers" method — offers
     are embedded per-merchant (`MerchantPublic.active_offer`) by
@@ -97,6 +106,7 @@ def get_cashback_offers(ctx: ToolContext) -> list[MerchantPublic]:
     return [merchant for merchant in merchants if merchant.active_offer is not None]
 
 
+@log_tool_call
 def forecast_month_end_balance(ctx: ToolContext) -> ForecastResponse:
     """Reuses analytics/service.py's forecast as-is (wallet_ledger_entries
     based, ignores HOLD/RELEASE, already carries its own "simplified"

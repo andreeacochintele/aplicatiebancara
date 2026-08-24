@@ -11,3 +11,4 @@ class OrchestratorChatRequest(BaseModel):
 class OrchestratorChatResponse(BaseModel):
     intent: IntentCategory
     reply: str
+    correlation_id: str

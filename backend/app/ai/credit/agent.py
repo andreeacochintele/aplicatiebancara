@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
 from app.ai.credit import tools
+from app.ai.observability import log_debug, timed_event
 from app.ai.tools.base import ToolContext
 from app.core.exceptions import ValidationError
 
@@ -81,13 +82,16 @@ def _select_tool(message: str) -> str:
 
 def _explain(message: str, data_summary: str) -> str:
     client = get_azure_foundry_client()
-    response = client.chat_completion(
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": f"User asked: {message}\n\nData:\n{data_summary}"},
-        ],
-    )
-    return response.choices[0].message.content.strip()
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": f"User asked: {message}\n\nData:\n{data_summary}"},
+    ]
+    log_debug("llm_call.request", agent="credit", messages=messages)
+    with timed_event("llm_call", agent="credit"):
+        response = client.chat_completion(messages=messages)
+    content = response.choices[0].message.content.strip()
+    log_debug("llm_call.response", agent="credit", content=content)
+    return content
 
 
 def _credit_score(ctx: ToolContext) -> str:

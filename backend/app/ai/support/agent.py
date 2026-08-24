@@ -19,6 +19,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
+from app.ai.observability import log_debug, timed_event
 
 _KNOWLEDGE_DIR = Path(__file__).parent / "knowledge"
 
@@ -62,10 +63,13 @@ def handle(message: str, user_id: uuid.UUID, db: Session) -> str:
 
 def _explain(message: str) -> str:
     client = get_azure_foundry_client()
-    response = client.chat_completion(
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": message},
-        ],
-    )
-    return response.choices[0].message.content.strip()
+    messages = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": message},
+    ]
+    log_debug("llm_call.request", agent="support", messages=messages)
+    with timed_event("llm_call", agent="support"):
+        response = client.chat_completion(messages=messages)
+    content = response.choices[0].message.content.strip()
+    log_debug("llm_call.response", agent="support", content=content)
+    return content
