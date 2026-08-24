@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.ai.orchestrator import models as ai_orchestrator_models  # noqa: F401
 from app.auth import models as auth_models  # noqa: F401
 from app.budgets import models as budgets_models  # noqa: F401
 from app.cards import models as cards_models  # noqa: F401

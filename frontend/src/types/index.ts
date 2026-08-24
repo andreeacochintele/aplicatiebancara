@@ -338,6 +338,26 @@ export interface LoanCalculatorResult {
   schedule: LoanInstallmentPreview[];
 }
 
+export interface EarlyRepaymentResult {
+  loan_id: string;
+  currency: string;
+  original_outstanding_principal: string;
+  extra_payment_amount: string;
+  applied_extra_payment_amount: string;
+  new_outstanding_principal: string;
+  remaining_term_months: number;
+  revised_term_months: number;
+  term_months_reduced: number;
+  total_interest_before: string;
+  total_interest_after: string;
+  total_interest_saved: string;
+}
+
+export interface EarlyRepaymentPaymentResult extends EarlyRepaymentResult {
+  transaction_id: string;
+  loan_status: Loan["status"];
+}
+
 export interface Loan {
   id: string;
   user_id: string;
@@ -660,4 +680,12 @@ export interface FraudCaseDetail extends FraudCaseSummary {
   transaction_currency: string;
   transaction_description: string | null;
   transaction_created_at: string;
+}
+
+export type OrchestratorIntent = "personal_finance" | "credit" | "support" | "greeting" | "out_of_scope";
+
+export interface OrchestratorChatResponse {
+  intent: OrchestratorIntent;
+  reply: string;
+  correlation_id: string;
 }

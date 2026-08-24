@@ -5,6 +5,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app.ai.orchestrator import models as ai_orchestrator_models  # noqa: F401
 from app.auth import models as auth_models  # noqa: F401
 from app.cards import models as cards_models  # noqa: F401
 from app.config import get_settings

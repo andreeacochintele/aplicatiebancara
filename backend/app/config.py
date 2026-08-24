@@ -26,10 +26,12 @@ class Settings(BaseSettings):
     # CORS
     FRONTEND_ORIGIN: str = "http://localhost:5173"
 
-    # Azure AI Foundry (GPT-5-mini) — optional, AI features degrade gracefully if unset
+    # Azure AI Foundry (GPT-5-mini) — optional, AI features degrade gracefully if unset.
+    # Not actually read from here: app/ai/client/config.py has its own settings class
+    # for the AI client. Declared here too only so `extra="ignore"` isn't relied on
+    # for these specific names.
     AZURE_OPENAI_ENDPOINT: str | None = None
     AZURE_OPENAI_API_KEY: str | None = None
-    AZURE_OPENAI_API_VERSION: str | None = None
     AZURE_OPENAI_DEPLOYMENT_NAME: str | None = None
 
     # Supabase REST (optional tooling path when direct Postgres ports are blocked)

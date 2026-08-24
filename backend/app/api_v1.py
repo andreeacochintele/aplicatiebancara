@@ -1,6 +1,7 @@
 """Aggregates every module's router under a single /api/v1 prefix."""
 from fastapi import APIRouter
 
+from app.ai.orchestrator.router import router as ai_orchestrator_router
 from app.analytics.router import router as analytics_router
 from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
@@ -47,3 +48,6 @@ api_router.include_router(budgets_router)
 api_router.include_router(savings_router)
 api_router.include_router(audit_router)
 api_router.include_router(business_router)
+
+# Phase 5 AI (in progress) — orchestrator only; specialized agents are stubs
+api_router.include_router(ai_orchestrator_router)

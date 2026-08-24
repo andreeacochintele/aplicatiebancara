@@ -1111,6 +1111,7 @@ th {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 320px));
   justify-content: center;
+  align-items: start;
   gap: 1rem;
 }
 
@@ -1318,6 +1319,7 @@ th {
 .card-panel {
   display: grid;
   gap: 0.7rem;
+  align-self: start;
   width: 100%;
   max-width: 320px;
   min-width: 0;
@@ -1697,6 +1699,18 @@ th {
   line-height: 1.35;
 }
 
+.card-panel__control-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  width: 100%;
+  align-items: stretch;
+}
+
+.card-panel__control-row--single {
+  grid-template-columns: 1fr;
+}
+
 .card-panel__details-toggle {
   display: grid;
   grid-template-columns: minmax(78px, auto) 18px;
@@ -1712,6 +1726,7 @@ th {
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text);
+  font-size: 0.82rem;
   line-height: 1;
   font-weight: 800;
   white-space: nowrap;
@@ -1732,6 +1747,7 @@ th {
   border-radius: var(--radius-sm);
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(236, 72, 153, 0.1));
   color: var(--color-accent-strong);
+  font-size: 0.82rem;
   font-weight: 900;
   line-height: 1;
   white-space: nowrap;
@@ -2633,6 +2649,107 @@ th {
   gap: 0.65rem;
 }
 
+.early-repayment-card {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.early-repayment-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.early-repayment-card__top strong {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--color-text);
+  font-size: 0.95rem;
+}
+
+.early-repayment-card__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(116px, auto);
+  gap: 0.55rem;
+  align-items: end;
+}
+
+.early-repayment-card__form label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.early-repayment-card__form button {
+  min-height: 44px;
+}
+
+.early-repayment-card__simulate {
+  justify-self: start;
+  width: auto;
+  min-width: 104px;
+  min-height: 36px;
+  padding: 0.42rem 0.8rem;
+}
+
+.early-repayment-card__result {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.early-repayment-card__result div {
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.early-repayment-card__result span {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.early-repayment-card__result strong {
+  display: block;
+  margin-top: 0.18rem;
+  color: var(--color-text);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
+.early-repayment-card__error {
+  margin: 0;
+  color: #8a3412;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.early-repayment-card__source-balance,
+.early-repayment-card__message {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.early-repayment-card__message {
+  color: #166534;
+}
+
 .approved-offer-card__figures {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3029,6 +3146,15 @@ th {
 
   .loan-product-callouts {
     grid-template-columns: 1fr;
+  }
+
+  .early-repayment-card__form,
+  .early-repayment-card__result {
+    grid-template-columns: 1fr;
+  }
+
+  .early-repayment-card__top {
+    flex-direction: column;
   }
 
   .down-payment-breakdown {
