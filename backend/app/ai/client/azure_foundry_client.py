@@ -34,6 +34,7 @@ from functools import lru_cache
 from typing import Any, Iterable
 
 from app.ai.client.config import AzureAIFoundrySettings, get_azure_ai_foundry_settings
+from app.ai.observability import record_usage
 
 
 class AzureFoundryNotConfiguredError(RuntimeError):
@@ -74,11 +75,16 @@ class AzureFoundryClient:
         `temperature`) so agent code doesn't need its own transport logic.
         """
         client = self._get_client()
-        return client.chat.completions.create(
+        response = client.chat.completions.create(
             model=self._settings.AZURE_OPENAI_DEPLOYMENT_NAME,
             messages=list(messages),
             **kwargs,
         )
+        # Reports token usage to ai/observability.py's llm_call log event —
+        # see record_usage()'s docstring for why this lives here rather than
+        # at every call site.
+        record_usage(getattr(response, "usage", None))
+        return response
 
 
 @lru_cache

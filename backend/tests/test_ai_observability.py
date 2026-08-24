@@ -1,4 +1,5 @@
 import logging
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,6 +10,7 @@ from app.ai.observability import (
     log_event,
     log_tool_call,
     new_correlation_id,
+    record_usage,
     timed_event,
 )
 from app.ai.tools.base import ToolContext
@@ -112,3 +114,61 @@ def test_log_tool_call_preserves_the_wrapped_function_name_and_docstring():
 
     assert a_documented_tool.__name__ == "a_documented_tool"
     assert a_documented_tool.__doc__ == "A docstring."
+
+
+# ---- token usage: reported via record_usage() (called by
+# azure_foundry_client.py, not asserted here — see test_ai_client.py),
+# consumed by timed_event()'s own "llm_call" success path ----
+
+
+def test_timed_event_llm_call_attaches_token_usage_when_recorded(caplog):
+    bind_correlation_id("u1")
+    usage = SimpleNamespace(prompt_tokens=23, completion_tokens=141)
+    with caplog.at_level(logging.INFO, logger="app.ai"):
+        with timed_event("llm_call", agent="credit"):
+            record_usage(usage)
+
+    record = caplog.records[-1]
+    assert record.fields["prompt_tokens"] == 23
+    assert record.fields["completion_tokens"] == 141
+    # unrelated existing fields are untouched
+    assert record.fields["status"] == "ok"
+    assert record.fields["agent"] == "credit"
+
+
+def test_timed_event_llm_call_without_a_recorded_usage_omits_token_fields(caplog):
+    bind_correlation_id("u2")
+    with caplog.at_level(logging.INFO, logger="app.ai"):
+        with timed_event("llm_call", agent="support"):
+            pass
+
+    record = caplog.records[-1]
+    assert "prompt_tokens" not in record.fields
+    assert "completion_tokens" not in record.fields
+
+
+def test_timed_event_non_llm_call_events_never_get_token_fields_even_if_usage_was_recorded(caplog):
+    bind_correlation_id("u3")
+    record_usage(SimpleNamespace(prompt_tokens=1, completion_tokens=2))
+    with caplog.at_level(logging.INFO, logger="app.ai"):
+        with timed_event("tool_call", tool="get_credit_score"):
+            pass
+
+    record = caplog.records[-1]
+    assert "prompt_tokens" not in record.fields
+    assert "completion_tokens" not in record.fields
+
+
+def test_timed_event_clears_stale_usage_from_an_earlier_block(caplog):
+    bind_correlation_id("u4")
+    with timed_event("llm_call", agent="credit"):
+        record_usage(SimpleNamespace(prompt_tokens=99, completion_tokens=99))
+    # A second, unrelated llm_call block that never records its own usage
+    # must not inherit the first block's leftover value.
+    with caplog.at_level(logging.INFO, logger="app.ai"):
+        with timed_event("llm_call", agent="support"):
+            pass
+
+    record = caplog.records[-1]
+    assert "prompt_tokens" not in record.fields
+    assert "completion_tokens" not in record.fields
