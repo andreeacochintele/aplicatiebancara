@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from openai import APIConnectionError
 
 from app.ai.client.azure_foundry_client import AzureFoundryNotConfiguredError
-from app.ai.credit.agent import handle as credit_handle
+from app.ai.credit import agent as credit_agent
 from app.ai.orchestrator import router as orchestrator_router
 from app.ai.orchestrator import service as orchestrator_service
 from app.ai.orchestrator.intent import IntentCategory, _parse_category
@@ -35,14 +35,12 @@ def test_registry_has_no_fraud_entry_and_exactly_the_three_routable_agents():
     }
 
 
-def test_remaining_agent_stubs_return_a_mock_string_reply(db_session):
-    # personal_finance is fully implemented now (see test_ai_personal_finance_agent.py) —
-    # only credit/support are still plain stubs here.
-    user_id = uuid.uuid4()
-    for handle in (credit_handle, support_handle):
-        reply = handle("any message", user_id, db_session)
-        assert isinstance(reply, str)
-        assert reply
+def test_remaining_agent_stub_returns_a_mock_string_reply(db_session):
+    # personal_finance and credit are fully implemented now (see their own
+    # test files) — only support is still a plain stub here.
+    reply = support_handle("any message", uuid.uuid4(), db_session)
+    assert isinstance(reply, str)
+    assert reply
 
 
 def test_chat_propagates_azure_not_configured_instead_of_swallowing_it(db_session, monkeypatch):
@@ -78,11 +76,12 @@ def test_chat_answers_out_of_scope_directly_without_touching_the_registry(db_ses
     [IntentCategory.PERSONAL_FINANCE, IntentCategory.CREDIT, IntentCategory.SUPPORT],
 )
 def test_chat_routes_each_routable_intent_to_its_agent_handler(db_session, monkeypatch, intent):
-    # personal_finance's handle() makes its own azure_foundry_client call
-    # (see agent.py's _explain) — mocked here too so this stays a routing
-    # test, not a live-network test; test_ai_personal_finance_agent.py
-    # covers that call's own behavior.
+    # personal_finance's and credit's handle() each make their own
+    # azure_foundry_client call (see their agent.py's _explain) — mocked
+    # here too so this stays a routing test, not a live-network test;
+    # their own test files cover that call's behavior.
     monkeypatch.setattr(personal_finance_agent, "_explain", lambda message, data_summary: "mocked explanation")
+    monkeypatch.setattr(credit_agent, "_explain", lambda message, data_summary: "mocked explanation")
     monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message: intent)
     response = OrchestratorService(db_session).chat(uuid.uuid4(), "some message")
     assert response.intent == intent

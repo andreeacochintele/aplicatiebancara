@@ -1,7 +1,7 @@
 # AI module
 
-Phase 5 (Agentic AI). The Orchestrator and the Personal Finance Agent are
-implemented; Credit and Support are still stubs, Fraud is untouched/out of
+Phase 5 (Agentic AI). The Orchestrator, Personal Finance Agent, and Credit
+Agent are implemented; Support is still a stub, Fraud is untouched/out of
 scope for the orchestrator.
 
 ## Constraint: single model, single provider
@@ -25,7 +25,7 @@ ai/
 ├── client/           # shared Azure AI Foundry GPT-5-mini client (implemented)
 ├── orchestrator/      # intent routing (single-agent routing only)
 ├── personal_finance/  # implemented — spending/budgets/savings/cashback/forecast
-├── credit/             # stub agent — future: credit score explanation, early repayment
+├── credit/             # implemented — score/loans/payment/principal/early-repayment (approx.)
 ├── support/            # stub agent — general account/app help (not in architecture.md)
 ├── fraud/               # future: fraud case investigation support (untouched, out of scope)
 └── tools/              # base.py: shared ToolContext/ToolDataUnavailableError contract —
