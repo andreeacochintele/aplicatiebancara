@@ -4,6 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.audit.service import AuditService
 from app.auth.dependencies import get_current_user, require_admin
 from app.core.exceptions import ValidationError
 from app.credit.models import CreditApplicationType
@@ -164,7 +165,17 @@ def review_document(
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> CreditDocumentPublic:
-    document = CreditService(db).review_document(document_id, admin.id, payload)
+    service = CreditService(db)
+    old_status = service.repository.get_document_by_id(document_id).status.value
+    document = service.review_document(document_id, admin.id, payload)
+    AuditService(db).log_action(
+        admin.id,
+        action=payload.status.value,
+        entity_type="CREDIT_DOCUMENT",
+        entity_id=document.id,
+        old_data={"status": old_status},
+        new_data={"status": document.status.value},
+    )
     db.commit()
     return document
 
@@ -177,7 +188,16 @@ def decide_application(
     db: Session = Depends(get_db),
 ) -> CreditApplicationPublic:
     service = CreditService(db)
-    service.decide_application(application_id, payload, admin_id=admin.id)
+    old_status = service.repository.get_application_by_id(application_id).status.value
+    application = service.decide_application(application_id, payload, admin_id=admin.id)
+    AuditService(db).log_action(
+        admin.id,
+        action=payload.status.value,
+        entity_type="CREDIT_APPLICATION",
+        entity_id=application.id,
+        old_data={"status": old_status},
+        new_data={"status": application.status.value},
+    )
     db.commit()
     return service.get_application_public(application_id)
 

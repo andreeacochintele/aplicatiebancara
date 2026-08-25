@@ -1,15 +1,20 @@
 """Backfill missing credit currency and loan dates.
 
-Revision ID: 0030_backfill_credit_currency_and_dates
+Revision ID: 0030_credit_currency_dates
 Revises: 0029_ai_conversation_messages
 Create Date: 2026-08-24
+
+Note: the revision id was shortened from
+0030_backfill_credit_currency_and_dates (39 chars) to fit Alembic's
+default alembic_version.version_num column (varchar(32)) -- the same
+truncation failure this project's history has already hit more than once.
 """
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0030_backfill_credit_currency_and_dates"
+revision: str = "0030_credit_currency_dates"
 down_revision: Union[str, None] = "0029_ai_conversation_messages"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
