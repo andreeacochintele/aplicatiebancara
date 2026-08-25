@@ -1,10 +1,11 @@
 """Pydantic schemas for the fraud module."""
+import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.fraud.models import FraudCaseStatus, FraudFlagCode
 
@@ -27,6 +28,41 @@ class FraudCaseSummary(BaseModel):
     flag_codes: list[FraudFlagCode]
 
 
+class FraudRiskLevel(str, enum.Enum):
+    """The Fraud Investigation Agent's qualitative read on a case — a
+    separate concept from FraudFlagCode (which flags fired) and from
+    risk_score (the deterministic point total). Advisory only: never
+    written by anything except ai/fraud/agent.py, never read by
+    fraud/service.py's scoring logic."""
+
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
+class FraudAgentAnalysisPublic(BaseModel):
+    """The Fraud Investigation Agent's cached output for one case —
+    JSON-serialized into FraudCase.agent_analysis (see that column's
+    comment in fraud/models.py) and parsed back out by
+    FraudService.to_detail(). Advisory only; risk_score above is the
+    authoritative, unmodified deterministic score."""
+
+    risk_level: FraudRiskLevel
+    explanation: str
+    generated_at: datetime
+    summary: str | None = None
+    case_overview: dict = Field(default_factory=dict)
+    behavioral_analysis: dict = Field(default_factory=dict)
+    velocity_analysis: dict = Field(default_factory=dict)
+    merchant_analysis: dict = Field(default_factory=dict)
+    device_analysis: dict = Field(default_factory=dict)
+    historical_context: dict = Field(default_factory=dict)
+    suspicious_signals: list[str] = Field(default_factory=list)
+    reassuring_signals: list[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
+    recommended_checks: list[str] = Field(default_factory=list)
+
+
 class FraudCaseDetail(FraudCaseSummary):
     decided_by_admin_id: uuid.UUID | None
     decided_at: datetime | None
@@ -35,6 +71,7 @@ class FraudCaseDetail(FraudCaseSummary):
     transaction_currency: str
     transaction_description: str | None
     transaction_created_at: datetime
+    agent_analysis: FraudAgentAnalysisPublic | None = None
 
 
 class FraudDecisionRequest(BaseModel):

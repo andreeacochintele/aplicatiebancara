@@ -680,13 +680,33 @@ export type FraudFlagCode =
   | "HIGH_AMOUNT"
   | "UNUSUAL_COUNTRY"
   | "REWARD_ABUSE_PATTERN"
-  | "HIGH_VELOCITY";
+  | "HIGH_VELOCITY"
+  | "UNUSUAL_TIME";
 
 export interface FraudFlag {
   id: string;
   code: FraudFlagCode;
   points: string;
   description: string;
+}
+
+export type FraudRiskLevel = "LOW" | "MEDIUM" | "HIGH";
+
+export interface FraudAgentAnalysis {
+  risk_level: FraudRiskLevel;
+  explanation: string;
+  generated_at: string;
+  summary: string | null;
+  case_overview: Record<string, unknown>;
+  behavioral_analysis: Record<string, unknown>;
+  velocity_analysis: Record<string, unknown>;
+  merchant_analysis: Record<string, unknown>;
+  device_analysis: Record<string, unknown>;
+  historical_context: Record<string, unknown>;
+  suspicious_signals: string[];
+  reassuring_signals: string[];
+  data_gaps: string[];
+  recommended_checks: string[];
 }
 
 export interface FraudCaseSummary {
@@ -708,6 +728,7 @@ export interface FraudCaseDetail extends FraudCaseSummary {
   transaction_currency: string;
   transaction_description: string | null;
   transaction_created_at: string;
+  agent_analysis: FraudAgentAnalysis | null;
 }
 
 export type OrchestratorIntent = "personal_finance" | "credit" | "support" | "greeting" | "out_of_scope";
@@ -716,4 +737,24 @@ export interface OrchestratorChatResponse {
   intent: OrchestratorIntent;
   reply: string;
   correlation_id: string;
+  conversation_id: string;
+}
+
+export interface ConversationMessagePublic {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  agent_used: OrchestratorIntent | null;
+  created_at: string;
+}
+
+export interface ConversationPublic {
+  id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationSummary extends ConversationPublic {
+  last_message_preview: string | null;
 }

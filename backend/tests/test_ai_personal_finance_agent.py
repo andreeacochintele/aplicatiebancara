@@ -222,3 +222,9 @@ def test_system_prompt_instructs_answering_directly_without_asking_for_confirmat
 def test_system_prompt_still_allows_clarifying_questions_when_genuinely_ambiguous():
     lowered = agent._SYSTEM_PROMPT.lower()
     assert "genuinely ambiguous" in lowered
+
+
+def test_system_prompt_instructs_matching_the_users_language_defaulting_to_romanian():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "same language the user's message is written in" in lowered
+    assert "default to romanian" in lowered

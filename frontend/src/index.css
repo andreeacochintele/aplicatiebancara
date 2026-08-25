@@ -2818,9 +2818,157 @@ th {
   color: var(--color-text-muted);
 }
 
+.fraud-detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.85rem 0;
+}
+
+.fraud-detail-panel__top,
+.fraud-agent-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.fraud-detail-panel__top div,
+.fraud-agent-summary div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.fraud-detail-panel__top span,
+.fraud-agent-summary p,
+.fraud-analysis-empty {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+.fraud-review-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.fraud-review-button svg {
+  flex: 0 0 auto;
+}
+
+.fraud-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.fraud-analysis-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.fraud-analysis-block h4 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 0.82rem;
+}
+
+.fraud-rule-list,
+.fraud-signal-list {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.fraud-rule-list li,
+.fraud-signal-list li {
+  margin: 0.3rem 0;
+  color: var(--color-text);
+  font-size: 0.82rem;
+}
+
+.fraud-rule-list span {
+  margin-left: 0.35rem;
+  color: var(--color-warning);
+  font-weight: 800;
+}
+
+.fraud-rule-list p {
+  margin: 0.12rem 0 0;
+  color: var(--color-text-muted);
+}
+
+.fraud-signal-list--risk li::marker {
+  color: var(--color-warning);
+}
+
+.fraud-signal-list--good li::marker {
+  color: #3fbf7f;
+}
+
+.fraud-signal-list--gap li::marker {
+  color: var(--color-text-muted);
+}
+
+.fraud-signal-list--check li::marker {
+  color: var(--color-accent);
+}
+
+.fraud-agent-summary {
+  padding: 0.85rem;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+}
+
+.fraud-agent-summary strong {
+  color: var(--color-text);
+}
+
+.fraud-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+
+.fraud-metric-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.65rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.fraud-metric-grid span {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+}
+
+.fraud-metric-grid strong {
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font-size: 0.84rem;
+}
+
 @media (max-width: 680px) {
   .card-panel__meta {
     grid-template-columns: 1fr;
+  }
+
+  .fraud-detail-panel__top,
+  .fraud-agent-summary {
+    flex-direction: column;
   }
 }
 

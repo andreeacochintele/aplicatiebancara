@@ -9,18 +9,34 @@ to from the Orchestrator for the `support` intent (`registry.py`).
 ## Files
 
 ```
-knowledge/fraud_policy.md -> qualitative-only fraud-pattern knowledge, based
-                              on fraud/service.py's real flag categories but
-                              rewritten with NO numbers/weights/windows
-knowledge/app_faq.md      -> short, high-level description of what the app
-                              actually has (wallets, transactions, budgets,
-                              savings, rewards, credit, cards, notifications)
-agent.py                  -> handle(): loads both files as static system-
-                              prompt context, then one azure_foundry_client
-                              call. No tools — see agent.py's own docstring
-                              for why. No `temperature=` kwarg (this
-                              deployment 400s on non-default values).
+knowledge/fraud_policy.md         -> qualitative-only fraud-pattern knowledge,
+                                      based on fraud/service.py's real flag
+                                      categories but rewritten with NO
+                                      numbers/weights/windows, plus general
+                                      (also number-free) phishing/device-
+                                      security habits
+knowledge/app_faq.md              -> high-level description of what the app
+                                      actually has (wallets, transactions,
+                                      budgets, savings, rewards, credit,
+                                      cards, notifications)
+knowledge/security_and_privacy.md -> identity verification, opening an
+                                      account, personal data requests
+agent.py                          -> handle(): loads all three files as
+                                      static system-prompt context, then one
+                                      azure_foundry_client call. No tools —
+                                      see agent.py's own docstring for why.
+                                      No `temperature=` kwarg (this
+                                      deployment 400s on non-default values).
 ```
+
+`app_faq.md` and `security_and_privacy.md` were expanded from 22 general
+bank reference documents the user provided. Roughly a third of that
+material was dropped or corrected — it described features this app
+doesn't have (joint accounts, term deposits, formal account closure,
+card PIN mechanics, transfer cut-off times, SWIFT/instant-payment
+distinctions) or described a real feature wrongly (the source's "savings
+account" earns interest; this app's savings goals don't). See each
+knowledge file's own header for specifics.
 
 ## Zero financial-data access, by design
 

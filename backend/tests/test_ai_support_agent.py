@@ -13,24 +13,46 @@ from app.fraud.service import (
     FRAUD_SCORE_THRESHOLD,
     HIGH_AMOUNT_MULTIPLIER,
     HIGH_AMOUNT_MIN_HISTORY,
+    HIGH_AMOUNT_BASE_POINTS,
+    HIGH_AMOUNT_POINTS_PER_EXTRA_MULTIPLE,
+    HIGH_AMOUNT_MAX_POINTS,
     HIGH_VELOCITY_MIN_COUNT,
     HIGH_VELOCITY_WINDOW,
+    HIGH_VELOCITY_BASE_POINTS,
+    HIGH_VELOCITY_POINTS_PER_EXTRA,
+    HIGH_VELOCITY_MAX_POINTS,
     NEW_DEVICE_POINTS,
     REWARD_ABUSE_MIN_COUNT,
     REWARD_ABUSE_WINDOW,
+    REWARD_ABUSE_BASE_POINTS,
+    REWARD_ABUSE_POINTS_PER_EXTRA,
+    REWARD_ABUSE_MAX_POINTS,
     UNUSUAL_COUNTRY_POINTS,
-    HIGH_AMOUNT_POINTS,
-    REWARD_ABUSE_PATTERN_POINTS,
-    HIGH_VELOCITY_POINTS,
+    UNUSUAL_TIME_POINTS,
+    UNUSUAL_TIME_WINDOW_START_HOUR,
+    UNUSUAL_TIME_WINDOW_END_HOUR,
+    MULTI_FLAG_BONUS_PER_EXTRA_FLAG,
+    MULTI_FLAG_BONUS_MAX,
 )
 
 _REAL_FRAUD_NUMBERS = {
     str(FRAUD_SCORE_THRESHOLD),
     str(NEW_DEVICE_POINTS),
-    str(HIGH_AMOUNT_POINTS),
     str(UNUSUAL_COUNTRY_POINTS),
-    str(REWARD_ABUSE_PATTERN_POINTS),
-    str(HIGH_VELOCITY_POINTS),
+    str(HIGH_AMOUNT_BASE_POINTS),
+    str(HIGH_AMOUNT_POINTS_PER_EXTRA_MULTIPLE),
+    str(HIGH_AMOUNT_MAX_POINTS),
+    str(HIGH_VELOCITY_BASE_POINTS),
+    str(HIGH_VELOCITY_POINTS_PER_EXTRA),
+    str(HIGH_VELOCITY_MAX_POINTS),
+    str(REWARD_ABUSE_BASE_POINTS),
+    str(REWARD_ABUSE_POINTS_PER_EXTRA),
+    str(REWARD_ABUSE_MAX_POINTS),
+    str(UNUSUAL_TIME_POINTS),
+    str(UNUSUAL_TIME_WINDOW_START_HOUR),
+    str(UNUSUAL_TIME_WINDOW_END_HOUR),
+    str(MULTI_FLAG_BONUS_PER_EXTRA_FLAG),
+    str(MULTI_FLAG_BONUS_MAX),
     str(HIGH_AMOUNT_MULTIPLIER),
     str(HIGH_AMOUNT_MIN_HISTORY),
     str(HIGH_VELOCITY_MIN_COUNT),
@@ -54,9 +76,10 @@ def test_fraud_policy_knowledge_does_not_contain_any_real_fraud_engine_number():
         assert number not in agent._FRAUD_POLICY
 
 
-def test_system_prompt_includes_both_knowledge_files_verbatim():
+def test_system_prompt_includes_all_three_knowledge_files_verbatim():
     assert agent._FRAUD_POLICY in agent._SYSTEM_PROMPT
     assert agent._APP_FAQ in agent._SYSTEM_PROMPT
+    assert agent._SECURITY_AND_PRIVACY in agent._SYSTEM_PROMPT
 
 
 def test_system_prompt_forbids_numeric_fraud_details_and_specific_case_confirmation():
@@ -120,3 +143,41 @@ def test_system_prompt_instructs_answering_directly_without_asking_which_topic()
 def test_system_prompt_still_allows_clarifying_questions_when_genuinely_ambiguous():
     lowered = agent._SYSTEM_PROMPT.lower()
     assert "genuinely ambiguous between multiple different topics" in lowered
+
+
+def test_system_prompt_instructs_matching_the_users_language_defaulting_to_romanian():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "same language the user's message is written in" in lowered
+    assert "default to romanian" in lowered
+
+
+# ---- knowledge base curated from 22 user-provided bank reference docs: about
+# a third described features this app doesn't have, or described a real
+# feature incorrectly. These tests guard the corrections/omissions rather
+# than assuming the source material was accurate.
+
+
+def test_app_faq_does_not_claim_savings_goals_earn_interest():
+    # The source doc described an interest-bearing "savings account";
+    # this app's savings goals are a plain tracker with no interest.
+    lowered = agent._APP_FAQ.lower()
+    assert "doesn't accrue interest" in lowered or "does not accrue interest" in lowered
+    assert "earns interest" not in lowered and "earn interest" not in lowered
+
+
+def test_app_faq_does_not_describe_features_this_app_lacks():
+    # The file's own header legitimately names these (to explain what was
+    # excluded and why) — check only the content sections after it, so this
+    # test fails if one were ever actually *described* there, not merely
+    # mentioned as "we dropped this".
+    content_body = agent._APP_FAQ.split("## Wallets", 1)[1].lower()
+    for absent_feature in ("joint account", "term deposit", "swift", "cut-off"):
+        assert absent_feature not in content_body
+
+
+def test_security_and_privacy_forbids_collecting_sensitive_data_in_chat():
+    # Normalize the markdown's line-wrapping so a phrase isn't missed just
+    # because a `\n` happens to fall inside it.
+    flat = " ".join(agent._SECURITY_AND_PRIVACY.lower().split())
+    assert "cannot open an account" in flat
+    assert "collect identity documents" in flat

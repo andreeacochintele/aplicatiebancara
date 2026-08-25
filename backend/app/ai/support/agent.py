@@ -5,9 +5,23 @@ Unlike ai/personal_finance/agent.py and ai/credit/agent.py, there's nothing
 here to dispatch to a tool for: this agent never touches analytics/,
 budgets/, credit/, transactions/, or fraud/ data (deliberately — see
 knowledge/fraud_policy.md's header). Every reply is a single
-azure_foundry_client call grounded in two static markdown files loaded into
-the system prompt (knowledge/fraud_policy.md, knowledge/app_faq.md), not a
-tool call — so ai/tools/base.py's ToolContext isn't used here.
+azure_foundry_client call grounded in three static markdown files loaded
+into the system prompt (knowledge/fraud_policy.md, knowledge/app_faq.md,
+knowledge/security_and_privacy.md), not a tool call — so ai/tools/base.py's
+ToolContext isn't used here.
+
+knowledge/app_faq.md and knowledge/security_and_privacy.md were expanded
+from a set of 22 general bank reference documents the user provided.
+About a third of that source material described things this app doesn't
+actually implement (joint accounts, term deposits, a formal account-
+closure process, PIN-attempt mechanics, cut-off times, SWIFT/instant-
+payment distinctions) or described a real feature incorrectly (savings
+goals don't accrue interest — the source doc described a different,
+interest-bearing "savings account"). Those parts were dropped or
+corrected rather than imported as-is, since an assistant that confidently
+explains a feature the app doesn't have is worse than one that says
+less. See each knowledge file's own header for what was kept, dropped,
+or corrected and why.
 
 No `temperature=` kwarg: this GPT-5-mini deployment is a reasoning model
 that only accepts the default and 400s otherwise (see
@@ -33,6 +47,7 @@ def _load_knowledge(filename: str) -> str:
 
 _FRAUD_POLICY = _load_knowledge("fraud_policy.md")
 _APP_FAQ = _load_knowledge("app_faq.md")
+_SECURITY_AND_PRIVACY = _load_knowledge("security_and_privacy.md")
 
 _SYSTEM_PROMPT = f"""You are the Support Agent of a banking assistant chatbot. You answer \
 general questions about the app/account and general fraud-awareness questions, using only \
@@ -56,12 +71,17 @@ knowledge below, answer it right away — don't ask which topic they meant or \
 offer to explain something else first. Only ask a clarifying question if the \
 request is genuinely ambiguous between multiple different topics, or falls \
 outside the knowledge you're given.
+- Always respond in the same language the user's message is written in. If \
+the message is ambiguous or too short to tell, default to Romanian.
 
 --- Fraud awareness knowledge (qualitative only) ---
 {_FRAUD_POLICY}
 
 --- App FAQ knowledge ---
 {_APP_FAQ}
+
+--- Security & privacy knowledge (identity verification, account opening, personal data) ---
+{_SECURITY_AND_PRIVACY}
 """
 
 

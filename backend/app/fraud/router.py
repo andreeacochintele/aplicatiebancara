@@ -1,17 +1,20 @@
 """Admin fraud review endpoints (architecture.md §32).
 
-The Fraud Investigation Agent's POST /fraud/cases/{id}/investigate isn't
-added yet — it belongs with the rest of ai/* on feature/dev4/ai-agents,
-which doesn't exist yet either. Cases are scored and held automatically by
-FraudService.evaluate_transaction (called from
-TransactionService.create_card_payment); an admin only ever approves or
-rejects an already-created case here.
+Cases are scored and held automatically by FraudService.evaluate_transaction
+(called from TransactionService.create_card_payment); an admin approves or
+rejects an already-created case via /decision below — the Fraud
+Investigation Agent (ai/fraud/agent.py, triggered by /investigate) never
+makes or overrides that decision, it only adds an advisory qualitative
+read the admin can see alongside the unchanged deterministic risk_score.
+/investigate is on-demand only — nothing here calls it automatically when a
+case is created.
 """
 import uuid
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.ai.fraud import agent as fraud_investigation_agent
 from app.auth.dependencies import require_admin
 from app.database import get_db
 from app.fraud.schemas import FraudCaseDetail, FraudCaseSummary, FraudDecisionRequest
@@ -53,5 +56,24 @@ def decide_fraud_case(
         case = service.approve(case, admin)
     else:
         case = service.reject(case, admin)
+    db.commit()
+    return service.to_detail(case)
+
+
+@router.post("/cases/{case_id}/investigate", response_model=FraudCaseDetail)
+def investigate_fraud_case(
+    case_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> FraudCaseDetail:
+    """Runs the Fraud Investigation Agent for this case on demand and caches
+    its output on the case (FraudCase.agent_analysis) — never runs
+    automatically, never touches risk_score/status/the APPROVE-REJECT
+    decision. GET /cases/{case_id} returns whatever's cached here without
+    re-running the agent."""
+    service = FraudService(db)
+    case = service.get_case(case_id)
+    result = fraud_investigation_agent.investigate(case_id, db)
+    service.save_agent_analysis(case, result.risk_level, result.explanation, **result.analysis_sections())
     db.commit()
     return service.to_detail(case)

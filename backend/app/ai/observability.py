@@ -1,12 +1,14 @@
 """Structured, human-readable logging for the AI orchestration flow.
 
-Scope: ai/orchestrator/ and the three registered agents only — not fraud/,
-not anything outside ai/.
+Scope: ai/orchestrator/, the three orchestrator-registered agents, and
+ai/fraud/'s Fraud Investigation Agent (admin-triggered, not orchestrator-
+registered, but reuses this same module rather than inventing its own
+logging — see ai/fraud/agent.py). Not used outside ai/.
 
-One correlation_id per chat request, generated in
-ai/orchestrator/service.py and carried via a `contextvars.ContextVar`
-rather than threaded as an explicit parameter through every function
-signature. That keeps `ai/orchestrator/registry.py`'s `AgentHandler`
+One correlation_id per chat/investigation request, generated in
+ai/orchestrator/service.py (or ai/fraud/agent.py's investigate()) and
+carried via a `contextvars.ContextVar` rather than threaded as an explicit
+parameter through every function signature. That keeps `ai/orchestrator/registry.py`'s `AgentHandler`
 contract and every tool function's signature unchanged, so nothing that
 calls them — including existing tests — needs to change. Each request
 runs in its own copied context (FastAPI's `run_in_threadpool` copies the
@@ -147,18 +149,19 @@ def timed_event(event: str, **fields: Any) -> Iterator[None]:
 
 def log_tool_call(func: F) -> F:
     """Decorator for a tools.py function: logs event=tool_call with the
-    tool's name, its call arguments (everything except `ctx` — a
-    ToolContext isn't a meaningful thing to render, and correlation_id
-    already ties the line back to the request/user), how long it took,
-    and success/failure. Apply directly to each tool function definition
-    so tools.py's own call sites (and agent.py's dispatch) stay unchanged."""
+    tool's name, its call arguments (everything except `ctx`/`db` — a
+    ToolContext or raw Session isn't a meaningful thing to render, and
+    correlation_id already ties the line back to the request/user), how
+    long it took, and success/failure. Apply directly to each tool function
+    definition so tools.py's own call sites (and agent.py's dispatch) stay
+    unchanged."""
     signature = inspect.signature(func)
 
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
-        loggable_args = {name: value for name, value in bound.arguments.items() if name != "ctx"}
+        loggable_args = {name: value for name, value in bound.arguments.items() if name not in ("ctx", "db")}
         with timed_event("tool_call", tool=func.__name__, **loggable_args):
             return func(*args, **kwargs)
 
