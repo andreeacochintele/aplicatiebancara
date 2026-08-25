@@ -31,6 +31,7 @@ class FraudFlagCode(str, enum.Enum):
     UNUSUAL_COUNTRY = "UNUSUAL_COUNTRY"
     REWARD_ABUSE_PATTERN = "REWARD_ABUSE_PATTERN"
     HIGH_VELOCITY = "HIGH_VELOCITY"
+    UNUSUAL_TIME = "UNUSUAL_TIME"
 
 
 class FraudCase(Base):
@@ -52,8 +53,12 @@ class FraudCase(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Cache for the (not yet implemented) Fraud Investigation Agent's output —
-    # see feature/dev4/ai-agents. Unused until that lands.
+    # Cache for the Fraud Investigation Agent's output (ai/fraud/agent.py) —
+    # a FraudAgentAnalysisPublic (fraud/schemas.py), JSON-serialized. Written
+    # only by FraudService.save_agent_analysis(), only when an admin calls
+    # POST /fraud/cases/{id}/investigate — never automatically, never by
+    # evaluate_transaction(). Advisory only: this never feeds back into
+    # risk_score, which stays the sole deterministic/authoritative score.
     agent_analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     flags = relationship("FraudFlag", back_populates="case")

@@ -1,4 +1,5 @@
 """Pydantic schemas for the fraud module."""
+import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -27,6 +28,30 @@ class FraudCaseSummary(BaseModel):
     flag_codes: list[FraudFlagCode]
 
 
+class FraudRiskLevel(str, enum.Enum):
+    """The Fraud Investigation Agent's qualitative read on a case — a
+    separate concept from FraudFlagCode (which flags fired) and from
+    risk_score (the deterministic point total). Advisory only: never
+    written by anything except ai/fraud/agent.py, never read by
+    fraud/service.py's scoring logic."""
+
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
+class FraudAgentAnalysisPublic(BaseModel):
+    """The Fraud Investigation Agent's cached output for one case —
+    JSON-serialized into FraudCase.agent_analysis (see that column's
+    comment in fraud/models.py) and parsed back out by
+    FraudService.to_detail(). Advisory only; risk_score above is the
+    authoritative, unmodified deterministic score."""
+
+    risk_level: FraudRiskLevel
+    explanation: str
+    generated_at: datetime
+
+
 class FraudCaseDetail(FraudCaseSummary):
     decided_by_admin_id: uuid.UUID | None
     decided_at: datetime | None
@@ -35,6 +60,7 @@ class FraudCaseDetail(FraudCaseSummary):
     transaction_currency: str
     transaction_description: str | None
     transaction_created_at: datetime
+    agent_analysis: FraudAgentAnalysisPublic | None = None
 
 
 class FraudDecisionRequest(BaseModel):
