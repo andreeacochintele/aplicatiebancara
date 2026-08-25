@@ -23,8 +23,13 @@ def test_parse_category_matches_each_known_value():
         assert _parse_category(f"  {category.value}  ") == category
 
 
-def test_parse_category_falls_back_to_out_of_scope_on_unrecognized_text():
-    assert _parse_category("i have no idea what you mean") == IntentCategory.OUT_OF_SCOPE
+def test_parse_category_falls_back_to_support_on_unrecognized_text():
+    # A reply that names no known category is a parsing failure, not
+    # evidence the request is actually out of scope -- defaulting to
+    # support keeps an unrecognized reply generically helpful instead of a
+    # flat refusal (see intent.py's _parse_category and its regression test
+    # in test_ai_intent_classification.py for the live symptom this fixed).
+    assert _parse_category("i have no idea what you mean") == IntentCategory.SUPPORT
 
 
 def test_registry_has_no_fraud_entry_and_exactly_the_three_routable_agents():
