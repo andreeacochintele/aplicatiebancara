@@ -33,6 +33,9 @@ _SYSTEM_PROMPT = (
     "something works, what a feature does, or is a general/conceptual "
     "question, classify support — even if it mentions financial terms.\n"
     "\n"
+    "Users may write in Romanian as well as English — classify by meaning, "
+    "not by language; the same rules and category names apply either way.\n"
+    "\n"
     "Examples:\n"
     "'What is my wallet balance?' -> personal_finance (asking for their own real figure)\n"
     "'How do budgets work in this app?' -> support (asking how the feature works, not for their own data)\n"
@@ -42,6 +45,10 @@ _SYSTEM_PROMPT = (
     "'Do I have any cashback right now?' -> personal_finance\n"
     "'What counts as a transaction?' -> support\n"
     "'Show me my recent transactions' -> personal_finance\n"
+    "'Ce sold am?' (what's my balance?) -> personal_finance\n"
+    "'Cat am in cont?' (how much do I have in my account?) -> personal_finance\n"
+    "'Cum functioneaza bugetele?' (how do budgets work?) -> support\n"
+    "'Arata-mi cheltuielile din ultima luna' (show me last month's expenses) -> personal_finance\n"
     "\n"
     "Conversation history, if shown below, is ONLY there to help you resolve "
     "ambiguous references in the current message (e.g. 'that', 'it', 'the same "
@@ -105,4 +112,9 @@ def _parse_category(raw: str) -> IntentCategory:
     for category in IntentCategory:
         if category.value in raw:
             return category
-    return IntentCategory.OUT_OF_SCOPE
+    # A reply that doesn't contain any known category name is a parsing
+    # failure, not evidence the request is actually out of scope -- default
+    # to support instead of a flat refusal, so an unrecognized reply still
+    # gets a generically helpful response rather than turning away a
+    # possibly perfectly answerable banking question.
+    return IntentCategory.SUPPORT

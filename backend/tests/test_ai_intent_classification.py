@@ -105,3 +105,52 @@ def test_classify_intent_passes_reasoning_effort_minimal(monkeypatch):
     classify_intent("how do budgets work?")
 
     assert fake.last_kwargs["reasoning_effort"] == "minimal"
+
+
+# ---- Romanian misclassification found live: "reasoning_effort=minimal" was
+# only live-validated against English phrasings (the 4 canonical questions
+# in the task report above). Live-tested in Romanian after that change
+# shipped: "Ce sold am?" landed on support and "Cat am in cont?" landed on
+# out_of_scope (an outright refusal) -- both should be personal_finance.
+# Same two-layer approach as the English regression tests above: prompt
+# content + mocked-correct-answer plumbing, not a substitute for a live call.
+
+
+def test_system_prompt_says_to_classify_romanian_by_meaning():
+    lowered = intent._SYSTEM_PROMPT.lower()
+    assert "romanian" in lowered
+    assert "classify by meaning, not by language" in lowered
+
+
+def test_system_prompt_contains_the_romanian_examples():
+    assert "'Ce sold am?' (what's my balance?) -> personal_finance" in intent._SYSTEM_PROMPT
+    assert "'Cat am in cont?' (how much do I have in my account?) -> personal_finance" in intent._SYSTEM_PROMPT
+    assert "'Cum functioneaza bugetele?' (how do budgets work?) -> support" in intent._SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize(
+    "message, model_reply, expected",
+    [
+        ("Ce sold am?", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+        ("Cat am in cont?", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+        ("Cum functioneaza bugetele?", "support", IntentCategory.SUPPORT),
+        ("Arata-mi cheltuielile din ultima luna", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+    ],
+)
+def test_classify_intent_returns_the_correct_category_for_romanian_messages(
+    monkeypatch, message, model_reply, expected
+):
+    monkeypatch.setattr(intent, "get_azure_foundry_client", lambda: _FakeClient(model_reply))
+    assert classify_intent(message) == expected
+
+
+# ---- fallback on an unrecognized model reply: was OUT_OF_SCOPE (a flat
+# refusal), now SUPPORT (still tries to help) -- a reply that names no known
+# category is a parse failure, not evidence the request is actually out of
+# scope. Live-observed: "Cat am in cont?" produced a reply _parse_category
+# couldn't match, which is what surfaced this in the first place.
+
+
+def test_parse_category_defaults_to_support_on_unrecognized_reply(monkeypatch):
+    monkeypatch.setattr(intent, "get_azure_foundry_client", lambda: _FakeClient("¯\\_(ツ)_/¯"))
+    assert classify_intent("anything") == IntentCategory.SUPPORT

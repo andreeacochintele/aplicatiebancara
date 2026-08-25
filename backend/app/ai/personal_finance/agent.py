@@ -49,16 +49,28 @@ _SYSTEM_PROMPT = (
 
 # First keyword match wins; order encodes priority for overlapping words
 # (e.g. a "budget" question naming a "category" still routes to budgets).
+#
+# Keywords are English + Romanian (both with and without diacritics, since
+# real users type "cat"/"cheltuieli" without them) -- English-only keyword
+# lists here silently misrouted Romanian questions to _DEFAULT_TOOL instead
+# of failing loudly (e.g. "arata-mi cheltuielile" matched nothing and fell
+# through to wallet_balances). Live-verified after adding Romanian keywords.
 _DISPATCH: list[tuple[str, tuple[str, ...]]] = [
-    ("budgets", ("budget",)),
-    ("savings_goals", ("saving", "goal")),
-    ("cashback_offers", ("cashback", "offer", "discount")),
-    ("forecast", ("forecast", "end of month", "end-of-month", "project")),
-    ("income", ("income", "salary", "earn")),
-    ("recurring", ("recurring", "subscription")),
-    ("spending_by_type", ("spend", "spent", "spending", "expense", "category")),
-    ("transactions", ("transaction", "history")),
-    ("wallet_balances", ("balance", "wallet", "money", "how much")),
+    ("budgets", ("budget", "buget")),
+    ("savings_goals", ("saving", "goal", "econom", "obiectiv")),
+    ("cashback_offers", ("cashback", "offer", "discount", "reducer", "ofert")),
+    (
+        "forecast",
+        ("forecast", "end of month", "end-of-month", "project", "prognoz", "sfarsitul lunii", "sfârșitul lunii", "estima"),
+    ),
+    ("income", ("income", "salary", "earn", "venit", "salar", "castig", "câștig")),
+    ("recurring", ("recurring", "subscription", "recurent", "abonament")),
+    (
+        "spending_by_type",
+        ("spend", "spent", "spending", "expense", "category", "cheltui", "categorie"),
+    ),
+    ("transactions", ("transaction", "history", "tranzact", "tranzacț", "istoric")),
+    ("wallet_balances", ("balance", "wallet", "money", "how much", "sold", "cont", "bani", "cat am", "cât am")),
 ]
 _DEFAULT_TOOL = "wallet_balances"
 

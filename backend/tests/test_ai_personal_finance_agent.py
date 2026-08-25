@@ -49,6 +49,30 @@ def test_select_tool_matches_expected_keyword(message, expected_tool):
     assert agent._select_tool(message) == expected_tool
 
 
+@pytest.mark.parametrize(
+    "message, expected_tool",
+    [
+        ("Care e statusul bugetului meu?", "budgets"),
+        ("Cat mai am pana la obiectivul de economii?", "savings_goals"),
+        ("Am oferte de cashback acum?", "cashback_offers"),
+        ("Poti sa faci o prognoza pentru sfarsitul lunii?", "forecast"),
+        ("Care e venitul meu lunar?", "income"),
+        ("Am abonamente recurente?", "recurring"),
+        ("Cat am cheltuit luna asta?", "spending_by_type"),
+        ("Arata-mi istoricul tranzactiilor", "transactions"),
+        ("Care e soldul meu?", "wallet_balances"),
+        ("Cat am in cont?", "wallet_balances"),
+    ],
+)
+def test_select_tool_matches_expected_keyword_in_romanian(message, expected_tool):
+    """Regression test: these English-only keyword lists used to silently
+    fall through to wallet_balances for Romanian phrasing that didn't happen
+    to contain an English loanword -- live-observed with "arata-mi
+    cheltuielile din ultima luna" (asked for spending, got wallet balances
+    back instead, with no error)."""
+    assert agent._select_tool(message) == expected_tool
+
+
 def test_select_tool_falls_back_to_wallet_balances_by_default():
     assert agent._select_tool("hello there, banking assistant") == "wallet_balances"
 
