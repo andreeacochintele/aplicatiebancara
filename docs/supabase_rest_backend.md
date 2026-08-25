@@ -46,19 +46,24 @@ each stating which checkpoint it expects to start from. Check the highest
 `version_num` referenced across `supabase/sql/*.sql` to see where the shared
 database actually is before running anything new.
 
-As of `0030_fraud_unusual_time`: the last checkpoint any file reached was
-`0026_fraud_cases`. `supabase/sql/supabase_advance_to_0030_fraud_unusual_time.sql`
-carries it the rest of the way (credit_card_accounts, admin_audit_logs,
-ai_conversation_messages, and the fraud_flag_code UNUSUAL_TIME value) — run
-it after `supabase_fraud_cases.sql`.
+As of `0034_widen_alembic_version`: run
+`supabase/sql/supabase_advance_to_0034_widen_alembic_version.sql`. It's
+written to be safe from *any* prior state (every statement is idempotent —
+`IF NOT EXISTS`, or an `UPDATE ... WHERE` that only touches rows still
+needing it), so it doesn't matter which of the older per-migration files
+under `supabase/sql/` already ran on the shared project or not; just run
+this one file. It supersedes `supabase_advance_to_0029_ai_conversation_messages.sql`,
+`supabase_advance_to_0030_fraud_unusual_time.sql`, `supabase_ai_conversations.sql`,
+`supabase_credit_card_accounts_update.sql` and `supabase_credit_documents_update.sql`
+— those are kept for history but shouldn't be run on their own anymore (none
+of them advanced the version marker as far as `0030_credit_currency_dates`,
+which had no sync script at all until this one).
 
-As of `0031_ai_conversations`: run `supabase/sql/supabase_ai_conversations.sql`
-after the file above. It adds the `ai_conversations` table and backfills
-every existing `ai_conversation_messages` row into one "Legacy conversation"
-per user — it prints before/after row counts via `RAISE NOTICE` and aborts
-the whole transaction if anything doesn't match, since this is the one
-schema change so far that rewrites existing shared rows rather than only
-adding new ones.
+Also widens `alembic_version.version_num` to `varchar(255)` (was the
+default `varchar(32)`) — a merge-migration revision id has overflowed that
+column three separate times now (see `backend/migrations/versions/0034_widen_alembic_version_column.py`),
+so this removes the failure mode instead of relying on everyone remembering
+a 32-char naming limit.
 
 ## Seed Data
 

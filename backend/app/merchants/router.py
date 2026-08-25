@@ -4,6 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.audit.service import AuditService
 from app.auth.dependencies import get_current_user, require_admin
 from app.database import get_db
 from app.merchants.schemas import (
@@ -39,10 +40,17 @@ def get_merchant(
 @router.post("", response_model=MerchantPublic, status_code=201)
 def create_merchant(
     payload: MerchantCreate,
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> MerchantPublic:
     merchant = MerchantService(db).create_merchant(payload)
+    AuditService(db).log_action(
+        admin.id,
+        action="CREATE",
+        entity_type="MERCHANT",
+        entity_id=merchant.id,
+        new_data={"name": merchant.name, "category": merchant.category},
+    )
     db.commit()
     return merchant
 
@@ -51,10 +59,17 @@ def create_merchant(
 def create_cashback_offer(
     merchant_id: uuid.UUID,
     payload: CashbackOfferCreate,
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> CashbackOfferPublic:
     offer = MerchantService(db).create_cashback_offer(merchant_id, payload)
+    AuditService(db).log_action(
+        admin.id,
+        action="CREATE",
+        entity_type="CASHBACK_OFFER",
+        entity_id=offer.id,
+        new_data={"merchant_id": str(merchant_id), "cashback_percent": str(offer.cashback_percent)},
+    )
     db.commit()
     return offer
 

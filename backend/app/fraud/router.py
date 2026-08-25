@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.ai.fraud import agent as fraud_investigation_agent
+from app.audit.service import AuditService
 from app.auth.dependencies import require_admin
 from app.database import get_db
 from app.fraud.schemas import FraudCaseDetail, FraudCaseSummary, FraudDecisionRequest
@@ -52,10 +53,19 @@ def decide_fraud_case(
 ) -> FraudCaseDetail:
     service = FraudService(db)
     case = service.get_case(case_id)
+    old_status = case.status.value
     if payload.action == "APPROVE":
         case = service.approve(case, admin)
     else:
         case = service.reject(case, admin)
+    AuditService(db).log_action(
+        admin.id,
+        action=payload.action,
+        entity_type="FRAUD_CASE",
+        entity_id=case.id,
+        old_data={"status": old_status},
+        new_data={"status": case.status.value},
+    )
     db.commit()
     return service.to_detail(case)
 
