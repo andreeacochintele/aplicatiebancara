@@ -7,8 +7,8 @@ from app.ai.client.azure_foundry_client import AzureFoundryNotConfiguredError
 from app.ai.credit import agent, tools
 from app.ai.tools.base import ToolContext
 from app.core.exceptions import ValidationError
-from app.credit.models import LoanProductType
-from app.credit.schemas import CreditApplicationCreate, CreditScorePublic
+from app.credit.models import CreditApplicationStatus, LoanProductType
+from app.credit.schemas import CreditApplicationCreate, CreditApplicationDecision, CreditScorePublic
 from app.credit.service import CreditService
 from app.users.schemas import UserCreate
 from app.users.service import UserService
@@ -24,7 +24,7 @@ def seeded_user(db_session):
 @pytest.fixture()
 def seeded_loan(db_session, seeded_user):
     """A real, fully server-computed personal loan + installment schedule,
-    via the same application -> auto-approve -> create_loan flow the
+    via the same application -> admin approve -> create_loan flow the
     product uses (not hand-built rows) — so simulate_early_repayment()'s
     exact fields (Loan.monthly_payment, installment interest_amount) are
     genuinely Dev3's own numbers, not test fixtures pretending to be."""
@@ -39,7 +39,18 @@ def seeded_loan(db_session, seeded_user):
             requested_term_months=12,
         ),
     )
-    return service.create_loan_from_application(seeded_user.id, application.id)
+    service.decide_application(
+        admin_id=seeded_user.id,
+        application_id=application.id,
+        data=CreditApplicationDecision(
+            status=CreditApplicationStatus.APPROVED,
+            offered_amount=application.requested_amount,
+            offered_interest_rate=Decimal("9.90"),
+        ),
+    )
+    loan = service.repository.get_loan_by_application(application.id)
+    assert loan is not None
+    return loan
 
 
 # ---- _select_tool: keyword dispatch (pure function, no DB/LLM) ----
