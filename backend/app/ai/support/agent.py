@@ -71,6 +71,8 @@ knowledge below, answer it right away — don't ask which topic they meant or \
 offer to explain something else first. Only ask a clarifying question if the \
 request is genuinely ambiguous between multiple different topics, or falls \
 outside the knowledge you're given.
+- Always respond in the same language the user's message is written in. If \
+the message is ambiguous or too short to tell, default to Romanian.
 
 --- Fraud awareness knowledge (qualitative only) ---
 {_FRAUD_POLICY}

@@ -145,6 +145,12 @@ def test_system_prompt_still_allows_clarifying_questions_when_genuinely_ambiguou
     assert "genuinely ambiguous between multiple different topics" in lowered
 
 
+def test_system_prompt_instructs_matching_the_users_language_defaulting_to_romanian():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "same language the user's message is written in" in lowered
+    assert "default to romanian" in lowered
+
+
 # ---- knowledge base curated from 22 user-provided bank reference docs: about
 # a third described features this app doesn't have, or described a real
 # feature incorrectly. These tests guard the corrections/omissions rather

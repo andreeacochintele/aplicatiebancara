@@ -65,6 +65,56 @@ def test_chat_answers_out_of_scope_directly_without_touching_the_registry(db_ses
     assert response.reply
 
 
+# ---- greeting/out_of_scope reply language: cheap heuristic, no LLM call ----
+
+
+@pytest.mark.parametrize(
+    "message, expected",
+    [
+        ("salut", True),
+        ("Bună ziua!", True),
+        ("ce mai faci?", True),
+        ("mulțumesc", True),
+        ("hi there", False),
+        ("hello!", False),
+        ("thanks", False),
+        ("good morning", False),
+        ("😊", True),  # too short/ambiguous -> defaults to Romanian
+        ("asdkfj", True),  # no recognizable word either way -> defaults to Romanian
+    ],
+)
+def test_reply_in_romanian_heuristic(message, expected):
+    assert orchestrator_service._reply_in_romanian(message) == expected
+
+
+def test_chat_answers_greeting_in_romanian_for_a_romanian_message(db_session, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message, history=None: IntentCategory.GREETING)
+    response = OrchestratorService(db_session).chat(uuid.uuid4(), "Salut, ce faci?")
+    assert response.reply == orchestrator_service._GREETING_REPLY_RO
+
+
+def test_chat_answers_greeting_in_english_for_an_english_message(db_session, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message, history=None: IntentCategory.GREETING)
+    response = OrchestratorService(db_session).chat(uuid.uuid4(), "Hi there!")
+    assert response.reply == orchestrator_service._GREETING_REPLY_EN
+
+
+def test_chat_answers_out_of_scope_in_romanian_for_a_romanian_message(db_session, monkeypatch):
+    monkeypatch.setattr(
+        orchestrator_service, "classify_intent", lambda message, history=None: IntentCategory.OUT_OF_SCOPE
+    )
+    response = OrchestratorService(db_session).chat(uuid.uuid4(), "Scrie-mi o poezie")
+    assert response.reply == orchestrator_service._OUT_OF_SCOPE_REPLY_RO
+
+
+def test_chat_answers_out_of_scope_in_english_for_an_english_message(db_session, monkeypatch):
+    monkeypatch.setattr(
+        orchestrator_service, "classify_intent", lambda message, history=None: IntentCategory.OUT_OF_SCOPE
+    )
+    response = OrchestratorService(db_session).chat(uuid.uuid4(), "Please write me a poem")
+    assert response.reply == orchestrator_service._OUT_OF_SCOPE_REPLY_EN
+
+
 @pytest.mark.parametrize(
     "intent",
     [IntentCategory.PERSONAL_FINANCE, IntentCategory.CREDIT, IntentCategory.SUPPORT],
@@ -91,7 +141,7 @@ def test_chat_route_maps_azure_api_errors_to_a_clean_503_without_leaking_details
     # AzureFoundryNotConfiguredError (credentials missing entirely). Found via
     # a real E2E check against this env's .env, which has Azure configured
     # but pointing at a deployment that 404s.
-    def _raise_api_error(self, user_id, message):
+    def _raise_api_error(self, user_id, message, conversation_id=None):
         raise APIConnectionError(request=httpx.Request("POST", "https://example.invalid"))
 
     monkeypatch.setattr(OrchestratorService, "chat", _raise_api_error)

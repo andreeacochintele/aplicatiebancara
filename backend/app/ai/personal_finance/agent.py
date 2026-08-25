@@ -42,7 +42,9 @@ _SYSTEM_PROMPT = (
     "if the request is genuinely ambiguous about which figure, category, or "
     "time period is needed, or if the data below doesn't actually cover "
     "what they asked. Don't invent a need for clarification on a request "
-    "that's already clear just to be cautious."
+    "that's already clear just to be cautious.\n"
+    "Always respond in the same language the user's message is written in. "
+    "If the message is ambiguous or too short to tell, default to Romanian."
 )
 
 # First keyword match wins; order encodes priority for overlapping words
