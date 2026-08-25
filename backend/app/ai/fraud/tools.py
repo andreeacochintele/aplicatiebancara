@@ -64,3 +64,8 @@ def get_fraud_flags(db: Session, case_id: uuid.UUID) -> list[FraudFlagPublic]:
 @log_tool_call
 def get_user_spending_profile(db: Session, user_id: uuid.UUID) -> SpendingProfile:
     return FraudService(db).get_user_spending_profile(user_id)
+
+
+@log_tool_call
+def get_investigation_context(db: Session, case_id: uuid.UUID) -> dict:
+    return FraudService(db).build_investigation_context(case_id)

@@ -85,7 +85,13 @@ def test_flush_patches_again_after_a_second_real_change(session, record_requests
 
 
 def test_add_does_not_get_repatched_by_a_later_unrelated_flush(session, record_requests):
-    new_merchant = Merchant(id=uuid.uuid4(), name="Zara", category="Retail", status=MerchantStatus.ACTIVE, verified=True)
+    new_merchant = Merchant(
+        id=uuid.uuid4(),
+        name="Zara",
+        category="Retail",
+        status=MerchantStatus.ACTIVE,
+        verified=True,
+    )
 
     session.add(new_merchant)
     assert record_requests == [("POST", "merchants")]
@@ -93,6 +99,35 @@ def test_add_does_not_get_repatched_by_a_later_unrelated_flush(session, record_r
     session.flush()
 
     assert record_requests == [("POST", "merchants")]  # still just the one POST, no follow-up PATCH
+
+
+def test_fetching_an_added_row_reuses_the_tracked_instance(session, record_bodies):
+    """Regression test for write-then-read flows such as card payments.
+
+    A transaction is inserted, fraud scoring reads recent transactions, and
+    then the original transaction is marked COMPLETED/PENDING_REVIEW. The
+    read must not replace the tracked object, or flush() loses the later
+    status update.
+    """
+    merchant_id = uuid.uuid4()
+    new_merchant = Merchant(
+        id=merchant_id,
+        name="Cinema City",
+        category="Entertainment",
+        status=MerchantStatus.ACTIVE,
+    )
+
+    session.add(new_merchant)
+    fetched = session._hydrate(Merchant, _merchant_row(merchant_id))
+
+    assert fetched is new_merchant
+
+    new_merchant.verified = True
+    session.flush()
+
+    method, table, body = record_bodies[-1]
+    assert (method, table) == ("PATCH", "merchants")
+    assert body["verified"] is True
 
 
 @pytest.fixture()

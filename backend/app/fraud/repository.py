@@ -45,6 +45,12 @@ class FraudRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def list_for_user(self, user_id: uuid.UUID) -> list[FraudCase]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(FraudCase, {"user_id": f"eq.{user_id}", "order": "created_at.desc"})
+        stmt = select(FraudCase).where(FraudCase.user_id == user_id).order_by(FraudCase.created_at.desc())
+        return list(self.db.scalars(stmt))
+
     def list_flags_for_case(self, case_id: uuid.UUID) -> list[FraudFlag]:
         if is_supabase_session(self.db):
             return self.db.fetch_many(FraudFlag, {"fraud_case_id": f"eq.{case_id}"})

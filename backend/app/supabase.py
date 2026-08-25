@@ -150,6 +150,12 @@ class SupabaseRestSession:
             for column in sa_inspect(model).columns
             if column.name in row
         }
+        primary_key = self._primary_key_name(model)
+        row_id = values.get(primary_key)
+        if row_id is not None:
+            tracked = self._tracked.get((self._table_name(model), str(row_id)))
+            if tracked is not None:
+                return tracked
         item = model(**values)
         self._track(item)
         return item

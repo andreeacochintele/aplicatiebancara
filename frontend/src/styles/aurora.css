@@ -1318,6 +1318,50 @@
   background: var(--aurora-red-soft);
 }
 
+.aurora-shell .fraud-analysis-block,
+.aurora-shell .fraud-metric-grid div {
+  border-color: var(--aurora-border);
+  background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .fraud-analysis-block h4,
+.aurora-shell .fraud-rule-list li,
+.aurora-shell .fraud-signal-list li,
+.aurora-shell .fraud-agent-summary strong,
+.aurora-shell .fraud-metric-grid strong {
+  color: var(--aurora-text);
+}
+
+.aurora-shell .fraud-detail-panel__top span,
+.aurora-shell .fraud-rule-list p,
+.aurora-shell .fraud-agent-summary p,
+.aurora-shell .fraud-analysis-empty,
+.aurora-shell .fraud-metric-grid span {
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .fraud-agent-summary {
+  border-color: var(--aurora-accent);
+  background: var(--aurora-accent-soft);
+}
+
+.aurora-shell .fraud-rule-list span,
+.aurora-shell .fraud-signal-list--risk li::marker {
+  color: var(--aurora-red);
+}
+
+.aurora-shell .fraud-signal-list--good li::marker {
+  color: var(--aurora-green);
+}
+
+.aurora-shell .fraud-signal-list--gap li::marker {
+  color: var(--aurora-text-faint);
+}
+
+.aurora-shell .fraud-signal-list--check li::marker {
+  color: var(--aurora-accent);
+}
+
 .aurora-shell .beneficiary-row {
   border-radius: var(--aurora-radius-sm);
 }

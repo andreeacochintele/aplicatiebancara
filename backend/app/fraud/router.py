@@ -74,6 +74,6 @@ def investigate_fraud_case(
     service = FraudService(db)
     case = service.get_case(case_id)
     result = fraud_investigation_agent.investigate(case_id, db)
-    service.save_agent_analysis(case, result.risk_level, result.explanation)
+    service.save_agent_analysis(case, result.risk_level, result.explanation, **result.analysis_sections())
     db.commit()
     return service.to_detail(case)

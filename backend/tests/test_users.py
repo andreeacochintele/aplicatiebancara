@@ -1,8 +1,11 @@
+import uuid
+
+import pytest
+
+from app.auth.models import UserDevice, UserSession
 from app.core.exceptions import ConflictError
 from app.users.schemas import UserCreate
 from app.users.service import UserService
-
-import pytest
 
 
 def _user_create(**overrides) -> UserCreate:
@@ -49,6 +52,58 @@ def test_register_endpoint(client):
     body = response.json()
     assert body["user"]["email"] == "register@example.com"
     assert "access_token" in body["tokens"]
+
+
+def test_register_endpoint_attaches_a_default_session_device(client, db_session):
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "device-register@example.com",
+            "phone": "+40733333337",
+            "password": "Sup3rSecret!",
+            "first_name": "Ana",
+            "last_name": "Ionescu",
+        },
+    )
+
+    assert response.status_code == 201
+    user_id = uuid.UUID(response.json()["user"]["id"])
+    session = db_session.query(UserSession).filter(UserSession.user_id == user_id).one()
+    device = db_session.query(UserDevice).filter(UserDevice.user_id == user_id).one()
+
+    assert session.device_id == device.id
+    assert device.device_type == "browser"
+    assert device.trusted is False
+
+
+def test_second_login_promotes_the_default_device_to_trusted(client, db_session):
+    """The auto-created device stays untrusted only on its first-ever
+    appearance; a later login reusing it means it's not new anymore, or the
+    fraud engine's NEW_DEVICE flag would fire on every payment forever."""
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "device-trust@example.com",
+            "phone": "+40733333338",
+            "password": "Sup3rSecret!",
+            "first_name": "Ana",
+            "last_name": "Ionescu",
+        },
+    )
+    user_id = uuid.UUID(register.json()["user"]["id"])
+    first_device = db_session.query(UserDevice).filter(UserDevice.user_id == user_id).one()
+    assert first_device.trusted is False
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "device-trust@example.com", "password": "Sup3rSecret!"},
+    )
+    assert login.status_code == 200
+
+    db_session.refresh(first_device)
+    devices = db_session.query(UserDevice).filter(UserDevice.user_id == user_id).all()
+    assert len(devices) == 1  # same placeholder row reused, not a second device
+    assert first_device.trusted is True
 
 
 def test_register_with_referral_code_credits_the_referrer(client):

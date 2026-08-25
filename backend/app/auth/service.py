@@ -5,12 +5,14 @@ import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.models import SessionStatus, UserSession
+from app.auth.models import SessionStatus, UserDevice, UserSession
 from app.config import get_settings
 from app.core.exceptions import AuthenticationError
 from app.core.security import create_access_token, create_refresh_token, verify_password
+from app.supabase import is_supabase_session
 from app.users.models import User
 from app.users.repository import UserRepository
 from app.users.schemas import UserCreate
@@ -39,6 +41,9 @@ class AuthService:
         return user
 
     def issue_tokens(self, user: User, device_id: uuid.UUID | None = None) -> tuple[str, str]:
+        if device_id is None:
+            device_id = self._get_or_create_default_device(user).id
+
         access_token = create_access_token(str(user.id))
         refresh_token = create_refresh_token(str(user.id))
 
@@ -52,3 +57,48 @@ class AuthService:
         self.db.add(session)
         self.db.flush()
         return access_token, refresh_token
+
+    def _get_or_create_default_device(self, user: User) -> UserDevice:
+        # A device is only genuinely "new" the first time it's ever seen —
+        # every login after that reuses this same placeholder row (there's
+        # no real per-browser fingerprinting here), so once we've seen it
+        # again it's a returning session, not a new one. Without this,
+        # trusted stayed False forever (nothing else in the app ever sets
+        # it True) and the fraud engine's NEW_DEVICE flag fired on every
+        # single card payment for every user.
+        now = datetime.now(timezone.utc)
+        if is_supabase_session(self.db):
+            devices = self.db.fetch_many(
+                UserDevice,
+                {"user_id": f"eq.{user.id}", "order": "last_seen_at.desc", "limit": "1"},
+            )
+            if devices:
+                device = devices[0]
+                device.last_seen_at = now
+                device.trusted = True
+                self.db.flush()
+                return device
+        else:
+            device = self.db.scalar(
+                select(UserDevice)
+                .where(UserDevice.user_id == user.id)
+                .order_by(UserDevice.last_seen_at.desc())
+                .limit(1)
+            )
+            if device is not None:
+                device.last_seen_at = now
+                device.trusted = True
+                self.db.flush()
+                return device
+
+        device = UserDevice(
+            user_id=user.id,
+            device_name="Web browser",
+            device_type="browser",
+            browser="Unknown",
+            operating_system="Unknown",
+            trusted=False,
+        )
+        self.db.add(device)
+        self.db.flush()
+        return device

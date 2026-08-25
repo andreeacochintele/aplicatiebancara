@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.fraud.models import FraudCaseStatus, FraudFlagCode
 
@@ -50,6 +50,17 @@ class FraudAgentAnalysisPublic(BaseModel):
     risk_level: FraudRiskLevel
     explanation: str
     generated_at: datetime
+    summary: str | None = None
+    case_overview: dict = Field(default_factory=dict)
+    behavioral_analysis: dict = Field(default_factory=dict)
+    velocity_analysis: dict = Field(default_factory=dict)
+    merchant_analysis: dict = Field(default_factory=dict)
+    device_analysis: dict = Field(default_factory=dict)
+    historical_context: dict = Field(default_factory=dict)
+    suspicious_signals: list[str] = Field(default_factory=list)
+    reassuring_signals: list[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
+    recommended_checks: list[str] = Field(default_factory=list)
 
 
 class FraudCaseDetail(FraudCaseSummary):

@@ -30,8 +30,11 @@ azure_foundry_client, structured logging via ai/observability.py (see that
 module's docstring for why ai/fraud/ reuses it too).
 """
 import uuid
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -69,33 +72,74 @@ _RISK_LEVEL_PREFIX = "RISK_LEVEL:"
 class InvestigationResult:
     risk_level: FraudRiskLevel
     explanation: str
+    summary: str | None = None
+    case_overview: dict[str, Any] = field(default_factory=dict)
+    behavioral_analysis: dict[str, Any] = field(default_factory=dict)
+    velocity_analysis: dict[str, Any] = field(default_factory=dict)
+    merchant_analysis: dict[str, Any] = field(default_factory=dict)
+    device_analysis: dict[str, Any] = field(default_factory=dict)
+    historical_context: dict[str, Any] = field(default_factory=dict)
+    suspicious_signals: list[str] = field(default_factory=list)
+    reassuring_signals: list[str] = field(default_factory=list)
+    data_gaps: list[str] = field(default_factory=list)
+    recommended_checks: list[str] = field(default_factory=list)
+
+    def analysis_sections(self) -> dict[str, Any]:
+        return {
+            "summary": self.summary,
+            "case_overview": self.case_overview,
+            "behavioral_analysis": self.behavioral_analysis,
+            "velocity_analysis": self.velocity_analysis,
+            "merchant_analysis": self.merchant_analysis,
+            "device_analysis": self.device_analysis,
+            "historical_context": self.historical_context,
+            "suspicious_signals": self.suspicious_signals,
+            "reassuring_signals": self.reassuring_signals,
+            "data_gaps": self.data_gaps,
+            "recommended_checks": self.recommended_checks,
+        }
 
 
 def investigate(case_id: uuid.UUID, db: Session) -> InvestigationResult:
     bind_correlation_id(new_correlation_id())
     log_event("fraud_investigation.started", case_id=str(case_id))
 
-    case = tools.get_case(db, case_id)
-    transaction = tools.get_transaction(db, case.transaction_id)
-    history = tools.get_user_transaction_history(db, case.user_id)
-    devices = tools.get_known_devices(db, case.user_id)
-    recent_activity = tools.get_recent_activity(db, case.user_id)
-    flags = tools.get_fraud_flags(db, case_id)
-    profile = tools.get_user_spending_profile(db, case.user_id)
-
-    context = _format_context(case, transaction, history, devices, recent_activity, flags, profile)
+    investigation_context = tools.get_investigation_context(db, case_id)
+    context = _format_context(investigation_context)
     reply = _explain(context)
     result = _parse_reply(reply)
+    result.summary = _summary_from_explanation(result.explanation)
+    result.case_overview = investigation_context["case_overview"]
+    result.behavioral_analysis = investigation_context["behavioral_analysis"]
+    result.velocity_analysis = investigation_context["velocity_analysis"]
+    result.merchant_analysis = investigation_context["merchant_analysis"]
+    result.device_analysis = investigation_context["device_analysis"]
+    result.historical_context = investigation_context["historical_context"]
+    result.suspicious_signals = investigation_context["suspicious_signals"]
+    result.reassuring_signals = investigation_context["reassuring_signals"]
+    result.data_gaps = investigation_context["data_gaps"]
+    result.recommended_checks = investigation_context["recommended_checks"]
 
     log_event("fraud_investigation.completed", case_id=str(case_id), risk_level=result.risk_level.value)
     return result
 
 
-def _format_context(case, transaction, history, devices, recent_activity, flags, profile) -> str:
+def _format_context(
+    case,
+    transaction=None,
+    history=None,
+    devices=None,
+    recent_activity=None,
+    flags=None,
+    profile=None,
+) -> str:
     """Deterministic, LLM-free formatting of everything the tools returned —
     same principle as ai/credit/agent.py's summarizers: the model explains
     data that's already been assembled here, it never recomputes or is
     trusted to transcribe figures itself."""
+    if isinstance(case, dict) and transaction is None:
+        return json.dumps(case, default=_json_default, indent=2, sort_keys=True)
+
     lines = [
         f"Deterministic risk_score (authoritative, not to be second-guessed): {case.risk_score}",
         f"Case status: {case.status.value}, hold amount: {case.hold_amount} {transaction.currency if transaction else ''}",
@@ -170,3 +214,23 @@ def _parse_reply(reply: str) -> InvestigationResult:
 
     explanation = "\n".join(explanation_lines).strip()
     return InvestigationResult(risk_level=risk_level, explanation=explanation)
+
+
+def _summary_from_explanation(explanation: str) -> str | None:
+    text = " ".join(line.strip() for line in explanation.splitlines() if line.strip())
+    if not text:
+        return None
+    first_sentence = text.split(". ", 1)[0].strip()
+    return first_sentence if first_sentence.endswith(".") else f"{first_sentence}."
+
+
+def _json_default(value):
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    return str(value)

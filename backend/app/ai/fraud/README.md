@@ -1,48 +1,57 @@
-# Fraud Investigation Agent (implemented — Phase 5)
+# Fraud Investigation Agent
 
-**Not one of the orchestrator's agents.** Not registered in
-`ai/orchestrator/registry.py`, no route a regular user can ever reach. Its
-only entry point is the admin-only `POST /fraud/cases/{id}/investigate`
-(`fraud/router.py`), triggered on demand by an admin reviewing one
-specific case — never automatically when a case is created.
+The Fraud Investigation Agent is advisory-only and admin-triggered. It is not
+registered in `ai/orchestrator/registry.py`, has no route reachable by a
+regular user, and never runs automatically when a fraud case is created.
 
-## What it does, and doesn't, do
+## Workflow
 
-- Reads a case's real data (the deterministic `risk_score` and flags,
-  the transaction, the user's broader transaction history/recent
-  activity/spending profile/known devices) through the read-only tools in
-  `tools.py`.
-- Produces a qualitative `risk_level` (LOW/MEDIUM/HIGH — `fraud/schemas.py
-  FraudRiskLevel`, a separate concept from `FraudFlagCode`) plus a short,
-  data-grounded explanation.
-- **Never modifies `FraudCase.risk_score` or `.status`.** The deterministic
-  score from `fraud/service.py` stays authoritative; this agent's output
-  is advisory, displayed alongside it. The admin still makes the actual
-  APPROVE/REJECT decision via the existing `/decision` endpoint —
-  untouched by this agent.
-- Its system prompt explicitly forbids a definitive fraud/not-fraud
-  verdict — only relative risk framing grounded in cited data points.
+1. A card payment is created by `TransactionService.create_card_payment()`.
+2. `FraudService.evaluate_transaction()` computes deterministic flags and a
+   deterministic `risk_score`.
+3. If the score crosses the threshold, the transaction is moved to
+   `PENDING_REVIEW`, the money is put on wallet `HOLD`, and a `FraudCase` plus
+   `FraudFlag` rows are created.
+4. The admin dashboard lists pending cases from `GET /fraud/cases`.
+5. Expanding a case loads `GET /fraud/cases/{id}`. This returns deterministic
+   case details and any cached `agent_analysis`.
+6. An admin may call `POST /fraud/cases/{id}/investigate`. This runs
+   `ai/fraud/agent.py` on demand.
+7. The agent calls `tools.get_investigation_context()`, which delegates to
+   `FraudService.build_investigation_context()`.
+8. The service builds deterministic evidence: case overview, behavioral
+   baselines, velocity windows, merchant context, device context, historical
+   fraud context, suspicious signals, reassuring signals, data gaps, and manual
+   review checks.
+9. The LLM receives that evidence pack and only writes a qualitative explanation
+   plus `RISK_LEVEL: LOW|MEDIUM|HIGH`.
+10. `FraudService.save_agent_analysis()` caches the advisory result as JSON in
+    `FraudCase.agent_analysis`.
+11. `GET /fraud/cases/{id}` returns the cached review without rerunning the LLM.
+12. The admin still decides through `POST /fraud/cases/{id}/decision`.
 
-## Files
+## Authority Boundary
 
-```
-tools.py -> 7 read-only tools, each wrapping FraudService or
-            TransactionRepository. Unlike the other three agents' tools,
-            these take explicit ids (case_id/transaction_id/user_id)
-            rather than a fixed ToolContext — there's no "current user"
-            here, an admin is investigating someone else's case.
-agent.py -> investigate(case_id, db): calls all 7 tools, formats their
-            output into a deterministic text summary (no LLM involved in
-            assembling the facts), one azure_foundry_client call for the
-            qualitative read, then parses a "RISK_LEVEL: X" line back out
-            of the reply. No `temperature=` kwarg — this deployment 400s
-            on anything but the default (see azure_foundry_client.py).
-```
+- The agent never modifies `FraudCase.risk_score`.
+- The agent never modifies `FraudCase.status`.
+- The agent never approves or rejects a case.
+- The agent never creates ledger entries or changes wallet balances.
+- The deterministic fraud engine and the human admin remain authoritative.
 
-## Storage: `FraudCase.agent_analysis`
+## Data Boundary
 
-The column already existed (added with `fraud_cases` in PR #32,
-unused until now). `FraudService.save_agent_analysis()` JSON-serializes
-a `FraudAgentAnalysisPublic` into it; `FraudService.to_detail()` parses it
-back out. `GET /fraud/cases/{id}` returns whatever's cached there without
-re-running the agent — only `POST /investigate` ever calls this agent.
+The investigation context uses only fields already present in the backend:
+transactions, fraud cases, fraud flags, known devices, active-session device
+proxy, merchant metadata, and transaction history.
+
+Missing data is represented as `data_gaps`; it is not treated as suspicious
+evidence by itself. In particular, the current schema does not contain a real
+per-transaction device id, IP address, country, merchant geolocation, or
+impossible-travel signal.
+
+## Storage
+
+`FraudCase.agent_analysis` stores a JSON-serialized
+`FraudAgentAnalysisPublic`. The schema keeps the original fields
+`risk_level`, `explanation`, and `generated_at`, and adds optional structured
+sections for analyst review. This keeps older cached rows parseable.

@@ -173,6 +173,16 @@ def test_get_user_spending_profile_reuses_fraud_service(db_session, seeded_user)
     assert profile.average_card_payment_amount == Decimal("50.00")
 
 
+def test_get_investigation_context_reuses_fraud_service(db_session, seeded_user):
+    case = _blocked_case(db_session, seeded_user)
+
+    context = tools.get_investigation_context(db_session, case.id)
+
+    expected = FraudService(db_session).build_investigation_context(case.id)
+    assert context["case_overview"]["transaction_id"] == expected["case_overview"]["transaction_id"]
+    assert context["behavioral_analysis"]["amount_baseline"]["average_completed_card_payment"] == Decimal("50.00")
+
+
 # ---- agent._format_context: deterministic, LLM-free summary assembly ----
 
 
@@ -215,6 +225,18 @@ def test_format_context_handles_no_spending_history():
 
     assert "not enough history" in context
     assert "none on record" in context
+
+
+def test_format_context_serializes_structured_context():
+    context = agent._format_context(
+        {
+            "case_overview": {"deterministic_risk_score": Decimal("74.75")},
+            "generated_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+        }
+    )
+
+    assert '"deterministic_risk_score": "74.75"' in context
+    assert "2026-01-01T00:00:00+00:00" in context
 
 
 # ---- agent._parse_reply: pure function, extracts RISK_LEVEL + explanation ----
@@ -262,6 +284,9 @@ def test_investigate_calls_all_tools_and_returns_parsed_result(db_session, seede
     assert result.risk_level == FraudRiskLevel.HIGH
     assert "elevated risk" in result.explanation.lower()
     assert str(case.risk_score) in captured["context"]
+    assert result.case_overview["deterministic_risk_score"] == Decimal("74.75")
+    assert result.summary == "Elevated risk due to a new device and a high-value payment."
+    assert result.suspicious_signals
 
 
 def test_investigate_propagates_azure_not_configured(db_session, seeded_user, monkeypatch):

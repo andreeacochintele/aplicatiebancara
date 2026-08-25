@@ -349,6 +349,22 @@ def test_list_pending_and_detail_expose_flags(db_session, seeded_user):
     assert len(detail.flags) == 2
 
 
+def test_build_investigation_context_exposes_structured_evidence(db_session, seeded_user):
+    _transaction, _wallet, _card, case = _create_blocked_payment(db_session, seeded_user)
+
+    context = FraudService(db_session).build_investigation_context(case.id)
+
+    assert context["case_overview"]["deterministic_risk_score"] == Decimal("74.75")
+    assert context["case_overview"]["transaction_amount"] == Decimal("500.00")
+    assert {flag["code"] for flag in context["case_overview"]["flags"]} == {"NEW_DEVICE", "HIGH_AMOUNT"}
+    assert context["behavioral_analysis"]["amount_baseline"]["average_completed_card_payment"] == Decimal("50.00")
+    assert context["behavioral_analysis"]["amount_baseline"]["amount_to_average_ratio"] == Decimal("10.0")
+    assert context["merchant_analysis"]["first_recorded_interaction"] is True
+    assert context["device_analysis"]["latest_active_device"]["trusted"] is False
+    assert any("NEW_DEVICE" in signal for signal in context["suspicious_signals"])
+    assert "No transaction category is available." in context["data_gaps"]
+
+
 # ---- proportional scaling: HIGH_AMOUNT points grow with how far over the
 # minimum trigger ratio the payment is, up to a cap ----
 
@@ -519,7 +535,12 @@ def test_investigate_endpoint_admin_triggers_agent_and_persists_analysis(client,
 
     def _fake_investigate(case_id, db):
         return fraud_agent_module.InvestigationResult(
-            risk_level=FraudRiskLevel.HIGH, explanation="Elevated risk: new device combined with a high-value payment."
+            risk_level=FraudRiskLevel.HIGH,
+            explanation="Elevated risk: new device combined with a high-value payment.",
+            summary="Elevated risk.",
+            case_overview={"deterministic_risk_score": Decimal("74.75")},
+            suspicious_signals=["NEW_DEVICE: Payment from an untrusted device"],
+            recommended_checks=["Confirm whether the latest active device belongs to the customer."],
         )
 
     monkeypatch.setattr(fraud_agent_module, "investigate", _fake_investigate)
@@ -533,6 +554,12 @@ def test_investigate_endpoint_admin_triggers_agent_and_persists_analysis(client,
     body = response.json()
     assert body["agent_analysis"]["risk_level"] == "HIGH"
     assert "elevated risk" in body["agent_analysis"]["explanation"].lower()
+    assert body["agent_analysis"]["summary"] == "Elevated risk."
+    assert body["agent_analysis"]["case_overview"]["deterministic_risk_score"] == "74.75"
+    assert body["agent_analysis"]["suspicious_signals"] == ["NEW_DEVICE: Payment from an untrusted device"]
+    assert body["agent_analysis"]["recommended_checks"] == [
+        "Confirm whether the latest active device belongs to the customer."
+    ]
     # risk_score/status are untouched by the agent — still the deterministic values.
     assert Decimal(body["risk_score"]) == case.risk_score
     assert body["status"] == "PENDING_REVIEW"

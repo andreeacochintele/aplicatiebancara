@@ -46,9 +46,11 @@ historical one, so it can't answer "where was transaction N-1 relative to
 transaction N".
 """
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -61,6 +63,7 @@ from app.core.exceptions import ConflictError, NotFoundError
 from app.fraud.models import FraudCase, FraudCaseStatus, FraudFlag, FraudFlagCode
 from app.fraud.repository import FraudRepository
 from app.fraud.schemas import FraudAgentAnalysisPublic, FraudCaseDetail, FraudCaseSummary, FraudFlagPublic, FraudRiskLevel
+from app.merchants.repository import MerchantRepository
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
 from app.users.models import User
@@ -185,6 +188,7 @@ class FraudService:
         self.transactions = TransactionRepository(db)
         self.wallets = WalletRepository(db)
         self.cards = CardRepository(db)
+        self.merchants = MerchantRepository(db)
 
     def evaluate_transaction(self, transaction: Transaction, wallet: Wallet) -> FraudDecision:
         flags: list[FlagHit] = []
@@ -258,18 +262,427 @@ class FraudService:
         devices = self.repository.list_devices_for_user(user_id)
         return sorted(devices, key=lambda device: device.last_seen_at, reverse=True)
 
-    def save_agent_analysis(self, case: FraudCase, risk_level: FraudRiskLevel, explanation: str) -> FraudCase:
+    def save_agent_analysis(
+        self,
+        case: FraudCase,
+        risk_level: FraudRiskLevel,
+        explanation: str,
+        **analysis_sections: Any,
+    ) -> FraudCase:
         """Persists the Fraud Investigation Agent's qualitative output onto
         FraudCase.agent_analysis (JSON-serialized). Advisory only — never
         touches risk_score or status. Called only from the admin-triggered
         POST /fraud/cases/{id}/investigate endpoint (ai/fraud/agent.py),
         never automatically."""
         payload = FraudAgentAnalysisPublic(
-            risk_level=risk_level, explanation=explanation, generated_at=datetime.now(timezone.utc)
+            risk_level=risk_level,
+            explanation=explanation,
+            generated_at=datetime.now(timezone.utc),
+            **analysis_sections,
         )
         case.agent_analysis = payload.model_dump_json()
         self.db.flush()
         return case
+
+    def build_investigation_context(self, case_id: uuid.UUID) -> dict[str, Any]:
+        """Read-only, deterministic evidence pack for an anti-fraud analyst.
+
+        The LLM may summarize this data, but it must not calculate these
+        values itself. Missing data is recorded as a data gap instead of being
+        treated as suspicious evidence.
+        """
+        case = self.get_case(case_id)
+        transaction = self.transactions.get_by_id(case.transaction_id)
+        if transaction is None:
+            raise NotFoundError("Fraud case transaction not found")
+
+        flags = self.repository.list_flags_for_case(case.id)
+        history = self.transactions.list_for_user(case.user_id, limit=100)
+        historical_transactions = [t for t in history if t.id != transaction.id]
+        completed_card_history = [
+            t
+            for t in historical_transactions
+            if t.type == TransactionType.CARD_PAYMENT and t.status == TransactionStatus.COMPLETED
+        ]
+        merchant = self.merchants.get_by_id(transaction.merchant_id) if transaction.merchant_id is not None else None
+        devices = self.get_known_devices(case.user_id)
+        current_device = self.repository.get_latest_device_for_user(case.user_id)
+        previous_cases = [previous for previous in self.repository.list_for_user(case.user_id) if previous.id != case.id]
+        previous_case_details = self._previous_case_details(previous_cases, transaction)
+
+        data_gaps: list[str] = []
+        suspicious_signals = [f"{flag.code.value}: {flag.description}" for flag in flags]
+        reassuring_signals: list[str] = []
+        recommended_checks: list[str] = [
+            "Verify whether the customer recognizes the merchant or counterparty.",
+            "Review transactions immediately before and after the payment under review.",
+        ]
+        recommended_checks.extend(self._flag_review_checks(flags))
+
+        if transaction.merchant_id is None:
+            data_gaps.append("No merchant identifier is attached to this transaction.")
+        elif merchant is None:
+            data_gaps.append("Merchant details are unavailable for the transaction merchant_id.")
+        if transaction.category_id is None:
+            data_gaps.append("No transaction category is available.")
+        if not devices:
+            data_gaps.append("No known devices are recorded for this user.")
+        if current_device is None:
+            data_gaps.append("No active session device is available as a proxy for the payment device.")
+        if not previous_cases:
+            data_gaps.append("No previous fraud-case decisions are available for this user.")
+        if len(completed_card_history) < HIGH_AMOUNT_MIN_HISTORY:
+            data_gaps.append("Insufficient completed card-payment history for robust amount baselines.")
+
+        amount_baseline = self._amount_baseline(transaction, completed_card_history)
+        ratio = amount_baseline.get("amount_to_average_ratio")
+        if ratio is not None:
+            if Decimal(str(ratio)) > HIGH_AMOUNT_MULTIPLIER:
+                suspicious_signals.append(
+                    f"Amount is {ratio}x the user's average completed card payment."
+                )
+            elif completed_card_history:
+                reassuring_signals.append("Amount is within the user's established completed card-payment range.")
+
+        merchant_analysis = self._merchant_analysis(transaction, historical_transactions, merchant, previous_case_details)
+        if merchant_analysis["first_recorded_interaction"]:
+            suspicious_signals.append("This is the first recorded interaction with this merchant.")
+        elif merchant_analysis["previous_transaction_count"] > 0:
+            reassuring_signals.append(
+                f"User has {merchant_analysis['previous_transaction_count']} previous transaction(s) with this merchant."
+            )
+        if merchant_analysis["previous_fraud_cases_with_merchant"] > 0:
+            suspicious_signals.append("Previous fraud cases involved the same merchant.")
+
+        velocity_analysis = self._velocity_analysis(transaction, history)
+        if velocity_analysis["near_identical_transactions_10m"] >= REWARD_ABUSE_MIN_COUNT:
+            suspicious_signals.append("Near-identical same-merchant payments appear within ten minutes.")
+        if velocity_analysis["windows"]["5m"]["count"] >= HIGH_VELOCITY_MIN_COUNT:
+            suspicious_signals.append("Transaction volume in the previous five minutes is elevated.")
+
+        device_analysis = self._device_analysis(current_device, devices, data_gaps)
+        if current_device is not None:
+            if current_device.trusted:
+                reassuring_signals.append("Latest active device is marked trusted.")
+            else:
+                suspicious_signals.append("Latest active device is not marked trusted.")
+            if current_device.mock_location and len(device_analysis["known_locations"]) > 1:
+                reassuring_signals.append("Device location can be compared against prior known device locations.")
+
+        historical_context = self._historical_context(previous_case_details, flags)
+        if historical_context["previous_case_count"] > 0:
+            suspicious_signals.append(f"User has {historical_context['previous_case_count']} previous fraud case(s).")
+            recommended_checks.append("Compare this case with prior manual fraud decisions for the same customer.")
+
+        if merchant_analysis["repeated_same_amount_count"] >= REWARD_ABUSE_MIN_COUNT:
+            recommended_checks.append("Check whether repeated same-amount merchant payments are duplicate attempts.")
+        if current_device is not None:
+            recommended_checks.append("Confirm whether the latest active device belongs to the customer.")
+
+        return {
+            "case_overview": self._case_overview(case, transaction, flags, merchant),
+            "behavioral_analysis": {
+                "history_transaction_count": len(historical_transactions),
+                "completed_card_payment_count": len(completed_card_history),
+                "amount_baseline": amount_baseline,
+                "transaction_counts": self._transaction_counts(transaction, history),
+                "usual_transaction_types": self._top_values([t.type.value for t in completed_card_history]),
+                "usual_merchant_ids": self._top_values([str(t.merchant_id) for t in completed_card_history if t.merchant_id]),
+                "usual_transaction_hours_utc": self._top_values(
+                    [str(_as_aware_utc(t.created_at).hour) for t in completed_card_history]
+                ),
+            },
+            "velocity_analysis": velocity_analysis,
+            "merchant_analysis": merchant_analysis,
+            "device_analysis": device_analysis,
+            "historical_context": historical_context,
+            "suspicious_signals": self._dedupe(suspicious_signals),
+            "reassuring_signals": self._dedupe(reassuring_signals),
+            "data_gaps": self._dedupe(data_gaps),
+            "recommended_checks": self._dedupe(recommended_checks),
+        }
+
+    def _case_overview(
+        self, case: FraudCase, transaction: Transaction, flags: list[FraudFlag], merchant
+    ) -> dict[str, Any]:
+        return {
+            "case_id": str(case.id),
+            "transaction_id": str(transaction.id),
+            "transaction_amount": transaction.amount,
+            "currency": transaction.currency,
+            "transaction_type": transaction.type.value,
+            "transaction_status": transaction.status.value,
+            "description": transaction.description,
+            "created_at": transaction.created_at,
+            "deterministic_risk_score": case.risk_score,
+            "case_status": case.status.value,
+            "hold_amount": case.hold_amount,
+            "merchant": self._merchant_summary(merchant),
+            "counterparty_user_id": str(transaction.counterparty_user_id) if transaction.counterparty_user_id else None,
+            "source_wallet_id": str(transaction.source_wallet_id) if transaction.source_wallet_id else None,
+            "destination_wallet_id": str(transaction.destination_wallet_id) if transaction.destination_wallet_id else None,
+            "card_id": str(transaction.card_id) if transaction.card_id else None,
+            "flags": [
+                {
+                    "code": flag.code.value,
+                    "points": flag.points,
+                    "description": flag.description,
+                }
+                for flag in flags
+            ],
+        }
+
+    def _amount_baseline(self, transaction: Transaction, completed_card_history: list[Transaction]) -> dict[str, Any]:
+        amounts = sorted(t.amount for t in completed_card_history)
+        if not amounts:
+            return {
+                "average_completed_card_payment": None,
+                "median_completed_card_payment": None,
+                "largest_completed_card_payment": None,
+                "amount_to_average_ratio": None,
+                "amount_percentile": None,
+                "sample_size": 0,
+            }
+
+        total = sum(amounts, Decimal("0"))
+        average = (total / len(amounts)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        middle = len(amounts) // 2
+        if len(amounts) % 2:
+            median = amounts[middle]
+        else:
+            median = ((amounts[middle - 1] + amounts[middle]) / Decimal("2")).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+        ratio = None
+        if average > 0:
+            ratio = (transaction.amount / average).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        percentile = (
+            (Decimal(sum(1 for amount in amounts if amount <= transaction.amount)) / Decimal(len(amounts)) * Decimal("100"))
+            .quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        )
+        return {
+            "average_completed_card_payment": average,
+            "median_completed_card_payment": median,
+            "largest_completed_card_payment": amounts[-1],
+            "amount_to_average_ratio": ratio,
+            "amount_percentile": percentile,
+            "sample_size": len(amounts),
+        }
+
+    def _transaction_counts(self, transaction: Transaction, history: list[Transaction]) -> dict[str, int]:
+        windows = {
+            "last_1h": timedelta(hours=1),
+            "last_24h": timedelta(hours=24),
+            "last_7d": timedelta(days=7),
+            "last_30d": timedelta(days=30),
+        }
+        anchor = _as_aware_utc(transaction.created_at)
+        return {
+            name: sum(1 for item in history if anchor - window <= _as_aware_utc(item.created_at) <= anchor)
+            for name, window in windows.items()
+        }
+
+    def _velocity_analysis(self, transaction: Transaction, history: list[Transaction]) -> dict[str, Any]:
+        anchor = _as_aware_utc(transaction.created_at)
+        windows = {
+            "5m": timedelta(minutes=5),
+            "10m": timedelta(minutes=10),
+            "30m": timedelta(minutes=30),
+            "1h": timedelta(hours=1),
+            "24h": timedelta(hours=24),
+        }
+        window_results = {}
+        for name, window in windows.items():
+            items = [item for item in history if anchor - window <= _as_aware_utc(item.created_at) <= anchor]
+            window_results[name] = {
+                "count": len(items),
+                "total_amount": sum((item.amount for item in items), Decimal("0")).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                ),
+                "same_merchant_count": sum(
+                    1
+                    for item in items
+                    if transaction.merchant_id is not None and item.merchant_id == transaction.merchant_id
+                ),
+                "distinct_merchant_count": len({item.merchant_id for item in items if item.merchant_id is not None}),
+            }
+
+        ten_minute_items = [
+            item
+            for item in history
+            if anchor - REWARD_ABUSE_WINDOW <= _as_aware_utc(item.created_at) <= anchor
+        ]
+        near_identical_count = sum(
+            1
+            for item in ten_minute_items
+            if transaction.merchant_id is not None
+            and item.merchant_id == transaction.merchant_id
+            and abs(item.amount - transaction.amount) < Decimal("0.01")
+        )
+        return {
+            "windows": window_results,
+            "near_identical_transactions_10m": near_identical_count,
+            "rapid_merchant_switching_30m": window_results["30m"]["distinct_merchant_count"],
+        }
+
+    def _merchant_analysis(
+        self,
+        transaction: Transaction,
+        historical_transactions: list[Transaction],
+        merchant,
+        previous_case_details: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        merchant_transactions = [
+            item
+            for item in historical_transactions
+            if transaction.merchant_id is not None and item.merchant_id == transaction.merchant_id
+        ]
+        completed_amounts = [item.amount for item in merchant_transactions if item.status == TransactionStatus.COMPLETED]
+        typical_amount = None
+        if completed_amounts:
+            typical_amount = (sum(completed_amounts, Decimal("0")) / len(completed_amounts)).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+        repeated_same_amount_count = sum(
+            1 for item in merchant_transactions if abs(item.amount - transaction.amount) < Decimal("0.01")
+        )
+        previous_fraud_cases_with_merchant = sum(
+            1
+            for detail in previous_case_details
+            if transaction.merchant_id is not None and detail.get("merchant_id") == str(transaction.merchant_id)
+        )
+        return {
+            "merchant": self._merchant_summary(merchant),
+            "previous_transaction_count": len(merchant_transactions),
+            "typical_completed_amount": typical_amount,
+            "first_recorded_interaction": transaction.merchant_id is not None and not merchant_transactions,
+            "repeated_same_amount_count": repeated_same_amount_count + 1 if transaction.merchant_id is not None else 0,
+            "merchant_concentration_percent": self._merchant_concentration(transaction, historical_transactions),
+            "previous_fraud_cases_with_merchant": previous_fraud_cases_with_merchant,
+        }
+
+    def _device_analysis(
+        self, current_device: UserDevice | None, devices: list[UserDevice], data_gaps: list[str]
+    ) -> dict[str, Any]:
+        known_locations = sorted({device.mock_location for device in devices if device.mock_location})
+        if not known_locations:
+            data_gaps.append("No device location history is available.")
+        if current_device is not None and not current_device.mock_location:
+            data_gaps.append("Latest active device has no mock_location value.")
+        return {
+            "latest_active_device": self._device_summary(current_device),
+            "known_device_count": len(devices),
+            "trusted_device_count": sum(1 for device in devices if device.trusted),
+            "known_locations": known_locations,
+            "has_new_or_untrusted_active_device": current_device is not None and not current_device.trusted,
+            "transaction_device_link_available": False,
+        }
+
+    def _historical_context(self, previous_case_details: list[dict[str, Any]], flags: list[FraudFlag]) -> dict[str, Any]:
+        status_counts = Counter(detail["status"] for detail in previous_case_details)
+        current_codes = {flag.code.value for flag in flags}
+        recurring_flags = Counter(
+            code for detail in previous_case_details for code in detail["flag_codes"] if code in current_codes
+        )
+        return {
+            "previous_case_count": len(previous_case_details),
+            "status_counts": dict(status_counts),
+            "recurring_flags": dict(recurring_flags),
+            "previous_cases": previous_case_details[:5],
+        }
+
+    def _previous_case_details(self, previous_cases: list[FraudCase], current_transaction: Transaction) -> list[dict[str, Any]]:
+        details = []
+        for previous in previous_cases:
+            previous_transaction = self.transactions.get_by_id(previous.transaction_id)
+            previous_flags = self.repository.list_flags_for_case(previous.id)
+            details.append(
+                {
+                    "case_id": str(previous.id),
+                    "transaction_id": str(previous.transaction_id),
+                    "status": previous.status.value,
+                    "risk_score": previous.risk_score,
+                    "created_at": previous.created_at,
+                    "decided_at": previous.decided_at,
+                    "flag_codes": [flag.code.value for flag in previous_flags],
+                    "amount": previous_transaction.amount if previous_transaction is not None else None,
+                    "currency": previous_transaction.currency if previous_transaction is not None else None,
+                    "merchant_id": str(previous_transaction.merchant_id)
+                    if previous_transaction is not None and previous_transaction.merchant_id
+                    else None,
+                    "same_merchant": previous_transaction is not None
+                    and current_transaction.merchant_id is not None
+                    and previous_transaction.merchant_id == current_transaction.merchant_id,
+                }
+            )
+        return details
+
+    def _flag_review_checks(self, flags: list[FraudFlag]) -> list[str]:
+        checks: list[str] = []
+        flag_codes = {flag.code for flag in flags}
+        if FraudFlagCode.HIGH_VELOCITY in flag_codes:
+            checks.append("Inspect the short-window transaction timeline for a burst, retry loop, or account takeover pattern.")
+            checks.append("Compare merchants and amounts in the burst instead of reviewing this payment in isolation.")
+        if FraudFlagCode.REWARD_ABUSE_PATTERN in flag_codes:
+            checks.append("Check whether same-amount same-merchant payments are legitimate duplicate checkout attempts.")
+            checks.append("Review merchant cashback/reward eligibility for the repeated payments before clearing the case.")
+        if FraudFlagCode.HIGH_AMOUNT in flag_codes:
+            checks.append("Compare the held amount with this customer's largest previous completed card payments.")
+        if FraudFlagCode.NEW_DEVICE in flag_codes:
+            checks.append("Confirm whether the latest active device is recognized and has trusted prior activity.")
+        if FraudFlagCode.UNUSUAL_COUNTRY in flag_codes:
+            checks.append("Treat device location as a proxy only; verify whether the customer recently used this location.")
+        if FraudFlagCode.UNUSUAL_TIME in flag_codes:
+            checks.append("Review whether the UTC transaction time is unusual for this customer's own history.")
+        return checks
+
+    def _merchant_concentration(self, transaction: Transaction, historical_transactions: list[Transaction]) -> Decimal | None:
+        merchant_transactions = [item for item in historical_transactions if item.merchant_id is not None]
+        if transaction.merchant_id is None or not merchant_transactions:
+            return None
+        same_merchant = sum(1 for item in merchant_transactions if item.merchant_id == transaction.merchant_id)
+        return (Decimal(same_merchant) / Decimal(len(merchant_transactions)) * Decimal("100")).quantize(
+            Decimal("0.1"), rounding=ROUND_HALF_UP
+        )
+
+    def _merchant_summary(self, merchant) -> dict[str, Any] | None:
+        if merchant is None:
+            return None
+        return {
+            "id": str(merchant.id),
+            "name": merchant.name,
+            "category": merchant.category,
+            "status": merchant.status.value,
+            "verified": merchant.verified,
+        }
+
+    def _device_summary(self, device: UserDevice | None) -> dict[str, Any] | None:
+        if device is None:
+            return None
+        return {
+            "id": str(device.id),
+            "device_name": device.device_name,
+            "device_type": device.device_type,
+            "browser": device.browser,
+            "operating_system": device.operating_system,
+            "mock_location": device.mock_location,
+            "trusted": device.trusted,
+            "first_seen_at": device.first_seen_at,
+            "last_seen_at": device.last_seen_at,
+        }
+
+    def _top_values(self, values: list[str], limit: int = 3) -> list[dict[str, Any]]:
+        return [{"value": value, "count": count} for value, count in Counter(values).most_common(limit)]
+
+    def _dedupe(self, values: list[str]) -> list[str]:
+        seen = set()
+        result = []
+        for value in values:
+            if value in seen:
+                continue
+            seen.add(value)
+            result.append(value)
+        return result
 
     def _device_flags(self, user_id: uuid.UUID) -> list[FlagHit]:
         flags: list[FlagHit] = []
