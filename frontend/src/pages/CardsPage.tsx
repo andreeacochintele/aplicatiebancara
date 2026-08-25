@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Eye, EyeOff, Lock, Trash2, Unlock } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, Eye, EyeOff, Lock, Trash2, Unlock } from "lucide-react";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { cardTierRewardBullets } from "../config/rewardPolicy";
@@ -59,6 +59,7 @@ interface CardTransactionDisplay {
   amount: string;
   currency: string;
   status: string;
+  direction: "in" | "out";
 }
 
 function formatCardType(type: CardType): string {
@@ -154,8 +155,18 @@ function mockCardTransactions(card: Card, wallet?: Wallet): CardTransactionDispl
       amount,
       currency,
       status: index === 0 ? "COMPLETED" : "SETTLED",
+      direction: "out",
     };
   });
+}
+
+function cardTransactionDirection(transaction: Transaction, card: Card): "in" | "out" {
+  if (card.type === "CREDIT") {
+    const description = transaction.description?.toLowerCase() ?? "";
+    return transaction.type === "LOAN_PAYMENT" && description.includes("credit card repayment") ? "in" : "out";
+  }
+  if (card.default_wallet_id && transaction.destination_wallet_id === card.default_wallet_id) return "in";
+  return "out";
 }
 
 export function CardsPage() {
@@ -171,6 +182,7 @@ export function CardsPage() {
   const [actionCardId, setActionCardId] = useState<string | null>(null);
   const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
   const [revealedCardIds, setRevealedCardIds] = useState<Set<string>>(() => new Set());
+  const [copiedCardId, setCopiedCardId] = useState<string | null>(null);
   const [expandedTransactionCardIds, setExpandedTransactionCardIds] = useState<Set<string>>(() => new Set());
   const [paymentPanelCardId, setPaymentPanelCardId] = useState<string | null>(null);
   const [paymentSourceType, setPaymentSourceType] = useState<CreditPaymentSourceType>("ACCOUNT");
@@ -180,7 +192,6 @@ export function CardsPage() {
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [creditBalanceOverrides, setCreditBalanceOverrides] = useState<Record<string, number>>({});
-  const [localCardActivity, setLocalCardActivity] = useState<Record<string, CardTransactionDisplay[]>>({});
   const [error, setError] = useState<string | null>(null);
 
   const activeWallets = useMemo(() => wallets.filter((wallet) => wallet.status === "ACTIVE"), [wallets]);
@@ -378,6 +389,51 @@ export function CardsPage() {
     });
   }
 
+  function copyCardNumberFallback(cardNumber: string) {
+    const textarea = document.createElement("textarea");
+    textarea.value = cardNumber;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.top = "0";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    try {
+      return document.execCommand("copy");
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  }
+
+  async function copyCardNumber(card: Card) {
+    const cardNumber = card.mock_pan.replace(/\s/g, "");
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(cardNumber);
+      } else if (!copyCardNumberFallback(cardNumber)) {
+        throw new Error("Clipboard copy failed");
+      }
+      setCopiedCardId(card.id);
+      setError(null);
+      window.setTimeout(() => {
+        setCopiedCardId((current) => (current === card.id ? null : current));
+      }, 1600);
+    } catch {
+      if (copyCardNumberFallback(cardNumber)) {
+        setCopiedCardId(card.id);
+        setError(null);
+        window.setTimeout(() => {
+          setCopiedCardId((current) => (current === card.id ? null : current));
+        }, 1600);
+      } else {
+        setError("Could not copy card number.");
+      }
+    }
+  }
+
   function toggleCardTransactions(cardId: string) {
     setExpandedTransactionCardIds((current) => {
       const next = new Set(current);
@@ -421,14 +477,13 @@ export function CardsPage() {
     }
     const debitCard = activeDebitCards.find((card) => card.id === paymentSourceId);
     const wallet = debitCard ? wallets.find((item) => item.id === debitCard.default_wallet_id) : undefined;
-    return debitCard ? `Debit **** ${debitCard.last_four}${wallet ? ` from ${walletDisplayName(wallet)}` : ""}` : "selected debit card";
+    return debitCard ? `Debit **** ${debitCard.last_four}${wallet ? ` - ${walletDisplayName(wallet)}` : ""}` : "selected debit card";
   }
 
   async function submitCreditCardPayment(card: Card) {
     if (!accessToken) return;
     const sourceWalletId = paymentSourceWalletId();
     const sourceWallet = wallets.find((wallet) => wallet.id === sourceWalletId);
-    const sourceDebitCard = paymentSourceType === "DEBIT_CARD" ? activeDebitCards.find((sourceCard) => sourceCard.id === paymentSourceId) : null;
     const currentBalanceDue = creditBalanceOverrides[card.id] ?? creditStatementBalance(card);
     const amount = paymentAmountMode === "FULL_BALANCE" ? currentBalanceDue : Number(paymentAmount);
 
@@ -457,8 +512,9 @@ export function CardsPage() {
     }
 
     const nextBalanceDue = Math.max(0, currentBalanceDue - amount);
+    let repaymentTransaction: Transaction;
     try {
-      await apiRequest<Transaction>("/transactions/credit-card-repayment", {
+      repaymentTransaction = await apiRequest<Transaction>("/transactions/credit-card-repayment", {
         method: "POST",
         token: accessToken,
         body: {
@@ -476,6 +532,7 @@ export function CardsPage() {
       return;
     }
 
+    setTransactions((current) => [repaymentTransaction, ...current.filter((transaction) => transaction.id !== repaymentTransaction.id)]);
     setWallets((current) =>
       current.map((wallet) =>
         wallet.id === sourceWallet.id
@@ -494,38 +551,13 @@ export function CardsPage() {
                 available_credit: creditAvailableBalance(item, nextBalanceDue).toFixed(2),
               },
             }
-          : item,
+        : item,
       ),
     );
     setCreditBalanceOverrides((current) => ({ ...current, [card.id]: nextBalanceDue }));
-    setLocalCardActivity((current) => {
-      const paidAt = new Date().toISOString();
-      const creditActivity: CardTransactionDisplay = {
-        id: `payment-${card.id}-${paidAt}`,
-        description: "Credit card payment received",
-        created_at: paidAt,
-        amount: amount.toFixed(2),
-        currency: "RON",
-        status: "COMPLETED",
-      };
-      const next = { ...current, [card.id]: [creditActivity, ...(current[card.id] ?? [])] };
-
-      if (sourceDebitCard) {
-        const debitActivity: CardTransactionDisplay = {
-          id: `payment-source-${sourceDebitCard.id}-${paidAt}`,
-          description: `Payment to credit card **** ${card.last_four}`,
-          created_at: paidAt,
-          amount: amount.toFixed(2),
-          currency: sourceWallet.currency,
-          status: "COMPLETED",
-        };
-        next[sourceDebitCard.id] = [debitActivity, ...(current[sourceDebitCard.id] ?? [])];
-      }
-
-      return next;
-    });
     setPaymentAmount("");
-    setPaymentMessage(`${formatCurrencyAmount(amount, sourceWallet.currency)} paid from ${paymentSourceLabel()}.`);
+    setPaymentMessage(`${formatCurrencyAmount(amount, sourceWallet.currency)} paid via ${paymentSourceLabel()}.`);
+    void loadCardsData(accessToken);
   }
 
   return (
@@ -656,8 +688,16 @@ export function CardsPage() {
               const wallet = wallets.find((item) => item.id === card.default_wallet_id);
               const isRevealed = revealedCardIds.has(card.id);
               const isTransactionsExpanded = expandedTransactionCardIds.has(card.id);
+              const isAccountLinkedCard = card.type === "DEBIT" || card.type === "ONE_TIME";
               const cardTransactions = transactions
-                .filter((transaction) => transaction.card_id === card.id)
+                .filter(
+                  (transaction) =>
+                    transaction.card_id === card.id ||
+                    (isAccountLinkedCard &&
+                      card.default_wallet_id &&
+                      (transaction.destination_wallet_id === card.default_wallet_id ||
+                        transaction.source_wallet_id === card.default_wallet_id)),
+                )
                 .sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime());
               const cardTransactionRows =
                 cardTransactions.length > 0
@@ -668,11 +708,13 @@ export function CardsPage() {
                       amount: transaction.amount,
                       currency: transaction.currency,
                       status: transaction.status,
+                      direction: cardTransactionDirection(transaction, card),
                     }))
                   : mockCardTransactions(card, wallet);
-              const cardActivityRows = [...(localCardActivity[card.id] ?? []), ...cardTransactionRows];
-              const isShowingPlaceholderTransactions = cardTransactions.length === 0 && !localCardActivity[card.id]?.length;
-              const isAccountLinkedCard = card.type === "DEBIT" || card.type === "ONE_TIME";
+              const cardActivityRows = [...cardTransactionRows].sort(
+                (first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime(),
+              );
+              const isShowingPlaceholderTransactions = cardTransactions.length === 0;
               const isCreditCard = card.type === "CREDIT";
               const creditBalanceDue = creditBalanceOverrides[card.id] ?? creditStatementBalance(card);
               const creditAvailable = creditAvailableBalance(card, creditBalanceDue);
@@ -738,6 +780,15 @@ export function CardsPage() {
                     </div>
                     <div className="bank-card__number-row">
                       <div className="bank-card__number">{isRevealed ? card.mock_pan : card.masked_pan}</div>
+                      <button
+                        type="button"
+                        className={`bank-card__copy${copiedCardId === card.id ? " bank-card__copy--copied" : ""}`}
+                        onClick={() => copyCardNumber(card)}
+                        aria-label={copiedCardId === card.id ? "Card number copied" : "Copy card number"}
+                        title={copiedCardId === card.id ? "Copied" : "Copy card number"}
+                      >
+                        <Copy size={16} strokeWidth={2.2} />
+                      </button>
                       <button
                         type="button"
                         className="bank-card__reveal"
@@ -814,11 +865,11 @@ export function CardsPage() {
 
                     <button
                       type="button"
-                      className="card-panel__details-toggle"
+                      className={`card-panel__details-toggle${isCreditCard ? " card-panel__details-toggle--credit" : ""}`}
                       onClick={() => toggleCardTransactions(card.id)}
                       aria-expanded={isTransactionsExpanded}
                     >
-                      <span>{isTransactionsExpanded ? "Retract" : "Show more"}</span>
+                      <span>{isTransactionsExpanded ? "Hide history" : "Transaction history"}</span>
                       <span className="card-panel__details-icon">
                         {isTransactionsExpanded ? <ChevronUp size={16} strokeWidth={2.2} /> : <ChevronDown size={16} strokeWidth={2.2} />}
                       </span>
@@ -921,12 +972,19 @@ export function CardsPage() {
                               placeholder="0.00"
                             />
                           ) : (
-                            <strong>{formatCurrencyAmount(creditBalanceDue, creditAccountCurrency)}</strong>
+                            <strong className="credit-card-payment__amount-preview">
+                              {formatCurrencyAmount(creditBalanceDue, creditAccountCurrency)}
+                            </strong>
                           )}
                         </div>
                       </div>
 
-                      <button type="button" className="credit-card-payment__submit" onClick={() => submitCreditCardPayment(card)}>
+                      <button
+                        type="button"
+                        className="credit-card-payment__submit"
+                        onClick={() => submitCreditCardPayment(card)}
+                        disabled={creditBalanceDue <= 0}
+                      >
                         Pay credit card
                       </button>
                       {paymentError && <div className="credit-card-payment__error">{paymentError}</div>}
@@ -939,14 +997,15 @@ export function CardsPage() {
                       {isShowingPlaceholderTransactions && (
                         <div className="card-transactions__note">Recent card activity</div>
                       )}
-                      {cardActivityRows.slice(0, 5).map((transaction) => (
+                      {cardActivityRows.slice(0, 8).map((transaction) => (
                           <div className="card-transaction-row" key={transaction.id}>
                             <div>
                               <strong>{transaction.description}</strong>
                               <span>{formatTransactionDate(transaction.created_at)}</span>
                             </div>
-                            <div>
+                            <div className={`card-transaction-row__amount card-transaction-row__amount--${transaction.direction}`}>
                               <strong>
+                                {transaction.direction === "in" ? "+" : "-"}
                                 {Number(transaction.amount).toLocaleString(undefined, {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,

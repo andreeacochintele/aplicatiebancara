@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict
 from app.credit.models import (
     CreditApplicationStatus,
     CreditApplicationType,
+    CreditDocumentPurpose,
+    CreditDocumentStatus,
     LoanInstallmentStatus,
     LoanProductType,
     LoanStatus,
@@ -38,14 +40,6 @@ class CreditScorePublic(BaseModel):
     band: str
     reason_data: dict[str, Any]
     calculated_at: datetime
-
-
-class CreditApplicationCreate(BaseModel):
-    type: CreditApplicationType
-    loan_product_type: LoanProductType | None = LoanProductType.PERSONAL_LOAN
-    requested_amount: Decimal
-    currency: str = "RON"
-    requested_term_months: int | None = None
 
 
 class LoanProductPublic(BaseModel):
@@ -100,7 +94,7 @@ class EarlyRepaymentSimulationRequest(BaseModel):
 
 
 class EarlyRepaymentPaymentRequest(BaseModel):
-    source_wallet_id: uuid.UUID
+    source_wallet_id: uuid.UUID | None = None
     amount: Decimal
     source_card_id: uuid.UUID | None = None
 
@@ -125,12 +119,72 @@ class EarlyRepaymentPaymentResult(EarlyRepaymentResult):
     loan_status: LoanStatus
 
 
+class CreditApplicationDocumentCreate(BaseModel):
+    document_type: str
+    file_name: str
+    content_type: str | None = None
+    file_size: int
+    content_base64: str | None = None
+
+
+class CreditApplicationCreate(BaseModel):
+    type: CreditApplicationType
+    loan_product_type: LoanProductType | None = LoanProductType.PERSONAL_LOAN
+    requested_amount: Decimal
+    currency: str = "RON"
+    requested_term_months: int | None = None
+    documents: list[CreditApplicationDocumentCreate] | None = None
+
+
+class CreditDocumentCreate(BaseModel):
+    application_id: uuid.UUID | None = None
+    purpose: CreditDocumentPurpose
+    document_type: str
+    file_name: str
+    content_type: str | None = None
+    file_size: int
+    content_base64: str | None = None
+
+
+class CreditDocumentReview(BaseModel):
+    status: CreditDocumentStatus
+    evaluation_score: int | None = None
+    review_note: str | None = None
+
+
+class CreditDocumentPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    application_id: uuid.UUID | None
+    purpose: CreditDocumentPurpose
+    document_type: str
+    file_name: str
+    content_type: str | None
+    file_size: int
+    status: CreditDocumentStatus
+    evaluation_score: int | None
+    review_note: str | None
+    uploaded_at: datetime
+    reviewed_at: datetime | None
+    reviewed_by_admin_id: uuid.UUID | None
+
+
+class CreditDocumentContentPublic(BaseModel):
+    id: uuid.UUID
+    file_name: str
+    content_type: str | None
+    content_base64: str
+
+
 class LoanPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     user_id: uuid.UUID
     application_id: uuid.UUID
+    loan_product_type: LoanProductType | None = None
     principal_amount: Decimal
     currency: str
     interest_rate: Decimal
@@ -176,3 +230,4 @@ class CreditApplicationPublic(BaseModel):
     status: CreditApplicationStatus
     created_at: datetime
     resolved_at: datetime | None
+    documents: list[CreditDocumentPublic] = []

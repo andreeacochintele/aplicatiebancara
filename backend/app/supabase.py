@@ -4,6 +4,7 @@ This is intentionally narrow: it preserves the service/repository shape while
 we migrate modules gradually from SQLAlchemy sessions to Supabase REST calls.
 """
 import json
+import re
 import uuid
 from collections.abc import Iterable, Mapping
 from datetime import date, datetime, timezone
@@ -47,6 +48,7 @@ class SupabaseRestSession:
         # fetched or wrote it — lets flush() skip PATCHing rows nothing
         # actually changed on (see flush() below).
         self._snapshots: dict[tuple[str, str], dict[str, object]] = {}
+        self._unsupported_patch_columns: dict[str, set[str]] = {}
 
     def get(self, model: type[ModelT], row_id: uuid.UUID) -> ModelT | None:
         primary_key = self._primary_key_name(model)
@@ -89,7 +91,9 @@ class SupabaseRestSession:
         self._ensure_defaults(model)
         table = self._table_name(type(model))
         payload = self._model_payload(model)
-        self.request("POST", table, body=payload, prefer="return=minimal")
+        for column in self._unsupported_patch_columns.get(table, set()):
+            payload.pop(column, None)
+        self._insert_row(table, payload)
         self._track(model)
         return model
 
@@ -125,17 +129,52 @@ class SupabaseRestSession:
             if row_id is None:
                 continue
             payload = self._model_payload(model, excluded_columns={primary_key}, include_nulls=True)
+            table = self._table_name(type(model))
+            for column in self._unsupported_patch_columns.get(table, set()):
+                payload.pop(column, None)
             if payload == self._snapshots.get(key):
                 continue
-            table = self._table_name(type(model))
-            self.request(
-                "PATCH",
-                table,
-                params={primary_key: f"eq.{row_id}"},
-                body=payload,
-                prefer="return=minimal",
-            )
+            self._patch_row(table, primary_key, row_id, payload)
             self._snapshots[key] = payload
+
+    def _insert_row(self, table: str, payload: dict[str, object]) -> None:
+        while True:
+            try:
+                self.request("POST", table, body=payload, prefer="return=minimal")
+                return
+            except RuntimeError as exc:
+                missing_column = self._missing_schema_column(table, exc)
+                if missing_column is None or missing_column not in payload:
+                    raise
+                self._unsupported_patch_columns.setdefault(table, set()).add(missing_column)
+                payload.pop(missing_column, None)
+
+    def _patch_row(self, table: str, primary_key: str, row_id: object, payload: dict[str, object]) -> None:
+        while True:
+            if not payload:
+                return
+            try:
+                self.request(
+                    "PATCH",
+                    table,
+                    params={primary_key: f"eq.{row_id}"},
+                    body=payload,
+                    prefer="return=minimal",
+                )
+                return
+            except RuntimeError as exc:
+                missing_column = self._missing_schema_column(table, exc)
+                if missing_column is None or missing_column not in payload:
+                    raise
+                self._unsupported_patch_columns.setdefault(table, set()).add(missing_column)
+                payload.pop(missing_column, None)
+
+    def _missing_schema_column(self, table: str, exc: RuntimeError) -> str | None:
+        match = re.search(r"Could not find the '([^']+)' column of '([^']+)'", str(exc))
+        if match is None:
+            return None
+        column_name, table_name = match.groups()
+        return column_name if table_name == table else None
 
     def commit(self) -> None:
         self.flush()

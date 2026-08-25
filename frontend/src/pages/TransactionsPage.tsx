@@ -31,6 +31,17 @@ function formatAmount(transaction: Transaction, userWalletIds: Set<string>): str
   return `${sign}${transaction.amount} ${transaction.currency}`;
 }
 
+function formatTransactionType(transaction: Transaction, userWalletIds: Set<string>): string {
+  const description = transaction.description?.toLowerCase() ?? "";
+  if (description.includes("loan") && description.includes("disbursement") && isIncomingOnly(transaction, userWalletIds)) {
+    return "Bank -> user";
+  }
+  if (transaction.type === "LOAN_PAYMENT") {
+    return "User -> bank";
+  }
+  return transaction.type.replaceAll("_", " ");
+}
+
 function toNumber(value: string): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -630,9 +641,11 @@ export function TransactionsPage() {
               {transactions.map((tx) => (
                 <tr key={tx.id}>
                   <td>{new Date(tx.created_at).toLocaleString()}</td>
-                  <td>{tx.type}</td>
+                  <td>{formatTransactionType(tx, userWalletIds)}</td>
                   <td>{tx.description}</td>
-                  <td>{formatAmount(tx, userWalletIds)}</td>
+                  <td className={isIncomingOnly(tx, userWalletIds) ? "transaction-amount--in" : "transaction-amount--out"}>
+                    {formatAmount(tx, userWalletIds)}
+                  </td>
                   <td>{tx.status}</td>
                   <td>
                     <div className="transaction-actions">

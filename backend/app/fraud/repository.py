@@ -30,14 +30,24 @@ class FraudRepository:
 
     def get_by_id(self, case_id: uuid.UUID) -> FraudCase | None:
         if is_supabase_session(self.db):
-            return self.db.get(FraudCase, case_id)
+            try:
+                return self.db.get(FraudCase, case_id)
+            except RuntimeError as exc:
+                if self._is_missing_supabase_table(exc, FraudCase):
+                    return None
+                raise
         return self.db.get(FraudCase, case_id)
 
     def list_pending(self) -> list[FraudCase]:
         if is_supabase_session(self.db):
-            return self.db.fetch_many(
-                FraudCase, {"status": f"eq.{FraudCaseStatus.PENDING_REVIEW.value}", "order": "created_at.asc"}
-            )
+            try:
+                return self.db.fetch_many(
+                    FraudCase, {"status": f"eq.{FraudCaseStatus.PENDING_REVIEW.value}", "order": "created_at.asc"}
+                )
+            except RuntimeError as exc:
+                if self._is_missing_supabase_table(exc, FraudCase):
+                    return []
+                raise
         stmt = (
             select(FraudCase)
             .where(FraudCase.status == FraudCaseStatus.PENDING_REVIEW)
@@ -47,7 +57,12 @@ class FraudRepository:
 
     def list_flags_for_case(self, case_id: uuid.UUID) -> list[FraudFlag]:
         if is_supabase_session(self.db):
-            return self.db.fetch_many(FraudFlag, {"fraud_case_id": f"eq.{case_id}"})
+            try:
+                return self.db.fetch_many(FraudFlag, {"fraud_case_id": f"eq.{case_id}"})
+            except RuntimeError as exc:
+                if self._is_missing_supabase_table(exc, FraudFlag):
+                    return []
+                raise
         stmt = select(FraudFlag).where(FraudFlag.fraud_case_id == case_id)
         return list(self.db.scalars(stmt))
 
@@ -84,3 +99,6 @@ class FraudRepository:
             return self.db.fetch_many(UserDevice, {"user_id": f"eq.{user_id}"})
         stmt = select(UserDevice).where(UserDevice.user_id == user_id)
         return list(self.db.scalars(stmt))
+
+    def _is_missing_supabase_table(self, exc: RuntimeError, model: type[object]) -> bool:
+        return f"Could not find the table 'public.{model.__tablename__}'" in str(exc)

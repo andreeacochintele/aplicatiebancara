@@ -340,6 +340,121 @@
   margin-bottom: 14px;
 }
 
+.aurora-wallet-activity {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 12px;
+  padding: 10px;
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-sm);
+  background: color-mix(in srgb, var(--aurora-surface) 84%, white);
+}
+
+.aurora-wallet-history-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, auto) 18px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 38px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--aurora-border);
+  border-radius: var(--aurora-radius-sm);
+  background: color-mix(in srgb, var(--aurora-surface) 90%, white);
+  color: var(--aurora-accent-dark);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.aurora-wallet-history-toggle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aurora-wallet-history-toggle:hover {
+  border-color: var(--aurora-accent);
+  background: color-mix(in srgb, var(--aurora-accent) 8%, white);
+}
+
+.aurora-wallet-activity__empty {
+  color: var(--aurora-text-soft);
+  font-size: 12px;
+}
+
+.aurora-wallet-activity__list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+}
+
+.aurora-wallet-activity__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.aurora-wallet-activity__list::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--aurora-border) 70%, white);
+  border-radius: 999px;
+}
+
+.aurora-wallet-activity__list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--aurora-text-soft) 55%, white);
+  border-radius: 999px;
+}
+
+.aurora-wallet-activity__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--aurora-border);
+  font-size: 12px;
+}
+
+.aurora-wallet-activity__row:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.aurora-wallet-activity__row strong,
+.aurora-wallet-activity__row span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aurora-wallet-activity__row strong {
+  color: var(--aurora-text);
+  font-size: 12px;
+}
+
+.aurora-wallet-activity__row span {
+  color: var(--aurora-text-soft);
+}
+
+.aurora-wallet-activity__amount--in,
+.aurora-wallet-activity__amount--out {
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.aurora-wallet-activity__amount--in {
+  color: var(--aurora-green);
+}
+
+.aurora-wallet-activity__amount--out {
+  color: var(--aurora-red);
+}
+
 .aurora-wallet-card__footer {
   display: flex;
   align-items: center;

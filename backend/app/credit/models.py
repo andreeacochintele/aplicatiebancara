@@ -9,7 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, UniqueConstraint
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -54,6 +54,18 @@ class LoanInstallmentStatus(str, enum.Enum):
 class LoanPaymentType(str, enum.Enum):
     REGULAR = "REGULAR"
     EARLY_REPAYMENT = "EARLY_REPAYMENT"
+
+
+class CreditDocumentPurpose(str, enum.Enum):
+    CREDIT_SCORE = "CREDIT_SCORE"
+    LOAN_APPLICATION = "LOAN_APPLICATION"
+
+
+class CreditDocumentStatus(str, enum.Enum):
+    UPLOADED = "UPLOADED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    NEEDS_MORE_INFO = "NEEDS_MORE_INFO"
 
 
 class CreditProfile(Base):
@@ -112,6 +124,39 @@ class CreditApplication(Base):
 
     owner = relationship("User")
     loan = relationship("Loan", back_populates="application", uselist=False)
+    documents = relationship("CreditDocument", back_populates="application")
+
+
+class CreditDocument(Base):
+    __tablename__ = "credit_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    application_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("credit_applications.id"), nullable=True
+    )
+    purpose: Mapped[CreditDocumentPurpose] = mapped_column(
+        Enum(CreditDocumentPurpose, name="credit_document_purpose"), nullable=False
+    )
+    document_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[CreditDocumentStatus] = mapped_column(
+        Enum(CreditDocumentStatus, name="credit_document_status"),
+        default=CreditDocumentStatus.UPLOADED,
+        nullable=False,
+    )
+    evaluation_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    owner = relationship("User", foreign_keys=[user_id])
+    reviewer = relationship("User", foreign_keys=[reviewed_by_admin_id])
+    application = relationship("CreditApplication", back_populates="documents")
 
 
 class Loan(Base):
@@ -143,6 +188,10 @@ class Loan(Base):
     application = relationship("CreditApplication", back_populates="loan")
     installments = relationship("LoanInstallment", back_populates="loan", cascade="all, delete-orphan")
     payments = relationship("LoanPayment", back_populates="loan", cascade="all, delete-orphan")
+
+    @property
+    def loan_product_type(self) -> LoanProductType | None:
+        return self.application.loan_product_type if self.application is not None else None
 
 
 class LoanInstallment(Base):

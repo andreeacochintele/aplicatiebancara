@@ -42,6 +42,19 @@ function formatAmount(transaction: Transaction, userWalletIds: Set<string>): { s
   return { sign, text: `${transaction.amount} ${transaction.currency}` };
 }
 
+function formatTransactionType(transaction: Transaction, userWalletIds: Set<string>): string {
+  const isIncoming = transaction.destination_wallet_id ? userWalletIds.has(transaction.destination_wallet_id) : false;
+  const isOutgoing = transaction.source_wallet_id ? userWalletIds.has(transaction.source_wallet_id) : false;
+  const description = transaction.description?.toLowerCase() ?? "";
+  if (description.includes("loan") && description.includes("disbursement") && isIncoming && !isOutgoing) {
+    return "Bank -> user";
+  }
+  if (transaction.type === "LOAN_PAYMENT") {
+    return "User -> bank";
+  }
+  return transaction.type.replaceAll("_", " ");
+}
+
 export function DashboardPage() {
   const { user, accessToken } = useAuth();
   const [hidden, setHidden] = useState(false);
@@ -203,6 +216,7 @@ export function DashboardPage() {
           <div className="aurora-tx-list">
             {recentTransactions.map((transaction) => {
               const { sign, text } = formatAmount(transaction, userWalletIds);
+              const typeLabel = formatTransactionType(transaction, userWalletIds);
               return (
                 <div className="aurora-tx-row" key={transaction.id}>
                   <div className="aurora-tx-left">
@@ -212,7 +226,7 @@ export function DashboardPage() {
                     <div>
                       <div className="aurora-tx-name">{transaction.description ?? transaction.type}</div>
                       <div className="aurora-tx-meta">
-                        {new Date(transaction.created_at).toLocaleDateString()} · {transaction.type}
+                        {new Date(transaction.created_at).toLocaleDateString()} · {typeLabel}
                       </div>
                     </div>
                   </div>

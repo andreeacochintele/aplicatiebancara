@@ -7,10 +7,16 @@ what made a handful of real writes in a request balloon into dozens of
 redundant HTTP round-trips."""
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
+from app.credit.models import CreditDocument, CreditDocumentPurpose, CreditDocumentStatus, LoanInstallment, LoanPayment, LoanPaymentType
+import app.credit.repository as credit_repository_module
+from app.credit.repository import CreditRepository
 from app.merchants.models import Merchant, MerchantStatus
+from app.fraud.models import FraudCase
+from app.fraud.repository import FraudRepository
 from app.supabase import SupabaseRestSession
 
 
@@ -134,3 +140,162 @@ def test_add_still_omits_an_unset_none_field_from_the_insert_payload(session, re
     method, table, body = record_bodies[0]
     assert (method, table) == ("POST", "merchants")
     assert "logo_url" not in body
+
+
+def test_flush_retries_patch_without_a_column_missing_from_supabase_schema(session, monkeypatch):
+    merchant = session._hydrate(Merchant, _merchant_row(uuid.uuid4()))
+    merchant.verified = False
+    merchant.logo_url = "https://example.com/logo.png"
+    calls: list[dict[str, object]] = []
+
+    def fake_request(method, table, *, params=None, body=None, prefer=None):
+        calls.append({"method": method, "table": table, "body": dict(body or {})})
+        if len(calls) == 1:
+            raise RuntimeError(
+                "Supabase REST request failed with HTTP 400: "
+                '{"message":"Could not find the \'logo_url\' column of \'merchants\' in the schema cache"}'
+            )
+        return None
+
+    monkeypatch.setattr(session, "request", fake_request)
+
+    session.flush()
+
+    assert len(calls) == 2
+    assert calls[0]["body"]["logo_url"] == "https://example.com/logo.png"
+    assert "logo_url" not in calls[1]["body"]
+    assert calls[1]["body"]["verified"] is False
+
+
+def test_add_retries_insert_without_a_column_missing_from_supabase_schema(session, monkeypatch):
+    new_merchant = Merchant(
+        id=uuid.uuid4(),
+        name="Zara",
+        logo_url="https://example.com/logo.png",
+        category="Retail",
+        status=MerchantStatus.ACTIVE,
+        verified=True,
+    )
+    calls: list[dict[str, object]] = []
+
+    def fake_request(method, table, *, params=None, body=None, prefer=None):
+        calls.append({"method": method, "table": table, "body": dict(body or {})})
+        if len(calls) == 1:
+            raise RuntimeError(
+                "Supabase REST request failed with HTTP 400: "
+                '{"message":"Could not find the \'logo_url\' column of \'merchants\' in the schema cache"}'
+            )
+        return None
+
+    monkeypatch.setattr(session, "request", fake_request)
+
+    session.add(new_merchant)
+
+    assert len(calls) == 2
+    assert calls[0]["body"]["logo_url"] == "https://example.com/logo.png"
+    assert "logo_url" not in calls[1]["body"]
+    assert calls[1]["body"]["name"] == "Zara"
+
+
+def test_fraud_repository_treats_missing_supabase_fraud_table_as_empty(session, monkeypatch):
+    def fake_fetch_many(model, params):
+        assert model is FraudCase
+        raise RuntimeError(
+            "Supabase REST request failed with HTTP 404: "
+            '{"message":"Could not find the table \'public.fraud_cases\' in the schema cache"}'
+        )
+
+    monkeypatch.setattr(session, "fetch_many", fake_fetch_many)
+
+    assert FraudRepository(session).list_pending() == []
+
+
+def test_credit_document_upload_falls_back_when_supabase_document_columns_are_missing(session, monkeypatch):
+    user_id = uuid.uuid4()
+    application_id = uuid.uuid4()
+    document_id = uuid.uuid4()
+    store_path = Path("backend/.credit_documents_test.json")
+    if store_path.exists():
+        store_path.unlink()
+    monkeypatch.setattr(credit_repository_module, "_DOCUMENT_STORE_PATH", store_path)
+
+    def fake_request(method, table, *, params=None, body=None, prefer=None):
+        if method == "GET" and table == "credit_documents":
+            raise RuntimeError(
+                "Supabase REST request failed with HTTP 400: "
+                '{"message":"column credit_documents.application_id does not exist"}'
+            )
+        return None
+
+    monkeypatch.setattr(session, "request", fake_request)
+    repository = CreditRepository(session)
+
+    repository.add_document(
+        CreditDocument(
+            id=document_id,
+            user_id=user_id,
+            application_id=application_id,
+            purpose=CreditDocumentPurpose.LOAN_APPLICATION,
+            document_type="Mortgage documentation",
+            file_name="salary.pdf",
+            content_type="application/pdf",
+            file_size=10,
+            content_base64="c2FsYXJ5LXBkZg==",
+            status=CreditDocumentStatus.UPLOADED,
+        )
+    )
+
+    documents = repository.list_documents()
+
+    assert documents[0].id == document_id
+    assert documents[0].application_id == application_id
+    assert documents[0].content_base64 == "c2FsYXJ5LXBkZg=="
+    store_path.unlink(missing_ok=True)
+
+
+def test_credit_repository_skips_installment_persistence_when_supabase_table_is_missing(session, monkeypatch):
+    loan_id = uuid.uuid4()
+
+    def fake_add(model):
+        assert isinstance(model, LoanInstallment)
+        raise RuntimeError(
+            "Supabase REST request failed with HTTP 404: "
+            '{"message":"Could not find the table \'public.loan_installments\' in the schema cache"}'
+        )
+
+    monkeypatch.setattr(session, "add", fake_add)
+
+    installments = [
+        LoanInstallment(
+            loan_id=loan_id,
+            installment_number=1,
+            due_date=datetime.now(timezone.utc).date(),
+            payment_amount=100,
+            principal_amount=90,
+            interest_amount=10,
+            remaining_principal=0,
+        )
+    ]
+
+    assert CreditRepository(session).add_installments(installments) == installments
+
+
+def test_credit_repository_skips_loan_payment_persistence_when_supabase_table_is_missing(session, monkeypatch):
+    payment = LoanPayment(
+        loan_id=uuid.uuid4(),
+        amount=100,
+        principal_paid=100,
+        interest_paid=0,
+        payment_type=LoanPaymentType.EARLY_REPAYMENT,
+    )
+
+    def fake_add(model):
+        assert isinstance(model, LoanPayment)
+        raise RuntimeError(
+            "Supabase REST request failed with HTTP 404: "
+            '{"message":"Could not find the table \'public.loan_payments\' in the schema cache"}'
+        )
+
+    monkeypatch.setattr(session, "add", fake_add)
+
+    assert CreditRepository(session).add_loan_payment(payment) is payment

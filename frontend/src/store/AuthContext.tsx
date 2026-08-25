@@ -86,12 +86,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setOnboardingCompleted(profile.onboarding.completed);
       })
       .catch(() => {
-        if (!cancelled) setOnboardingCompleted(null);
+        if (!cancelled) logout();
       });
     return () => {
       cancelled = true;
     };
-  }, [accessToken]);
+  }, [accessToken, logout]);
 
   const logoutTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

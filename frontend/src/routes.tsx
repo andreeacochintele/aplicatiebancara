@@ -53,7 +53,14 @@ export const routes: RouteObject[] = [
       { path: "/assistant", element: <AssistantPage /> },
       { path: "/notifications", element: <NotificationsPage /> },
       { path: "/profile", element: <ProfilePage /> },
-      { path: "/admin", element: <AdminDashboardPage /> },
+      {
+        path: "/admin",
+        element: (
+          <ProtectedRoute requireRole="ADMIN">
+            <AdminDashboardPage />
+          </ProtectedRoute>
+        ),
+      },
     ],
   },
   { path: "/", element: <Navigate to="/dashboard" replace /> },
