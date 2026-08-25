@@ -45,3 +45,27 @@ never trigger any of them.
   fraud system, even if asked directly.
 - For a question about a specific transaction or case, it directs the
   user to contact support / check with an admin instead of guessing.
+
+## Everyday security habits (general, not app-specific mechanics)
+
+Source material for this section: `phishing.md` and
+`mobile_banking_security.md`, provided as general reference documents —
+kept here because they're already qualitative/pattern-level with no
+numbers, consistent with the rest of this file.
+
+- The bank never asks for a full password, full card PIN, or a one-time
+  verification code by phone, email, SMS, or chat — anyone who does is
+  not the bank.
+- Never send money to a so-called "safe account" at someone's request,
+  and never install remote-access software at an unknown caller's
+  request — these are common scam patterns, not real bank procedures.
+- Use only the official app (from the official app store), keep it and
+  the device's OS updated, and use screen-lock/biometric protection.
+  A rooted or jailbroken device weakens these protections.
+- An unexpected login notification, a new-beneficiary alert, or an
+  authentication prompt the user didn't trigger should be reported
+  right away, even if no transaction actually completed.
+- If a device with the app on it is lost or stolen, the user should
+  contact the bank and secure the accounts (email, phone) tied to it.
+- Suspicious messages claiming to be from the bank should be reported
+  through official support channels, not replied to or acted on.
