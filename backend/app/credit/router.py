@@ -5,10 +5,16 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_admin
+from app.core.exceptions import ValidationError
+from app.credit.models import CreditApplicationType
 from app.credit.schemas import (
     CreditApplicationCreate,
     CreditApplicationDecision,
     CreditApplicationPublic,
+    CreditDocumentContentPublic,
+    CreditDocumentCreate,
+    CreditDocumentPublic,
+    CreditDocumentReview,
     CreditProfilePublic,
     CreditScorePublic,
     CreditScoreRecalculateRequest,
@@ -91,9 +97,39 @@ def create_application(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CreditApplicationPublic:
+    if payload.type == CreditApplicationType.PERSONAL_LOAN and not payload.documents:
+        raise ValidationError("Loan applications require supporting documents")
     application = CreditService(db).create_application(current_user.id, payload)
     db.commit()
     return application
+
+
+@router.get("/documents", response_model=list[CreditDocumentPublic])
+def list_documents(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[CreditDocumentPublic]:
+    return CreditService(db).list_documents(current_user.id)
+
+
+@router.post("/documents", response_model=CreditDocumentPublic, status_code=201)
+def upload_document(
+    payload: CreditDocumentCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CreditDocumentPublic:
+    document = CreditService(db).upload_document(current_user.id, payload)
+    db.commit()
+    return document
+
+
+@router.get("/documents/{document_id}/content", response_model=CreditDocumentContentPublic)
+def get_document_content(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CreditDocumentContentPublic:
+    return CreditService(db).get_document_content_for_user(current_user.id, document_id)
 
 
 @router.get("/admin/applications", response_model=list[CreditApplicationPublic])
@@ -101,19 +137,49 @@ def list_all_applications(
     _admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> list[CreditApplicationPublic]:
-    return CreditService(db).list_all_applications()
+    return CreditService(db).list_all_applications_with_documents()
+
+
+@router.get("/admin/documents", response_model=list[CreditDocumentPublic])
+def list_all_documents(
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[CreditDocumentPublic]:
+    return CreditService(db).list_all_documents()
+
+
+@router.get("/admin/documents/{document_id}/content", response_model=CreditDocumentContentPublic)
+def get_admin_document_content(
+    document_id: uuid.UUID,
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> CreditDocumentContentPublic:
+    return CreditService(db).get_document_content_for_admin(document_id)
+
+
+@router.patch("/admin/documents/{document_id}/review", response_model=CreditDocumentPublic)
+def review_document(
+    document_id: uuid.UUID,
+    payload: CreditDocumentReview,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> CreditDocumentPublic:
+    document = CreditService(db).review_document(document_id, admin.id, payload)
+    db.commit()
+    return document
 
 
 @router.patch("/admin/applications/{application_id}/decision", response_model=CreditApplicationPublic)
 def decide_application(
     application_id: uuid.UUID,
     payload: CreditApplicationDecision,
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> CreditApplicationPublic:
-    application = CreditService(db).decide_application(application_id, payload)
+    service = CreditService(db)
+    service.decide_application(application_id, payload, admin_id=admin.id)
     db.commit()
-    return application
+    return service.get_application_public(application_id)
 
 
 @router.get("/loans", response_model=list[LoanPublic])
@@ -121,7 +187,9 @@ def list_loans(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[LoanPublic]:
-    return CreditService(db).list_loans(current_user.id)
+    loans = CreditService(db).list_loans(current_user.id)
+    db.commit()
+    return loans
 
 
 @router.post("/applications/{application_id}/loan", response_model=LoanPublic, status_code=201)

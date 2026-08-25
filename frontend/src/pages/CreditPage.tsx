@@ -5,6 +5,8 @@ import { useAuth } from "../hooks/useAuth";
 import type {
   Card,
   CreditApplication,
+  CreditDocument,
+  CreditDocumentPurpose,
   CreditProfile,
   CreditScore,
   EarlyRepaymentPaymentResult,
@@ -93,6 +95,18 @@ function formatMoney(value: string, currency = "RON"): string {
   return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 }
 
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      resolve(result.includes(",") ? result.split(",")[1] : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read selected document."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function parseAmount(value: string): number {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : 0;
@@ -117,6 +131,7 @@ export function CreditPage() {
   const [profile, setProfile] = useState<CreditProfile | null>(null);
   const [score, setScore] = useState<CreditScore | null>(null);
   const [applications, setApplications] = useState<CreditApplication[]>([]);
+  const [creditDocuments, setCreditDocuments] = useState<CreditDocument[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
@@ -132,6 +147,8 @@ export function CreditPage() {
   const [profileCurrency, setProfileCurrency] = useState("RON");
   const [supportingDocuments, setSupportingDocuments] = useState<File[]>([]);
   const [loanApplicationDocuments, setLoanApplicationDocuments] = useState<File[]>([]);
+  const [documentMessage, setDocumentMessage] = useState<string | null>(null);
+  const [loanPrompt, setLoanPrompt] = useState<string | null>(null);
   const [loanProductType, setLoanProductType] = useState<LoanProductType>("PERSONAL_LOAN");
   const [isLoanInfoExpanded, setIsLoanInfoExpanded] = useState(false);
   const [areApprovedOffersExpanded, setAreApprovedOffersExpanded] = useState(false);
@@ -152,10 +169,19 @@ export function CreditPage() {
   const [error, setError] = useState<string | null>(null);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
 
+  const hasPendingScoreReview = useMemo(
+    () =>
+      creditDocuments.some(
+        (document) => document.purpose === "CREDIT_SCORE" && ["UPLOADED", "NEEDS_MORE_INFO"].includes(document.status),
+      ),
+    [creditDocuments],
+  );
+  const scoreIsPendingAdminReview = score?.reason_data.review_status === "PENDING_ADMIN_REVIEW";
+  const visibleScore = score && !scoreIsPendingAdminReview ? score : null;
   const scorePercent = useMemo(() => {
-    if (!score) return 0;
-    return Math.round(((score.score - 300) / 550) * 100);
-  }, [score]);
+    if (!visibleScore) return 0;
+    return Math.round(((visibleScore.score - 300) / 550) * 100);
+  }, [visibleScore]);
 
   const selectedLoanProduct = useMemo(
     () => loanProducts.find((product) => product.product_type === loanProductType) ?? loanProducts[0],
@@ -171,6 +197,10 @@ export function CreditPage() {
     () => cards.filter((card) => card.type === "DEBIT" && card.status === "ACTIVE" && card.default_wallet_id),
     [cards],
   );
+  const activeCreditCards = useMemo(
+    () => cards.filter((card) => card.type === "CREDIT" && card.status === "ACTIVE" && card.credit_account),
+    [cards],
+  );
   const debitRepresentedWalletIds = useMemo(
     () => new Set(activeDebitCards.map((card) => card.default_wallet_id).filter((walletId): walletId is string => Boolean(walletId))),
     [activeDebitCards],
@@ -180,13 +210,25 @@ export function CreditPage() {
     [activeWallets, debitRepresentedWalletIds],
   );
   const supportsDownPayment = DOWN_PAYMENT_LOAN_TYPES.has(loanProductType);
+  const existingLoanDebt = useMemo(
+    () =>
+      loans
+        .filter((loan) => loan.status === "ACTIVE")
+        .reduce((total, loan) => total + Number(loan.outstanding_principal), 0),
+    [loans],
+  );
+  const existingLoanDebtDisplay = existingLoanDebt.toFixed(2);
   const assetPriceAmount = parseAmount(assetPrice);
   const downPaymentAmount = parseAmount(downPayment);
   const financedAmount = supportsDownPayment ? Math.max(0, assetPriceAmount - downPaymentAmount) : parseAmount(requestedAmount);
   const principalAmountForApplication = financedAmount > 0 ? financedAmount.toFixed(2) : "";
   const hasDownPaymentError = supportsDownPayment && downPaymentAmount > assetPriceAmount && assetPriceAmount > 0;
   const canSubmitApplication =
-    !isApplying && principalAmountForApplication !== "" && Number(requestedTermMonths) > 0 && !hasDownPaymentError;
+    !isApplying &&
+    principalAmountForApplication !== "" &&
+    Number(requestedTermMonths) > 0 &&
+    !hasDownPaymentError &&
+    loanApplicationDocuments.length > 0;
 
   async function loadCreditData(token: string) {
     setIsLoading(true);
@@ -203,12 +245,13 @@ export function CreditPage() {
       setExistingDebt(profileResponse.existing_debt);
       setProfileCurrency(profileResponse.currency);
 
-      const [applicationsResult, loansResult, loanProductsResult, walletsResult, cardsResult] = await Promise.allSettled([
+      const [applicationsResult, loansResult, loanProductsResult, walletsResult, cardsResult, documentsResult] = await Promise.allSettled([
         apiRequest<CreditApplication[]>("/credit/applications", { token }),
         apiRequest<Loan[]>("/credit/loans", { token }),
         apiRequest<LoanProduct[]>("/credit/loan-products", { token }),
         apiRequest<Wallet[]>("/wallets", { token }),
         apiRequest<Card[]>("/cards", { token }),
+        apiRequest<CreditDocument[]>("/credit/documents", { token }),
       ]);
 
       if (applicationsResult.status === "fulfilled") {
@@ -220,6 +263,10 @@ export function CreditPage() {
 
       if (loansResult.status === "fulfilled") {
         setLoans(loansResult.value);
+        const loanDebt = loansResult.value
+          .filter((loan) => loan.status === "ACTIVE")
+          .reduce((total, loan) => total + Number(loan.outstanding_principal), 0);
+        setExistingDebt(loanDebt.toFixed(2));
       } else {
         setLoans([]);
         setLoadWarning("Credit score loaded, but active loans could not be loaded.");
@@ -240,6 +287,13 @@ export function CreditPage() {
       } else {
         setCards([]);
       }
+
+      if (documentsResult.status === "fulfilled") {
+        setCreditDocuments(documentsResult.value);
+      } else {
+        setCreditDocuments([]);
+      }
+
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -255,6 +309,10 @@ export function CreditPage() {
     if (!accessToken) return;
     void loadCreditData(accessToken);
   }, [accessToken, logout]);
+
+  useEffect(() => {
+    setExistingDebt(existingLoanDebtDisplay);
+  }, [existingLoanDebtDisplay]);
 
   useEffect(() => {
     if (!accessToken || applications.length === 0) return;
@@ -367,6 +425,16 @@ export function CreditPage() {
           currency: wallet.currency,
           availableBalance: wallet.available_balance,
         })),
+      ...activeCreditCards
+        .filter((card) => card.credit_account?.currency === currency)
+        .map((card) => ({
+          value: `CREDIT_CARD:${card.id}`,
+          walletId: "",
+          cardId: card.id,
+          label: `Credit **** ${card.last_four}`,
+          currency: card.credit_account?.currency,
+          availableBalance: card.credit_account?.available_credit ?? "0.00",
+        })),
     ];
   }
 
@@ -460,7 +528,7 @@ export function CreditPage() {
         method: "POST",
         token: accessToken,
         body: {
-          source_wallet_id: source.walletId,
+          ...(source.walletId ? { source_wallet_id: source.walletId } : {}),
           source_card_id: source.cardId,
           amount,
         },
@@ -483,7 +551,7 @@ export function CreditPage() {
       );
       setWallets((current) =>
         current.map((wallet) =>
-          wallet.id === source.walletId
+          source.walletId && wallet.id === source.walletId
             ? {
                 ...wallet,
                 available_balance: (Number(wallet.available_balance) - Number(result.applied_extra_payment_amount)).toFixed(2),
@@ -491,12 +559,14 @@ export function CreditPage() {
             : wallet,
         ),
       );
-      const [freshLoans, freshWallets] = await Promise.all([
+      const [freshLoans, freshWallets, freshCards] = await Promise.all([
         apiRequest<Loan[]>("/credit/loans", { token: accessToken }),
         apiRequest<Wallet[]>("/wallets", { token: accessToken }),
+        apiRequest<Card[]>("/cards", { token: accessToken }),
       ]);
       setLoans(freshLoans);
       setWallets(freshWallets);
+      setCards(freshCards);
       setEarlyRepaymentMessages((current) => ({
         ...current,
         [loan.id]: `${formatMoney(result.applied_extra_payment_amount, result.currency)} paid from ${source.label}.`,
@@ -521,10 +591,15 @@ export function CreditPage() {
 
   async function recalculateScore() {
     if (!accessToken || isSaving) return;
+    if (supportingDocuments.length === 0) {
+      setError("Upload salary/income and debt documentation before submitting the score for review.");
+      return;
+    }
     setIsSaving(true);
     setError(null);
+    setDocumentMessage(null);
     try {
-      const scoreResponse = await apiRequest<CreditScore>("/credit/score/recalculate", {
+      await apiRequest<CreditScore>("/credit/score/recalculate", {
         method: "POST",
         token: accessToken,
         body: {
@@ -533,12 +608,23 @@ export function CreditPage() {
           currency: profileCurrency,
         },
       });
+      const uploadedDocuments = await uploadCreditDocuments(
+        supportingDocuments,
+        "CREDIT_SCORE",
+        null,
+        "Income and debt documentation",
+      );
       const profileResponse = await apiRequest<CreditProfile>("/credit/profile", { token: accessToken });
-      setScore(scoreResponse);
+      const documentsResponse = await apiRequest<CreditDocument[]>("/credit/documents", { token: accessToken });
+      setCreditDocuments(documentsResponse);
       setProfile(profileResponse);
       setIncome(profileResponse.income);
-      setExistingDebt(profileResponse.existing_debt);
+      setExistingDebt(existingLoanDebtDisplay);
       setProfileCurrency(profileResponse.currency);
+      if (uploadedDocuments.length > 0) {
+        setSupportingDocuments([]);
+        setDocumentMessage("Credit score submitted for admin evaluation. The score will appear after approval.");
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -554,7 +640,17 @@ export function CreditPage() {
     if (!accessToken || !canSubmitApplication) return;
     setIsApplying(true);
     setError(null);
+    setLoanPrompt(null);
     try {
+      const documents = await Promise.all(
+        loanApplicationDocuments.map(async (file) => ({
+          document_type: `${formatProductType(loanProductType)} documentation`,
+          file_name: file.name,
+          content_type: file.type || null,
+          file_size: file.size,
+          content_base64: await readFileAsBase64(file),
+        })),
+      );
       const application = await apiRequest<CreditApplication>("/credit/applications", {
         method: "POST",
         token: accessToken,
@@ -564,13 +660,16 @@ export function CreditPage() {
           requested_amount: principalAmountForApplication,
           currency: requestedCurrency,
           requested_term_months: Number(requestedTermMonths),
+          documents,
         },
       });
       setApplications((current) => [application, ...current]);
+      setLoanPrompt("Application submitted for admin review. Once approved, you can activate the loan here.");
+      setDocumentMessage(`${documents.length} loan document${documents.length === 1 ? "" : "s"} attached for admin review.`);
+      setLoanApplicationDocuments([]);
       setRequestedAmount("");
       setAssetPrice("");
       setDownPayment("");
-      setLoanApplicationDocuments([]);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -582,22 +681,62 @@ export function CreditPage() {
     }
   }
 
+  async function uploadCreditDocuments(
+    files: File[],
+    purpose: CreditDocumentPurpose,
+    applicationId: string | null,
+    documentType: string,
+  ) {
+    if (!accessToken || files.length === 0) return [];
+
+    const uploads = await Promise.all(
+      files.map(async (file) =>
+        apiRequest<CreditDocument>("/credit/documents", {
+          method: "POST",
+          token: accessToken,
+          body: {
+            application_id: applicationId,
+            purpose,
+            document_type: documentType,
+            file_name: file.name,
+            content_type: file.type || null,
+            file_size: file.size,
+            content_base64: await readFileAsBase64(file),
+          },
+        }),
+      ),
+    );
+    return uploads;
+  }
+
   async function activateLoan(application: CreditApplication) {
     if (!accessToken || activatingApplicationId) return;
     setActivatingApplicationId(application.id);
     setError(null);
+    setLoanPrompt(null);
     try {
       const loan = await apiRequest<Loan>(`/credit/applications/${application.id}/loan`, {
         method: "POST",
         token: accessToken,
       });
       setLoans((current) => [loan, ...current]);
+      setWallets((current) =>
+        current.map((wallet) =>
+          wallet.currency === loan.currency
+            ? {
+                ...wallet,
+                available_balance: (Number(wallet.available_balance) + Number(loan.principal_amount)).toFixed(2),
+              }
+            : wallet,
+        ),
+      );
+      setLoanPrompt(`${formatMoney(loan.principal_amount, loan.currency)} was wired to your ${loan.currency} account.`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not activate loan.");
+      setLoanPrompt(err instanceof ApiError ? err.message : "Create a matching currency account before activating this loan.");
     } finally {
       setActivatingApplicationId(null);
     }
@@ -608,22 +747,23 @@ export function CreditPage() {
       <div className="tile">
         <div className="tile__header">
           <span className="eyebrow">Credit score</span>
-          {score && <span className={bandClass(score.band)}>{score.band}</span>}
+          {visibleScore && <span className={bandClass(visibleScore.band)}>{visibleScore.band}</span>}
+          {!visibleScore && hasPendingScoreReview && <span className="tag tag--neutral">Pending admin review</span>}
         </div>
 
         {isLoading && <div className="card-empty">Loading credit score...</div>}
-        {!isLoading && score && (
+        {!isLoading && visibleScore && (
           <div className="credit-score-layout">
             <div>
               <div className="credit-score-ring" style={{ "--score-percent": `${scorePercent}%` } as CSSProperties}>
                 <div>
-                  <span>{score.score}</span>
+                  <span>{visibleScore.score}</span>
                   <small>/ 850</small>
                 </div>
               </div>
             </div>
             <div className="credit-factor-grid">
-              {Object.entries(score.reason_data).map(([key, value]) => (
+              {Object.entries(visibleScore.reason_data).map(([key, value]) => (
                 <div className="credit-factor" key={key}>
                   <div className="eyebrow">{formatFactorLabel(key)}</div>
                   <div className="card-panel__value">{value}</div>
@@ -632,7 +772,15 @@ export function CreditPage() {
             </div>
           </div>
         )}
+        {!isLoading && !visibleScore && (
+          <div className="card-empty">
+            {hasPendingScoreReview
+              ? "Your documents are waiting for admin evaluation."
+              : "Submit the calculator and supporting documents to receive a reviewed credit score."}
+          </div>
+        )}
         {error && <p style={{ color: "var(--color-warning)", margin: "0.85rem 0 0" }}>{error}</p>}
+        {loanPrompt && <p className="credit-document-message">{loanPrompt}</p>}
         {loadWarning && <p style={{ color: "var(--color-warning)", margin: "0.85rem 0 0" }}>{loadWarning}</p>}
       </div>
 
@@ -647,8 +795,8 @@ export function CreditPage() {
               <input value={income} onChange={(event) => setIncome(event.target.value)} inputMode="decimal" />
             </label>
             <label>
-              Existing debt
-              <input value={existingDebt} onChange={(event) => setExistingDebt(event.target.value)} inputMode="decimal" />
+              Existing loan debt
+              <input value={existingDebt} readOnly inputMode="decimal" />
             </label>
             <label>
               Currency
@@ -701,6 +849,7 @@ export function CreditPage() {
             <strong>{new Date(profile.updated_at).toLocaleString()}</strong>
           </div>
         )}
+        {documentMessage && <p className="credit-document-message">{documentMessage}</p>}
       </div>
 
       <div className="tile">
@@ -804,7 +953,7 @@ export function CreditPage() {
                     <span>
                       {loanApplicationDocuments.length > 0
                         ? `${loanApplicationDocuments.length} document${loanApplicationDocuments.length === 1 ? "" : "s"} selected`
-                        : "Optional for demo, ready for future admin review"}
+                        : "Upload income, debt or asset proof before submitting"}
                     </span>
                   </div>
                   <label className="button--ghost income-document-upload__button">
@@ -820,7 +969,7 @@ export function CreditPage() {
               </div>
             </div>
             <button type="button" onClick={createApplication} disabled={!canSubmitApplication}>
-              {isApplying ? "Submitting..." : "Submit application"}
+              {isApplying ? "Submitting..." : loanApplicationDocuments.length > 0 ? "Submit application" : "Upload documents to submit"}
             </button>
           </div>
 
@@ -966,18 +1115,27 @@ export function CreditPage() {
               <div className="approved-offers__list" id="approved-offers-list">
                 {visibleLoanApplications.map((application) => {
                   const existingLoan = loans.find((loan) => loan.application_id === application.id);
+                  const activeLoan = existingLoan?.status === "ACTIVE" ? existingLoan : null;
                   const breakdown = applicationBreakdowns[application.id];
                   const isApproved = application.status === "APPROVED";
                   const canActivate = application.type === "PERSONAL_LOAN" && isApproved && !existingLoan;
                   const isOfferExpanded = expandedOfferIds.has(application.id);
                   const breakdownId = `approved-offer-breakdown-${application.id}`;
-                  const earlyRepaymentAmount = existingLoan ? earlyRepaymentAmounts[existingLoan.id] ?? "" : "";
-                  const earlyRepaymentError = existingLoan ? earlyRepaymentErrors[existingLoan.id] : null;
-                  const earlyRepaymentMessage = existingLoan ? earlyRepaymentMessages[existingLoan.id] : null;
-                  const earlyRepaymentResult = existingLoan ? earlyRepaymentResults[existingLoan.id] : null;
-                  const repaymentSources = existingLoan ? loanPaymentSourceOptions(existingLoan.currency) : [];
-                  const selectedRepaymentSource = existingLoan
-                    ? earlyRepaymentSourceIds[existingLoan.id] || repaymentSources[0]?.value || ""
+                  const loanStatusLabel =
+                    existingLoan?.status === "ACTIVE"
+                      ? "Loan active"
+                      : existingLoan?.status === "PAID" || existingLoan?.status === "CLOSED"
+                        ? "Loan closed"
+                        : existingLoan
+                          ? existingLoan.status.toLowerCase()
+                          : "";
+                  const earlyRepaymentAmount = activeLoan ? earlyRepaymentAmounts[activeLoan.id] ?? "" : "";
+                  const earlyRepaymentError = activeLoan ? earlyRepaymentErrors[activeLoan.id] : null;
+                  const earlyRepaymentMessage = activeLoan ? earlyRepaymentMessages[activeLoan.id] : null;
+                  const earlyRepaymentResult = activeLoan ? earlyRepaymentResults[activeLoan.id] : null;
+                  const repaymentSources = activeLoan ? loanPaymentSourceOptions(activeLoan.currency) : [];
+                  const selectedRepaymentSource = activeLoan
+                    ? earlyRepaymentSourceIds[activeLoan.id] || repaymentSources[0]?.value || ""
                     : "";
                   const selectedRepaymentSourceDetails = repaymentSources.find((source) => source.value === selectedRepaymentSource);
                   return (
@@ -1000,7 +1158,7 @@ export function CreditPage() {
                             {isApproved ? "Approved" : "Pending review"}
                           </span>
                           {existingLoan ? (
-                            <span className="tag tag--accent">Loan active</span>
+                            <span className={activeLoan ? "tag tag--accent" : "tag tag--neutral"}>{loanStatusLabel}</span>
                           ) : isApproved ? (
                             <button
                               type="button"
@@ -1038,7 +1196,7 @@ export function CreditPage() {
                               {isOfferExpanded ? "Retract" : "Show details"}
                             </button>
                           </div>
-                          {existingLoan && (
+                          {activeLoan && (
                             <div className="early-repayment-card">
                               <div className="early-repayment-card__top">
                                 <div>
@@ -1046,7 +1204,7 @@ export function CreditPage() {
                                   <strong>Simulate or make an extra principal payment</strong>
                                 </div>
                                 <span className="tag tag--neutral">
-                                  {formatMoney(existingLoan.outstanding_principal, existingLoan.currency)} left
+                                  {formatMoney(activeLoan.outstanding_principal, activeLoan.currency)} left
                                 </span>
                               </div>
                               <div className="early-repayment-card__form">
@@ -1060,10 +1218,10 @@ export function CreditPage() {
                                     onChange={(event) =>
                                       setEarlyRepaymentAmounts((current) => ({
                                         ...current,
-                                        [existingLoan.id]: event.target.value,
+                                        [activeLoan.id]: event.target.value,
                                       }))
                                     }
-                                    placeholder={`0.00 ${existingLoan.currency}`}
+                                    placeholder={`0.00 ${activeLoan.currency}`}
                                   />
                                 </label>
                                 <label>
@@ -1073,7 +1231,7 @@ export function CreditPage() {
                                     onChange={(event) =>
                                       setEarlyRepaymentSourceIds((current) => ({
                                         ...current,
-                                        [existingLoan.id]: event.target.value,
+                                        [activeLoan.id]: event.target.value,
                                       }))
                                     }
                                     disabled={repaymentSources.length === 0}
@@ -1092,18 +1250,18 @@ export function CreditPage() {
                                 <button
                                   type="button"
                                   className="button--ghost early-repayment-card__simulate"
-                                  onClick={() => simulateEarlyRepayment(existingLoan)}
-                                  disabled={simulatingLoanId === existingLoan.id}
+                                  onClick={() => simulateEarlyRepayment(activeLoan)}
+                                  disabled={simulatingLoanId === activeLoan.id}
                                 >
-                                  {simulatingLoanId === existingLoan.id ? "Simulating..." : "Simulate"}
+                                  {simulatingLoanId === activeLoan.id ? "Simulating..." : "Simulate"}
                                 </button>
                                 <button
                                   type="button"
                                   className="credit-card-payment__submit"
-                                  onClick={() => makeEarlyRepayment(existingLoan, repaymentSources)}
-                                  disabled={payingLoanId === existingLoan.id || repaymentSources.length === 0}
+                                  onClick={() => makeEarlyRepayment(activeLoan, repaymentSources)}
+                                  disabled={payingLoanId === activeLoan.id || repaymentSources.length === 0}
                                 >
-                                  {payingLoanId === existingLoan.id ? "Paying..." : "Make payment"}
+                                  {payingLoanId === activeLoan.id ? "Paying..." : "Make payment"}
                                 </button>
                               </div>
                               {selectedRepaymentSource && (
@@ -1113,8 +1271,8 @@ export function CreditPage() {
                                     ? `${Number(selectedRepaymentSourceDetails.availableBalance).toLocaleString(undefined, {
                                         minimumFractionDigits: 2,
                                         maximumFractionDigits: 2,
-                                      })} ${existingLoan.currency}`
-                                    : `0.00 ${existingLoan.currency}`}
+                                      })} ${activeLoan.currency}`
+                                    : `0.00 ${activeLoan.currency}`}
                                 </p>
                               )}
                               {earlyRepaymentError && <p className="early-repayment-card__error">{earlyRepaymentError}</p>}

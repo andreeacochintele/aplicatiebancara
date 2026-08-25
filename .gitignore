@@ -18,6 +18,7 @@ frontend/tsconfig.tsbuildinfo
 .env
 backend/.env
 frontend/.env
+backend/.credit_documents.json
 
 # Editors / OS
 .vscode/

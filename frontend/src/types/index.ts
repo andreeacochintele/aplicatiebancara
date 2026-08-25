@@ -362,6 +362,7 @@ export interface Loan {
   id: string;
   user_id: string;
   application_id: string;
+  loan_product_type: LoanProductType | null;
   principal_amount: string;
   currency: string;
   interest_rate: string;
@@ -398,6 +399,8 @@ export type LoanProductType =
   | "HOME_IMPROVEMENT"
   | "DEBT_CONSOLIDATION";
 export type CreditApplicationStatus = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
+export type CreditDocumentPurpose = "CREDIT_SCORE" | "LOAN_APPLICATION";
+export type CreditDocumentStatus = "UPLOADED" | "APPROVED" | "REJECTED" | "NEEDS_MORE_INFO";
 
 export interface CreditApplication {
   id: string;
@@ -413,6 +416,31 @@ export interface CreditApplication {
   status: CreditApplicationStatus;
   created_at: string;
   resolved_at: string | null;
+  documents?: CreditDocument[];
+}
+
+export interface CreditDocument {
+  id: string;
+  user_id: string;
+  application_id: string | null;
+  purpose: CreditDocumentPurpose;
+  document_type: string;
+  file_name: string;
+  content_type: string | null;
+  file_size: number;
+  status: CreditDocumentStatus;
+  evaluation_score: number | null;
+  review_note: string | null;
+  uploaded_at: string;
+  reviewed_at: string | null;
+  reviewed_by_admin_id: string | null;
+}
+
+export interface CreditDocumentContent {
+  id: string;
+  file_name: string;
+  content_type: string | null;
+  content_base64: string;
 }
 
 export interface LoanProduct {

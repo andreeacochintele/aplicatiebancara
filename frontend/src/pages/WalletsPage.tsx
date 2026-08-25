@@ -1,11 +1,11 @@
-import { ArrowLeftRight, Plus, Star, Trash2, TrendingUp, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowLeftRight, ChevronDown, ChevronUp, Plus, Star, Trash2, TrendingUp, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
-import type { FXMarketRate, FXQuote, FXRateHistory, Wallet } from "../types";
+import type { FXMarketRate, FXQuote, FXRateHistory, Transaction, Wallet } from "../types";
 
 const RATE_ACCENT = "#5b5fef"; // same violet as --aurora-accent, kept as one deliberate hue for the trend line
 // matches backend/app/fx/service.py's _RATES_TO_RON — keep both in sync
@@ -21,6 +21,17 @@ function hueFromString(value: string): number {
 
 function colorForCurrency(currency: string): string {
   return `hsl(${hueFromString(currency)} 65% 55%)`;
+}
+
+function formatTransactionDate(value: string): string {
+  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatTransactionType(type: string): string {
+  return type
+    .split("_")
+    .map((part) => part[0] + part.slice(1).toLowerCase())
+    .join(" ");
 }
 
 function RateTrendChart({ history }: { history: FXRateHistory }) {
@@ -76,6 +87,7 @@ function RateTrendChart({ history }: { history: FXRateHistory }) {
 export function WalletsPage() {
   const { accessToken } = useAuth();
   const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [sourceId, setSourceId] = useState("");
   const [targetId, setTargetId] = useState("");
   const [amount, setAmount] = useState("100");
@@ -92,15 +104,45 @@ export function WalletsPage() {
   const [chartSourceCurrency, setChartSourceCurrency] = useState("");
   const [chartTargetCurrency, setChartTargetCurrency] = useState("");
   const [rateHistory, setRateHistory] = useState<FXRateHistory | null>(null);
+  const [expandedTransactionWalletIds, setExpandedTransactionWalletIds] = useState<Set<string>>(() => new Set());
 
   function loadWallets() {
     if (!accessToken) return;
     apiRequest<Wallet[]>("/wallets", { token: accessToken }).then(setWallets).catch(() => setWallets([]));
   }
 
+  function loadTransactions() {
+    if (!accessToken) return;
+    apiRequest<Transaction[]>("/transactions", { token: accessToken }).then(setTransactions).catch(() => setTransactions([]));
+  }
+
   useEffect(loadWallets, [accessToken]);
+  useEffect(loadTransactions, [accessToken]);
+
+  function toggleWalletTransactions(walletId: string) {
+    setExpandedTransactionWalletIds((current) => {
+      const next = new Set(current);
+      if (next.has(walletId)) {
+        next.delete(walletId);
+      } else {
+        next.add(walletId);
+      }
+      return next;
+    });
+  }
 
   const activeWallets = wallets.filter((w) => w.status !== "CLOSED");
+  const transactionsByWallet = useMemo(
+    () =>
+      transactions.reduce<Record<string, Transaction[]>>((groups, transaction) => {
+        for (const walletId of [transaction.source_wallet_id, transaction.destination_wallet_id]) {
+          if (!walletId) continue;
+          groups[walletId] = [...(groups[walletId] ?? []), transaction];
+        }
+        return groups;
+      }, {}),
+    [transactions],
+  );
   const mainWallet = activeWallets.find((w) => w.is_main);
   const missingCurrencies = SUPPORTED_CURRENCIES.filter((c) => !activeWallets.some((w) => w.currency === c));
 
@@ -256,6 +298,7 @@ export function WalletsPage() {
       setQuote(null);
       setTargetId(destinationWalletId);
       loadWallets();
+      loadTransactions();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Conversion failed");
     } finally {
@@ -289,56 +332,100 @@ export function WalletsPage() {
         </div>
 
         <div className="aurora-wallet-grid">
-          {activeWallets.map((wallet) => (
-            <div
-              className="aurora-wallet-card"
-              key={wallet.id}
-              style={{ "--wallet-accent": colorForCurrency(wallet.currency) } as CSSProperties}
-            >
-              <div className="aurora-wallet-card__top">
-                <span className="aurora-wallet-card__code">{wallet.currency}</span>
-                {wallet.is_main ? (
-                  <span className="aurora-chip aurora-chip-violet">Main</span>
-                ) : (
-                  <span className="aurora-chip aurora-chip-neutral">{wallet.status}</span>
-                )}
-              </div>
-              <div className="aurora-wallet-card__amount" style={{ color: "var(--wallet-accent)" }}>
-                {wallet.available_balance}
-              </div>
-              <div className="aurora-wallet-card__sub">
-                {wallet.reserved_balance !== "0" && wallet.reserved_balance !== "0.00"
-                  ? `${wallet.reserved_balance} ${wallet.currency} reserved`
-                  : "Nothing on hold"}
-              </div>
-              <div className="aurora-wallet-card__footer">
-                <span className="aurora-eyebrow" style={{ marginBottom: 0 }}>
-                  {wallet.is_main ? "Main wallet" : wallet.status}
-                </span>
-                {!wallet.is_main && wallet.status === "ACTIVE" && (
-                  <div style={{ display: "flex", gap: 12 }}>
-                    <button
-                      type="button"
-                      className="aurora-wallet-card__set-main"
-                      onClick={() => setMainWallet(wallet.id)}
-                      disabled={settingMainId === wallet.id}
-                    >
-                      <Star size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
-                      Set as main
-                    </button>
-                    <button
-                      type="button"
-                      className="aurora-wallet-card__delete"
-                      onClick={() => setDeletingWallet(wallet)}
-                    >
-                      <Trash2 size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
-                      Delete
-                    </button>
+          {activeWallets.map((wallet) => {
+            const isTransactionsExpanded = expandedTransactionWalletIds.has(wallet.id);
+            const walletTransactions = (transactionsByWallet[wallet.id] ?? [])
+              .sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime())
+              .slice(0, 8);
+            return (
+              <div
+                className="aurora-wallet-card"
+                key={wallet.id}
+                style={{ "--wallet-accent": colorForCurrency(wallet.currency) } as CSSProperties}
+              >
+                <div className="aurora-wallet-card__top">
+                  <span className="aurora-wallet-card__code">{wallet.currency}</span>
+                  {wallet.is_main ? (
+                    <span className="aurora-chip aurora-chip-violet">Main</span>
+                  ) : (
+                    <span className="aurora-chip aurora-chip-neutral">{wallet.status}</span>
+                  )}
+                </div>
+                <div className="aurora-wallet-card__amount" style={{ color: "var(--wallet-accent)" }}>
+                  {wallet.available_balance}
+                </div>
+                <div className="aurora-wallet-card__sub">
+                  {wallet.reserved_balance !== "0" && wallet.reserved_balance !== "0.00"
+                    ? `${wallet.reserved_balance} ${wallet.currency} reserved`
+                    : "Nothing on hold"}
+                </div>
+                <button
+                  type="button"
+                  className="aurora-wallet-history-toggle"
+                  onClick={() => toggleWalletTransactions(wallet.id)}
+                  aria-expanded={isTransactionsExpanded}
+                >
+                  <span>{isTransactionsExpanded ? "Hide history" : "Transaction history"}</span>
+                  {isTransactionsExpanded ? <ChevronUp size={16} strokeWidth={2.2} /> : <ChevronDown size={16} strokeWidth={2.2} />}
+                </button>
+                {isTransactionsExpanded && (
+                  <div className="aurora-wallet-activity">
+                    {walletTransactions.length === 0 ? (
+                      <div className="aurora-wallet-activity__empty">No account transactions yet.</div>
+                    ) : (
+                      <div className="aurora-wallet-activity__list">
+                        {walletTransactions.map((transaction) => {
+                          const isIncoming = transaction.destination_wallet_id === wallet.id;
+                          return (
+                            <div className="aurora-wallet-activity__row" key={transaction.id}>
+                              <div>
+                                <strong>{transaction.description || formatTransactionType(transaction.type)}</strong>
+                                <span>{formatTransactionDate(transaction.created_at)}</span>
+                              </div>
+                              <div className={isIncoming ? "aurora-wallet-activity__amount--in" : "aurora-wallet-activity__amount--out"}>
+                                {isIncoming ? "+" : "-"}
+                                {Number(transaction.amount).toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}{" "}
+                                {transaction.currency}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
+                <div className="aurora-wallet-card__footer">
+                  <span className="aurora-eyebrow" style={{ marginBottom: 0 }}>
+                    {wallet.is_main ? "Main wallet" : wallet.status}
+                  </span>
+                  {!wallet.is_main && wallet.status === "ACTIVE" && (
+                    <div style={{ display: "flex", gap: 12 }}>
+                      <button
+                        type="button"
+                        className="aurora-wallet-card__set-main"
+                        onClick={() => setMainWallet(wallet.id)}
+                        disabled={settingMainId === wallet.id}
+                      >
+                        <Star size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
+                        Set as main
+                      </button>
+                      <button
+                        type="button"
+                        className="aurora-wallet-card__delete"
+                        onClick={() => setDeletingWallet(wallet)}
+                      >
+                        <Trash2 size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {activeWallets.length === 0 && <p className="aurora-tx-meta">No wallets yet.</p>}
         </div>
         {error && <p role="alert">{error}</p>}
