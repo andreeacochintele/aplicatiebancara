@@ -4083,3 +4083,242 @@ th {
   color: var(--color-text-muted);
   white-space: nowrap;
 }
+
+/* ---- Assistant ---- */
+
+.assistant-layout {
+  display: flex;
+  gap: 1rem;
+  height: 78vh;
+}
+
+.assistant-sidebar {
+  width: 260px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.assistant-sidebar__new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0.6rem 0;
+  font-size: 0.85rem;
+}
+
+.assistant-conversation-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.assistant-conversation {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: var(--radius-sm);
+}
+
+.assistant-conversation--active {
+  background: var(--color-accent-soft);
+}
+
+.assistant-conversation__open {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0.5rem 0.6rem;
+  color: var(--color-text);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.assistant-conversation--active .assistant-conversation__open {
+  color: var(--color-accent-strong);
+  font-weight: 700;
+}
+
+.assistant-conversation__title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-conversation__delete {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 0.3rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.assistant-conversation__delete:hover {
+  background: rgba(240, 166, 166, 0.12);
+  color: #f0a6a6;
+}
+
+.assistant-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 1rem;
+}
+
+.assistant-hero {
+  border: 1px solid var(--color-divider);
+  padding: 1.1rem 1.25rem;
+  background: linear-gradient(135deg, var(--color-accent-soft), transparent 65%), var(--color-surface);
+}
+
+.assistant-hero__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.assistant-hero__avatar {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.assistant-hero__title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--color-text);
+}
+
+.assistant-hero__subtitle {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.assistant-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.assistant-quick-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  color: var(--color-text);
+}
+
+.assistant-quick-action:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent-strong);
+}
+
+.assistant-quick-action--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.assistant-quick-action--primary:hover {
+  background: var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
+  color: #fff;
+}
+
+.assistant-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.assistant-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.75rem;
+}
+
+.assistant-message {
+  display: flex;
+  flex-direction: column;
+  max-width: 78%;
+}
+
+.assistant-message--user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.assistant-message--assistant {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.assistant-bubble {
+  padding: 0.6rem 0.85rem;
+  border-radius: 1rem;
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.assistant-bubble--user {
+  background: var(--color-accent);
+  color: #fff;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.assistant-bubble--assistant {
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  border-bottom-left-radius: 0.25rem;
+}
+
+.assistant-message__agent {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+  padding: 0 0.3rem;
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  opacity: 0.75;
+}
+
+.assistant-composer {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.assistant-composer input {
+  flex: 1;
+}

@@ -1967,3 +1967,78 @@
 .aurora-shell .bar-row__value {
   color: var(--aurora-text-soft);
 }
+
+/* ---- Assistant ---- */
+
+.aurora-shell .assistant-conversation--active {
+  background: var(--aurora-accent-soft);
+}
+
+.aurora-shell .assistant-conversation__open {
+  color: var(--aurora-text);
+}
+
+.aurora-shell .assistant-conversation--active .assistant-conversation__open {
+  color: var(--aurora-accent-dark);
+}
+
+.aurora-shell .assistant-conversation__delete {
+  color: var(--aurora-text-faint);
+}
+
+.aurora-shell .assistant-conversation__delete:hover {
+  background: var(--aurora-red-soft);
+  color: var(--aurora-red);
+}
+
+.aurora-shell .assistant-hero {
+  border-color: var(--aurora-border);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--aurora-violet) 12%, transparent),
+      color-mix(in srgb, var(--aurora-pink) 10%, transparent) 70%
+    ),
+    var(--aurora-surface);
+}
+
+.aurora-shell .assistant-hero__avatar {
+  background: var(--aurora-gradient);
+}
+
+.aurora-shell .assistant-hero__subtitle {
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .assistant-quick-action {
+  background: var(--aurora-surface-alt);
+  border-color: var(--aurora-border);
+  color: var(--aurora-text);
+}
+
+.aurora-shell .assistant-quick-action:hover {
+  border-color: var(--aurora-accent);
+  color: var(--aurora-accent-dark);
+  background: var(--aurora-accent-soft);
+}
+
+.aurora-shell .assistant-quick-action--primary,
+.aurora-shell .assistant-quick-action--primary:hover {
+  background: var(--aurora-accent-dark);
+  border-color: var(--aurora-accent-dark);
+  color: #fff;
+}
+
+.aurora-shell .assistant-bubble--assistant {
+  background: var(--aurora-surface-alt);
+  color: var(--aurora-text);
+  border: 1px solid var(--aurora-border);
+}
+
+.aurora-shell .assistant-bubble--user {
+  background: var(--aurora-accent);
+}
+
+.aurora-shell .assistant-message__agent {
+  color: var(--aurora-text-faint);
+}
