@@ -153,13 +153,18 @@ def _format_context(
             f"description={transaction.description or 'n/a'}, created_at={transaction.created_at}"
         )
 
-    if profile.average_card_payment_amount is not None:
-        lines.append(
-            f"User's average completed card payment: {profile.average_card_payment_amount} "
-            f"(based on {profile.card_payment_history_count} completed card payments)"
+    if profile.by_currency:
+        currency_lines = ", ".join(
+            f"{currency_profile.average_card_payment_amount} {currency} "
+            f"(based on {currency_profile.card_payment_history_count} completed {currency} card payments)"
+            for currency, currency_profile in sorted(profile.by_currency.items())
         )
+        lines.append(f"User's average completed card payment by currency: {currency_lines}")
     else:
-        lines.append(f"User's average completed card payment: not enough history ({profile.card_payment_history_count} completed card payments on record)")
+        lines.append(
+            f"User's average completed card payment: not enough history "
+            f"({profile.card_payment_history_count} completed card payments on record)"
+        )
 
     lines.append(f"Transactions in the last 24 hours: {len(recent_activity)}")
     lines.append(f"Transaction history available for this user: {len(history)} transactions total")

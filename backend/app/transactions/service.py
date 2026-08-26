@@ -9,6 +9,14 @@ of internal wallet-to-wallet transfers with paired ledger entries
 Fraud scoring (app/fraud/service.py) hooks into create_card_payment and can
 route a payment to PENDING_REVIEW + a HOLD instead of completing it — see
 the FraudService call below.
+
+Reward sync (points + cashback, app/merchants/service.py) also hooks into
+create_card_payment: a COMPLETED card payment triggers
+MerchantService.sync_purchases_from_transactions right away, instead of
+only lazily the next time the Rewards page happens to load. A payment held
+for fraud review is skipped here (its status isn't COMPLETED yet) — it's
+not synced until something else calls sync-rewards again after the case is
+approved (app/fraud/service.py's approve() does not itself trigger a sync).
 """
 import uuid
 from datetime import datetime, timezone
@@ -23,6 +31,7 @@ from app.fraud.service import FraudService
 from app.fx.service import FXService
 from app.merchants.models import MerchantStatus
 from app.merchants.repository import MerchantRepository
+from app.merchants.service import MerchantService
 from app.notifications.service import NotificationsService
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
@@ -223,6 +232,7 @@ class TransactionService:
             transaction.status = TransactionStatus.COMPLETED
             transaction.completed_at = datetime.now(timezone.utc)
             self.db.flush()
+            self._sync_rewards(initiator_user_id)
             return transaction
 
         preferences = self.cards.get_preferences(card.id)
@@ -282,7 +292,16 @@ class TransactionService:
         transaction.status = TransactionStatus.COMPLETED
         transaction.completed_at = datetime.now(timezone.utc)
         self.db.flush()
+        self._sync_rewards(initiator_user_id)
         return transaction
+
+    def _sync_rewards(self, user_id: uuid.UUID) -> None:
+        """Best-effort: a completed card payment should show up as earned
+        points/cashback immediately rather than only the next time the
+        Rewards page happens to sync on its own. Reuses the same
+        already-earned dedup MerchantService.sync_purchases_from_transactions
+        already does, so this is safe to call after every completed payment."""
+        MerchantService(self.db).sync_purchases_from_transactions(user_id)
 
     def create_credit_card_repayment(self, initiator_user_id: uuid.UUID, data: CreditCardRepaymentCreate) -> Transaction:
         if data.amount <= 0:

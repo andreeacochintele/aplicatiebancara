@@ -1,6 +1,9 @@
+import { Bot, Check, Copy, CreditCard, LifeBuoy, MessageCircle, Plus, Sparkles, Trash2, Wallet } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { apiRequest, ApiError } from "../api/apiClient";
+import { ASSISTANT_NAME, ASSISTANT_QUICK_ACTIONS } from "../config/assistant";
 import { useAuth } from "../hooks/useAuth";
 import type {
   ConversationMessagePublic,
@@ -14,6 +17,11 @@ interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   intent?: OrchestratorIntent;
+  createdAt: string;
+  /** Only ever set on the assistant reply just received this session — not
+   * reconstructed from history, since the backend doesn't persist these
+   * (see OrchestratorChatResponse.suggested_followups). */
+  followups?: string[];
 }
 
 const INTENT_LABEL: Record<OrchestratorIntent, string> = {
@@ -24,6 +32,14 @@ const INTENT_LABEL: Record<OrchestratorIntent, string> = {
   out_of_scope: "Out of scope",
 };
 
+const QUICK_ACTION_ICON: Record<OrchestratorIntent, LucideIcon> = {
+  personal_finance: Wallet,
+  credit: CreditCard,
+  support: LifeBuoy,
+  greeting: Bot,
+  out_of_scope: Bot,
+};
+
 const MESSAGES_PAGE_SIZE = 50;
 
 function toChatMessage(entry: ConversationMessagePublic): ChatMessage {
@@ -31,11 +47,20 @@ function toChatMessage(entry: ConversationMessagePublic): ChatMessage {
     role: entry.role === "assistant" ? "assistant" : "user",
     text: entry.content,
     intent: entry.agent_used ?? undefined,
+    createdAt: entry.created_at,
   };
 }
 
+function conversationTitle(conversation: ConversationSummary): string {
+  return conversation.title ?? "New conversation";
+}
+
+function formatMessageTime(iso: string): string {
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+}
+
 export function AssistantPage() {
-  const { accessToken } = useAuth();
+  const { user, accessToken } = useAuth();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -45,9 +70,12 @@ export function AssistantPage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [conversationSearch, setConversationSearch] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const shouldScrollToBottomRef = useRef(false);
+  const draftInputRef = useRef<HTMLInputElement | null>(null);
 
   // ---- conversation list (sidebar) ----
 
@@ -81,7 +109,7 @@ export function AssistantPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
 
-  // ---- opening / switching / creating conversations ----
+  // ---- opening / switching / creating / deleting conversations ----
 
   async function openConversation(conversationId: string) {
     if (!accessToken) return;
@@ -122,6 +150,26 @@ export function AssistantPage() {
     }
   }
 
+  async function deleteConversation(conversationId: string) {
+    if (!accessToken) return;
+    setError(null);
+    try {
+      await apiRequest<void>(`/ai/orchestrator/conversations/${conversationId}`, {
+        method: "DELETE",
+        token: accessToken,
+      });
+      setConversations((current) => current.filter((c) => c.id !== conversationId));
+      if (activeConversationId === conversationId) {
+        setActiveConversationId(null);
+        setMessages([]);
+        setOldestLoadedCreatedAt(null);
+        setHasMoreOlder(false);
+      }
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not delete this conversation");
+    }
+  }
+
   async function loadOlderMessages() {
     if (!accessToken || !activeConversationId || !oldestLoadedCreatedAt || loadingOlder) return;
     setLoadingOlder(true);
@@ -142,15 +190,32 @@ export function AssistantPage() {
     }
   }
 
+  // ---- quick actions ----
+
+  function applyStarterPrompt(prompt: string) {
+    setDraft(prompt);
+    draftInputRef.current?.focus();
+  }
+
+  // ---- copy-to-clipboard ----
+
+  async function copyMessage(index: number, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex((current) => (current === index ? null : current)), 1500);
+    } catch {
+      // Clipboard permission denied/unavailable — nothing worth surfacing an error for.
+    }
+  }
+
   // ---- sending a message ----
 
-  async function send() {
-    const text = draft.trim();
+  async function sendMessage(text: string) {
     if (!text || !accessToken || sending) return;
 
     shouldScrollToBottomRef.current = true;
-    setMessages((current) => [...current, { role: "user", text }]);
-    setDraft("");
+    setMessages((current) => [...current, { role: "user", text, createdAt: new Date().toISOString() }]);
     setSending(true);
     setError(null);
     try {
@@ -160,25 +225,38 @@ export function AssistantPage() {
         token: accessToken,
       });
       shouldScrollToBottomRef.current = true;
-      setMessages((current) => [...current, { role: "assistant", text: response.reply, intent: response.intent }]);
-
-      const isNewConversation = response.conversation_id !== activeConversationId;
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          text: response.reply,
+          intent: response.intent,
+          createdAt: new Date().toISOString(),
+          followups: response.suggested_followups,
+        },
+      ]);
       setActiveConversationId(response.conversation_id);
-      setConversations((current) => {
-        const preview = response.reply.slice(0, 140);
-        const now = new Date().toISOString();
-        if (isNewConversation) {
-          return [{ id: response.conversation_id, title: null, created_at: now, updated_at: now, last_message_preview: preview }, ...current];
-        }
-        const rest = current.filter((c) => c.id !== response.conversation_id);
-        const existing = current.find((c) => c.id === response.conversation_id);
-        return [{ ...(existing ?? { id: response.conversation_id, title: null, created_at: now }), updated_at: now, last_message_preview: preview }, ...rest];
-      });
+      // Re-fetch rather than optimistically patch state: the backend may
+      // have just generated a real title for this conversation (see
+      // OrchestratorService._maybe_generate_title) and this is the
+      // simplest way to pick it up without duplicating that logic here.
+      await refreshConversations();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not reach the assistant");
     } finally {
       setSending(false);
     }
+  }
+
+  function send() {
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    void sendMessage(text);
+  }
+
+  function sendFollowup(text: string) {
+    void sendMessage(text);
   }
 
   // Auto-scroll to bottom only for genuinely new messages (initial open,
@@ -190,89 +268,159 @@ export function AssistantPage() {
     }
   }, [messages]);
 
+  const filteredConversations = conversations.filter((conversation) =>
+    conversationTitle(conversation).toLowerCase().includes(conversationSearch.trim().toLowerCase()),
+  );
+
   return (
-    <section style={{ display: "flex", gap: "1rem", height: "70vh" }}>
-      <aside className="tile" style={{ width: "260px", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <section className="assistant-layout">
+      <aside className="tile assistant-sidebar">
         <div className="tile__header">
           <span className="eyebrow">Conversations</span>
         </div>
-        <button onClick={startNewConversation} style={{ margin: "0.5rem 0" }}>
-          + New conversation
+        <button className="assistant-sidebar__new" onClick={startNewConversation} type="button">
+          <Plus size={16} /> New conversation
         </button>
-        <div style={{ overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-          {conversations.length === 0 && <p className="eyebrow">No conversations yet.</p>}
-          {conversations.map((conversation) => (
-            <button
+        <input
+          className="assistant-sidebar__search"
+          value={conversationSearch}
+          onChange={(e) => setConversationSearch(e.target.value)}
+          placeholder="Search conversations..."
+          type="search"
+        />
+        <div className="assistant-conversation-list">
+          {conversations.length === 0 && <p className="empty-state">No conversations yet.</p>}
+          {conversations.length > 0 && filteredConversations.length === 0 && (
+            <p className="empty-state">No conversations match your search.</p>
+          )}
+          {filteredConversations.map((conversation) => (
+            <div
               key={conversation.id}
-              onClick={() => openConversation(conversation.id)}
-              style={{
-                textAlign: "left",
-                background: conversation.id === activeConversationId ? "var(--tile-active-bg, #2a2a3a)" : "transparent",
-                border: "none",
-                borderRadius: "0.4rem",
-                padding: "0.5rem",
-                cursor: "pointer",
-              }}
+              className={`assistant-conversation ${
+                conversation.id === activeConversationId ? "assistant-conversation--active" : ""
+              }`}
             >
-              <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{conversation.title ?? "Conversation"}</div>
-              {conversation.last_message_preview && (
-                <div className="eyebrow" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {conversation.last_message_preview}
-                </div>
-              )}
-            </button>
+              <button className="assistant-conversation__open" onClick={() => openConversation(conversation.id)} type="button">
+                <span className="assistant-conversation__icon">
+                  <MessageCircle size={13} />
+                </span>
+                <span className="assistant-conversation__title">{conversationTitle(conversation)}</span>
+              </button>
+              <button
+                className="assistant-conversation__delete"
+                aria-label="Delete conversation"
+                onClick={() => deleteConversation(conversation.id)}
+                type="button"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
           ))}
         </div>
       </aside>
 
-      <div className="tile" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        <div className="tile__header">
-          <span className="eyebrow">Banking assistant</span>
-        </div>
-        {error && <p role="alert">{error}</p>}
-
-        {/* Fixed-height, internally scrollable message list — never grows the page. */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.75rem" }}>
-          {hasMoreOlder && (
-            <button onClick={loadOlderMessages} disabled={loadingOlder} style={{ alignSelf: "center" }}>
-              {loadingOlder ? "Loading…" : "Load older messages"}
-            </button>
-          )}
-          {messages.length === 0 && <p>Ask about your spending, budgets, savings, cashback, or credit.</p>}
-          {messages.map((message, index) => (
-            <div
-              key={index}
-              className="tile"
-              style={{
-                alignSelf: message.role === "user" ? "flex-end" : "flex-start",
-                maxWidth: "80%",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {message.intent && (
-                <span className="tag tag--neutral" style={{ marginBottom: "0.4rem", display: "inline-block" }}>
-                  {INTENT_LABEL[message.intent]}
-                </span>
-              )}
-              {message.text}
+      <div className="assistant-main">
+        <div className="tile assistant-hero">
+          <div className="assistant-hero__top">
+            <div className="assistant-hero__avatar">
+              <Sparkles size={20} />
             </div>
-          ))}
-          {sending && <p className="eyebrow">Thinking…</p>}
-          <div ref={messagesEndRef} />
+            <div>
+              <p className="assistant-hero__title">
+                <strong>
+                  Hi {user?.first_name}! I'm {ASSISTANT_NAME}, your AI assistant.
+                </strong>
+              </p>
+              <p className="assistant-hero__subtitle">
+                I orchestrate a team of specialised agents to help you with spending, budgets, savings, cashback, and
+                credit.
+              </p>
+            </div>
+          </div>
+          <div className="assistant-quick-actions">
+            {ASSISTANT_QUICK_ACTIONS.map((action) => {
+              const Icon = QUICK_ACTION_ICON[action.intent];
+              return (
+                <button
+                  key={action.intent}
+                  className="assistant-quick-action"
+                  onClick={() => applyStarterPrompt(action.starterPrompt)}
+                  type="button"
+                >
+                  <Icon size={15} /> {action.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder="Ask the assistant…"
-            style={{ flex: 1 }}
-            disabled={sending}
-          />
-          <button onClick={send} disabled={sending || !draft.trim()}>
-            Send
-          </button>
+        <div className="tile assistant-chat">
+          {error && <p role="alert">{error}</p>}
+
+          {/* Fixed-height, internally scrollable message list — never grows the page. */}
+          <div className="assistant-messages">
+            {hasMoreOlder && (
+              <button onClick={loadOlderMessages} disabled={loadingOlder} style={{ alignSelf: "center" }} type="button">
+                {loadingOlder ? "Loading…" : "Load older messages"}
+              </button>
+            )}
+            {messages.length === 0 && (
+              <p className="empty-state">Ask about your spending, budgets, savings, cashback, or credit.</p>
+            )}
+            {messages.map((message, index) => (
+              <div key={index} className={`assistant-message assistant-message--${message.role}`}>
+                <div className={`assistant-bubble assistant-bubble--${message.role}`}>{message.text}</div>
+                {message.role === "assistant" && message.intent && (
+                  <span className="assistant-message__agent">
+                    <Bot size={11} /> {INTENT_LABEL[message.intent]}
+                  </span>
+                )}
+                <div className="assistant-message__meta">
+                  <span className="assistant-message__time">{formatMessageTime(message.createdAt)}</span>
+                  <button
+                    className="assistant-message__copy"
+                    aria-label="Copy message"
+                    onClick={() => copyMessage(index, message.text)}
+                    type="button"
+                  >
+                    {copiedIndex === index ? <Check size={12} /> : <Copy size={12} />}
+                  </button>
+                </div>
+                {message.role === "assistant" && message.followups && message.followups.length > 0 && (
+                  <div className="assistant-followups">
+                    {message.followups.map((followup) => (
+                      <button
+                        key={followup}
+                        className="assistant-followup"
+                        onClick={() => sendFollowup(followup)}
+                        disabled={sending}
+                        type="button"
+                      >
+                        {followup}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {sending && <p className="eyebrow">Thinking…</p>}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div className="assistant-composer">
+            <input
+              ref={draftInputRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && send()}
+              placeholder="Ask the assistant…"
+              disabled={sending}
+            />
+            <button onClick={send} disabled={sending || !draft.trim()} type="button">
+              Send
+            </button>
+          </div>
+          <p className="assistant-disclaimer">{ASSISTANT_NAME} can make mistakes. Please verify important information.</p>
         </div>
       </div>
     </section>

@@ -42,6 +42,8 @@ _SYSTEM_PROMPT = (
     "'Do I have any cashback right now?' -> personal_finance\n"
     "'What counts as a transaction?' -> support\n"
     "'Show me my recent transactions' -> personal_finance\n"
+    "'What is a fraud score and how is it calculated?' -> support (asking how "
+    "fraud scoring works conceptually, not a credit score/loan question)\n"
     "\n"
     "Conversation history, if shown below, is ONLY there to help you resolve "
     "ambiguous references in the current message (e.g. 'that', 'it', 'the same "

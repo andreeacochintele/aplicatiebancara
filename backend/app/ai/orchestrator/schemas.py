@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.ai.orchestrator.intent import IntentCategory
 
@@ -19,6 +19,10 @@ class OrchestratorChatResponse(BaseModel):
     reply: str
     correlation_id: str
     conversation_id: uuid.UUID
+    # 2-3 clickable next-question suggestions — only populated for a routed
+    # agent reply (personal_finance/credit/support), always empty for
+    # greeting/out_of_scope. See OrchestratorService._generate_followups().
+    suggested_followups: list[str] = Field(default_factory=list)
 
 
 class ConversationMessagePublic(BaseModel):

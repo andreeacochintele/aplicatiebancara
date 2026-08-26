@@ -1967,3 +1967,129 @@
 .aurora-shell .bar-row__value {
   color: var(--aurora-text-soft);
 }
+
+/* ---- Assistant ---- */
+
+.aurora-shell .assistant-sidebar__new {
+  background: var(--aurora-gradient);
+}
+
+.aurora-shell .assistant-sidebar__new:hover {
+  filter: brightness(1.05);
+}
+
+.aurora-shell .assistant-sidebar__search {
+  background: var(--aurora-surface-alt);
+  border: 1px solid var(--aurora-border);
+  color: var(--aurora-text);
+}
+
+.aurora-shell .assistant-conversation:hover {
+  background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .assistant-conversation--active {
+  background: var(--aurora-accent-soft);
+  border-color: var(--aurora-accent);
+}
+
+/* .aurora-shell button (the app-wide default) fills every plain <button>
+   with the gradient + white bold text — explicitly reset here, otherwise
+   these two buttons (not meant to look like CTAs) inherit it by
+   specificity regardless of source order, which is what made every
+   conversation row and its delete icon render as a solid gradient pill
+   instead of only the active row getting a highlight. */
+.aurora-shell .assistant-conversation__open {
+  background: transparent;
+  color: var(--aurora-text);
+  font-weight: 400;
+}
+
+.aurora-shell .assistant-conversation__icon {
+  background: var(--aurora-gradient);
+}
+
+.aurora-shell .assistant-conversation--active .assistant-conversation__open {
+  color: var(--aurora-accent-dark);
+  font-weight: 700;
+}
+
+.aurora-shell .assistant-conversation__delete {
+  background: transparent;
+  color: var(--aurora-text-faint);
+}
+
+.aurora-shell .assistant-conversation__delete:hover {
+  background: var(--aurora-red-soft);
+  color: var(--aurora-red);
+}
+
+.aurora-shell .assistant-hero {
+  border-color: var(--aurora-border);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--aurora-violet) 12%, transparent),
+      color-mix(in srgb, var(--aurora-pink) 10%, transparent) 70%
+    ),
+    var(--aurora-surface);
+}
+
+.aurora-shell .assistant-hero__avatar {
+  background: var(--aurora-gradient);
+}
+
+.aurora-shell .assistant-hero__subtitle {
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .assistant-quick-action {
+  background: var(--aurora-surface-alt);
+  border-color: var(--aurora-border);
+  color: var(--aurora-text);
+}
+
+.aurora-shell .assistant-quick-action:hover {
+  border-color: var(--aurora-accent);
+  color: var(--aurora-accent-dark);
+  background: var(--aurora-accent-soft);
+}
+
+/* Same generic .aurora-shell button reset as the conversation-row buttons
+   above — this is a plain icon button, not a CTA. */
+.aurora-shell .assistant-message__copy {
+  background: transparent;
+  color: var(--aurora-text-faint);
+  font-weight: 400;
+}
+
+.aurora-shell .assistant-message__copy:hover {
+  background: var(--aurora-accent-soft);
+  color: var(--aurora-accent-dark);
+}
+
+.aurora-shell .assistant-bubble--assistant {
+  background: var(--aurora-surface-alt);
+  color: var(--aurora-text);
+  border: 1px solid var(--aurora-border);
+}
+
+.aurora-shell .assistant-bubble--user {
+  background: var(--aurora-accent);
+}
+
+.aurora-shell .assistant-message__agent {
+  color: var(--aurora-text-faint);
+}
+
+.aurora-shell .assistant-followup {
+  background: var(--aurora-surface-alt);
+  border-color: var(--aurora-border);
+  color: var(--aurora-text);
+}
+
+.aurora-shell .assistant-followup:hover {
+  border-color: var(--aurora-accent);
+  color: var(--aurora-accent-dark);
+  background: var(--aurora-accent-soft);
+}

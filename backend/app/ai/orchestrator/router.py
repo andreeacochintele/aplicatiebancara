@@ -76,6 +76,16 @@ def list_conversations(
     return OrchestratorService(db).list_conversations(current_user.id, limit=limit)
 
 
+@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_conversation(
+    conversation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    OrchestratorService(db).delete_conversation(current_user.id, conversation_id)
+    db.commit()
+
+
 @router.get("/conversations/{conversation_id}/messages", response_model=list[ConversationMessagePublic])
 def get_conversation_messages(
     conversation_id: uuid.UUID,
