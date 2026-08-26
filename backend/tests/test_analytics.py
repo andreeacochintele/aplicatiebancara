@@ -16,6 +16,7 @@ from app.transactions.models import (
 )
 from app.users.schemas import UserCreate
 from app.users.service import UserService
+from app.wallets.models import Wallet
 from app.wallets.schemas import WalletCreate
 from app.wallets.service import WalletService
 
@@ -187,16 +188,20 @@ def test_net_worth_with_no_wallets_returns_zero(db_session, user_only):
 
 
 def test_net_worth_survives_a_wallet_in_an_unsupported_currency(db_session, user_only):
-    """Nothing validates wallet currency against FXService's mock rate table
-    at wallet-creation time, so a wallet in a currency the table doesn't
-    cover is possible. That one wallet used to 422 net worth for every
-    wallet the user has — it should just show up unconverted (rate 1)
-    instead. Uses a fictional code rather than a real one so this test
-    doesn't silently start testing the wrong thing if that currency is
-    ever added to the rate table (already happened once — see git history)."""
+    """WalletService.create_wallet now rejects any currency outside
+    FXService's mock rate table, so this state can no longer be produced
+    through normal wallet creation — the wallet below is inserted directly
+    to simulate a pre-existing row (e.g. data from before that validation
+    existed, or drift from a different environment) reaching net worth. That
+    one wallet used to 422 net worth for every wallet the user has — it
+    should just show up unconverted (rate 1) instead. Uses a fictional code
+    rather than a real one so this test doesn't silently start testing the
+    wrong thing if that currency is ever added to the rate table (already
+    happened once — see git history)."""
     wallets = WalletService(db_session)
     ron = wallets.create_wallet(user_only.id, WalletCreate(currency="RON", is_main=True))
-    odd = wallets.create_wallet(user_only.id, WalletCreate(currency="ZZZ"))
+    odd = Wallet(user_id=user_only.id, currency="ZZZ")
+    db_session.add(odd)
     ron.available_balance = Decimal("1000.00")
     odd.available_balance = Decimal("5000.00")
     db_session.flush()

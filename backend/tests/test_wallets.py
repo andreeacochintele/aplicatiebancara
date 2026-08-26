@@ -33,6 +33,20 @@ def test_first_wallet_is_automatically_main(db_session, seeded_user):
     assert wallet.available_balance == Decimal("0")
 
 
+def test_oversized_currency_code_is_rejected(db_session, seeded_user):
+    service = WalletService(db_session)
+
+    with pytest.raises(ValidationError):
+        service.create_wallet(seeded_user.id, WalletCreate(currency="ABCDEFGH"))
+
+
+def test_unsupported_currency_code_is_rejected(db_session, seeded_user):
+    service = WalletService(db_session)
+
+    with pytest.raises(ValidationError):
+        service.create_wallet(seeded_user.id, WalletCreate(currency="ZZZ"))
+
+
 def test_duplicate_currency_wallet_rejected(db_session, seeded_user):
     service = WalletService(db_session)
     service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
@@ -129,3 +143,26 @@ def test_currency_can_be_reopened_after_closing(db_session, seeded_user):
 
     assert reopened.status == WalletStatus.ACTIVE
     assert reopened.available_balance == Decimal("0")
+
+
+def test_oversized_currency_returns_422_not_a_bare_500(client):
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "wallet-http@example.com",
+            "phone": "+40744444445",
+            "password": "Sup3rSecret!",
+            "first_name": "Wallet",
+            "last_name": "Http",
+        },
+    )
+    assert register.status_code == 201
+    token = register.json()["tokens"]["access_token"]
+
+    response = client.post(
+        "/api/v1/wallets",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"currency": "ABCDEFGH"},
+    )
+
+    assert response.status_code == 422

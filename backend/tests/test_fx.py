@@ -72,6 +72,12 @@ def test_expired_quote_is_rejected(db_session, seeded_user):
 
     assert quote.status == FXQuoteStatus.EXPIRED
 
+    # Force a real reload from the DB (bypasses the identity-map cached
+    # value) to prove the status change was actually committed, not just
+    # held in-memory on the `quote` object.
+    db_session.expire(quote)
+    assert quote.status == FXQuoteStatus.EXPIRED
+
 
 def test_accepted_quote_cannot_be_reused(db_session, seeded_user):
     service = FXService(db_session)
