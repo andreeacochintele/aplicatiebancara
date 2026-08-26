@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { apiRequest, ApiError } from "../api/apiClient";
@@ -16,6 +17,8 @@ const TYPE_LABEL: Record<string, string> = {
   SYSTEM: "System",
 };
 
+const NOTIFICATIONS_PER_PAGE = 5;
+
 function typeLabel(type: string): string {
   return TYPE_LABEL[type] ?? type.charAt(0) + type.slice(1).toLowerCase().replace(/_/g, " ");
 }
@@ -26,6 +29,7 @@ export function NotificationsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
+  const [page, setPage] = useState(1);
 
   function loadNotifications() {
     if (!accessToken) return;
@@ -35,6 +39,13 @@ export function NotificationsPage() {
   }
 
   useEffect(loadNotifications, [accessToken]);
+
+  useEffect(() => {
+    setPage((currentPage) => {
+      const maxPage = Math.max(1, Math.ceil(notifications.length / NOTIFICATIONS_PER_PAGE));
+      return Math.min(currentPage, maxPage);
+    });
+  }, [notifications.length]);
 
   async function markRead(notification: Notification) {
     if (!accessToken || notification.is_read) return;
@@ -74,6 +85,13 @@ export function NotificationsPage() {
   }
 
   const unreadCount = notifications.filter((notification) => !notification.is_read).length;
+  const totalPages = Math.max(1, Math.ceil(notifications.length / NOTIFICATIONS_PER_PAGE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * NOTIFICATIONS_PER_PAGE;
+  const visibleNotifications = notifications.slice(pageStart, pageStart + NOTIFICATIONS_PER_PAGE);
+  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
+  const firstVisible = notifications.length === 0 ? 0 : pageStart + 1;
+  const lastVisible = Math.min(pageStart + NOTIFICATIONS_PER_PAGE, notifications.length);
 
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -91,7 +109,7 @@ export function NotificationsPage() {
         {error && <p role="alert">{error}</p>}
 
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.75rem" }}>
-          {notifications.map((notification) => (
+          {visibleNotifications.map((notification) => (
             <div
               key={notification.id}
               className="tile"
@@ -122,6 +140,58 @@ export function NotificationsPage() {
           ))}
           {notifications.length === 0 && <p>No notifications yet.</p>}
         </div>
+
+        {notifications.length > NOTIFICATIONS_PER_PAGE && (
+          <div
+            style={{
+              alignItems: "center",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.6rem",
+              justifyContent: "space-between",
+              marginTop: "1rem",
+            }}
+          >
+            <span className="eyebrow">
+              Showing {firstVisible}-{lastVisible} of {notifications.length}
+            </span>
+            <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+              <button
+                type="button"
+                className="button--ghost"
+                aria-label="Previous notifications page"
+                disabled={currentPage === 1}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+              >
+                <ChevronLeft size={16} aria-hidden="true" />
+              </button>
+              {pageNumbers.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  className={pageNumber === currentPage ? undefined : "button--ghost"}
+                  aria-label={`Go to notifications page ${pageNumber}`}
+                  aria-current={pageNumber === currentPage ? "page" : undefined}
+                  onClick={() => setPage(pageNumber)}
+                  style={{ minWidth: 40, padding: "0.65rem 0.75rem" }}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="button--ghost"
+                aria-label="Next notifications page"
+                disabled={currentPage === totalPages}
+                onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+                style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+              >
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
