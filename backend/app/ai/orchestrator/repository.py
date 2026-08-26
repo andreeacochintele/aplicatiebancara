@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.ai.orchestrator.models import Conversation, ConversationMessage
@@ -43,6 +43,25 @@ class ConversationRepository:
         conversation.updated_at = updated_at
         if not is_supabase_session(self.db):
             self.db.flush()
+
+    def set_title(self, conversation: Conversation, title: str) -> None:
+        conversation.title = title
+        if not is_supabase_session(self.db):
+            self.db.flush()
+
+    def delete_conversation(self, conversation: Conversation) -> None:
+        """Deletes the conversation and all its messages. Messages have a
+        plain FK to conversations with no ON DELETE CASCADE (migration
+        0031), so messages must be removed first."""
+        if is_supabase_session(self.db):
+            messages = self.db.fetch_many(ConversationMessage, {"conversation_id": f"eq.{conversation.id}", "limit": "1000"})
+            for message in messages:
+                self.db.delete(message)
+            self.db.delete(conversation)
+            return
+        self.db.execute(delete(ConversationMessage).where(ConversationMessage.conversation_id == conversation.id))
+        self.db.delete(conversation)
+        self.db.flush()
 
     # ---- messages ----
 
