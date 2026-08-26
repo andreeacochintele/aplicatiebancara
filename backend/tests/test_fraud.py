@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -13,8 +13,9 @@ from app.core.exceptions import ConflictError
 from app.fraud.models import FraudCase, FraudCaseStatus, FraudFlagCode
 from app.fraud.schemas import FraudRiskLevel
 from app.fraud.service import FraudService
-from app.merchants.schemas import MerchantCreate
+from app.merchants.schemas import CashbackOfferCreate, MerchantCreate
 from app.merchants.service import MerchantService
+from app.rewards.service import RewardsService
 from app.transactions.models import Transaction, TransactionStatus, TransactionType
 from app.transactions.schemas import CardPaymentCreate
 from app.transactions.service import TransactionService
@@ -72,13 +73,13 @@ def _device(db_session, user_id, *, trusted, location=None, device_name="Device"
     return device
 
 
-def _completed_card_payment(db_session, user_id, amount, merchant_id=None, created_at=None):
+def _completed_card_payment(db_session, user_id, amount, merchant_id=None, created_at=None, currency="RON"):
     transaction = Transaction(
         initiator_user_id=user_id,
         type=TransactionType.CARD_PAYMENT,
         status=TransactionStatus.COMPLETED,
         amount=amount,
-        currency="RON",
+        currency=currency,
         merchant_id=merchant_id,
         created_at=created_at or datetime.now(timezone.utc),
     )
@@ -87,7 +88,7 @@ def _completed_card_payment(db_session, user_id, amount, merchant_id=None, creat
     return transaction
 
 
-def _pending_transaction(user_id, wallet_id, amount, merchant_id=None, created_at=None):
+def _pending_transaction(user_id, wallet_id, amount, merchant_id=None, created_at=None, currency="RON"):
     return Transaction(
         id=uuid.uuid4(),
         initiator_user_id=user_id,
@@ -96,16 +97,17 @@ def _pending_transaction(user_id, wallet_id, amount, merchant_id=None, created_a
         type=TransactionType.CARD_PAYMENT,
         status=TransactionStatus.PROCESSING,
         amount=amount,
-        currency="RON",
+        currency=currency,
         created_at=created_at or datetime.now(timezone.utc),
     )
 
 
 def _create_blocked_payment(db_session, seeded_user, amount=Decimal("500.00"), card_type=CardType.DEBIT):
     """3x50 RON baseline + an untrusted device -> a 10x-average HIGH_AMOUNT
-    (capped at 40) + NEW_DEVICE (25) = 65 base, combined with the 2-flag
-    weighted-combination multiplier (x1.15) = 74.75, which crosses the
-    65-point threshold."""
+    (15 base + 8*7 over-minimum = 71, capped at 70 - see FIX 2's raised
+    HIGH_AMOUNT_MAX_POINTS) + NEW_DEVICE (25) = 95 base, combined with the
+    2-flag weighted-combination multiplier (x1.15) = 109.25, which crosses
+    the 65-point threshold."""
     wallet = _wallet(db_session, seeded_user.id, balance=Decimal("1000.00"))
     card = _card(db_session, seeded_user.id, wallet.id, card_type=card_type)
     merchant = _merchant(db_session)
@@ -168,8 +170,9 @@ def test_unusual_country_flags_when_location_not_previously_seen(db_session, see
 
 
 def test_high_amount_flags_relative_to_users_average(db_session, seeded_user):
-    """400 is exactly 4x the 100 average -> the minimum trigger ratio (>3x),
-    so this scores the proportional flag's base points (15), not the cap."""
+    """400 is exactly 4x the 100 average -> 1 multiple past the minimum
+    trigger ratio (>3x): 15 base + 8*1 = 23 (see FIX 2's recalibrated
+    HIGH_AMOUNT_POINTS_PER_EXTRA_MULTIPLE)."""
     wallet = _wallet(db_session, seeded_user.id)
     for _ in range(3):
         _completed_card_payment(db_session, seeded_user.id, Decimal("100.00"))
@@ -177,13 +180,62 @@ def test_high_amount_flags_relative_to_users_average(db_session, seeded_user):
 
     decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
 
-    assert decision.score == Decimal("20")
+    assert decision.score == Decimal("23")
 
 
 def test_high_amount_does_not_flag_without_enough_history(db_session, seeded_user):
     wallet = _wallet(db_session, seeded_user.id)
     _completed_card_payment(db_session, seeded_user.id, Decimal("100.00"))
     transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("5000.00"))
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
+
+    assert decision.score == Decimal("0")
+
+
+# ---- FIX 1: HIGH_AMOUNT's baseline is per-currency, never blended across a
+# multi-currency wallet holder's history ----
+
+
+def test_high_amount_baseline_is_scoped_to_the_transactions_currency(db_session, seeded_user):
+    """A user with a much larger RON history must not have a genuinely
+    high-value USD payment scored against a blended RON+USD average - it's
+    scored only against this user's own USD history. Before FIX 1, the
+    blended average here (RON+USD summed and divided by 6) would have put
+    this 40.00 USD payment under the 3x trigger ratio entirely, scoring 0."""
+    wallet = _wallet(db_session, seeded_user.id)
+    # Spread well outside HIGH_VELOCITY_WINDOW/REWARD_ABUSE_WINDOW so only
+    # the currency-scoped HIGH_AMOUNT baseline is under test here.
+    now = datetime.now(timezone.utc)
+    for i in range(3):
+        _completed_card_payment(
+            db_session, seeded_user.id, Decimal("100.00"), currency="RON", created_at=now - timedelta(days=10 + i)
+        )
+    for i in range(3):
+        _completed_card_payment(
+            db_session, seeded_user.id, Decimal("10.00"), currency="USD", created_at=now - timedelta(days=20 + i)
+        )
+    transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("40.00"), currency="USD", created_at=now)  # 4x USD average
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
+
+    assert decision.score == Decimal("23")  # 15 base + 8*1, scored against the 10.00 USD average
+
+
+def test_high_amount_does_not_flag_a_users_first_payment_in_a_new_currency(db_session, seeded_user):
+    """No same-currency history yet -> no baseline to compare against, so
+    this falls through the same insufficient-history path as a brand-new
+    user (documented fallback) rather than crashing or ever falling back to
+    a cross-currency average."""
+    wallet = _wallet(db_session, seeded_user.id)
+    now = datetime.now(timezone.utc)
+    # Spread well outside HIGH_VELOCITY_WINDOW so only the currency fallback
+    # behavior is under test here.
+    for i in range(5):
+        _completed_card_payment(
+            db_session, seeded_user.id, Decimal("10.00"), currency="RON", created_at=now - timedelta(days=10 + i)
+        )
+    transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("5000.00"), currency="USD", created_at=now)
 
     decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
 
@@ -255,8 +307,12 @@ def test_velocity_still_flags_the_non_matching_activity_around_a_repeat_pattern(
     # trigger (base 20 points). velocity = the 4 unrelated transactions (2
     # matching ones excluded) + this one = 5 -> HIGH_VELOCITY at its minimum
     # trigger too (base 15 points) - still fires on the genuinely separate
-    # activity. Two flags co-occurring: (20 + 15) * 1.15 = 40.25.
+    # activity. Two flags co-occurring: (20 + 15) * 1.15 = 40.25. Unaffected
+    # by FIX 2's raised caps (both flags sit at their unchanged minimum-
+    # trigger base points) - two bare-minimum flags still do NOT cross the
+    # 65-point threshold together, per last session's deliberate finding.
     assert decision.score == Decimal("40.25")
+    assert decision.blocked is False
 
 
 def test_transactions_with_no_merchant_never_match_each_other_for_abuse_pattern(db_session, seeded_user):
@@ -271,11 +327,32 @@ def test_transactions_with_no_merchant_never_match_each_other_for_abuse_pattern(
     assert decision.score == Decimal("0")
 
 
+def test_reward_abuse_pattern_ignores_same_amount_payments_in_a_different_currency(db_session, seeded_user):
+    """FIX 1: REWARD_ABUSE_PATTERN's near-identical-amount matching is also
+    currency-scoped - a RON 25.00 and a USD 25.00 payment are not the same
+    amount, they just happen to share a numeral."""
+    wallet = _wallet(db_session, seeded_user.id)
+    merchant = _merchant(db_session)
+    now = datetime.now(timezone.utc)
+    for _ in range(2):
+        _completed_card_payment(
+            db_session, seeded_user.id, Decimal("25.00"), merchant_id=merchant.id,
+            created_at=now - timedelta(minutes=2), currency="USD",
+        )
+    transaction = _pending_transaction(
+        seeded_user.id, wallet.id, Decimal("25.00"), merchant_id=merchant.id, created_at=now, currency="RON"
+    )
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
+
+    assert decision.score == Decimal("0")
+
+
 def test_create_card_payment_holds_funds_when_score_crosses_threshold(db_session, seeded_user):
     transaction, wallet, _card, case = _create_blocked_payment(db_session, seeded_user)
 
     assert transaction.status == TransactionStatus.PENDING_REVIEW
-    assert transaction.fraud_score == Decimal("74.75")
+    assert transaction.fraud_score == Decimal("109.25")
     assert wallet.available_balance == Decimal("500.00")
     assert wallet.reserved_balance == Decimal("500.00")
 
@@ -283,7 +360,7 @@ def test_create_card_payment_holds_funds_when_score_crosses_threshold(db_session
     assert ledger_types == ["HOLD"]
 
     assert case.status == FraudCaseStatus.PENDING_REVIEW
-    assert case.risk_score == Decimal("74.75")
+    assert case.risk_score == Decimal("109.25")
     assert case.hold_amount == Decimal("500.00")
     assert {flag.code for flag in case.flags} == {FraudFlagCode.NEW_DEVICE, FraudFlagCode.HIGH_AMOUNT}
 
@@ -306,6 +383,48 @@ def test_approve_debits_reserved_funds_completes_transaction_and_consumes_one_ti
 
     ledger_types = [entry.entry_type.value for entry in transaction.ledger_entries]
     assert ledger_types == ["HOLD", "DEBIT"]
+
+
+def test_approve_syncs_rewards_for_the_now_completed_transaction(db_session, seeded_user):
+    """Regression for a live report: a payment held for fraud review and
+    later approved by an admin must earn cashback/points too. It was
+    skipped by create_card_payment's own auto-sync (see that method's
+    docstring) since the transaction was still PENDING_REVIEW, not
+    COMPLETED, at the time create_card_payment returned."""
+    merchant_service = MerchantService(db_session)
+    merchant = merchant_service.create_merchant(MerchantCreate(name="Booking.com", category="Travel", verified=True))
+    today = date.today()
+    merchant_service.create_cashback_offer(
+        merchant.id,
+        CashbackOfferCreate(
+            cashback_percent=Decimal("4"), start_date=today - timedelta(days=1), end_date=today + timedelta(days=30)
+        ),
+    )
+
+    wallet = _wallet(db_session, seeded_user.id, balance=Decimal("1000.00"))
+    card = _card(db_session, seeded_user.id, wallet.id)
+    _device(db_session, seeded_user.id, trusted=False)
+    for _ in range(3):
+        _completed_card_payment(db_session, seeded_user.id, Decimal("50.00"))
+
+    transaction = TransactionService(db_session).create_card_payment(
+        seeded_user.id,
+        CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("500.00"), cvv=card.mock_cvv),
+    )
+    case = db_session.query(FraudCase).filter(FraudCase.transaction_id == transaction.id).one()
+    assert transaction.status == TransactionStatus.PENDING_REVIEW
+
+    # Not synced yet while held - create_card_payment's own auto-sync only
+    # runs on its COMPLETED path, which this payment never reached.
+    assert RewardsService(db_session).get_account(seeded_user.id).lifetime_points_earned == 0
+
+    admin = _admin(db_session)
+    FraudService(db_session).approve(case, admin)
+
+    assert transaction.status == TransactionStatus.COMPLETED
+    account = RewardsService(db_session).get_account(seeded_user.id)
+    assert account.lifetime_points_earned == 500  # 500 RON * 1x base rate (REGULAR tier)
+    assert wallet.available_balance == Decimal("520.00")  # 500 left after the hold's debit + 20 cashback (4% of 500)
 
 
 def test_reject_releases_the_hold_back_to_available_balance(db_session, seeded_user):
@@ -354,7 +473,7 @@ def test_build_investigation_context_exposes_structured_evidence(db_session, see
 
     context = FraudService(db_session).build_investigation_context(case.id)
 
-    assert context["case_overview"]["deterministic_risk_score"] == Decimal("74.75")
+    assert context["case_overview"]["deterministic_risk_score"] == Decimal("109.25")
     assert context["case_overview"]["transaction_amount"] == Decimal("500.00")
     assert {flag["code"] for flag in context["case_overview"]["flags"]} == {"NEW_DEVICE", "HIGH_AMOUNT"}
     assert context["behavioral_analysis"]["amount_baseline"]["average_completed_card_payment"] == Decimal("50.00")
@@ -380,8 +499,8 @@ def test_high_amount_points_scale_with_ratio_over_average(db_session, seeded_use
     score_at_minimum = FraudService(db_session).evaluate_transaction(at_minimum, wallet).score
     score_further_over = FraudService(db_session).evaluate_transaction(further_over, wallet).score
 
-    assert score_at_minimum == Decimal("20")  # 15 base + 5*1
-    assert score_further_over == Decimal("30")  # 15 base + 5*3
+    assert score_at_minimum == Decimal("23")  # 15 base + 8*1
+    assert score_further_over == Decimal("39")  # 15 base + 8*3
     assert score_further_over > score_at_minimum
 
 
@@ -393,7 +512,72 @@ def test_high_amount_points_cap_at_max_for_extreme_outliers(db_session, seeded_u
 
     decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
 
-    assert decision.score == Decimal("40")  # capped, not 15 + 5*497
+    assert decision.score == Decimal("70")  # capped, not 15 + 8*497
+
+
+# ---- FIX 2: HIGH_AMOUNT and HIGH_VELOCITY's raised caps let a single,
+# sufficiently extreme signal cross FRAUD_SCORE_THRESHOLD (65) entirely on
+# its own, without needing a second co-occurring flag ----
+
+
+def test_extreme_high_amount_alone_crosses_threshold_without_a_second_flag(db_session, seeded_user):
+    wallet = _wallet(db_session, seeded_user.id)
+    daytime = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+    for _ in range(3):
+        _completed_card_payment(db_session, seeded_user.id, Decimal("50.00"), created_at=daytime - timedelta(days=1))
+    transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("500.00"), created_at=daytime)  # 10x average
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
+
+    # 15 base + 8*7 = 71, capped at 70 -> a single HIGH_AMOUNT flag alone (no
+    # device, no velocity signal) crosses the 65-point threshold by itself.
+    assert decision.score == Decimal("70")
+    assert decision.blocked is True
+    assert {flag.code for flag in decision.case.flags} == {FraudFlagCode.HIGH_AMOUNT}
+
+
+def test_extreme_velocity_burst_alone_crosses_threshold_without_a_second_flag(db_session, seeded_user):
+    wallet = _wallet(db_session, seeded_user.id)
+    daytime = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+    for _ in range(14):
+        _completed_card_payment(db_session, seeded_user.id, Decimal("10.00"), created_at=daytime)
+    transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("10.00"), created_at=daytime)
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
+
+    # total_velocity = 14 + 1 = 15, 10 over the minimum trigger count of 5:
+    # 15 base + 6*10 = 75, capped at 70 -> a single HIGH_VELOCITY flag alone
+    # (amount stays at 1x the user's average, so HIGH_AMOUNT never fires)
+    # crosses the 65-point threshold by itself.
+    assert decision.score == Decimal("70")
+    assert decision.blocked is True
+    assert {flag.code for flag in decision.case.flags} == {FraudFlagCode.HIGH_VELOCITY}
+
+
+def test_extreme_reward_abuse_burst_alone_crosses_threshold_without_a_second_flag(db_session, seeded_user):
+    """Reported live: 8 identical repeats to the same merchant didn't cross
+    the threshold (score capped at the old 40) - REWARD_ABUSE_PATTERN's cap
+    is raised the same way HIGH_AMOUNT/HIGH_VELOCITY's were, so a large
+    enough burst can hold a transaction on its own too."""
+    wallet = _wallet(db_session, seeded_user.id)
+    merchant = _merchant(db_session)
+    now = datetime.now(timezone.utc)
+    for _ in range(11):
+        _completed_card_payment(
+            db_session, seeded_user.id, Decimal("50.00"), merchant_id=merchant.id, created_at=now - timedelta(minutes=1)
+        )
+    transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("50.00"), merchant_id=merchant.id, created_at=now)
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
+
+    # total_matching = 11 + 1 = 12, 9 over the minimum trigger count of 3:
+    # 20 base + 6*9 = 74, capped at 70 -> a single REWARD_ABUSE_PATTERN flag
+    # alone crosses the 65-point threshold by itself. (The 11 matching
+    # history payments are excluded from HIGH_VELOCITY's own count, so it
+    # never co-fires - see _velocity_and_abuse_flags.)
+    assert decision.score == Decimal("70")
+    assert decision.blocked is True
+    assert {flag.code for flag in decision.case.flags} == {FraudFlagCode.REWARD_ABUSE_PATTERN}
 
 
 # ---- UNUSUAL_TIME: a night-window payment with no precedent of this user
@@ -486,7 +670,8 @@ def test_get_user_spending_profile_computes_average_and_history_count(db_session
     profile = FraudService(db_session).get_user_spending_profile(seeded_user.id)
 
     assert profile.card_payment_history_count == 3
-    assert profile.average_card_payment_amount == Decimal("100.00")
+    assert profile.by_currency["RON"].average_card_payment_amount == Decimal("100.00")
+    assert profile.by_currency["RON"].card_payment_history_count == 3
     assert profile.spending_by_type is not None
 
 
@@ -494,7 +679,25 @@ def test_get_user_spending_profile_average_is_none_without_history(db_session, s
     profile = FraudService(db_session).get_user_spending_profile(seeded_user.id)
 
     assert profile.card_payment_history_count == 0
-    assert profile.average_card_payment_amount is None
+    assert profile.by_currency == {}
+
+
+def test_get_user_spending_profile_breaks_down_by_currency_not_a_blended_average(db_session, seeded_user):
+    """FIX 1: multi-currency history is reported per currency, never as one
+    blended average that would be meaningless across currencies."""
+    for _ in range(3):
+        _completed_card_payment(db_session, seeded_user.id, Decimal("100.00"), currency="RON")
+    for _ in range(2):
+        _completed_card_payment(db_session, seeded_user.id, Decimal("10.00"), currency="USD")
+
+    profile = FraudService(db_session).get_user_spending_profile(seeded_user.id)
+
+    assert profile.card_payment_history_count == 5
+    assert set(profile.by_currency) == {"RON", "USD"}
+    assert profile.by_currency["RON"].average_card_payment_amount == Decimal("100.00")
+    assert profile.by_currency["RON"].card_payment_history_count == 3
+    assert profile.by_currency["USD"].average_card_payment_amount == Decimal("10.00")
+    assert profile.by_currency["USD"].card_payment_history_count == 2
 
 
 # ---- get_known_devices(): extracted, independently-callable read ----

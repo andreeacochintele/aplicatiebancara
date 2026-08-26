@@ -66,8 +66,8 @@ def _merchant(db_session, name="Nike"):
 def _blocked_case(db_session, seeded_user) -> FraudCase:
     """A real PENDING_REVIEW case via the normal create_card_payment flow —
     same shape as test_fraud.py's _create_blocked_payment: 3x50 baseline +
-    an untrusted device -> HIGH_AMOUNT + NEW_DEVICE, weighted-combined past
-    the 65-point threshold."""
+    an untrusted device -> HIGH_AMOUNT (71, capped at 70) + NEW_DEVICE (25),
+    weighted-combined to 109.25, past the 65-point threshold."""
     wallet = _wallet(db_session, seeded_user.id, balance=Decimal("1000.00"))
     card = CardService(db_session).create_card(
         seeded_user.id, CardCreate(type=CardType.DEBIT, default_wallet_id=wallet.id)
@@ -170,7 +170,7 @@ def test_get_user_spending_profile_reuses_fraud_service(db_session, seeded_user)
 
     assert isinstance(profile, SpendingProfile)
     assert profile.card_payment_history_count == 3
-    assert profile.average_card_payment_amount == Decimal("50.00")
+    assert profile.by_currency["RON"].average_card_payment_amount == Decimal("50.00")
 
 
 def test_get_investigation_context_reuses_fraud_service(db_session, seeded_user):
@@ -211,7 +211,7 @@ def test_format_context_handles_no_spending_history():
 
     today = datetime.now(timezone.utc).date()
     profile = SpendingProfile(
-        average_card_payment_amount=None,
+        by_currency={},
         card_payment_history_count=0,
         spending_by_type=SpendingByTypeResponse(period_start=today, period_end=today, items=[]),
     )
@@ -284,7 +284,7 @@ def test_investigate_calls_all_tools_and_returns_parsed_result(db_session, seede
     assert result.risk_level == FraudRiskLevel.HIGH
     assert "elevated risk" in result.explanation.lower()
     assert str(case.risk_score) in captured["context"]
-    assert result.case_overview["deterministic_risk_score"] == Decimal("74.75")
+    assert result.case_overview["deterministic_risk_score"] == Decimal("109.25")
     assert result.summary == "Elevated risk due to a new device and a high-value payment."
     assert result.suspicious_signals
 

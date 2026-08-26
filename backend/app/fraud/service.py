@@ -29,6 +29,19 @@ Flag signals and their data sources:
     _velocity_and_abuse_flags) — a burst of near-identical repeats to one
     merchant is a single underlying behavior, not two independent signals,
     so it's scored once rather than double-counted under both flags.
+    HIGH_AMOUNT's baseline and REWARD_ABUSE_PATTERN's near-identical-amount
+    matching are both computed PER CURRENCY (a transaction is only ever
+    compared against the user's own history in that same currency) — a
+    wallet holder with, say, both RON and USD activity must never have a
+    high-value RON payment scored against a blended RON+USD average, and
+    must never have a RON payment counted as a "near-identical" repeat of a
+    same-amount USD one. A user's first-ever payment in a given currency has
+    no same-currency baseline to compare against: HIGH_AMOUNT simply doesn't
+    fire for that payment (same as the existing insufficient-history
+    fallback below) rather than falling back to a cross-currency average.
+    HIGH_AMOUNT, HIGH_VELOCITY, and REWARD_ABUSE_PATTERN additionally allow
+    a single, sufficiently extreme occurrence to cross FRAUD_SCORE_THRESHOLD
+    on its own — see the raised MAX_POINTS on each below.
   - UNUSUAL_TIME: fires when a payment lands inside a fixed UTC "night
     window" the user has no history of transacting in — see
     _unusual_time_flag() for the exact rule and its known limitation (no
@@ -64,6 +77,7 @@ from app.fraud.models import FraudCase, FraudCaseStatus, FraudFlag, FraudFlagCod
 from app.fraud.repository import FraudRepository
 from app.fraud.schemas import FraudAgentAnalysisPublic, FraudCaseDetail, FraudCaseSummary, FraudFlagPublic, FraudRiskLevel
 from app.merchants.repository import MerchantRepository
+from app.merchants.service import MerchantService
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
 from app.users.models import User
@@ -82,28 +96,41 @@ UNUSUAL_COUNTRY_POINTS = Decimal("20")
 # HIGH_AMOUNT: proportional. BASE_POINTS at exactly HIGH_AMOUNT_MULTIPLIER (the
 # minimum ratio-to-average needed to trigger at all), +POINTS_PER_EXTRA_MULTIPLE
 # for each additional whole multiple of the user's average beyond that, capped
-# at MAX_POINTS so one extreme outlier can't dominate the score by itself.
+# at MAX_POINTS. The cap is deliberately set above FRAUD_SCORE_THRESHOLD (65):
+# a merely-borderline payment (a couple of multiples over average) still scores
+# close to BASE_POINTS as before, but a genuinely extreme outlier (e.g. ~10x
+# the user's own average, i.e. HIGH_AMOUNT_MULTIPLIER + 7) can reach the cap
+# and cross the threshold entirely on its own, without needing a second
+# co-occurring flag — see the calibration table in the task report.
 HIGH_AMOUNT_MULTIPLIER = Decimal("3")
 HIGH_AMOUNT_MIN_HISTORY = 3
 HIGH_AMOUNT_BASE_POINTS = Decimal("15")
-HIGH_AMOUNT_POINTS_PER_EXTRA_MULTIPLE = Decimal("5")
-HIGH_AMOUNT_MAX_POINTS = Decimal("40")
+HIGH_AMOUNT_POINTS_PER_EXTRA_MULTIPLE = Decimal("8")
+HIGH_AMOUNT_MAX_POINTS = Decimal("70")
 
 # HIGH_VELOCITY: proportional, same base/per-extra/cap pattern keyed on how
-# many transactions beyond HIGH_VELOCITY_MIN_COUNT fell inside the window.
+# many transactions beyond HIGH_VELOCITY_MIN_COUNT fell inside the window. As
+# with HIGH_AMOUNT above, the cap is set above FRAUD_SCORE_THRESHOLD so a
+# sufficiently extreme burst (well past the minimum-count trigger) can cross
+# the threshold alone, while a burst right at the minimum count is unchanged
+# (still scores exactly BASE_POINTS, same as before this recalibration).
 HIGH_VELOCITY_WINDOW = timedelta(minutes=5)
 HIGH_VELOCITY_MIN_COUNT = 5
 HIGH_VELOCITY_BASE_POINTS = Decimal("15")
-HIGH_VELOCITY_POINTS_PER_EXTRA = Decimal("4")
-HIGH_VELOCITY_MAX_POINTS = Decimal("35")
+HIGH_VELOCITY_POINTS_PER_EXTRA = Decimal("6")
+HIGH_VELOCITY_MAX_POINTS = Decimal("70")
 
 # REWARD_ABUSE_PATTERN: proportional, same pattern keyed on how many
-# near-identical repeats beyond REWARD_ABUSE_MIN_COUNT fell inside the window.
+# near-identical repeats beyond REWARD_ABUSE_MIN_COUNT fell inside the
+# window. Same rationale as HIGH_AMOUNT/HIGH_VELOCITY above: the cap is set
+# above FRAUD_SCORE_THRESHOLD so a large enough repeat-burst (well past the
+# minimum trigger count) can cross the threshold alone, while a bare-minimum
+# 3-repeat case is unchanged (still scores exactly BASE_POINTS).
 REWARD_ABUSE_WINDOW = timedelta(minutes=10)
 REWARD_ABUSE_MIN_COUNT = 3
 REWARD_ABUSE_BASE_POINTS = Decimal("20")
 REWARD_ABUSE_POINTS_PER_EXTRA = Decimal("6")
-REWARD_ABUSE_MAX_POINTS = Decimal("40")
+REWARD_ABUSE_MAX_POINTS = Decimal("70")
 
 # UNUSUAL_TIME: binary — a payment inside this UTC window with no precedent of
 # this user transacting in that same window before. Deliberately UTC-relative:
@@ -171,12 +198,29 @@ class FraudDecision:
 
 
 @dataclass
+class CurrencySpendingProfile:
+    """This user's card-payment baseline within a single currency — never
+    blend this across currencies, see module docstring."""
+
+    currency: str
+    average_card_payment_amount: Decimal
+    card_payment_history_count: int
+
+
+@dataclass
 class SpendingProfile:
     """Read-only "what's normal for this user" baseline. Not a scoring
     decision by itself — a lookup other code (evaluate_transaction today,
-    AI agent tools later) can build on."""
+    AI agent tools later) can build on.
 
-    average_card_payment_amount: Decimal | None
+    `by_currency` is keyed by currency code — averaging across currencies
+    would produce a meaningless blended figure (see module docstring), so
+    there is deliberately no single blended "average amount" field here.
+    `card_payment_history_count` is a plain count (not an average), so
+    summing it across currencies is safe and stays as a total.
+    """
+
+    by_currency: dict[str, CurrencySpendingProfile]
     card_payment_history_count: int
     spending_by_type: SpendingByTypeResponse
 
@@ -228,9 +272,9 @@ class FraudService:
         return [t for t in self.transactions.list_for_user(user_id, limit=100) if _as_aware_utc(t.created_at) >= cutoff]
 
     def get_user_spending_profile(self, user_id: uuid.UUID) -> SpendingProfile:
-        """Combines a card-payment average baseline with this month's
-        category breakdown into one read-only "is this normal for this
-        user" call, usable independently of evaluate_transaction().
+        """Combines a per-currency card-payment average baseline with this
+        month's category breakdown into one read-only "is this normal for
+        this user" call, usable independently of evaluate_transaction().
 
         Deliberately not reused internally by _high_amount_flag(): that
         check only needs the average, and this method also computes a full
@@ -245,11 +289,23 @@ class FraudService:
             for t in self.transactions.list_for_user(user_id, limit=100)
             if t.type == TransactionType.CARD_PAYMENT and t.status == TransactionStatus.COMPLETED
         ]
-        average = (sum((t.amount for t in history), Decimal("0")) / len(history)) if history else None
+        by_currency_history: dict[str, list[Transaction]] = {}
+        for t in history:
+            by_currency_history.setdefault(t.currency, []).append(t)
+        by_currency = {
+            currency: CurrencySpendingProfile(
+                currency=currency,
+                average_card_payment_amount=(sum((t.amount for t in items), Decimal("0")) / len(items)).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                ),
+                card_payment_history_count=len(items),
+            )
+            for currency, items in by_currency_history.items()
+        }
         now = datetime.now(timezone.utc)
         spending = AnalyticsService(self.db).spending_by_type(user_id, now.year, now.month)
         return SpendingProfile(
-            average_card_payment_amount=average,
+            by_currency=by_currency,
             card_payment_history_count=len(history),
             spending_by_type=spending,
         )
@@ -331,10 +387,14 @@ class FraudService:
             data_gaps.append("No active session device is available as a proxy for the payment device.")
         if not previous_cases:
             data_gaps.append("No previous fraud-case decisions are available for this user.")
-        if len(completed_card_history) < HIGH_AMOUNT_MIN_HISTORY:
-            data_gaps.append("Insufficient completed card-payment history for robust amount baselines.")
 
         amount_baseline = self._amount_baseline(transaction, completed_card_history)
+        if amount_baseline["sample_size"] < HIGH_AMOUNT_MIN_HISTORY:
+            # Checked against the same-currency sample size, not the total
+            # history count across all currencies — see _amount_baseline().
+            data_gaps.append(
+                f"Insufficient completed {transaction.currency} card-payment history for robust amount baselines."
+            )
         ratio = amount_baseline.get("amount_to_average_ratio")
         if ratio is not None:
             if Decimal(str(ratio)) > HIGH_AMOUNT_MULTIPLIER:
@@ -433,9 +493,15 @@ class FraudService:
         }
 
     def _amount_baseline(self, transaction: Transaction, completed_card_history: list[Transaction]) -> dict[str, Any]:
-        amounts = sorted(t.amount for t in completed_card_history)
+        """`completed_card_history` may span multiple currencies (callers
+        build it from the user's full history); the baseline itself must
+        only ever compare `transaction` against that same-currency subset —
+        see module docstring."""
+        same_currency_history = [t for t in completed_card_history if t.currency == transaction.currency]
+        amounts = sorted(t.amount for t in same_currency_history)
         if not amounts:
             return {
+                "currency": transaction.currency,
                 "average_completed_card_payment": None,
                 "median_completed_card_payment": None,
                 "largest_completed_card_payment": None,
@@ -461,6 +527,7 @@ class FraudService:
             .quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
         )
         return {
+            "currency": transaction.currency,
             "average_completed_card_payment": average,
             "median_completed_card_payment": median,
             "largest_completed_card_payment": amounts[-1],
@@ -517,6 +584,7 @@ class FraudService:
             for item in ten_minute_items
             if transaction.merchant_id is not None
             and item.merchant_id == transaction.merchant_id
+            and item.currency == transaction.currency
             and abs(item.amount - transaction.amount) < Decimal("0.01")
         )
         return {
@@ -544,7 +612,9 @@ class FraudService:
                 Decimal("0.01"), rounding=ROUND_HALF_UP
             )
         repeated_same_amount_count = sum(
-            1 for item in merchant_transactions if abs(item.amount - transaction.amount) < Decimal("0.01")
+            1
+            for item in merchant_transactions
+            if item.currency == transaction.currency and abs(item.amount - transaction.amount) < Decimal("0.01")
         )
         previous_fraud_cases_with_merchant = sum(
             1
@@ -711,10 +781,17 @@ class FraudService:
         return flags
 
     def _high_amount_flag(self, transaction: Transaction) -> FlagHit | None:
+        # Same-currency only — see module docstring. A user with no prior
+        # history in this transaction's currency simply has no baseline to
+        # compare against, so this falls through the same insufficient-
+        # history path as a brand-new user (return None), rather than ever
+        # falling back to a cross-currency average.
         history = [
             t
             for t in self.transactions.list_for_user(transaction.initiator_user_id, limit=100)
-            if t.type == TransactionType.CARD_PAYMENT and t.status == TransactionStatus.COMPLETED
+            if t.type == TransactionType.CARD_PAYMENT
+            and t.status == TransactionStatus.COMPLETED
+            and t.currency == transaction.currency
         ]
         if len(history) < HIGH_AMOUNT_MIN_HISTORY:
             return None
@@ -751,6 +828,7 @@ class FraudService:
             and t.type == TransactionType.CARD_PAYMENT
             and t.merchant_id == transaction.merchant_id
             and _as_aware_utc(t.created_at) >= now - REWARD_ABUSE_WINDOW
+            and t.currency == transaction.currency
             and abs(t.amount - transaction.amount) < Decimal("0.01")
         ]
         matching_ids = {t.id for t in matching}
@@ -878,6 +956,13 @@ class FraudService:
         case.decided_by_admin_id = admin.id
         case.decided_at = datetime.now(timezone.utc)
         self.db.flush()
+
+        # The transaction only just became COMPLETED here — it was skipped
+        # by TransactionService.create_card_payment's own auto-sync (see
+        # that method's docstring) since it was PENDING_REVIEW at the time.
+        # Sync now so an approved-after-hold payment earns points/cashback
+        # immediately too, not only the next time something else syncs.
+        MerchantService(self.db).sync_purchases_from_transactions(transaction.initiator_user_id)
         return case
 
     def reject(self, case: FraudCase, admin: User) -> FraudCase:
