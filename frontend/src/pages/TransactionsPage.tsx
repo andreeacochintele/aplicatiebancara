@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -8,6 +9,7 @@ import type { Beneficiary, BillSplit, Transaction, TransactionFolder, Wallet } f
 
 const FOLDER_NAME_MAX_LENGTH = 40;
 const FOLDER_DESCRIPTION_MAX_LENGTH = 120;
+const TRANSACTIONS_PER_PAGE = 15;
 
 interface SplitParticipantDraft {
   key: string;
@@ -103,6 +105,7 @@ export function TransactionsPage() {
   const [splitActionId, setSplitActionId] = useState<string | null>(null);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
+  const [transactionsPage, setTransactionsPage] = useState(1);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -121,12 +124,34 @@ export function TransactionsPage() {
     return () => window.removeEventListener(BILL_SPLIT_CHANGED_EVENT, handleBillSplitChanged);
   }, [accessToken]);
 
+  useEffect(() => {
+    setTransactionsPage((currentPage) => {
+      const maxPage = Math.max(1, Math.ceil(transactions.length / TRANSACTIONS_PER_PAGE));
+      return Math.min(currentPage, maxPage);
+    });
+  }, [transactions.length]);
+
   const userWalletIds = new Set(wallets.map((wallet) => wallet.id));
   const internalBeneficiaries = beneficiaries.filter((beneficiary) => beneficiary.beneficiary_user_id);
   const pendingSplitRequests = billSplits.flatMap((split) =>
     split.participants
       .filter((participant) => participant.status === "PENDING" && participant.participant_user_id === user?.id)
       .map((participant) => ({ split, participant })),
+  );
+  const transactionPageCount = Math.max(1, Math.ceil(transactions.length / TRANSACTIONS_PER_PAGE));
+  const currentTransactionsPage = Math.min(transactionsPage, transactionPageCount);
+  const transactionsPageStart = (currentTransactionsPage - 1) * TRANSACTIONS_PER_PAGE;
+  const visibleTransactions = transactions.slice(transactionsPageStart, transactionsPageStart + TRANSACTIONS_PER_PAGE);
+  const firstVisibleTransaction = transactions.length === 0 ? 0 : transactionsPageStart + 1;
+  const lastVisibleTransaction = Math.min(transactionsPageStart + TRANSACTIONS_PER_PAGE, transactions.length);
+  const transactionPageButtonCount = Math.min(5, transactionPageCount);
+  const firstTransactionPageButton = Math.min(
+    Math.max(1, currentTransactionsPage - 2),
+    Math.max(1, transactionPageCount - transactionPageButtonCount + 1),
+  );
+  const transactionPageNumbers = Array.from(
+    { length: transactionPageButtonCount },
+    (_, index) => firstTransactionPageButton + index,
   );
 
   async function loadBillSplits() {
@@ -638,7 +663,7 @@ export function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {transactions.map((tx) => (
+              {visibleTransactions.map((tx) => (
                 <tr key={tx.id}>
                   <td>{new Date(tx.created_at).toLocaleString()}</td>
                   <td>{formatTransactionType(tx, userWalletIds)}</td>
@@ -669,6 +694,57 @@ export function TransactionsPage() {
               ))}
             </tbody>
           </table>
+        )}
+        {transactions.length > TRANSACTIONS_PER_PAGE && (
+          <div
+            style={{
+              alignItems: "center",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.6rem",
+              justifyContent: "space-between",
+              marginTop: "1rem",
+            }}
+          >
+            <span className="eyebrow">
+              Showing {firstVisibleTransaction}-{lastVisibleTransaction} of {transactions.length}
+            </span>
+            <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+              <button
+                type="button"
+                className="button--ghost"
+                aria-label="Previous transactions page"
+                disabled={currentTransactionsPage === 1}
+                onClick={() => setTransactionsPage((value) => Math.max(1, value - 1))}
+                style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+              >
+                <ChevronLeft size={16} aria-hidden="true" />
+              </button>
+              {transactionPageNumbers.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  className={pageNumber === currentTransactionsPage ? undefined : "button--ghost"}
+                  aria-label={`Go to transactions page ${pageNumber}`}
+                  aria-current={pageNumber === currentTransactionsPage ? "page" : undefined}
+                  onClick={() => setTransactionsPage(pageNumber)}
+                  style={{ minWidth: 40, padding: "0.65rem 0.75rem" }}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="button--ghost"
+                aria-label="Next transactions page"
+                disabled={currentTransactionsPage === transactionPageCount}
+                onClick={() => setTransactionsPage((value) => Math.min(transactionPageCount, value + 1))}
+                style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+              >
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
         )}
       </section>
     </section>

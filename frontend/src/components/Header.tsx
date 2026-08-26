@@ -1,4 +1,4 @@
-import { Bell } from "lucide-react";
+import { Bell, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -22,6 +22,8 @@ const PAGE_INFO: Record<string, { title: string; subtitle: string }> = {
   "/admin": { title: "Admin Dashboard", subtitle: "Operations overview" },
 };
 
+const HEADER_NOTIFICATIONS_PER_PAGE = 4;
+
 function initials(firstName?: string, lastName?: string): string {
   return `${firstName?.[0] ?? ""}${lastName?.[0] ?? ""}`.toUpperCase();
 }
@@ -38,17 +40,26 @@ export function Header() {
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
   const [dismissingId, setDismissingId] = useState<string | null>(null);
+  const [notificationPage, setNotificationPage] = useState(1);
 
   const pendingSplitRequests = billSplits.flatMap((split) =>
     split.participants
       .filter((participant) => participant.status === "PENDING" && participant.participant_user_id === user?.id)
       .map((participant) => ({ split, participant })),
   );
+  const notificationItemCount = pendingSplitRequests.length + notifications.length;
 
   useEffect(() => {
     if (!accessToken) return;
     void loadNotifications();
   }, [accessToken, location.pathname]);
+
+  useEffect(() => {
+    setNotificationPage((currentPage) => {
+      const maxPage = Math.max(1, Math.ceil(notificationItemCount / HEADER_NOTIFICATIONS_PER_PAGE));
+      return Math.min(currentPage, maxPage);
+    });
+  }, [notificationItemCount]);
 
   async function loadNotifications() {
     if (!accessToken) return;
@@ -134,6 +145,31 @@ export function Header() {
     }
   }
 
+  const notificationPanelItems = [
+    ...notifications.map((notification) => ({ kind: "notification" as const, id: notification.id, notification })),
+    ...pendingSplitRequests.map(({ split, participant }) => ({
+      kind: "split" as const,
+      id: participant.id,
+      participant,
+      split,
+    })),
+  ];
+  const notificationPageCount = Math.max(1, Math.ceil(notificationPanelItems.length / HEADER_NOTIFICATIONS_PER_PAGE));
+  const currentNotificationPage = Math.min(notificationPage, notificationPageCount);
+  const notificationPageStart = (currentNotificationPage - 1) * HEADER_NOTIFICATIONS_PER_PAGE;
+  const visibleNotificationPanelItems = notificationPanelItems.slice(
+    notificationPageStart,
+    notificationPageStart + HEADER_NOTIFICATIONS_PER_PAGE,
+  );
+  const firstPanelItem = notificationPanelItems.length === 0 ? 0 : notificationPageStart + 1;
+  const lastPanelItem = Math.min(notificationPageStart + HEADER_NOTIFICATIONS_PER_PAGE, notificationPanelItems.length);
+  const visiblePanelNotifications = visibleNotificationPanelItems.flatMap((item) =>
+    item.kind === "notification" ? [item.notification] : [],
+  );
+  const visiblePanelSplitRequests = visibleNotificationPanelItems.flatMap((item) =>
+    item.kind === "split" ? [{ split: item.split, participant: item.participant }] : [],
+  );
+
   return (
     <header className="header aurora-header">
       <span className="header__title">{page?.title ?? "Banking App"}</span>
@@ -146,8 +182,8 @@ export function Header() {
           type="button"
         >
           <Bell size={16} />
-          {pendingSplitRequests.length + notifications.length > 0 && (
-            <span className="notification-badge">{pendingSplitRequests.length + notifications.length}</span>
+          {notificationItemCount > 0 && (
+            <span className="notification-badge">{notificationItemCount}</span>
           )}
         </button>
         {notificationsOpen && (
@@ -159,11 +195,11 @@ export function Header() {
               </button>
             </div>
             {notificationError && <p className="status-line status-line--error">{notificationError}</p>}
-            {pendingSplitRequests.length === 0 && notifications.length === 0 ? (
+            {notificationItemCount === 0 ? (
               <p className="empty-state">No pending requests.</p>
             ) : (
               <>
-                {notifications.map((notification) => (
+                {visiblePanelNotifications.map((notification) => (
                   <div className="notification-item" key={notification.id}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
                       <div>
@@ -183,7 +219,7 @@ export function Header() {
                     </div>
                   </div>
                 ))}
-                {pendingSplitRequests.map(({ split, participant }) => (
+                {visiblePanelSplitRequests.map(({ split, participant }) => (
                   <div className="notification-item" key={participant.id}>
                     <span className="eyebrow">Split bill</span>
                     <strong>{split.title}</strong>
@@ -209,6 +245,38 @@ export function Header() {
                     </div>
                   </div>
                 ))}
+                {notificationPanelItems.length > HEADER_NOTIFICATIONS_PER_PAGE && (
+                  <div
+                    className="notification-item__actions"
+                    style={{ borderTop: "1px solid var(--color-divider)", paddingTop: "0.7rem" }}
+                  >
+                    <span className="eyebrow">
+                      {firstPanelItem}-{lastPanelItem} of {notificationPanelItems.length}
+                    </span>
+                    <div style={{ display: "flex", gap: "0.35rem" }}>
+                      <button
+                        type="button"
+                        className="button--ghost"
+                        aria-label="Previous notification page"
+                        disabled={currentNotificationPage === 1}
+                        onClick={() => setNotificationPage((value) => Math.max(1, value - 1))}
+                        style={{ minWidth: 36, padding: "0.45rem 0.55rem" }}
+                      >
+                        <ChevronLeft size={14} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="button--ghost"
+                        aria-label="Next notification page"
+                        disabled={currentNotificationPage === notificationPageCount}
+                        onClick={() => setNotificationPage((value) => Math.min(notificationPageCount, value + 1))}
+                        style={{ minWidth: 36, padding: "0.45rem 0.55rem" }}
+                      >
+                        <ChevronRight size={14} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
