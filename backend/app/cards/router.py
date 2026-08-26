@@ -27,7 +27,7 @@ def create_card(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CardPublic:
-    card = CardService(db).create_card(current_user.id, payload)
+    card = CardService(db).create_card(current_user.id, payload, admin_approved=False)
     db.commit()
     return card
 

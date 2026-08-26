@@ -292,6 +292,8 @@ export interface CreditCardAccount {
   used_amount: string;
   available_credit: string;
   annual_interest_rate: string;
+  collateral_wallet_id: string | null;
+  collateral_amount: string | null;
   updated_at: string;
 }
 

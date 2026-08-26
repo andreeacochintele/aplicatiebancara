@@ -202,6 +202,26 @@ def decide_application(
     return service.get_application_public(application_id)
 
 
+@router.patch("/admin/applications/{application_id}/more-info", response_model=CreditApplicationPublic)
+def request_application_more_info(
+    application_id: uuid.UUID,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> CreditApplicationPublic:
+    service = CreditService(db)
+    application = service.request_application_more_info(application_id, admin_id=admin.id)
+    AuditService(db).log_action(
+        admin.id,
+        action="NEEDS_MORE_INFO",
+        entity_type="CREDIT_APPLICATION",
+        entity_id=application.id,
+        old_data={"status": application.status.value},
+        new_data={"documents": "NEEDS_MORE_INFO"},
+    )
+    db.commit()
+    return service.get_application_public(application_id)
+
+
 @router.get("/loans", response_model=list[LoanPublic])
 def list_loans(
     current_user: User = Depends(get_current_user),

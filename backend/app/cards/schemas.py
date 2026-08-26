@@ -12,6 +12,10 @@ class CardCreate(BaseModel):
     type: CardType = CardType.DEBIT
     tier: CardTier | None = None
     default_wallet_id: uuid.UUID | None = None
+    new_wallet_currency: str | None = None
+    currency: str | None = None
+    collateral_wallet_id: uuid.UUID | None = None
+    collateral_amount: Decimal | None = None
 
 
 class CreditCardAccountPublic(BaseModel):
@@ -24,6 +28,8 @@ class CreditCardAccountPublic(BaseModel):
     used_amount: Decimal
     available_credit: Decimal
     annual_interest_rate: Decimal
+    collateral_wallet_id: uuid.UUID | None = None
+    collateral_amount: Decimal | None = Decimal("0.00")
     updated_at: datetime
 
 

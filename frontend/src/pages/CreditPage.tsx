@@ -147,6 +147,7 @@ export function CreditPage() {
   const [profileCurrency, setProfileCurrency] = useState("RON");
   const [supportingDocuments, setSupportingDocuments] = useState<File[]>([]);
   const [loanApplicationDocuments, setLoanApplicationDocuments] = useState<File[]>([]);
+  const [additionalLoanDocuments, setAdditionalLoanDocuments] = useState<Record<string, File[]>>({});
   const [documentMessage, setDocumentMessage] = useState<string | null>(null);
   const [loanPrompt, setLoanPrompt] = useState<string | null>(null);
   const [loanProductType, setLoanProductType] = useState<LoanProductType>("PERSONAL_LOAN");
@@ -164,6 +165,7 @@ export function CreditPage() {
   const [isApplying, setIsApplying] = useState(false);
   const [isEstimatingApplication, setIsEstimatingApplication] = useState(false);
   const [activatingApplicationId, setActivatingApplicationId] = useState<string | null>(null);
+  const [uploadingMoreInfoApplicationId, setUploadingMoreInfoApplicationId] = useState<string | null>(null);
   const [simulatingLoanId, setSimulatingLoanId] = useState<string | null>(null);
   const [payingLoanId, setPayingLoanId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -189,8 +191,22 @@ export function CreditPage() {
   );
 
   const visibleLoanApplications = useMemo(
-    () => applications.filter((application) => application.status === "APPROVED" || application.status === "PENDING"),
+    () =>
+      applications.filter(
+        (application) =>
+          application.type === "PERSONAL_LOAN" &&
+          (application.status === "APPROVED" || application.status === "PENDING"),
+      ),
     [applications],
+  );
+  const documentsByApplication = useMemo(
+    () =>
+      creditDocuments.reduce<Record<string, CreditDocument[]>>((groups, document) => {
+        if (!document.application_id) return groups;
+        groups[document.application_id] = [...(groups[document.application_id] ?? []), document];
+        return groups;
+      }, {}),
+    [creditDocuments],
   );
   const activeWallets = useMemo(() => wallets.filter((wallet) => wallet.status === "ACTIVE"), [wallets]);
   const activeDebitCards = useMemo(
@@ -709,6 +725,45 @@ export function CreditPage() {
     return uploads;
   }
 
+  async function uploadMoreInfoDocuments(application: CreditApplication) {
+    if (!accessToken || uploadingMoreInfoApplicationId) return;
+    const files = additionalLoanDocuments[application.id] ?? [];
+    if (files.length === 0) {
+      setError("Select documents before uploading more information.");
+      return;
+    }
+
+    setUploadingMoreInfoApplicationId(application.id);
+    setError(null);
+    setDocumentMessage(null);
+    try {
+      const uploadedDocuments = await uploadCreditDocuments(
+        files,
+        "LOAN_APPLICATION",
+        application.id,
+        `${formatProductType(application.loan_product_type)} additional documentation`,
+      );
+      const [documentsResponse, applicationsResponse] = await Promise.all([
+        apiRequest<CreditDocument[]>("/credit/documents", { token: accessToken }),
+        apiRequest<CreditApplication[]>("/credit/applications", { token: accessToken }),
+      ]);
+      setCreditDocuments(documentsResponse);
+      setApplications(applicationsResponse);
+      setAdditionalLoanDocuments((current) => ({ ...current, [application.id]: [] }));
+      setDocumentMessage(
+        `${uploadedDocuments.length} additional document${uploadedDocuments.length === 1 ? "" : "s"} uploaded for admin review.`,
+      );
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : "Could not upload additional documents.");
+    } finally {
+      setUploadingMoreInfoApplicationId(null);
+    }
+  }
+
   async function activateLoan(application: CreditApplication) {
     if (!accessToken || activatingApplicationId) return;
     setActivatingApplicationId(application.id);
@@ -1118,6 +1173,12 @@ export function CreditPage() {
                   const activeLoan = existingLoan?.status === "ACTIVE" ? existingLoan : null;
                   const breakdown = applicationBreakdowns[application.id];
                   const isApproved = application.status === "APPROVED";
+                  const applicationDocuments = documentsByApplication[application.id] ?? application.documents ?? [];
+                  const needsMoreInfoDocuments = applicationDocuments.filter((document) => document.status === "NEEDS_MORE_INFO");
+                  const hasUploadedFollowUpDocuments =
+                    needsMoreInfoDocuments.length > 0 && applicationDocuments.some((document) => document.status === "UPLOADED");
+                  const needsMoreInfo = !isApproved && needsMoreInfoDocuments.length > 0 && !hasUploadedFollowUpDocuments;
+                  const selectedAdditionalDocuments = additionalLoanDocuments[application.id] ?? [];
                   const canActivate = application.type === "PERSONAL_LOAN" && isApproved && !existingLoan;
                   const isOfferExpanded = expandedOfferIds.has(application.id);
                   const breakdownId = `approved-offer-breakdown-${application.id}`;
@@ -1155,7 +1216,13 @@ export function CreditPage() {
                         </div>
                         <div className="approved-offer-card__actions">
                           <span className={isApproved ? "tag tag--accent" : "tag tag--neutral"}>
-                            {isApproved ? "Approved" : "Pending review"}
+                            {isApproved
+                              ? "Approved"
+                              : needsMoreInfo
+                                ? "More info needed"
+                                : hasUploadedFollowUpDocuments
+                                  ? "Documents submitted"
+                                  : "Pending review"}
                           </span>
                           {existingLoan ? (
                             <span className={activeLoan ? "tag tag--accent" : "tag tag--neutral"}>{loanStatusLabel}</span>
@@ -1175,8 +1242,16 @@ export function CreditPage() {
                       {!isApproved ? (
                         <div className="approved-offer-card__main-payment">
                           <span className="eyebrow">Review status</span>
-                          <strong>Pending</strong>
-                          <span>Admin review will decide the final offer, rate and repayment schedule.</span>
+                          <strong>
+                            {needsMoreInfo ? "More documents needed" : hasUploadedFollowUpDocuments ? "Additional docs submitted" : "Pending"}
+                          </strong>
+                          <span>
+                            {needsMoreInfo
+                              ? "Admin needs extra documentation before deciding this loan application."
+                              : hasUploadedFollowUpDocuments
+                                ? "Your additional documents are waiting for admin review."
+                              : "Admin review will decide the final offer, rate and repayment schedule."}
+                          </span>
                         </div>
                       ) : breakdown ? (
                         <>
@@ -1338,6 +1413,45 @@ export function CreditPage() {
                       ) : (
                         <div className="approved-offer-card__loading" id={breakdownId}>
                           Preparing backend payment breakdown...
+                        </div>
+                      )}
+                      {needsMoreInfo && (
+                        <div className="loan-more-info-upload">
+                          <div className="loan-more-info-upload__copy">
+                            <span className="eyebrow">Requested documents</span>
+                            <strong>
+                              {selectedAdditionalDocuments.length > 0
+                                ? selectedAdditionalDocuments.map((document) => document.name).join(", ")
+                                : needsMoreInfoDocuments.map((document) => document.document_type).join(", ")}
+                            </strong>
+                            {needsMoreInfoDocuments.some((document) => document.review_note) && (
+                              <span>{needsMoreInfoDocuments.find((document) => document.review_note)?.review_note}</span>
+                            )}
+                          </div>
+                          <div className="loan-more-info-upload__actions">
+                            <label className="button--ghost loan-more-info-upload__select">
+                              Upload files
+                              <input
+                                type="file"
+                                multiple
+                                accept=".pdf,.png,.jpg,.jpeg"
+                                onChange={(event) =>
+                                  setAdditionalLoanDocuments((current) => ({
+                                    ...current,
+                                    [application.id]: Array.from(event.target.files ?? []),
+                                  }))
+                                }
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className="credit-card-payment__submit"
+                              onClick={() => uploadMoreInfoDocuments(application)}
+                              disabled={uploadingMoreInfoApplicationId === application.id || selectedAdditionalDocuments.length === 0}
+                            >
+                              {uploadingMoreInfoApplicationId === application.id ? "Uploading..." : "Send documents"}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </article>

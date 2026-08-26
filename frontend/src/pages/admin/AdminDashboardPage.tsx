@@ -35,6 +35,11 @@ function formatProductType(type: LoanProductType | null): string {
     .join(" ");
 }
 
+function formatApplicationProduct(application: CreditApplication): string {
+  if (application.type === "CREDIT_CARD") return "Credit Card";
+  return formatProductType(application.loan_product_type);
+}
+
 function formatMoney(value: string | null, currency = "RON"): string {
   if (!value) return "N/A";
   return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
@@ -110,6 +115,7 @@ export function AdminDashboardPage() {
   const [showAllApplications, setShowAllApplications] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const pendingApplications = useMemo(
     () => applications.filter((application) => application.status === "PENDING" || application.status === "DRAFT"),
@@ -183,7 +189,7 @@ export function AdminDashboardPage() {
       const fields = [
         application.user_id,
         application.user_id.slice(0, 8),
-        formatProductType(application.loan_product_type),
+        formatApplicationProduct(application),
         application.status,
         application.currency,
         application.requested_amount,
@@ -266,43 +272,27 @@ export function AdminDashboardPage() {
 
   async function requestMoreInfo(application: CreditApplication) {
     if (!accessToken || moreInfoApplicationId) return;
-    const pendingDocuments = (documentsByApplication[application.id] ?? []).filter((document) => document.status === "UPLOADED");
-    if (pendingDocuments.length === 0) {
-      setError("This submission has no pending uploaded documents to request more information on.");
-      return;
-    }
 
     setMoreInfoApplicationId(application.id);
     setError(null);
+    setNotice(null);
     try {
-      const updatedDocuments = await Promise.all(
-        pendingDocuments.map((document) =>
-          apiRequest<CreditDocument>(`/credit/admin/documents/${document.id}/review`, {
-            method: "PATCH",
-            token: accessToken,
-            body: {
-              status: "NEEDS_MORE_INFO",
-              evaluation_score: null,
-              review_note: "Additional supporting information required.",
-            },
-          }),
-        ),
-      );
-      setDocuments((current) =>
-        current.map((document) => updatedDocuments.find((updated) => updated.id === document.id) ?? document),
-      );
+      const updated = await apiRequest<CreditApplication>(`/credit/admin/applications/${application.id}/more-info`, {
+        method: "PATCH",
+        token: accessToken,
+      });
+      const updatedDocuments = updated.documents ?? [];
+      setDocuments((current) => {
+        const byId = new Map(current.map((document) => [document.id, document]));
+        for (const document of updatedDocuments) {
+          byId.set(document.id, document);
+        }
+        return [...byId.values()];
+      });
       setApplications((current) =>
-        current.map((item) =>
-          item.id === application.id
-            ? {
-                ...item,
-                documents: item.documents?.map(
-                  (document) => updatedDocuments.find((updated) => updated.id === document.id) ?? document,
-                ),
-              }
-            : item,
-        ),
+        current.map((item) => (item.id === updated.id ? updated : item)),
       );
+      setNotice("More information request sent to the client.");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -394,6 +384,9 @@ export function AdminDashboardPage() {
   function renderSubmissionDocuments(application: CreditApplication) {
     const linkedDocuments = documentsByApplication[application.id] ?? [];
     if (linkedDocuments.length === 0) {
+      if (application.type === "CREDIT_CARD") {
+        return <span className="admin-submission-documents__empty">Not required</span>;
+      }
       return (
         <div className="admin-submission-documents__missing">
           <strong>Missing documents</strong>
@@ -413,7 +406,9 @@ export function AdminDashboardPage() {
                   <span>
                     {document.document_type} / {formatFileSize(document.file_size)}
                   </span>
+                  {document.review_note && <span className="admin-submission-document__note">{document.review_note}</span>}
                 </div>
+                <span className={documentStatusClass(document.status)}>{document.status.replaceAll("_", " ")}</span>
               </div>
               <div className="admin-submission-document__actions">
                 <button
@@ -530,6 +525,7 @@ export function AdminDashboardPage() {
           <span className="tag tag--neutral">{pendingApplications.length} pending credit</span>
         </div>
         {error && <p style={{ color: "var(--color-warning)", margin: "0 0 0.85rem" }}>{error}</p>}
+        {notice && <p className="admin-dashboard-notice">{notice}</p>}
         {isLoading && <div className="card-empty">Loading loan applications...</div>}
         {!isLoading && (
           <>
@@ -570,10 +566,14 @@ export function AdminDashboardPage() {
                     const isOpen = application.status === "PENDING" || application.status === "DRAFT";
                     const offerAmount = application.offered_amount ?? application.requested_amount;
                     const displayRate = application.offered_interest_rate ?? defaultRate(application);
+                    const hasMoreInfoRequested = (documentsByApplication[application.id] ?? []).some(
+                      (document) => document.status === "NEEDS_MORE_INFO",
+                    );
+                    const canRequestMoreInfo = application.type === "PERSONAL_LOAN";
                     return (
                       <tr key={application.id}>
                         <td>{application.user_id.slice(0, 8)}</td>
-                        <td>{formatProductType(application.loan_product_type)}</td>
+                        <td>{formatApplicationProduct(application)}</td>
                         <td>{formatMoney(application.requested_amount, application.currency)}</td>
                         <td>{formatMoney(offerAmount, application.currency)}</td>
                         <td>{displayRate}</td>
@@ -598,14 +598,20 @@ export function AdminDashboardPage() {
                               >
                                 Approve
                               </button>
-                              <button
-                                type="button"
-                                className="button--ghost"
-                                onClick={() => requestMoreInfo(application)}
-                                disabled={moreInfoApplicationId === application.id}
-                              >
-                                Need more info
-                              </button>
+                              {canRequestMoreInfo && (
+                                <button
+                                  type="button"
+                                  className="button--ghost"
+                                  onClick={() => requestMoreInfo(application)}
+                                  disabled={moreInfoApplicationId === application.id || hasMoreInfoRequested}
+                                >
+                                  {moreInfoApplicationId === application.id
+                                    ? "Requesting..."
+                                    : hasMoreInfoRequested
+                                      ? "Info requested"
+                                      : "Need more info"}
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="button--ghost"

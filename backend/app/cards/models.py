@@ -107,10 +107,15 @@ class CreditCardAccount(Base):
     credit_limit: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     used_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0.00"), nullable=False)
     annual_interest_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    collateral_wallet_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("wallets.id"), nullable=True
+    )
+    collateral_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0.00"), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     card = relationship("Card", back_populates="credit_account")
     owner = relationship("User")
+    collateral_wallet = relationship("Wallet")
 
     @property
     def available_credit(self) -> Decimal:
