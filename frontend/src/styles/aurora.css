@@ -1970,12 +1970,47 @@
 
 /* ---- Assistant ---- */
 
+.aurora-shell .assistant-sidebar__new {
+  background: var(--aurora-gradient);
+}
+
+.aurora-shell .assistant-sidebar__new:hover {
+  filter: brightness(1.05);
+}
+
+.aurora-shell .assistant-sidebar__search {
+  background: var(--aurora-surface-alt);
+  border: 1px solid var(--aurora-border);
+  color: var(--aurora-text);
+}
+
+.aurora-shell .assistant-conversation:hover {
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--aurora-violet) 5%, transparent),
+      color-mix(in srgb, var(--aurora-pink) 4%, transparent) 70%
+    ),
+    var(--aurora-surface-alt);
+}
+
 .aurora-shell .assistant-conversation--active {
-  background: var(--aurora-accent-soft);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--aurora-violet) 16%, transparent),
+      color-mix(in srgb, var(--aurora-pink) 12%, transparent) 70%
+    ),
+    var(--aurora-surface);
+  border-color: color-mix(in srgb, var(--aurora-accent) 45%, transparent);
 }
 
 .aurora-shell .assistant-conversation__open {
   color: var(--aurora-text);
+}
+
+.aurora-shell .assistant-conversation__icon {
+  background: var(--aurora-gradient);
 }
 
 .aurora-shell .assistant-conversation--active .assistant-conversation__open {

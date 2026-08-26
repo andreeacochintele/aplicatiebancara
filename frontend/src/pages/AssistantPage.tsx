@@ -1,4 +1,4 @@
-import { Bot, Check, Copy, CreditCard, LifeBuoy, Plus, Sparkles, Trash2, Wallet } from "lucide-react";
+import { Bot, Check, Copy, CreditCard, LifeBuoy, MessageCircle, Plus, Sparkles, Trash2, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -71,6 +71,7 @@ export function AssistantPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [conversationSearch, setConversationSearch] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const shouldScrollToBottomRef = useRef(false);
@@ -267,6 +268,10 @@ export function AssistantPage() {
     }
   }, [messages]);
 
+  const filteredConversations = conversations.filter((conversation) =>
+    conversationTitle(conversation).toLowerCase().includes(conversationSearch.trim().toLowerCase()),
+  );
+
   return (
     <section className="assistant-layout">
       <aside className="tile assistant-sidebar">
@@ -274,11 +279,21 @@ export function AssistantPage() {
           <span className="eyebrow">Conversations</span>
         </div>
         <button className="assistant-sidebar__new" onClick={startNewConversation} type="button">
-          <Plus size={14} /> New conversation
+          <Plus size={16} /> New conversation
         </button>
+        <input
+          className="assistant-sidebar__search"
+          value={conversationSearch}
+          onChange={(e) => setConversationSearch(e.target.value)}
+          placeholder="Search conversations..."
+          type="search"
+        />
         <div className="assistant-conversation-list">
           {conversations.length === 0 && <p className="empty-state">No conversations yet.</p>}
-          {conversations.map((conversation) => (
+          {conversations.length > 0 && filteredConversations.length === 0 && (
+            <p className="empty-state">No conversations match your search.</p>
+          )}
+          {filteredConversations.map((conversation) => (
             <div
               key={conversation.id}
               className={`assistant-conversation ${
@@ -286,6 +301,9 @@ export function AssistantPage() {
               }`}
             >
               <button className="assistant-conversation__open" onClick={() => openConversation(conversation.id)} type="button">
+                <span className="assistant-conversation__icon">
+                  <MessageCircle size={13} />
+                </span>
                 <span className="assistant-conversation__title">{conversationTitle(conversation)}</span>
               </button>
               <button
