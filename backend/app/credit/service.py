@@ -7,8 +7,9 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy.orm import Session
 
-from app.cards.models import CardStatus, CardType
+from app.cards.models import CardStatus, CardTier, CardType
 from app.cards.repository import CardRepository
+from app.cards.schemas import CardCreate
 from app.cards.service import CardService
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.database import utcnow
@@ -617,8 +618,11 @@ class CreditService:
         self._mark_application_documents_reviewed(application, data.status, admin_id)
         self.db.flush()
 
-        if application.status == CreditApplicationStatus.APPROVED and application.type == CreditApplicationType.PERSONAL_LOAN:
-            self.create_loan_from_application(application.user_id, application.id)
+        if application.status == CreditApplicationStatus.APPROVED:
+            if application.type == CreditApplicationType.PERSONAL_LOAN:
+                self.create_loan_from_application(application.user_id, application.id)
+            elif application.type == CreditApplicationType.CREDIT_CARD:
+                self._create_credit_card_from_approved_application(application)
 
         try:
             if data.status == CreditApplicationStatus.APPROVED:
@@ -643,6 +647,80 @@ class CreditService:
                 )
         except Exception:
             pass
+        return application
+
+    def _create_credit_card_from_approved_application(self, application: CreditApplication) -> None:
+        offered_amount = application.offered_amount or application.requested_amount
+        offered_interest_rate = application.offered_interest_rate or Decimal("18.00")
+        existing_cards = [
+            card
+            for card in self.cards.list_for_user(application.user_id)
+            if card.type == CardType.CREDIT
+            and card.credit_account is not None
+            and card.credit_account.credit_limit == offered_amount
+            and card.credit_account.currency == application.currency
+            and card.created_at >= application.created_at
+        ]
+        if existing_cards:
+            return
+        CardService(self.db).create_card(
+            application.user_id,
+            CardCreate(type=CardType.CREDIT, tier=self._tier_for_credit_limit(offered_amount)),
+            admin_approved=True,
+            credit_limit=offered_amount,
+            annual_interest_rate=offered_interest_rate,
+            currency=application.currency,
+        )
+
+    def _tier_for_credit_limit(self, amount: Decimal) -> CardTier:
+        if amount >= Decimal("30000.00"):
+            return CardTier.PLATINUM
+        if amount >= Decimal("15000.00"):
+            return CardTier.GOLD
+        return CardTier.REGULAR
+
+    def request_application_more_info(self, application_id: uuid.UUID, admin_id: uuid.UUID | None = None) -> CreditApplication:
+        application = self.repository.get_application_by_id(application_id)
+        if application is None:
+            raise NotFoundError("Credit application not found")
+        if application.status not in {CreditApplicationStatus.PENDING, CreditApplicationStatus.DRAFT}:
+            raise ValidationError("Only draft or pending applications can request more information")
+
+        documents = [
+            document
+            for document in self.repository.list_documents()
+            if document.purpose == CreditDocumentPurpose.LOAN_APPLICATION and document.application_id == application.id
+        ]
+        if not documents:
+            raise ValidationError("This loan application has no documents to request more information on")
+
+        review_time = utcnow()
+        for document in documents:
+            if document.status in {CreditDocumentStatus.APPROVED, CreditDocumentStatus.REJECTED}:
+                continue
+            document.status = CreditDocumentStatus.NEEDS_MORE_INFO
+            document.evaluation_score = None
+            document.review_note = "Additional supporting information required."
+            document.reviewed_by_admin_id = admin_id
+            document.reviewed_at = review_time
+            self.repository.persist_document(document)
+
+        try:
+            product_name = (
+                get_loan_product(application.loan_product_type).name.lower()
+                if application.loan_product_type is not None
+                else "loan"
+            )
+            self.notifications.create(
+                application.user_id,
+                type="CREDIT",
+                title="More loan information required",
+                message=f"We need more documents for your {product_name} application for "
+                f"{application.requested_amount} {application.currency}. Open Credit to upload the requested information.",
+            )
+        except Exception:
+            pass
+        self.db.flush()
         return application
 
     def _mark_application_documents_reviewed(

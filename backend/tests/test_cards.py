@@ -48,6 +48,29 @@ def test_create_mock_debit_card(db_session, user_with_wallet):
     assert card.mock_cvv.isdigit()
 
 
+def test_create_debit_card_can_create_new_current_account(db_session, user_with_wallet):
+    user, _wallet = user_with_wallet
+    card = CardService(db_session).create_card(
+        user.id,
+        CardCreate(type=CardType.DEBIT, new_wallet_currency="EUR"),
+    )
+    wallet = WalletService(db_session).list_wallets(user.id)
+    eur_wallet = next(item for item in wallet if item.currency == "EUR")
+
+    assert card.type == CardType.DEBIT
+    assert card.default_wallet_id == eur_wallet.id
+
+
+def test_create_debit_card_rejects_existing_and_new_account_together(db_session, user_with_wallet):
+    user, wallet = user_with_wallet
+
+    with pytest.raises(ValidationError):
+        CardService(db_session).create_card(
+            user.id,
+            CardCreate(type=CardType.DEBIT, default_wallet_id=wallet.id, new_wallet_currency="EUR"),
+        )
+
+
 def test_one_time_card_starts_with_one_remaining_use(db_session, user_with_wallet):
     user, wallet = user_with_wallet
     card = CardService(db_session).create_card(
@@ -82,6 +105,66 @@ def test_create_gold_credit_card(db_session, user_with_wallet):
     assert card.credit_account is not None
     assert card.credit_account.credit_limit == Decimal("15000.00")
     assert card.credit_account.used_amount == Decimal("0.00")
+    assert card.credit_account.collateral_wallet_id is None
+    assert card.credit_account.collateral_amount == Decimal("0.00")
+
+
+def test_user_created_credit_card_requires_collateral(db_session, user_with_wallet):
+    user, _wallet = user_with_wallet
+
+    with pytest.raises(ValidationError):
+        CardService(db_session).create_card(
+            user.id,
+            CardCreate(type=CardType.CREDIT, tier=CardTier.GOLD),
+            admin_approved=False,
+        )
+
+
+def test_secured_credit_card_reserves_and_releases_collateral(db_session, user_with_wallet):
+    user, wallet = user_with_wallet
+    wallet.available_balance = Decimal("7000.00")
+    service = CardService(db_session)
+
+    card = service.create_card(
+        user.id,
+        CardCreate(
+            type=CardType.CREDIT,
+            tier=CardTier.REGULAR,
+            collateral_wallet_id=wallet.id,
+            collateral_amount=Decimal("5000.00"),
+        ),
+        admin_approved=False,
+    )
+
+    assert card.credit_account is not None
+    assert card.credit_account.credit_limit == Decimal("5000.00")
+    assert card.credit_account.collateral_wallet_id == wallet.id
+    assert card.credit_account.collateral_amount == Decimal("5000.00")
+    assert wallet.available_balance == Decimal("2000.00")
+    assert wallet.reserved_balance == Decimal("5000.00")
+
+    service.delete_card(user.id, card.id)
+
+    assert wallet.available_balance == Decimal("7000.00")
+    assert wallet.reserved_balance == Decimal("0.00")
+
+
+def test_secured_credit_card_rejects_currency_mismatch(db_session, user_with_wallet):
+    user, wallet = user_with_wallet
+    wallet.available_balance = Decimal("7000.00")
+
+    with pytest.raises(ValidationError):
+        CardService(db_session).create_card(
+            user.id,
+            CardCreate(
+                type=CardType.CREDIT,
+                tier=CardTier.REGULAR,
+                currency="EUR",
+                collateral_wallet_id=wallet.id,
+                collateral_amount=Decimal("5000.00"),
+            ),
+            admin_approved=False,
+        )
 
 
 def test_credit_card_does_not_keep_wallet_link(db_session, user_with_wallet):
@@ -114,7 +197,7 @@ def test_debit_and_one_time_cards_require_account(db_session, user_with_wallet):
         service.create_card(user.id, CardCreate(type=CardType.ONE_TIME))
 
 
-def test_create_card_rejects_more_than_five_cards(db_session, user_with_wallet):
+def test_create_card_rejects_more_than_five_credit_cards(db_session, user_with_wallet):
     user, _wallet = user_with_wallet
     service = CardService(db_session)
     for _ in range(5):
@@ -122,6 +205,38 @@ def test_create_card_rejects_more_than_five_cards(db_session, user_with_wallet):
 
     with pytest.raises(ConflictError):
         service.create_card(user.id, CardCreate(type=CardType.CREDIT))
+
+
+def test_create_card_allows_five_credit_and_five_debit_cards(db_session, user_with_wallet):
+    user, wallet = user_with_wallet
+    wallet.available_balance = Decimal("50000.00")
+    service = CardService(db_session)
+    for _ in range(5):
+        service.create_card(user.id, CardCreate(type=CardType.CREDIT))
+
+    currencies = ["EUR", "USD", "GBP", "CHF"]
+    debit_wallets = [wallet] + [
+        WalletService(db_session).create_wallet(user.id, WalletCreate(currency=currency)) for currency in currencies
+    ]
+    for debit_wallet in debit_wallets:
+        service.create_card(user.id, CardCreate(type=CardType.DEBIT, default_wallet_id=debit_wallet.id))
+
+    assert len([card for card in service.list_cards(user.id) if card.type == CardType.CREDIT]) == 5
+    assert len([card for card in service.list_cards(user.id) if card.type == CardType.DEBIT]) == 5
+
+
+def test_create_card_rejects_more_than_five_debit_cards(db_session, user_with_wallet):
+    user, wallet = user_with_wallet
+    service = CardService(db_session)
+    currencies = ["EUR", "USD", "GBP", "CHF", "CAD"]
+    debit_wallets = [wallet] + [
+        WalletService(db_session).create_wallet(user.id, WalletCreate(currency=currency)) for currency in currencies
+    ]
+    for debit_wallet in debit_wallets[:5]:
+        service.create_card(user.id, CardCreate(type=CardType.DEBIT, default_wallet_id=debit_wallet.id))
+
+    with pytest.raises(ConflictError):
+        service.create_card(user.id, CardCreate(type=CardType.DEBIT, default_wallet_id=debit_wallets[5].id))
 
 
 def test_one_time_card_rejects_tier(db_session, user_with_wallet):

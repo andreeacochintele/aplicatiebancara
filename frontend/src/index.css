@@ -836,6 +836,13 @@ th {
   min-height: 38px;
 }
 
+.admin-dashboard-notice {
+  margin: 0 0 0.85rem;
+  color: #047857;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
 .admin-applications-scroll {
   overflow-x: auto;
   padding-bottom: 0.2rem;
@@ -1068,6 +1075,11 @@ th {
   color: var(--color-text-muted);
   font-size: 0.7rem;
   line-height: 1.25;
+}
+
+.admin-submission-document__top .admin-submission-document__note {
+  color: #9a3412;
+  font-weight: 800;
 }
 
 .admin-submission-document__review {
@@ -1546,6 +1558,47 @@ th {
   color: var(--color-text);
 }
 
+.aurora-wallet-history-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  min-height: 42px;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--wallet-accent, var(--color-accent)) 45%, var(--color-divider));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--wallet-accent, var(--color-accent)) 8%, var(--color-surface));
+  color: var(--wallet-accent, var(--color-accent));
+  font-weight: 800;
+}
+
+.aurora-wallet-history-toggle:hover {
+  border-color: var(--wallet-accent, var(--color-accent));
+  background: color-mix(in srgb, var(--wallet-accent, var(--color-accent)) 14%, var(--color-surface));
+  color: var(--wallet-accent, var(--color-accent));
+}
+
+.aurora-wallet-history-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--wallet-accent, var(--color-accent)) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.aurora-wallet-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+}
+
+.aurora-wallet-card__actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  width: 100%;
+}
+
 .tag {
   display: inline-block;
   padding: 0.1rem 0.5rem;
@@ -1750,6 +1803,57 @@ th {
 .compact-tier-option span {
   color: var(--color-text-muted);
   font-size: 0.78rem;
+}
+
+.credit-issue-controls {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.credit-issue-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.credit-issue-mode button {
+  min-height: 42px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.credit-issue-mode button.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.credit-tier-limit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 46px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.credit-tier-limit span {
+  color: var(--color-text-muted);
+}
+
+.credit-tier-limit strong {
+  color: var(--color-text);
 }
 
 .card-choice-explainer {
@@ -3441,6 +3545,61 @@ th {
   margin-top: 0.35rem;
 }
 
+.loan-more-info-upload {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid rgba(234, 88, 12, 0.22);
+  border-radius: var(--radius-sm);
+  background: #fff7ed;
+}
+
+.loan-more-info-upload strong,
+.loan-more-info-upload span:not(.eyebrow) {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loan-more-info-upload strong {
+  margin-top: 0.18rem;
+  color: var(--color-text);
+  font-size: 0.92rem;
+}
+
+.loan-more-info-upload__copy span:not(.eyebrow) {
+  margin-top: 0.16rem;
+  color: #9a3412;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.loan-more-info-upload__actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.45rem;
+}
+
+.loan-more-info-upload__select,
+.loan-more-info-upload__actions button {
+  display: inline-grid;
+  place-items: center;
+  min-height: 34px;
+  width: 100%;
+  text-align: center;
+  cursor: pointer;
+}
+
+.loan-more-info-upload__select input {
+  display: none;
+}
+
 .approved-offer-card__details {
   grid-column: 1 / -1;
   display: grid;
@@ -4037,6 +4196,7 @@ th {
   .approved-offer-card,
   .approved-offer-card__figures,
   .approved-offer-card__schedule,
+  .loan-more-info-upload,
   .loan-disclosure-list,
   .loan-product-metrics,
   .loan-estimate-card__figures,

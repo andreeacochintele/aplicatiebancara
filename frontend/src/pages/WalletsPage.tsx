@@ -345,11 +345,7 @@ export function WalletsPage() {
               >
                 <div className="aurora-wallet-card__top">
                   <span className="aurora-wallet-card__code">{wallet.currency}</span>
-                  {wallet.is_main ? (
-                    <span className="aurora-chip aurora-chip-violet">Main</span>
-                  ) : (
-                    <span className="aurora-chip aurora-chip-neutral">{wallet.status}</span>
-                  )}
+                  {wallet.is_main && <span className="aurora-chip aurora-chip-violet">Main</span>}
                 </div>
                 <div className="aurora-wallet-card__amount" style={{ color: "var(--wallet-accent)" }}>
                   {wallet.available_balance}
@@ -398,11 +394,9 @@ export function WalletsPage() {
                   </div>
                 )}
                 <div className="aurora-wallet-card__footer">
-                  <span className="aurora-eyebrow" style={{ marginBottom: 0 }}>
-                    {wallet.is_main ? "Main wallet" : wallet.status}
-                  </span>
+                  <span aria-hidden="true" />
                   {!wallet.is_main && wallet.status === "ACTIVE" && (
-                    <div style={{ display: "flex", gap: 12 }}>
+                    <div className="aurora-wallet-card__actions">
                       <button
                         type="button"
                         className="aurora-wallet-card__set-main"

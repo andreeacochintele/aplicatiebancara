@@ -4,10 +4,18 @@ import { ChevronDown, ChevronUp, Copy, Eye, EyeOff, Lock, Trash2, Unlock } from 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { cardTierRewardBullets } from "../config/rewardPolicy";
 import { useAuth } from "../hooks/useAuth";
-import type { Card, CardTier, CardType, Transaction, Wallet } from "../types";
+import type { Card, CardTier, CardType, CreditApplication, Transaction, Wallet } from "../types";
 
 const CARD_TYPES: CardType[] = ["DEBIT", "CREDIT", "ONE_TIME"];
-const MAX_CARDS = 5;
+const CREDIT_CARD_CURRENCIES = ["RON", "EUR", "USD", "GBP"];
+const CURRENT_ACCOUNT_CURRENCIES = [
+  "RON", "EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD", "PLN", "TRY",
+  "BRL", "CNY", "CZK", "DKK", "HKD", "HUF", "IDR", "ILS", "INR", "ISK",
+  "KRW", "MXN", "MYR", "NOK", "NZD", "PHP", "SEK", "SGD", "THB", "ZAR",
+];
+const MAX_CARDS_PER_TYPE = 5;
+type CreditIssueMode = "SECURED" | "ADMIN_REVIEW";
+type DebitIssueMode = "EXISTING_ACCOUNT" | "NEW_ACCOUNT";
 // Single source of truth for the reward numbers lives in config/rewardPolicy.ts
 // (shared with RewardsPage.tsx) - this just maps it into the shape this page renders.
 const CARD_TIER_REWARDS: Record<CardTier, string[]> = {
@@ -177,6 +185,11 @@ export function CardsPage() {
   const [selectedType, setSelectedType] = useState<CardType | "">("");
   const [selectedTier, setSelectedTier] = useState<CardTier>("REGULAR");
   const [selectedWalletId, setSelectedWalletId] = useState("");
+  const [debitIssueMode, setDebitIssueMode] = useState<DebitIssueMode>("EXISTING_ACCOUNT");
+  const [selectedDebitCurrency, setSelectedDebitCurrency] = useState("RON");
+  const [selectedCreditCurrency, setSelectedCreditCurrency] = useState("RON");
+  const [creditIssueMode, setCreditIssueMode] = useState<CreditIssueMode>("SECURED");
+  const [collateralCardId, setCollateralCardId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [actionCardId, setActionCardId] = useState<string | null>(null);
@@ -193,6 +206,7 @@ export function CardsPage() {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [creditBalanceOverrides, setCreditBalanceOverrides] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const activeWallets = useMemo(() => wallets.filter((wallet) => wallet.status === "ACTIVE"), [wallets]);
   const activeDebitCards = useMemo(
@@ -207,9 +221,23 @@ export function CardsPage() {
     () => activeWallets.filter((wallet) => !debitRepresentedWalletIds.has(wallet.id)),
     [activeWallets, debitRepresentedWalletIds],
   );
+  const missingCurrentAccountCurrencies = useMemo(
+    () => CURRENT_ACCOUNT_CURRENCIES.filter((currency) => !activeWallets.some((wallet) => wallet.currency === currency)),
+    [activeWallets],
+  );
   const cardholderName = user ? `${user.first_name} ${user.last_name}`.trim() : "Card holder";
   const selectedReusableCardType = selectedType === "DEBIT" || selectedType === "CREDIT";
   const selectedAccountLinkedCard = selectedType === "DEBIT" || selectedType === "ONE_TIME";
+  const collateralDebitCards = useMemo(
+    () =>
+      activeDebitCards
+        .map((card) => ({ card, wallet: wallets.find((wallet) => wallet.id === card.default_wallet_id) }))
+        .filter(
+          (item): item is { card: Card; wallet: Wallet } =>
+            Boolean(item.wallet) && item.wallet?.currency === selectedCreditCurrency,
+        ),
+    [activeDebitCards, selectedCreditCurrency, wallets],
+  );
   const debitWalletIds = useMemo(
     () =>
       new Set(
@@ -223,14 +251,41 @@ export function CardsPage() {
     () => cards.some((card) => card.type === "ONE_TIME" && (card.status === "ACTIVE" || card.status === "FROZEN")),
     [cards],
   );
-  const selectedAccountAlreadyHasDebit = selectedType === "DEBIT" && selectedWalletId !== "" && debitWalletIds.has(selectedWalletId);
+  const selectedAccountAlreadyHasDebit =
+    selectedType === "DEBIT" &&
+    debitIssueMode === "EXISTING_ACCOUNT" &&
+    selectedWalletId !== "" &&
+    debitWalletIds.has(selectedWalletId);
   const selectedOneTimeAlreadyExists = selectedType === "ONE_TIME" && hasOneTimePaymentCard;
-  const cardLimitReached = cards.length >= MAX_CARDS;
+  const debitNewAccountAlreadyExists =
+    selectedType === "DEBIT" &&
+    debitIssueMode === "NEW_ACCOUNT" &&
+    activeWallets.some((wallet) => wallet.currency === selectedDebitCurrency);
+  const hasNewDebitAccountCurrency = debitIssueMode !== "NEW_ACCOUNT" || missingCurrentAccountCurrencies.length > 0;
+  const selectedCollateralSource = collateralDebitCards.find((item) => item.card.id === collateralCardId);
+  const tierCreditAmount = CREDIT_CARD_LIMITS[selectedTier].toFixed(2);
+  const parsedCreditAmount = CREDIT_CARD_LIMITS[selectedTier];
+  const creditAmountIsValid = parsedCreditAmount > 0;
+  const selectedCollateralHasFunds =
+    selectedType !== "CREDIT" ||
+    creditIssueMode !== "SECURED" ||
+    (selectedCollateralSource !== undefined && Number(selectedCollateralSource.wallet.available_balance) >= parsedCreditAmount);
+  const selectedTypeCardCount = selectedType === "" ? 0 : cards.filter((card) => card.type === selectedType).length;
+  const cardLimitReached =
+    selectedType === "DEBIT" || selectedType === "CREDIT" ? selectedTypeCardCount >= MAX_CARDS_PER_TYPE : false;
+  const selectedTypeLabel = selectedType === "" ? "Card" : formatCardType(selectedType);
   const canCreateCard =
     selectedType !== "" &&
     !cardLimitReached &&
-    (!selectedAccountLinkedCard || selectedWalletId !== "") &&
+    (!selectedAccountLinkedCard ||
+      (selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT") ||
+      selectedWalletId !== "") &&
+    (selectedType !== "CREDIT" ||
+      (creditAmountIsValid &&
+        (creditIssueMode === "ADMIN_REVIEW" || (selectedCollateralSource !== undefined && selectedCollateralHasFunds)))) &&
     !selectedAccountAlreadyHasDebit &&
+    !debitNewAccountAlreadyExists &&
+    hasNewDebitAccountCurrency &&
     !selectedOneTimeAlreadyExists;
 
   async function loadCardsData(token: string) {
@@ -295,21 +350,78 @@ export function CardsPage() {
     }
   }, [activeDebitCards, cards, directPaymentWallets, paymentPanelCardId, paymentSourceId, paymentSourceType, wallets]);
 
+  useEffect(() => {
+    if (selectedType !== "CREDIT" || collateralCardId) return;
+    setCollateralCardId(collateralDebitCards[0]?.card.id ?? "");
+  }, [collateralCardId, collateralDebitCards, selectedType]);
+
+  useEffect(() => {
+    if (selectedType !== "DEBIT" || debitIssueMode !== "NEW_ACCOUNT") return;
+    if (missingCurrentAccountCurrencies.includes(selectedDebitCurrency)) return;
+    setSelectedDebitCurrency(missingCurrentAccountCurrencies[0] ?? "");
+  }, [debitIssueMode, missingCurrentAccountCurrencies, selectedDebitCurrency, selectedType]);
+
+  useEffect(() => {
+    if (selectedType !== "CREDIT") return;
+    if (collateralDebitCards.some(({ card }) => card.id === collateralCardId)) return;
+    setCollateralCardId(collateralDebitCards[0]?.card.id ?? "");
+  }, [collateralCardId, collateralDebitCards, selectedCreditCurrency, selectedType]);
+
   async function createCard() {
     if (!accessToken || isSaving || !canCreateCard) return;
     setIsSaving(true);
     setError(null);
+    setNotice(null);
     try {
+      if (selectedType === "CREDIT" && creditIssueMode === "ADMIN_REVIEW") {
+        await apiRequest<CreditApplication>("/credit/applications", {
+          method: "POST",
+          token: accessToken,
+          body: {
+            type: "CREDIT_CARD",
+            loan_product_type: null,
+            requested_amount: tierCreditAmount,
+            currency: selectedCreditCurrency,
+            requested_term_months: null,
+          },
+        });
+        setNotice("Credit card request sent for credit score evaluation.");
+        return;
+      }
+
       const card = await apiRequest<Card>("/cards", {
         method: "POST",
         token: accessToken,
         body: {
           type: selectedType,
           tier: selectedReusableCardType ? selectedTier : null,
-          default_wallet_id: selectedAccountLinkedCard ? selectedWalletId || null : null,
+          default_wallet_id:
+            selectedAccountLinkedCard && !(selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT")
+              ? selectedWalletId || null
+              : null,
+          new_wallet_currency: selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT" ? selectedDebitCurrency : null,
+          currency: selectedType === "CREDIT" ? selectedCreditCurrency : null,
+          collateral_wallet_id:
+            selectedType === "CREDIT" && creditIssueMode === "SECURED"
+              ? selectedCollateralSource?.wallet.id ?? null
+              : null,
+          collateral_amount: selectedType === "CREDIT" && creditIssueMode === "SECURED" ? tierCreditAmount : null,
         },
       });
       setCards((current) => [card, ...current]);
+      setNotice(
+        selectedType === "CREDIT"
+          ? `Secured credit card created with ${parsedCreditAmount.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })} ${card.credit_account?.currency ?? selectedCreditCurrency} collateral.`
+          : selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT"
+            ? `${selectedDebitCurrency} current account created and linked to the debit card.`
+          : null,
+      );
+      if (selectedType === "CREDIT" || (selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT")) {
+        void loadCardsData(accessToken);
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -578,6 +690,12 @@ export function CardsPage() {
                   if (nextType === "ONE_TIME") {
                     setSelectedTier("REGULAR");
                   }
+                  if (nextType === "CREDIT") {
+                    setSelectedWalletId("");
+                  }
+                  if (nextType === "DEBIT") {
+                    setDebitIssueMode("EXISTING_ACCOUNT");
+                  }
                 }}
               >
                 <option value="" disabled hidden>
@@ -591,20 +709,67 @@ export function CardsPage() {
               </select>
             </label>
             {selectedAccountLinkedCard && (
-              <label>
-                Account
-                <select value={selectedWalletId} onChange={(event) => setSelectedWalletId(event.target.value)}>
-                  <option value="">Select account</option>
-                  {activeWallets.map((wallet) => {
-                    const debitAlreadyExists = selectedType === "DEBIT" && debitWalletIds.has(wallet.id);
-                    return (
-                      <option key={wallet.id} value={wallet.id} disabled={debitAlreadyExists}>
-                        {walletOptionLabel(wallet, debitAlreadyExists)}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
+              <>
+                {selectedType === "DEBIT" && (
+                  <div className="credit-issue-controls debit-issue-controls">
+                    <span className="eyebrow">Current account</span>
+                    <div className="credit-issue-mode">
+                      <button
+                        type="button"
+                        className={debitIssueMode === "EXISTING_ACCOUNT" ? "active" : ""}
+                        onClick={() => setDebitIssueMode("EXISTING_ACCOUNT")}
+                      >
+                        Existing account
+                      </button>
+                      <button
+                        type="button"
+                        className={debitIssueMode === "NEW_ACCOUNT" ? "active" : ""}
+                        onClick={() => {
+                          setDebitIssueMode("NEW_ACCOUNT");
+                          setSelectedDebitCurrency((current) =>
+                            missingCurrentAccountCurrencies.includes(current)
+                              ? current
+                              : missingCurrentAccountCurrencies[0] ?? "",
+                          );
+                        }}
+                      >
+                        New account
+                      </button>
+                    </div>
+                    {debitIssueMode === "NEW_ACCOUNT" && (
+                      <label>
+                        Currency
+                        <select
+                          value={selectedDebitCurrency}
+                          onChange={(event) => setSelectedDebitCurrency(event.target.value)}
+                        >
+                          {missingCurrentAccountCurrencies.map((currency) => (
+                            <option key={currency} value={currency}>
+                              {currency}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                )}
+                {(selectedType !== "DEBIT" || debitIssueMode === "EXISTING_ACCOUNT") && (
+                  <label>
+                    Account
+                    <select value={selectedWalletId} onChange={(event) => setSelectedWalletId(event.target.value)}>
+                      <option value="">Select account</option>
+                      {activeWallets.map((wallet) => {
+                        const debitAlreadyExists = selectedType === "DEBIT" && debitWalletIds.has(wallet.id);
+                        return (
+                          <option key={wallet.id} value={wallet.id} disabled={debitAlreadyExists}>
+                            {walletOptionLabel(wallet, debitAlreadyExists)}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </label>
+                )}
+              </>
             )}
             {selectedReusableCardType && (
               <div className="compact-tier-picker" aria-label="Card tier">
@@ -629,21 +794,90 @@ export function CardsPage() {
                 </div>
               </div>
             )}
+            {selectedType === "CREDIT" && (
+              <div className="credit-issue-controls">
+                <span className="eyebrow">Issuance path</span>
+                <div className="credit-issue-mode">
+                  <button
+                    type="button"
+                    className={creditIssueMode === "SECURED" ? "active" : ""}
+                    onClick={() => setCreditIssueMode("SECURED")}
+                  >
+                    Use collateral
+                  </button>
+                  <button
+                    type="button"
+                    className={creditIssueMode === "ADMIN_REVIEW" ? "active" : ""}
+                    onClick={() => setCreditIssueMode("ADMIN_REVIEW")}
+                  >
+                    Credit score evaluation
+                  </button>
+                </div>
+                <div className="credit-tier-limit">
+                  <span>Credit limit</span>
+                  <strong>{formatCurrencyAmount(CREDIT_CARD_LIMITS[selectedTier], selectedCreditCurrency)}</strong>
+                </div>
+                <label>
+                  Currency
+                  <select
+                    value={selectedCreditCurrency}
+                    onChange={(event) => setSelectedCreditCurrency(event.target.value)}
+                  >
+                    {CREDIT_CARD_CURRENCIES.map((currency) => (
+                      <option key={currency} value={currency}>
+                        {currency}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {creditIssueMode === "SECURED" && (
+                  <label>
+                    Collateral debit card
+                    <select value={collateralCardId} onChange={(event) => setCollateralCardId(event.target.value)}>
+                      <option value="" disabled hidden>
+                        Select debit card
+                      </option>
+                      {collateralDebitCards.map(({ card, wallet }) => (
+                        <option key={card.id} value={card.id}>
+                          Debit **** {card.last_four} - {walletDisplayName(wallet)} - {formatWalletBalance(wallet)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+            )}
             <button type="button" onClick={createCard} disabled={isSaving || !canCreateCard}>
               {isSaving
                 ? "Creating..."
                 : cardLimitReached
-                  ? "Card limit reached"
+                  ? `${selectedTypeLabel} limit reached`
                 : selectedType === ""
                   ? "Select card type"
                 : selectedAccountAlreadyHasDebit
                   ? "Account already has debit"
+                : debitNewAccountAlreadyExists
+                  ? `${selectedDebitCurrency} account already exists`
+                : selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT" && !hasNewDebitAccountCurrency
+                  ? "All account currencies exist"
                 : selectedOneTimeAlreadyExists
                   ? "One-time card already exists"
-                : selectedAccountLinkedCard && !selectedWalletId
+                : selectedAccountLinkedCard &&
+                    !(selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT") &&
+                    !selectedWalletId
                   ? "Select account"
+                : selectedType === "CREDIT" && !creditAmountIsValid
+                  ? "Enter credit limit"
+                : selectedType === "CREDIT" && creditIssueMode === "SECURED" && !selectedCollateralSource
+                  ? "Select collateral"
+                : selectedType === "CREDIT" && creditIssueMode === "SECURED" && !selectedCollateralHasFunds
+                  ? "Insufficient collateral"
+                : selectedType === "CREDIT" && creditIssueMode === "ADMIN_REVIEW"
+                  ? "Send for credit score evaluation"
                 : selectedReusableCardType
-                  ? `Create ${CARD_TIER_LABELS[selectedTier]} ${formatCardType(selectedType)}`
+                  ? selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT"
+                    ? `Create ${selectedDebitCurrency} account and debit card`
+                    : `Create ${CARD_TIER_LABELS[selectedTier]} ${formatCardType(selectedType)}`
                   : "Create one-time card"}
             </button>
           </div>
@@ -663,16 +897,19 @@ export function CardsPage() {
               <small>
                 {selectedType === "DEBIT"
                   ? "Debit cards spend from the selected linked account."
-                  : `Available credit preview: ${formatCurrencyAmount(CREDIT_CARD_LIMITS[selectedTier])}`}
+                  : creditIssueMode === "SECURED"
+                    ? "Collateral-backed cards are issued immediately after the selected debit-linked account has funds reserved."
+                    : "The request goes to the admin with the client's credit score before approval or rejection."}
               </small>
             </aside>
           )}
         </div>
         {cardLimitReached && (
           <p className="eyebrow" style={{ margin: "0.85rem 0 0" }}>
-            You can have up to {MAX_CARDS} cards.
+            You can have up to {MAX_CARDS_PER_TYPE} {selectedTypeLabel.toLowerCase()} cards.
           </p>
         )}
+        {notice && <p style={{ color: "var(--color-success)", margin: "0.85rem 0 0" }}>{notice}</p>}
         {error && <p style={{ color: "var(--color-warning)", margin: "0.85rem 0 0" }}>{error}</p>}
       </div>
 

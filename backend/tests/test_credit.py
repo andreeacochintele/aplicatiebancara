@@ -3,6 +3,7 @@ from uuid import UUID
 
 import pytest
 
+from app.cards.models import CardType
 from app.cards.schemas import CardCreate
 from app.cards.service import CardService
 from app.core.exceptions import NotFoundError, ValidationError
@@ -829,6 +830,13 @@ def test_admin_decides_credit_application(db_session):
     assert decided.offered_amount == Decimal("20000.00")
     assert decided.offered_interest_rate == Decimal("9.50")
     assert decided.resolved_at is not None
+    issued_cards = CardService(db_session).list_cards(user.id)
+    assert len(issued_cards) == 1
+    assert issued_cards[0].type == CardType.CREDIT
+    assert issued_cards[0].credit_account is not None
+    assert issued_cards[0].credit_account.credit_limit == Decimal("20000.00")
+    assert issued_cards[0].credit_account.annual_interest_rate == Decimal("9.50")
+    assert issued_cards[0].credit_account.collateral_wallet_id is None
 
     credit_notifications = [
         n for n in NotificationsService(db_session).list_for_user(user.id) if n.type == "CREDIT"
@@ -1417,6 +1425,42 @@ def test_document_review_rejects_uploaded_as_final_status(db_session):
             admin.id,
             CreditDocumentReview(status=CreditDocumentStatus.UPLOADED),
         )
+
+
+def test_request_application_more_info_marks_documents_and_notifies_user(db_session):
+    user = _create_user(db_session, email="loan-more-info-user@example.com")
+    admin = _create_user(db_session, email="loan-more-info-admin@example.com")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            loan_product_type=LoanProductType.MORTGAGE,
+            requested_amount=Decimal("120000.00"),
+            currency="RON",
+            requested_term_months=240,
+            documents=[
+                CreditApplicationDocumentCreate(
+                    document_type="Property documents",
+                    file_name="property.pdf",
+                    file_size=12,
+                    content_base64="cHJvcGVydHkucGRm",
+                )
+            ],
+        ),
+    )
+
+    updated = service.request_application_more_info(application.id, admin_id=admin.id)
+    documents = [document for document in service.list_documents(user.id) if document.application_id == application.id]
+    notifications = [notification for notification in NotificationsService(db_session).list_for_user(user.id) if notification.type == "CREDIT"]
+
+    assert updated.status == CreditApplicationStatus.PENDING
+    assert documents
+    assert {document.status for document in documents} == {CreditDocumentStatus.NEEDS_MORE_INFO}
+    assert documents[0].review_note == "Additional supporting information required."
+    assert len(notifications) == 1
+    assert notifications[0].title == "More loan information required"
+    assert "upload" in notifications[0].message.lower()
 
 
 def test_credit_score_document_review_publishes_score_after_admin_approval(db_session):
