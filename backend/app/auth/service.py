@@ -44,10 +44,15 @@ class AuthService:
         if device_id is None:
             device_id = self._get_or_create_default_device(user).id
 
-        access_token = create_access_token(str(user.id))
-        refresh_token = create_refresh_token(str(user.id))
+        # Generated up front (UserSession.id has only a Python-side default,
+        # applied at flush) so both tokens can embed the same "sid" claim as
+        # the session row they belong to, with no insert-then-reissue step.
+        session_id = uuid.uuid4()
+        access_token = create_access_token(str(user.id), str(session_id))
+        refresh_token = create_refresh_token(str(user.id), str(session_id))
 
         session = UserSession(
+            id=session_id,
             user_id=user.id,
             device_id=device_id,
             token_hash=_hash_token(refresh_token),
