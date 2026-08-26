@@ -4313,6 +4313,51 @@ th {
   opacity: 0.75;
 }
 
+.assistant-message__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+  padding: 0 0.3rem;
+  min-height: 18px;
+}
+
+.assistant-message__time {
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.assistant-message__copy {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.assistant-message:hover .assistant-message__copy,
+.assistant-message__copy:focus-visible {
+  opacity: 1;
+}
+
+.assistant-message__copy:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
+.assistant-disclaimer {
+  margin: 0.6rem 0 0;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
 .assistant-composer {
   display: flex;
   gap: 0.5rem;

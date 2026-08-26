@@ -1,4 +1,4 @@
-import { Bot, CreditCard, LifeBuoy, Plus, Sparkles, Trash2, Wallet } from "lucide-react";
+import { Bot, Check, Copy, CreditCard, LifeBuoy, Plus, Sparkles, Trash2, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -17,6 +17,7 @@ interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   intent?: OrchestratorIntent;
+  createdAt: string;
 }
 
 const INTENT_LABEL: Record<OrchestratorIntent, string> = {
@@ -42,11 +43,16 @@ function toChatMessage(entry: ConversationMessagePublic): ChatMessage {
     role: entry.role === "assistant" ? "assistant" : "user",
     text: entry.content,
     intent: entry.agent_used ?? undefined,
+    createdAt: entry.created_at,
   };
 }
 
 function conversationTitle(conversation: ConversationSummary): string {
   return conversation.title ?? "New conversation";
+}
+
+function formatMessageTime(iso: string): string {
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 }
 
 export function AssistantPage() {
@@ -60,6 +66,7 @@ export function AssistantPage() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const shouldScrollToBottomRef = useRef(false);
@@ -185,6 +192,18 @@ export function AssistantPage() {
     draftInputRef.current?.focus();
   }
 
+  // ---- copy-to-clipboard ----
+
+  async function copyMessage(index: number, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex((current) => (current === index ? null : current)), 1500);
+    } catch {
+      // Clipboard permission denied/unavailable — nothing worth surfacing an error for.
+    }
+  }
+
   // ---- sending a message ----
 
   async function send() {
@@ -192,7 +211,7 @@ export function AssistantPage() {
     if (!text || !accessToken || sending) return;
 
     shouldScrollToBottomRef.current = true;
-    setMessages((current) => [...current, { role: "user", text }]);
+    setMessages((current) => [...current, { role: "user", text, createdAt: new Date().toISOString() }]);
     setDraft("");
     setSending(true);
     setError(null);
@@ -203,7 +222,10 @@ export function AssistantPage() {
         token: accessToken,
       });
       shouldScrollToBottomRef.current = true;
-      setMessages((current) => [...current, { role: "assistant", text: response.reply, intent: response.intent }]);
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", text: response.reply, intent: response.intent, createdAt: new Date().toISOString() },
+      ]);
       setActiveConversationId(response.conversation_id);
       // Re-fetch rather than optimistically patch state: the backend may
       // have just generated a real title for this conversation (see
@@ -316,6 +338,17 @@ export function AssistantPage() {
                     <Bot size={11} /> {INTENT_LABEL[message.intent]}
                   </span>
                 )}
+                <div className="assistant-message__meta">
+                  <span className="assistant-message__time">{formatMessageTime(message.createdAt)}</span>
+                  <button
+                    className="assistant-message__copy"
+                    aria-label="Copy message"
+                    onClick={() => copyMessage(index, message.text)}
+                    type="button"
+                  >
+                    {copiedIndex === index ? <Check size={12} /> : <Copy size={12} />}
+                  </button>
+                </div>
               </div>
             ))}
             {sending && <p className="eyebrow">Thinking…</p>}
@@ -335,6 +368,7 @@ export function AssistantPage() {
               Send
             </button>
           </div>
+          <p className="assistant-disclaimer">Asistentul poate face greșeli. Verifică informațiile importante.</p>
         </div>
       </div>
     </section>
