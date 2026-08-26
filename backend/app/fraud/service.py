@@ -354,7 +354,15 @@ class FraudService:
 
         flags = self.repository.list_flags_for_case(case.id)
         history = self.transactions.list_for_user(case.user_id, limit=100)
-        historical_transactions = [t for t in history if t.id != transaction.id]
+        # Anchored to the flagged transaction's own timestamp, not wall-clock
+        # now — a case can stay open for review while the user keeps
+        # transacting, and a payment made *after* the hold must never leak
+        # into the baseline/merchant evidence used to explain the hold (the
+        # same anchor _velocity_analysis() below already uses correctly).
+        anchor = _as_aware_utc(transaction.created_at)
+        historical_transactions = [
+            t for t in history if t.id != transaction.id and _as_aware_utc(t.created_at) <= anchor
+        ]
         completed_card_history = [
             t
             for t in historical_transactions
