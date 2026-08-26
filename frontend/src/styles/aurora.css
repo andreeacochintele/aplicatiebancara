@@ -1985,28 +1985,24 @@
 }
 
 .aurora-shell .assistant-conversation:hover {
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--aurora-violet) 5%, transparent),
-      color-mix(in srgb, var(--aurora-pink) 4%, transparent) 70%
-    ),
-    var(--aurora-surface-alt);
+  background: var(--aurora-surface-alt);
 }
 
 .aurora-shell .assistant-conversation--active {
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--aurora-violet) 16%, transparent),
-      color-mix(in srgb, var(--aurora-pink) 12%, transparent) 70%
-    ),
-    var(--aurora-surface);
-  border-color: color-mix(in srgb, var(--aurora-accent) 45%, transparent);
+  background: var(--aurora-accent-soft);
+  border-color: var(--aurora-accent);
 }
 
+/* .aurora-shell button (the app-wide default) fills every plain <button>
+   with the gradient + white bold text — explicitly reset here, otherwise
+   these two buttons (not meant to look like CTAs) inherit it by
+   specificity regardless of source order, which is what made every
+   conversation row and its delete icon render as a solid gradient pill
+   instead of only the active row getting a highlight. */
 .aurora-shell .assistant-conversation__open {
+  background: transparent;
   color: var(--aurora-text);
+  font-weight: 400;
 }
 
 .aurora-shell .assistant-conversation__icon {
@@ -2015,9 +2011,11 @@
 
 .aurora-shell .assistant-conversation--active .assistant-conversation__open {
   color: var(--aurora-accent-dark);
+  font-weight: 700;
 }
 
 .aurora-shell .assistant-conversation__delete {
+  background: transparent;
   color: var(--aurora-text-faint);
 }
 
@@ -2057,11 +2055,17 @@
   background: var(--aurora-accent-soft);
 }
 
-.aurora-shell .assistant-quick-action--primary,
-.aurora-shell .assistant-quick-action--primary:hover {
-  background: var(--aurora-accent-dark);
-  border-color: var(--aurora-accent-dark);
-  color: #fff;
+/* Same generic .aurora-shell button reset as the conversation-row buttons
+   above — this is a plain icon button, not a CTA. */
+.aurora-shell .assistant-message__copy {
+  background: transparent;
+  color: var(--aurora-text-faint);
+  font-weight: 400;
+}
+
+.aurora-shell .assistant-message__copy:hover {
+  background: var(--aurora-accent-soft);
+  color: var(--aurora-accent-dark);
 }
 
 .aurora-shell .assistant-bubble--assistant {

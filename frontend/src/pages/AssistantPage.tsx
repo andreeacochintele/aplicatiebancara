@@ -338,12 +338,12 @@ export function AssistantPage() {
             </div>
           </div>
           <div className="assistant-quick-actions">
-            {ASSISTANT_QUICK_ACTIONS.map((action, index) => {
+            {ASSISTANT_QUICK_ACTIONS.map((action) => {
               const Icon = QUICK_ACTION_ICON[action.intent];
               return (
                 <button
                   key={action.intent}
-                  className={`assistant-quick-action ${index === 0 ? "assistant-quick-action--primary" : ""}`}
+                  className="assistant-quick-action"
                   onClick={() => applyStarterPrompt(action.starterPrompt)}
                   type="button"
                 >
@@ -420,7 +420,7 @@ export function AssistantPage() {
               Send
             </button>
           </div>
-          <p className="assistant-disclaimer">Asistentul poate face greșeli. Verifică informațiile importante.</p>
+          <p className="assistant-disclaimer">{ASSISTANT_NAME} can make mistakes. Please verify important information.</p>
         </div>
       </div>
     </section>

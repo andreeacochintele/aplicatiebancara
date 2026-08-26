@@ -4242,7 +4242,12 @@ th {
 .assistant-hero__title {
   margin: 0;
   font-size: 1rem;
-  color: var(--color-text);
+  /* No explicit color: inherits var(--color-text) from body normally, and
+     var(--aurora-text) under .aurora-shell (see .app-shell__content in
+     aurora.css) — setting it here directly used to pin it to the dark
+     theme's near-white text color even under the light Aurora theme,
+     which made this line nearly invisible against the hero's light
+     gradient background. */
 }
 
 .assistant-hero__subtitle {
@@ -4274,18 +4279,6 @@ th {
 .assistant-quick-action:hover {
   border-color: var(--color-accent);
   color: var(--color-accent-strong);
-}
-
-.assistant-quick-action--primary {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: #fff;
-}
-
-.assistant-quick-action--primary:hover {
-  background: var(--color-accent-strong);
-  border-color: var(--color-accent-strong);
-  color: #fff;
 }
 
 .assistant-chat {
