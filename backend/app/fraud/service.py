@@ -818,7 +818,12 @@ class FraudService:
         recent = [
             t
             for t in self.get_recent_activity(transaction.initiator_user_id, window=lookback, as_of=now)
-            if t.id != transaction.id
+            # CASHBACK is money the system credits back as a side effect of a
+            # CARD_PAYMENT, not a separate user action — without this filter
+            # every cashback-eligible payment counts twice toward velocity
+            # (the payment, then its own cashback a moment later), same
+            # rationale as analytics' _is_real_spend excluding CASHBACK.
+            if t.id != transaction.id and t.type != TransactionType.CASHBACK
         ]
 
         matching = [
