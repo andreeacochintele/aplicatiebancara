@@ -639,7 +639,7 @@ def test_create_loan_creates_matching_currency_account_when_missing(db_session):
     assert wallet.available_balance == Decimal("20000.00")
 
 
-def test_list_loans_backfills_missing_disbursement_transaction_history(db_session):
+def test_list_loans_does_not_repair_missing_disbursement_transaction_history(db_session):
     user = _create_user(db_session, email="missing-disbursement-history@example.com")
     wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
     service = CreditService(db_session)
@@ -662,10 +662,7 @@ def test_list_loans_backfills_missing_disbursement_transaction_history(db_sessio
     borrower_transactions = TransactionService(db_session).list_for_user(user.id)
 
     assert loans == [loan]
-    backfilled = [item for item in borrower_transactions if item.description == "Personal loan disbursement"]
-    assert len(backfilled) == 1
-    assert backfilled[0].destination_wallet_id == wallet.id
-    assert backfilled[0].amount == Decimal("12000.00")
+    assert [item for item in borrower_transactions if item.description == "Personal loan disbursement"] == []
     assert wallet.available_balance == Decimal("12000.00")
 
 

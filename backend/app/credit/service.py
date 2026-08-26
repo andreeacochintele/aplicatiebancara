@@ -245,9 +245,7 @@ class CreditService:
         return loan
 
     def list_loans(self, user_id: uuid.UUID) -> list[Loan]:
-        loans = self.repository.list_loans_for_user(user_id)
-        self._ensure_disbursement_history(user_id, loans)
-        return loans
+        return self.repository.list_loans_for_user(user_id)
 
     def get_loan_for_user(self, user_id: uuid.UUID, loan_id: uuid.UUID) -> Loan:
         loan = self.repository.get_loan_by_id(loan_id)

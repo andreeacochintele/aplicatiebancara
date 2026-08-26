@@ -161,6 +161,7 @@ export function CreditPage() {
   const [requestedTermMonths, setRequestedTermMonths] = useState("48");
   const [applicationEstimate, setApplicationEstimate] = useState<LoanCalculatorResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreditDetailsLoading, setIsCreditDetailsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [isEstimatingApplication, setIsEstimatingApplication] = useState(false);
@@ -260,6 +261,8 @@ export function CreditPage() {
       setIncome(profileResponse.income);
       setExistingDebt(profileResponse.existing_debt);
       setProfileCurrency(profileResponse.currency);
+      setIsLoading(false);
+      setIsCreditDetailsLoading(true);
 
       const [applicationsResult, loansResult, loanProductsResult, walletsResult, cardsResult, documentsResult] = await Promise.allSettled([
         apiRequest<CreditApplication[]>("/credit/applications", { token }),
@@ -318,6 +321,7 @@ export function CreditPage() {
       setError(err instanceof ApiError ? err.message : "Could not load credit score.");
     } finally {
       setIsLoading(false);
+      setIsCreditDetailsLoading(false);
     }
   }
 
@@ -910,6 +914,7 @@ export function CreditPage() {
       <div className="tile">
         <div className="tile__header">
           <span className="eyebrow">Loan applications</span>
+          {isCreditDetailsLoading && <span className="tag tag--neutral">Loading current loans</span>}
         </div>
         <div className="loan-application-workspace">
           <div className="credit-application-form">
@@ -1145,6 +1150,10 @@ export function CreditPage() {
               </div>
             )}
           </section>
+        )}
+
+        {isCreditDetailsLoading && visibleLoanApplications.length === 0 && (
+          <div className="card-empty">Loading current loans...</div>
         )}
 
         {visibleLoanApplications.length > 0 && (
