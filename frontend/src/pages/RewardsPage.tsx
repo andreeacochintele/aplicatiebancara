@@ -9,7 +9,6 @@ import {
   cardTierRewardBullets,
   combinedRateLabel,
   pointsPerRonLabel,
-  pointsToRon,
 } from "../config/rewardPolicy";
 import { useAuth } from "../hooks/useAuth";
 import type {
@@ -418,11 +417,6 @@ export function RewardsPage() {
         <div className="balance-hero__amount" style={{ color: "#fff" }}>
           {rewards ? rewards.points_balance : "—"} <span style={{ fontSize: "1.1rem", fontWeight: 600 }}>pts</span>
         </div>
-        {rewards && (
-          <div style={{ color: "rgba(255,255,255,0.75)", fontSize: "0.85rem" }}>
-            ≈ {pointsToRon(rewards.points_balance)} RON value · {rewards.lifetime_points_earned} lifetime points
-          </div>
-        )}
         <div style={{ marginTop: "1rem", display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
           <button type="button" onClick={() => scrollToId("rewards-pay")} style={{ background: "#fff", color: "#4548c9", border: "none" }}>
             Earn points

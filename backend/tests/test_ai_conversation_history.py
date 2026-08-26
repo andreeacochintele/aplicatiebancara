@@ -78,6 +78,18 @@ def test_repository_list_conversations_orders_by_most_recently_updated(db_sessio
     assert [c.id for c in conversations] == [newer.id, older.id]
 
 
+def test_repository_delete_conversation_removes_it_and_its_messages(db_session, seeded_user):
+    repo = ConversationRepository(db_session)
+    conversation = _conversation(db_session, seeded_user.id)
+    repo.add(_message(seeded_user.id, conversation.id, role="user", content="hi"))
+    repo.add(_message(seeded_user.id, conversation.id, role="assistant", content="hello"))
+
+    repo.delete_conversation(conversation)
+
+    assert repo.get_conversation(conversation.id) is None
+    assert repo.list_messages_for_conversation(conversation.id, limit=10) == []
+
+
 def test_repository_touch_conversation_updates_the_timestamp(db_session, seeded_user):
     repo = ConversationRepository(db_session)
     conversation = repo.create_conversation(Conversation(user_id=seeded_user.id))
@@ -238,6 +250,16 @@ def test_chat_rejects_a_conversation_id_belonging_to_another_user(db_session, se
         OrchestratorService(db_session).chat(seeded_user.id, "hi", conversation.id)
 
 
+def test_delete_conversation_rejects_another_users_conversation(db_session, seeded_user):
+    other_user = UserService(db_session).create_user(
+        UserCreate(email="delete-other-owner@example.com", password="Sup3rSecret!", first_name="Other", last_name="User")
+    )
+    conversation = _conversation(db_session, other_user.id)
+
+    with pytest.raises(NotFoundError):
+        OrchestratorService(db_session).delete_conversation(seeded_user.id, conversation.id)
+
+
 def test_chat_rejects_a_nonexistent_conversation_id(db_session, seeded_user, monkeypatch):
     import uuid as uuid_module
 
@@ -274,6 +296,123 @@ def test_chat_touches_the_conversations_updated_at(db_session, seeded_user, monk
 
     refreshed = ConversationRepository(db_session).get_conversation(conversation.id)
     assert refreshed.updated_at >= original_updated_at
+
+
+# ---- conversation title generation: one cheap mocked LLM call, once per
+# conversation (never on live Azure — see title.py) ----
+
+
+def test_chat_generates_a_title_once_for_a_new_conversation(db_session, seeded_user, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    calls = []
+
+    def _fake_title(message, reply):
+        calls.append((message, reply))
+        return "Budget rules explained"
+
+    monkeypatch.setattr(orchestrator_service, "generate_conversation_title", _fake_title)
+
+    response = OrchestratorService(db_session).chat(seeded_user.id, "how do budgets work?")
+
+    conversation = ConversationRepository(db_session).get_conversation(response.conversation_id)
+    assert conversation.title == "Budget rules explained"
+    assert calls == [("how do budgets work?", "A reply.")]
+
+
+def test_chat_does_not_regenerate_a_title_on_a_second_message(db_session, seeded_user, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    calls = []
+    monkeypatch.setattr(
+        orchestrator_service, "generate_conversation_title", lambda message, reply: (calls.append(1), "Title")[1]
+    )
+
+    first = OrchestratorService(db_session).chat(seeded_user.id, "first message")
+    OrchestratorService(db_session).chat(seeded_user.id, "second message", first.conversation_id)
+
+    assert len(calls) == 1  # not called again now that the conversation already has a title
+    conversation = ConversationRepository(db_session).get_conversation(first.conversation_id)
+    assert conversation.title == "Title"
+
+
+def test_chat_falls_back_gracefully_when_title_generation_fails(db_session, seeded_user, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+
+    def _raise(message, reply):
+        raise RuntimeError("Azure unavailable")
+
+    monkeypatch.setattr(orchestrator_service, "generate_conversation_title", _raise)
+
+    response = OrchestratorService(db_session).chat(seeded_user.id, "how do budgets work?")
+
+    # The chat itself still succeeds; the title just stays unset for the
+    # frontend's own fallback (see AssistantPage.tsx) to handle.
+    conversation = ConversationRepository(db_session).get_conversation(response.conversation_id)
+    assert conversation.title is None
+
+
+# ---- follow-up question suggestions: one cheap mocked LLM call, only for a
+# routed agent reply (never greeting/out_of_scope) — see followups.py ----
+
+
+def test_chat_returns_suggested_followups_for_a_routed_agent_reply(db_session, seeded_user, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    calls = []
+
+    def _fake_followups(message, reply):
+        calls.append((message, reply))
+        return ["Cum schimb limitele cardului?", "Ce fac daca am cardul blocat?"]
+
+    monkeypatch.setattr(orchestrator_service, "generate_followup_questions", _fake_followups)
+
+    response = OrchestratorService(db_session).chat(seeded_user.id, "how do budgets work?")
+
+    assert response.suggested_followups == ["Cum schimb limitele cardului?", "Ce fac daca am cardul blocat?"]
+    assert calls == [("how do budgets work?", "A reply.")]
+
+
+def test_chat_skips_followups_for_greeting(db_session, seeded_user, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.GREETING))
+
+    def _fail_if_called(message, reply):
+        raise AssertionError("generate_followup_questions must not be called for greeting")
+
+    monkeypatch.setattr(orchestrator_service, "generate_followup_questions", _fail_if_called)
+
+    response = OrchestratorService(db_session).chat(seeded_user.id, "hi there")
+
+    assert response.suggested_followups == []
+
+
+def test_chat_skips_followups_for_out_of_scope(db_session, seeded_user, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.OUT_OF_SCOPE))
+
+    def _fail_if_called(message, reply):
+        raise AssertionError("generate_followup_questions must not be called for out_of_scope")
+
+    monkeypatch.setattr(orchestrator_service, "generate_followup_questions", _fail_if_called)
+
+    response = OrchestratorService(db_session).chat(seeded_user.id, "write me a poem")
+
+    assert response.suggested_followups == []
+
+
+def test_chat_falls_back_to_empty_followups_when_generation_fails(db_session, seeded_user, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+
+    def _raise(message, reply):
+        raise RuntimeError("Azure unavailable")
+
+    monkeypatch.setattr(orchestrator_service, "generate_followup_questions", _raise)
+
+    response = OrchestratorService(db_session).chat(seeded_user.id, "how do budgets work?")
+
+    # The chat itself still succeeds with an empty suggestion list.
+    assert response.suggested_followups == []
 
 
 def test_chat_persists_greeting_and_out_of_scope_turns_with_no_agent(db_session, seeded_user, monkeypatch):
@@ -558,9 +697,44 @@ def test_chat_endpoint_without_conversation_id_creates_one(client, db_session, m
     assert response.json()["conversation_id"]
 
 
+def test_delete_conversation_endpoint(client, db_session):
+    user = UserService(db_session).create_user(
+        UserCreate(email="delete-conv@example.com", password="Sup3rSecret!", first_name="Delete", last_name="Conv")
+    )
+    conversation = _conversation(db_session, user.id)
+    db_session.commit()
+    token = _login(client, "delete-conv@example.com")
+
+    response = client.delete(
+        f"/api/v1/ai/orchestrator/conversations/{conversation.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 204
+    assert ConversationRepository(db_session).get_conversation(conversation.id) is None
+
+
+def test_delete_conversation_endpoint_rejects_another_users_conversation(client, db_session):
+    owner = UserService(db_session).create_user(
+        UserCreate(email="delete-owner@example.com", password="Sup3rSecret!", first_name="Owner", last_name="Conv")
+    )
+    UserService(db_session).create_user(
+        UserCreate(email="delete-intruder@example.com", password="Sup3rSecret!", first_name="Intruder", last_name="Conv")
+    )
+    conversation = _conversation(db_session, owner.id)
+    db_session.commit()
+
+    token = _login(client, "delete-intruder@example.com")
+    response = client.delete(
+        f"/api/v1/ai/orchestrator/conversations/{conversation.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 404
+
+
 def test_conversation_endpoints_require_authentication(client):
     assert client.post("/api/v1/ai/orchestrator/conversations").status_code == 401
     assert client.get("/api/v1/ai/orchestrator/conversations").status_code == 401
     import uuid as uuid_module
 
     assert client.get(f"/api/v1/ai/orchestrator/conversations/{uuid_module.uuid4()}/messages").status_code == 401
+    assert client.delete(f"/api/v1/ai/orchestrator/conversations/{uuid_module.uuid4()}").status_code == 401

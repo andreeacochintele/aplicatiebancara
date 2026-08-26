@@ -232,7 +232,10 @@ def test_sync_credits_cashback_to_the_debited_wallet_as_real_money(db_session, s
     which actually debits a wallet and sets source_wallet_id) — the exact
     scenario from the spec: 50 RON, REGULAR card, 10% total cashback should
     leave the wallet net -45 RON (debited 50, credited back 5) and award
-    exactly 50 points, with cashback never touching the points number."""
+    exactly 50 points, with cashback never touching the points number.
+    create_card_payment auto-syncs rewards on completion (see its
+    docstring), so both the debit AND the cashback credit land in the same
+    call — no separate sync_purchases_from_transactions call needed."""
     wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON"))
     wallet.available_balance = Decimal("500.00")
     db_session.flush()
@@ -249,13 +252,14 @@ def test_sync_credits_cashback_to_the_debited_wallet_as_real_money(db_session, s
         seeded_user.id,
         CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"), cvv=card.mock_cvv),
     )
-    assert wallet.available_balance == Decimal("450.00")  # debited at payment time
 
-    result = merchant_service.sync_purchases_from_transactions(seeded_user.id)[0]
+    # A later explicit sync finds nothing new left to earn — it already
+    # happened inside create_card_payment.
+    assert merchant_service.sync_purchases_from_transactions(seeded_user.id) == []
 
-    assert result.points_earned == 50
-    assert result.cashback_amount == Decimal("5.00")
-    assert wallet.available_balance == Decimal("455.00")  # 450 + 5 cashback credited back
+    account = RewardsService(db_session).get_account(seeded_user.id)
+    assert account.lifetime_points_earned == 50
+    assert wallet.available_balance == Decimal("455.00")  # 500 - 50 debited + 5 cashback credited back
     # Net effect vs. the original 500: -45, matching the worked example exactly.
     assert Decimal("500.00") - wallet.available_balance == Decimal("45.00")
 
@@ -290,7 +294,10 @@ def test_sync_credits_cashback_even_if_the_notification_write_fails(db_session, 
     """A notification is best-effort — if creating it blows up (e.g. a
     shared DB that's behind on migrations, exactly what happened live), the
     cashback money and the points already earned must not be rolled back or
-    silently dropped from the sync result."""
+    silently dropped. The failure has to be in place BEFORE the payment now:
+    create_card_payment syncs rewards internally on completion, so that's
+    where the notification write actually happens, not in a later separate
+    sync call."""
     wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON"))
     wallet.available_balance = Decimal("500.00")
     db_session.flush()
@@ -302,18 +309,16 @@ def test_sync_credits_cashback_even_if_the_notification_write_fails(db_session, 
         merchant.id, CashbackOfferCreate(cashback_percent=Decimal("10"), start_date=start, end_date=end)
     )
     card = CardService(db_session).create_card(seeded_user.id, CardCreate(default_wallet_id=wallet.id))
+
+    monkeypatch.setattr(NotificationsService, "create", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError))
+
     TransactionService(db_session).create_card_payment(
         seeded_user.id,
         CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"), cvv=card.mock_cvv),
     )
 
-    monkeypatch.setattr(NotificationsService, "create", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError))
-
-    results = merchant_service.sync_purchases_from_transactions(seeded_user.id)
-
-    assert len(results) == 1
-    assert results[0].points_earned == 50
-    assert results[0].cashback_amount == Decimal("5.00")
+    account = RewardsService(db_session).get_account(seeded_user.id)
+    assert account.lifetime_points_earned == 50
     assert wallet.available_balance == Decimal("455.00")
     cashback_notifications = [
         n for n in NotificationsService(db_session).list_for_user(seeded_user.id) if n.type == "CASHBACK"
