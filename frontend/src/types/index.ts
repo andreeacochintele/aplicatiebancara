@@ -738,6 +738,7 @@ export interface OrchestratorChatResponse {
   reply: string;
   correlation_id: string;
   conversation_id: string;
+  suggested_followups: string[];
 }
 
 export interface ConversationMessagePublic {

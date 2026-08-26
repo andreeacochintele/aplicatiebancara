@@ -2042,3 +2042,15 @@
 .aurora-shell .assistant-message__agent {
   color: var(--aurora-text-faint);
 }
+
+.aurora-shell .assistant-followup {
+  background: var(--aurora-surface-alt);
+  border-color: var(--aurora-border);
+  color: var(--aurora-text);
+}
+
+.aurora-shell .assistant-followup:hover {
+  border-color: var(--aurora-accent);
+  color: var(--aurora-accent-dark);
+  background: var(--aurora-accent-soft);
+}

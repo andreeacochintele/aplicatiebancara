@@ -353,6 +353,68 @@ def test_chat_falls_back_gracefully_when_title_generation_fails(db_session, seed
     assert conversation.title is None
 
 
+# ---- follow-up question suggestions: one cheap mocked LLM call, only for a
+# routed agent reply (never greeting/out_of_scope) — see followups.py ----
+
+
+def test_chat_returns_suggested_followups_for_a_routed_agent_reply(db_session, seeded_user, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    calls = []
+
+    def _fake_followups(message, reply):
+        calls.append((message, reply))
+        return ["Cum schimb limitele cardului?", "Ce fac daca am cardul blocat?"]
+
+    monkeypatch.setattr(orchestrator_service, "generate_followup_questions", _fake_followups)
+
+    response = OrchestratorService(db_session).chat(seeded_user.id, "how do budgets work?")
+
+    assert response.suggested_followups == ["Cum schimb limitele cardului?", "Ce fac daca am cardul blocat?"]
+    assert calls == [("how do budgets work?", "A reply.")]
+
+
+def test_chat_skips_followups_for_greeting(db_session, seeded_user, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.GREETING))
+
+    def _fail_if_called(message, reply):
+        raise AssertionError("generate_followup_questions must not be called for greeting")
+
+    monkeypatch.setattr(orchestrator_service, "generate_followup_questions", _fail_if_called)
+
+    response = OrchestratorService(db_session).chat(seeded_user.id, "hi there")
+
+    assert response.suggested_followups == []
+
+
+def test_chat_skips_followups_for_out_of_scope(db_session, seeded_user, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.OUT_OF_SCOPE))
+
+    def _fail_if_called(message, reply):
+        raise AssertionError("generate_followup_questions must not be called for out_of_scope")
+
+    monkeypatch.setattr(orchestrator_service, "generate_followup_questions", _fail_if_called)
+
+    response = OrchestratorService(db_session).chat(seeded_user.id, "write me a poem")
+
+    assert response.suggested_followups == []
+
+
+def test_chat_falls_back_to_empty_followups_when_generation_fails(db_session, seeded_user, monkeypatch):
+    monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+
+    def _raise(message, reply):
+        raise RuntimeError("Azure unavailable")
+
+    monkeypatch.setattr(orchestrator_service, "generate_followup_questions", _raise)
+
+    response = OrchestratorService(db_session).chat(seeded_user.id, "how do budgets work?")
+
+    # The chat itself still succeeds with an empty suggestion list.
+    assert response.suggested_followups == []
+
+
 def test_chat_persists_greeting_and_out_of_scope_turns_with_no_agent(db_session, seeded_user, monkeypatch):
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.GREETING))
     first = OrchestratorService(db_session).chat(seeded_user.id, "hi there")

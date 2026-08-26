@@ -10,6 +10,7 @@ from app.ai.client.azure_foundry_client import AzureFoundryNotConfiguredError
 from app.ai.credit import agent as credit_agent
 from app.ai.orchestrator import router as orchestrator_router
 from app.ai.orchestrator import service as orchestrator_service
+from app.ai.orchestrator.followups import _parse_followups
 from app.ai.orchestrator.intent import IntentCategory, _parse_category
 from app.ai.orchestrator.registry import AGENT_REGISTRY
 from app.ai.orchestrator.schemas import OrchestratorChatRequest
@@ -25,6 +26,28 @@ def test_parse_category_matches_each_known_value():
 
 def test_parse_category_falls_back_to_out_of_scope_on_unrecognized_text():
     assert _parse_category("i have no idea what you mean") == IntentCategory.OUT_OF_SCOPE
+
+
+# ---- followups._parse_followups: pure function, no LLM call ----
+
+
+def test_parse_followups_splits_lines_and_strips_markers():
+    raw = "1. Cat am cheltuit pe transport?\n2) Care e bugetul meu lunar?\n- Ce economii am facut?"
+    assert _parse_followups(raw) == [
+        "Cat am cheltuit pe transport?",
+        "Care e bugetul meu lunar?",
+        "Ce economii am facut?",
+    ]
+
+
+def test_parse_followups_drops_blank_lines():
+    raw = "First question?\n\n\nSecond question?\n"
+    assert _parse_followups(raw) == ["First question?", "Second question?"]
+
+
+def test_parse_followups_caps_at_three_even_if_the_model_returns_more():
+    raw = "\n".join(f"Question {i}?" for i in range(6))
+    assert _parse_followups(raw) == ["Question 0?", "Question 1?", "Question 2?"]
 
 
 def test_registry_has_no_fraud_entry_and_exactly_the_three_routable_agents():

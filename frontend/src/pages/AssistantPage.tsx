@@ -18,6 +18,10 @@ interface ChatMessage {
   text: string;
   intent?: OrchestratorIntent;
   createdAt: string;
+  /** Only ever set on the assistant reply just received this session — not
+   * reconstructed from history, since the backend doesn't persist these
+   * (see OrchestratorChatResponse.suggested_followups). */
+  followups?: string[];
 }
 
 const INTENT_LABEL: Record<OrchestratorIntent, string> = {
@@ -206,13 +210,11 @@ export function AssistantPage() {
 
   // ---- sending a message ----
 
-  async function send() {
-    const text = draft.trim();
+  async function sendMessage(text: string) {
     if (!text || !accessToken || sending) return;
 
     shouldScrollToBottomRef.current = true;
     setMessages((current) => [...current, { role: "user", text, createdAt: new Date().toISOString() }]);
-    setDraft("");
     setSending(true);
     setError(null);
     try {
@@ -224,7 +226,13 @@ export function AssistantPage() {
       shouldScrollToBottomRef.current = true;
       setMessages((current) => [
         ...current,
-        { role: "assistant", text: response.reply, intent: response.intent, createdAt: new Date().toISOString() },
+        {
+          role: "assistant",
+          text: response.reply,
+          intent: response.intent,
+          createdAt: new Date().toISOString(),
+          followups: response.suggested_followups,
+        },
       ]);
       setActiveConversationId(response.conversation_id);
       // Re-fetch rather than optimistically patch state: the backend may
@@ -237,6 +245,17 @@ export function AssistantPage() {
     } finally {
       setSending(false);
     }
+  }
+
+  function send() {
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    void sendMessage(text);
+  }
+
+  function sendFollowup(text: string) {
+    void sendMessage(text);
   }
 
   // Auto-scroll to bottom only for genuinely new messages (initial open,
@@ -349,6 +368,21 @@ export function AssistantPage() {
                     {copiedIndex === index ? <Check size={12} /> : <Copy size={12} />}
                   </button>
                 </div>
+                {message.role === "assistant" && message.followups && message.followups.length > 0 && (
+                  <div className="assistant-followups">
+                    {message.followups.map((followup) => (
+                      <button
+                        key={followup}
+                        className="assistant-followup"
+                        onClick={() => sendFollowup(followup)}
+                        disabled={sending}
+                        type="button"
+                      >
+                        {followup}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             {sending && <p className="eyebrow">Thinking…</p>}

@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.ai.observability import bind_correlation_id, get_correlation_id, log_event, new_correlation_id
+from app.ai.orchestrator.followups import generate_followup_questions
 from app.ai.orchestrator.intent import IntentCategory, classify_intent
 from app.ai.orchestrator.models import Conversation, ConversationMessage
 from app.ai.orchestrator.registry import AGENT_REGISTRY
@@ -126,10 +127,17 @@ class OrchestratorService:
         agent_used = intent.value if intent in AGENT_REGISTRY else None
         self._persist_turn(conversation, message, reply, agent_used)
         self._maybe_generate_title(conversation, message, reply)
+        # Only for a routed agent reply — greeting/out_of_scope are fixed
+        # strings with no LLM call of their own, not worth the extra one here.
+        suggested_followups = self._generate_followups(message, reply) if agent_used is not None else []
 
         log_event("final_response", intent=intent.value, duration_ms=_elapsed_ms(start))
         return OrchestratorChatResponse(
-            intent=intent, reply=reply, correlation_id=get_correlation_id(), conversation_id=conversation.id
+            intent=intent,
+            reply=reply,
+            correlation_id=get_correlation_id(),
+            conversation_id=conversation.id,
+            suggested_followups=suggested_followups,
         )
 
     def create_conversation(self, user_id: uuid.UUID) -> Conversation:
@@ -221,6 +229,19 @@ class OrchestratorService:
             return
         if title:
             self.conversations.set_title(conversation, title)
+
+    def _generate_followups(self, message: str, reply: str) -> list[str]:
+        """Best-effort, same failure philosophy as _maybe_generate_title:
+        only called for a routed agent reply (see chat()), and a failure
+        here (Azure not configured, API error, ...) is swallowed rather
+        than raised — the chat reply above has already been computed and
+        persisted, so a missing suggestion list must never turn an
+        otherwise-successful chat request into a failed one."""
+        try:
+            return generate_followup_questions(message, reply)
+        except Exception as exc:
+            log_event("followup_questions_failed", error_type=type(exc).__name__)
+            return []
 
 
 def _mask_user_id(user_id: uuid.UUID) -> str:
