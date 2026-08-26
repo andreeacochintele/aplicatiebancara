@@ -269,7 +269,11 @@ class MerchantService:
                 proof_code=proof_code,
             )
             if points_earned > 0
-            else self.rewards.get_or_create_account(user_id)
+            else self.rewards.record_processed(
+                user_id,
+                source_transaction_id,
+                description=f"Card payment at {merchant.name} (below reward-points minimum)",
+            )
         )
 
         # Only credit cashback once points have been durably recorded for

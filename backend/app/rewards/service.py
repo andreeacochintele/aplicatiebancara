@@ -119,6 +119,35 @@ class RewardsService:
         self.db.flush()
         return account
 
+    def record_processed(
+        self,
+        user_id: uuid.UUID,
+        source_transaction_id: uuid.UUID,
+        description: str | None = None,
+    ) -> RewardAccount:
+        """Durable dedup marker for a transaction that was evaluated for
+        rewards but earned zero points (e.g. a sub-1-RON payment truncates to
+        0 via int()) — without a row here, get_synced_transaction_ids never
+        sees this source_transaction_id, so
+        MerchantService.sync_purchases_from_transactions treats it as
+        unprocessed forever and re-credits any cashback on every sync call
+        (cashback is evaluated independently of points). Zero points, so it
+        never touches points_balance/lifetime_points_earned — it exists only
+        so the source_transaction_id unique constraint (migration 0011) can
+        do its job."""
+        account = self.get_or_create_account(user_id)
+        self.repository.add_transaction(
+            RewardTransaction(
+                reward_account_id=account.id,
+                source_transaction_id=source_transaction_id,
+                type=RewardTransactionType.ADJUSTMENT,
+                points=0,
+                description=description,
+            )
+        )
+        self.db.flush()
+        return account
+
     def has_earned_for_transaction(self, source_transaction_id: uuid.UUID) -> bool:
         return self.repository.has_transaction_for_source(source_transaction_id)
 
