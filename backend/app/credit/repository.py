@@ -342,6 +342,22 @@ class CreditRepository:
         self.db.flush()
         return installments
 
+    def delete_installments(self, installments: list[LoanInstallment]) -> None:
+        if not installments:
+            return
+        if is_supabase_session(self.db):
+            for installment in installments:
+                try:
+                    self.db.delete(installment)
+                except RuntimeError as exc:
+                    if self._is_missing_supabase_table(exc, LoanInstallment):
+                        return
+                    raise
+            return
+        for installment in installments:
+            self.db.delete(installment)
+        self.db.flush()
+
     def add_loan_payment(self, payment: LoanPayment) -> LoanPayment:
         if is_supabase_session(self.db):
             try:

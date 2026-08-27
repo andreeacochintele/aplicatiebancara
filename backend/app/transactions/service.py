@@ -201,6 +201,10 @@ class TransactionService:
             raise NotFoundError("Card not found")
         if data.cvv != card.mock_cvv:
             raise ValidationError("Incorrect CVV")
+        if self._card_is_expired(card):
+            card.status = CardStatus.EXPIRED
+            self.db.flush()
+            raise ValidationError("Card is expired")
         if card.status != CardStatus.ACTIVE:
             raise ValidationError(f"Card is {card.status.value}, payments require an ACTIVE card")
 
@@ -302,6 +306,10 @@ class TransactionService:
         already-earned dedup MerchantService.sync_purchases_from_transactions
         already does, so this is safe to call after every completed payment."""
         MerchantService(self.db).sync_purchases_from_transactions(user_id)
+
+    def _card_is_expired(self, card) -> bool:
+        now = datetime.now(timezone.utc)
+        return (card.expiration_year, card.expiration_month) < (now.year, now.month)
 
     def create_credit_card_repayment(self, initiator_user_id: uuid.UUID, data: CreditCardRepaymentCreate) -> Transaction:
         if data.amount <= 0:

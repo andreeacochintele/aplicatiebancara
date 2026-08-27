@@ -28,6 +28,8 @@ from app.credit.schemas import (
     LoanInstallmentPublic,
     LoanProductPublic,
     LoanPublic,
+    RegularInstallmentPaymentRequest,
+    RegularInstallmentPaymentResult,
 )
 from app.credit.service import CreditService
 from app.database import get_db
@@ -287,6 +289,23 @@ def make_early_repayment(
         loan_id,
         payload.source_wallet_id,
         payload.amount,
+        payload.source_card_id,
+    )
+    db.commit()
+    return result
+
+
+@router.post("/loans/{loan_id}/installments/pay", response_model=RegularInstallmentPaymentResult)
+def make_regular_installment_payment(
+    loan_id: uuid.UUID,
+    payload: RegularInstallmentPaymentRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RegularInstallmentPaymentResult:
+    result = CreditService(db).make_regular_installment_payment(
+        current_user.id,
+        loan_id,
+        payload.source_wallet_id,
         payload.source_card_id,
     )
     db.commit()

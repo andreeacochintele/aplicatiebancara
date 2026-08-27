@@ -14,6 +14,8 @@ from app.credit.models import (
     CreditApplicationType,
     CreditDocumentPurpose,
     CreditDocumentStatus,
+    LoanPayment,
+    LoanPaymentType,
     LoanInstallmentStatus,
     LoanProductType,
     LoanStatus,
@@ -761,6 +763,10 @@ def test_make_early_repayment_debits_wallet_and_reduces_loan(db_session):
     assert result.new_outstanding_principal == Decimal("9000.00")
     assert loan.outstanding_principal == Decimal("9000.00")
     assert wallet.available_balance == Decimal("14000.00")
+    installments = service.list_installments_for_loan(user.id, loan.id)
+    assert len(installments) == result.revised_term_months
+    assert installments[0].remaining_principal < result.new_outstanding_principal
+    assert installments[-1].remaining_principal == Decimal("0.00")
 
     transaction = db_session.get(Transaction, result.transaction_id)
     assert transaction is not None
@@ -774,6 +780,35 @@ def test_make_early_repayment_debits_wallet_and_reduces_loan(db_session):
     )
     assert ledger_entry.amount == Decimal("1000.00")
     assert ledger_entry.balance_after == Decimal("14000.00")
+
+
+def test_make_early_repayment_closes_fully_paid_loan_and_list_keeps_status(db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    _approve_application(application, Decimal("10000.00"), Decimal("12.00"))
+    loan = service.create_loan_from_application(user.id, application.id)
+
+    result = service.make_early_repayment(user.id, loan.id, wallet.id, Decimal("10000.00"))
+    listed_loan = service.list_loans(user.id)[0]
+
+    assert result.loan_status == LoanStatus.PAID
+    assert result.new_outstanding_principal == Decimal("0.00")
+    assert loan.outstanding_principal == Decimal("0.00")
+    assert loan.status == LoanStatus.PAID
+    assert loan.closed_at is not None
+    assert listed_loan.status == LoanStatus.PAID
+    assert listed_loan.outstanding_principal == Decimal("0.00")
+    assert service.list_installments_for_loan(user.id, loan.id) == []
 
 
 def test_make_early_repayment_from_debit_card_tags_card_transaction(db_session):
@@ -804,6 +839,58 @@ def test_make_early_repayment_from_debit_card_tags_card_transaction(db_session):
     assert transaction.source_wallet_id == wallet.id
     assert transaction.type == TransactionType.LOAN_PAYMENT
     assert wallet.available_balance == Decimal("14000.00")
+
+
+def test_make_regular_installment_payment_pays_next_installment_and_advances_due_date(db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    _approve_application(application, Decimal("10000.00"), Decimal("12.00"))
+    loan = service.create_loan_from_application(user.id, application.id)
+    installments = service.list_installments_for_loan(user.id, loan.id)
+    first_installment = installments[0]
+    second_installment = installments[1]
+
+    result = service.make_regular_installment_payment(user.id, loan.id, wallet.id)
+
+    assert result.loan_id == loan.id
+    assert result.installment_id == first_installment.id
+    assert result.amount == first_installment.payment_amount
+    assert result.principal_paid == first_installment.principal_amount
+    assert result.interest_paid == first_installment.interest_amount
+    assert result.remaining_principal == first_installment.remaining_principal
+    assert result.next_payment_date == second_installment.due_date
+    assert result.loan_status == LoanStatus.ACTIVE
+    assert first_installment.status == LoanInstallmentStatus.PAID
+    assert second_installment.status == LoanInstallmentStatus.PENDING
+    assert loan.outstanding_principal == first_installment.remaining_principal
+    assert loan.next_payment_date == second_installment.due_date
+    assert wallet.available_balance == Decimal("15000.00") - first_installment.payment_amount
+
+    payment = db_session.query(LoanPayment).filter_by(transaction_id=result.transaction_id).one()
+    assert payment.payment_type == LoanPaymentType.REGULAR
+    assert payment.principal_paid == first_installment.principal_amount
+    assert payment.interest_paid == first_installment.interest_amount
+
+    transaction = db_session.get(Transaction, result.transaction_id)
+    assert transaction is not None
+    assert transaction.type == TransactionType.LOAN_PAYMENT
+    assert transaction.source_wallet_id == wallet.id
+    ledger_entry = (
+        db_session.query(WalletLedgerEntry)
+        .filter_by(transaction_id=result.transaction_id, entry_type=LedgerEntryType.DEBIT)
+        .one()
+    )
+    assert ledger_entry.amount == first_installment.payment_amount
 
 
 def test_admin_decides_credit_application(db_session):
@@ -889,6 +976,54 @@ def test_admin_loan_decision_uses_submitted_amount_and_product_rate(db_session):
     assert public_application.documents[0].file_name == "valuation.pdf"
     assert public_application.documents[0].status == CreditDocumentStatus.APPROVED
     assert public_application.documents[0].reviewed_by_admin_id == admin.id
+
+
+def test_admin_cannot_approve_loan_application_with_rejected_document(db_session):
+    user = _create_user(db_session, email="rejected-loan-document-user@example.com")
+    admin = _create_user(db_session, email="rejected-loan-document-admin@example.com")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            loan_product_type=LoanProductType.PERSONAL_LOAN,
+            requested_amount=Decimal("15000.00"),
+            requested_term_months=36,
+            documents=[
+                CreditApplicationDocumentCreate(
+                    document_type="Proof of income",
+                    file_name="income.pdf",
+                    file_size=10,
+                    content_base64="aW5jb21lLnBkZg==",
+                ),
+            ],
+        ),
+    )
+    document = service.list_documents(user.id)[0]
+    rejected = service.review_document(
+        document.id,
+        admin.id,
+        CreditDocumentReview(
+            status=CreditDocumentStatus.REJECTED,
+            review_note="Fraudulent document, definitely reject",
+        ),
+    )
+
+    with pytest.raises(ValidationError, match="rejected supporting documents"):
+        service.decide_application(
+            application.id,
+            CreditApplicationDecision(status=CreditApplicationStatus.APPROVED),
+            admin_id=admin.id,
+        )
+
+    db_session.refresh(application)
+    refreshed_document = service.repository.get_document_by_id(rejected.id)
+    assert application.status == CreditApplicationStatus.PENDING
+    assert refreshed_document is not None
+    assert refreshed_document.status == CreditDocumentStatus.REJECTED
+    assert refreshed_document.review_note == "Fraudulent document, definitely reject"
+    assert refreshed_document.reviewed_by_admin_id == admin.id
+    assert service.list_loans(user.id) == []
 
 
 def test_admin_rejection_notifies_the_applicant(db_session):
@@ -1162,6 +1297,48 @@ def test_early_repayment_endpoint_pays_from_wallet(client, db_session):
     db_session.refresh(loan)
     assert wallet.available_balance == Decimal("14000.00")
     assert loan.outstanding_principal == Decimal("9000.00")
+
+
+def test_regular_installment_payment_endpoint_pays_next_due_installment(client, db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    _approve_application(application, Decimal("10000.00"), Decimal("12.00"))
+    loan = service.create_loan_from_application(user.id, application.id)
+    first_installment = service.list_installments_for_loan(user.id, loan.id)[0]
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "credit-owner@example.com", "password": "Sup3rSecret!"},
+    )
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.post(
+        f"/api/v1/credit/loans/{loan.id}/installments/pay",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"source_wallet_id": str(wallet.id)},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["loan_id"] == str(loan.id)
+    assert body["installment_id"] == str(first_installment.id)
+    assert body["amount"] == str(first_installment.payment_amount)
+    assert body["principal_paid"] == str(first_installment.principal_amount)
+    assert body["interest_paid"] == str(first_installment.interest_amount)
+    assert body["loan_status"] == "ACTIVE"
+    db_session.refresh(loan)
+    db_session.refresh(wallet)
+    assert loan.outstanding_principal == first_installment.remaining_principal
+    assert wallet.available_balance == Decimal("15000.00") - first_installment.payment_amount
 
 
 def test_early_repayment_endpoint_records_source_debit_card(client, db_session):

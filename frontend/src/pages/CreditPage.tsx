@@ -15,6 +15,7 @@ import type {
   LoanCalculatorResult,
   LoanProduct,
   LoanProductType,
+  RegularInstallmentPaymentResult,
   Wallet,
 } from "../types";
 
@@ -153,6 +154,7 @@ export function CreditPage() {
   const [loanProductType, setLoanProductType] = useState<LoanProductType>("PERSONAL_LOAN");
   const [isLoanInfoExpanded, setIsLoanInfoExpanded] = useState(false);
   const [areApprovedOffersExpanded, setAreApprovedOffersExpanded] = useState(false);
+  const [arePastLoansExpanded, setArePastLoansExpanded] = useState(false);
   const [expandedOfferIds, setExpandedOfferIds] = useState<Set<string>>(() => new Set());
   const [requestedAmount, setRequestedAmount] = useState("");
   const [assetPrice, setAssetPrice] = useState("");
@@ -169,6 +171,7 @@ export function CreditPage() {
   const [uploadingMoreInfoApplicationId, setUploadingMoreInfoApplicationId] = useState<string | null>(null);
   const [simulatingLoanId, setSimulatingLoanId] = useState<string | null>(null);
   const [payingLoanId, setPayingLoanId] = useState<string | null>(null);
+  const [payingInstallmentLoanId, setPayingInstallmentLoanId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadWarning, setLoadWarning] = useState<string | null>(null);
 
@@ -199,6 +202,22 @@ export function CreditPage() {
           (application.status === "APPROVED" || application.status === "PENDING"),
       ),
     [applications],
+  );
+  const activeLoanApplications = useMemo(
+    () =>
+      visibleLoanApplications.filter((application) => {
+        const existingLoan = loans.find((loan) => loan.application_id === application.id);
+        return existingLoan?.status !== "PAID" && existingLoan?.status !== "CLOSED";
+      }),
+    [loans, visibleLoanApplications],
+  );
+  const closedLoanApplications = useMemo(
+    () =>
+      visibleLoanApplications.filter((application) => {
+        const existingLoan = loans.find((loan) => loan.application_id === application.id);
+        return existingLoan?.status === "PAID" || existingLoan?.status === "CLOSED";
+      }),
+    [loans, visibleLoanApplications],
   );
   const documentsByApplication = useMemo(
     () =>
@@ -564,7 +583,7 @@ export function CreditPage() {
                 ...item,
                 outstanding_principal: result.new_outstanding_principal,
                 status: result.loan_status,
-                closed_at: result.loan_status === "PAID" ? new Date().toISOString() : item.closed_at,
+                closed_at: result.loan_status === "PAID" || result.loan_status === "CLOSED" ? new Date().toISOString() : item.closed_at,
               }
             : item,
         ),
@@ -584,7 +603,18 @@ export function CreditPage() {
         apiRequest<Wallet[]>("/wallets", { token: accessToken }),
         apiRequest<Card[]>("/cards", { token: accessToken }),
       ]);
-      setLoans(freshLoans);
+      setLoans(
+        freshLoans.map((item) =>
+          item.id === loan.id
+            ? {
+                ...item,
+                outstanding_principal: result.new_outstanding_principal,
+                status: result.loan_status,
+                closed_at: result.loan_status === "PAID" || result.loan_status === "CLOSED" ? item.closed_at ?? new Date().toISOString() : item.closed_at,
+              }
+            : item,
+        ),
+      );
       setWallets(freshWallets);
       setCards(freshCards);
       setEarlyRepaymentMessages((current) => ({
@@ -606,6 +636,108 @@ export function CreditPage() {
       }));
     } finally {
       setPayingLoanId(null);
+    }
+  }
+
+  async function makeRegularInstallmentPayment(loan: Loan, sourceOptions: ReturnType<typeof loanPaymentSourceOptions>) {
+    if (!accessToken || payingInstallmentLoanId) return;
+
+    const selectedSourceValue = earlyRepaymentSourceIds[loan.id] || sourceOptions[0]?.value || "";
+    const source = sourceOptions.find((option) => option.value === selectedSourceValue);
+    if (!source) {
+      setEarlyRepaymentErrors((current) => ({
+        ...current,
+        [loan.id]: "No payment source is available in this loan currency.",
+      }));
+      return;
+    }
+    if (Number(loan.monthly_payment) > Number(source.availableBalance)) {
+      setEarlyRepaymentErrors((current) => ({
+        ...current,
+        [loan.id]: "The selected source does not have enough available balance.",
+      }));
+      return;
+    }
+
+    setPayingInstallmentLoanId(loan.id);
+    setEarlyRepaymentErrors((current) => {
+      const next = { ...current };
+      delete next[loan.id];
+      return next;
+    });
+    setEarlyRepaymentMessages((current) => {
+      const next = { ...current };
+      delete next[loan.id];
+      return next;
+    });
+
+    try {
+      const result = await apiRequest<RegularInstallmentPaymentResult>(`/credit/loans/${loan.id}/installments/pay`, {
+        method: "POST",
+        token: accessToken,
+        body: {
+          ...(source.walletId ? { source_wallet_id: source.walletId } : {}),
+          source_card_id: source.cardId,
+        },
+      });
+      setLoans((current) =>
+        current.map((item) =>
+          item.id === loan.id
+            ? {
+                ...item,
+                outstanding_principal: result.remaining_principal,
+                next_payment_date: result.next_payment_date ?? item.next_payment_date,
+                status: result.loan_status,
+                closed_at: result.loan_status === "PAID" || result.loan_status === "CLOSED" ? new Date().toISOString() : item.closed_at,
+              }
+            : item,
+        ),
+      );
+      setWallets((current) =>
+        current.map((wallet) =>
+          source.walletId && wallet.id === source.walletId
+            ? {
+                ...wallet,
+                available_balance: (Number(wallet.available_balance) - Number(result.amount)).toFixed(2),
+              }
+            : wallet,
+        ),
+      );
+      const [freshLoans, freshWallets, freshCards] = await Promise.all([
+        apiRequest<Loan[]>("/credit/loans", { token: accessToken }),
+        apiRequest<Wallet[]>("/wallets", { token: accessToken }),
+        apiRequest<Card[]>("/cards", { token: accessToken }),
+      ]);
+      setLoans(
+        freshLoans.map((item) =>
+          item.id === loan.id
+            ? {
+                ...item,
+                outstanding_principal: result.remaining_principal,
+                next_payment_date: result.next_payment_date ?? item.next_payment_date,
+                status: result.loan_status,
+                closed_at: result.loan_status === "PAID" || result.loan_status === "CLOSED" ? item.closed_at ?? new Date().toISOString() : item.closed_at,
+              }
+            : item,
+        ),
+      );
+      setWallets(freshWallets);
+      setCards(freshCards);
+      setEarlyRepaymentMessages((current) => ({
+        ...current,
+        [loan.id]: `${formatMoney(result.amount, loan.currency)} installment paid from ${source.label}.`,
+      }));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setEarlyRepaymentErrors((current) => ({
+        ...current,
+        [loan.id]: err instanceof ApiError ? err.message : "Could not pay installment.",
+      }));
+    } finally {
+      setPayingInstallmentLoanId(null);
     }
   }
 
@@ -1152,17 +1284,17 @@ export function CreditPage() {
           </section>
         )}
 
-        {isCreditDetailsLoading && visibleLoanApplications.length === 0 && (
+        {isCreditDetailsLoading && activeLoanApplications.length === 0 && (
           <div className="card-empty">Loading current loans...</div>
         )}
 
-        {visibleLoanApplications.length > 0 && (
+        {activeLoanApplications.length > 0 && (
           <div className="approved-offers">
             <div className="approved-offers__header">
               <div>
-                <span className="eyebrow">Approved / pending loans</span>
+                <span className="eyebrow">Active / pending loans</span>
                 <strong>
-                  {visibleLoanApplications.length} loan request{visibleLoanApplications.length === 1 ? "" : "s"}
+                  {activeLoanApplications.length} loan request{activeLoanApplications.length === 1 ? "" : "s"}
                 </strong>
               </div>
               <button
@@ -1177,7 +1309,7 @@ export function CreditPage() {
             </div>
             {areApprovedOffersExpanded && (
               <div className="approved-offers__list" id="approved-offers-list">
-                {visibleLoanApplications.map((application) => {
+                {activeLoanApplications.map((application) => {
                   const existingLoan = loans.find((loan) => loan.application_id === application.id);
                   const activeLoan = existingLoan?.status === "ACTIVE" ? existingLoan : null;
                   const breakdown = applicationBreakdowns[application.id];
@@ -1341,6 +1473,14 @@ export function CreditPage() {
                                 </button>
                                 <button
                                   type="button"
+                                  className="button--ghost early-repayment-card__simulate"
+                                  onClick={() => makeRegularInstallmentPayment(activeLoan, repaymentSources)}
+                                  disabled={payingInstallmentLoanId === activeLoan.id || repaymentSources.length === 0}
+                                >
+                                  {payingInstallmentLoanId === activeLoan.id ? "Paying..." : "Pay installment"}
+                                </button>
+                                <button
+                                  type="button"
                                   className="credit-card-payment__submit"
                                   onClick={() => makeEarlyRepayment(activeLoan, repaymentSources)}
                                   disabled={payingLoanId === activeLoan.id || repaymentSources.length === 0}
@@ -1463,6 +1603,78 @@ export function CreditPage() {
                           </div>
                         </div>
                       )}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {closedLoanApplications.length > 0 && (
+          <div className="approved-offers">
+            <div className="approved-offers__header">
+              <div>
+                <span className="eyebrow">Past loans</span>
+                <strong>
+                  {closedLoanApplications.length} closed loan{closedLoanApplications.length === 1 ? "" : "s"}
+                </strong>
+              </div>
+              <button
+                type="button"
+                className="button--ghost approved-offers__toggle"
+                onClick={() => setArePastLoansExpanded((current) => !current)}
+                aria-expanded={arePastLoansExpanded}
+                aria-controls="past-loans-list"
+              >
+                {arePastLoansExpanded ? "Retract" : "Show more"}
+              </button>
+            </div>
+            {arePastLoansExpanded && (
+              <div className="approved-offers__list" id="past-loans-list">
+                {closedLoanApplications.map((application) => {
+                  const closedLoan = loans.find((loan) => loan.application_id === application.id);
+                  const breakdown = applicationBreakdowns[application.id];
+                  return (
+                    <article className="approved-offer-card approved-offer-card--collapsed" key={application.id}>
+                      <div className="approved-offer-card__summary">
+                        <div>
+                          <span className="eyebrow">{formatProductType(application.loan_product_type)}</span>
+                          <h3>{formatMoney(application.offered_amount ?? application.requested_amount, application.currency)}</h3>
+                          <p>
+                            Closed {closedLoan?.closed_at ? new Date(closedLoan.closed_at).toLocaleDateString() : "after repayment"}
+                          </p>
+                        </div>
+                        <div className="approved-offer-card__actions">
+                          <span className="tag tag--neutral">Loan closed</span>
+                        </div>
+                      </div>
+                      <div className="approved-offer-card__details">
+                        <div className="approved-offer-card__figures">
+                          <div>
+                            <span className="eyebrow">Original principal</span>
+                            <strong>{formatMoney(closedLoan?.principal_amount ?? application.offered_amount ?? application.requested_amount, application.currency)}</strong>
+                          </div>
+                          <div>
+                            <span className="eyebrow">Outstanding</span>
+                            <strong>{formatMoney(closedLoan?.outstanding_principal ?? "0.00", closedLoan?.currency ?? application.currency)}</strong>
+                          </div>
+                          <div>
+                            <span className="eyebrow">Monthly payment</span>
+                            <strong>
+                              {closedLoan
+                                ? formatMoney(closedLoan.monthly_payment, closedLoan.currency)
+                                : breakdown
+                                  ? formatMoney(breakdown.monthly_payment, breakdown.currency)
+                                  : "Closed"}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="eyebrow">Term</span>
+                            <strong>{closedLoan?.term_months ?? breakdown?.term_months ?? application.requested_term_months ?? 0} months</strong>
+                          </div>
+                        </div>
+                      </div>
                     </article>
                   );
                 })}
