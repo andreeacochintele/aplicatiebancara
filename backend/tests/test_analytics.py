@@ -154,6 +154,140 @@ def test_spending_by_category_groups_unmatched_merchant_as_other(db_session, see
     assert result.items[0].total_amount == Decimal("30.00")
 
 
+def test_spending_recommendations_flags_week_over_week_increase(db_session, seeded_user_with_wallet):
+    from app.merchants.models import Merchant
+
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    last_week_start = week_start - timedelta(days=7)
+    COMPLETED = TransactionStatus.COMPLETED
+
+    cinema = Merchant(name="Cinema City", category="Entertainment", verified=True)
+    db_session.add(cinema)
+    db_session.flush()
+
+    # Last week: 100. This week: 200 (+100%, well over the 20% threshold).
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", COMPLETED, last_week_start + timedelta(days=1), merchant_id=cinema.id)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "200.00", COMPLETED, now, merchant_id=cinema.id)
+
+    flags = AnalyticsService(db_session).spending_recommendations(user.id)
+
+    entertainment = next(f for f in flags if f.category == "Entertainment")
+    assert "WEEK_OVER_WEEK_INCREASE" in entertainment.reasons
+    assert entertainment.week_over_week is not None
+    assert entertainment.week_over_week.current_amount == Decimal("200.00")
+    assert entertainment.week_over_week.comparison_amount == Decimal("100.00")
+    assert entertainment.week_over_week.change_percent == 100.0
+
+
+def test_spending_recommendations_does_not_flag_a_small_increase(db_session, seeded_user_with_wallet):
+    from app.merchants.models import Merchant
+
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    last_week_start = week_start - timedelta(days=7)
+    COMPLETED = TransactionStatus.COMPLETED
+
+    zara = Merchant(name="Zara", category="Retail", verified=True)
+    kfc = Merchant(name="KFC", category="Food", verified=True)
+    db_session.add_all([zara, kfc])
+    db_session.flush()
+
+    # Last week: 100. This week: 105 (+5%, under the 20% threshold). A
+    # second, larger category keeps Retail's month share under the
+    # concentration threshold too, so only WEEK_OVER_WEEK_INCREASE is
+    # actually being tested here.
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", COMPLETED, last_week_start + timedelta(days=1), merchant_id=zara.id)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "105.00", COMPLETED, now, merchant_id=zara.id)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "500.00", COMPLETED, now, merchant_id=kfc.id)
+
+    flags = AnalyticsService(db_session).spending_recommendations(user.id)
+
+    assert not any(f.category == "Retail" for f in flags)
+
+
+def test_spending_recommendations_flags_category_concentration(db_session, seeded_user_with_wallet):
+    from app.merchants.models import Merchant
+
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    COMPLETED = TransactionStatus.COMPLETED
+
+    petrom = Merchant(name="Petrom", category="Fuel", verified=True)
+    kfc = Merchant(name="KFC", category="Food", verified=True)
+    db_session.add_all([petrom, kfc])
+    db_session.flush()
+
+    # This month: Fuel 800, Food 200 -> Fuel is 80% of total, over the 40% threshold.
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "800.00", COMPLETED, now, merchant_id=petrom.id)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "200.00", COMPLETED, now, merchant_id=kfc.id)
+
+    flags = AnalyticsService(db_session).spending_recommendations(user.id)
+
+    fuel = next(f for f in flags if f.category == "Fuel")
+    assert "CATEGORY_CONCENTRATION" in fuel.reasons
+    assert fuel.share_of_total_percent == 80.0
+    assert not any(f.category == "Food" for f in flags)
+
+
+def test_spending_recommendations_flags_month_vs_three_month_average_increase(db_session, seeded_user_with_wallet):
+    from app.merchants.models import Merchant
+
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    COMPLETED = TransactionStatus.COMPLETED
+
+    booking = Merchant(name="Booking.com", category="Travel", verified=True)
+    db_session.add(booking)
+    db_session.flush()
+
+    # Prior 3 months: 30 total each (avg 10/month). This month so far: 100 (+900%).
+    for months_back in (1, 2, 3):
+        _add_transaction(
+            db_session, user, wallet, TransactionType.CARD_PAYMENT, "10.00", COMPLETED,
+            _months_ago(month_start, months_back), merchant_id=booking.id,
+        )
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", COMPLETED, now, merchant_id=booking.id)
+
+    flags = AnalyticsService(db_session).spending_recommendations(user.id)
+
+    travel = next(f for f in flags if f.category == "Travel")
+    assert "MONTH_VS_AVERAGE_INCREASE" in travel.reasons
+    assert travel.month_vs_three_month_average is not None
+    assert travel.month_vs_three_month_average.comparison_amount == Decimal("10.00")
+
+
+def test_spending_recommendations_scopes_comparisons_per_currency(db_session, seeded_user_with_wallet):
+    from app.merchants.models import Merchant
+
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    last_week_start = week_start - timedelta(days=7)
+    COMPLETED = TransactionStatus.COMPLETED
+
+    emirates = Merchant(name="Emirates", category="Travel", verified=True)
+    db_session.add(emirates)
+    db_session.flush()
+
+    # Last week: 1000 RON. This week: 10 USD - a currency change, not a
+    # same-currency spike, must never be compared against the RON figure
+    # for the week-over-week check (the USD entry is still its own
+    # 100%-of-month concentration case, which is correct and separate).
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "1000.00", COMPLETED, last_week_start + timedelta(days=1), merchant_id=emirates.id, currency="RON")
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "10.00", COMPLETED, now, merchant_id=emirates.id, currency="USD")
+
+    flags = AnalyticsService(db_session).spending_recommendations(user.id)
+
+    usd_travel = next(f for f in flags if f.category == "Travel" and f.currency == "USD")
+    assert "WEEK_OVER_WEEK_INCREASE" not in usd_travel.reasons
+    assert usd_travel.week_over_week is not None
+    assert usd_travel.week_over_week.comparison_amount == Decimal("0")
+
+
 def _months_ago(dt: datetime, months: int) -> datetime:
     year, month = dt.year, dt.month - months
     while month <= 0:

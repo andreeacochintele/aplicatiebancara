@@ -40,6 +40,32 @@ class SpendingByCategoryResponse(BaseModel):
     items: list[SpendingByCategory]
 
 
+class SpendingComparisonPoint(BaseModel):
+    """One before/after pair — current_amount vs comparison_amount.
+    change_percent is None when comparison_amount is 0 (nothing to divide
+    by; a fresh category with no prior history isn't a "spike")."""
+
+    current_amount: Decimal
+    comparison_amount: Decimal
+    change_percent: float | None
+
+
+class CategorySpendingFlag(BaseModel):
+    """One category AnalyticsService.spending_recommendations() flagged as
+    worth surfacing to the user — reasons is never empty (a category only
+    appears here because at least one comparison crossed its threshold),
+    but any individual comparison may be None if that comparison wasn't
+    the one that triggered it (e.g. flagged only for concentration, not
+    for a week-over-week spike)."""
+
+    category: str
+    currency: str
+    reasons: list[str]
+    week_over_week: SpendingComparisonPoint | None
+    month_vs_three_month_average: SpendingComparisonPoint | None
+    share_of_total_percent: float | None
+
+
 class MonthlyTrendItem(BaseModel):
     year: int
     month: int

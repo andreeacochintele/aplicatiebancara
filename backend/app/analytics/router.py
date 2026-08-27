@@ -4,6 +4,8 @@ import uuid
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.ai.personal_finance import insights as ai_insights
+from app.ai.personal_finance.schemas import AIInsightPublic
 from app.analytics.schemas import (
     ForecastResponse,
     MonthlyTrendResponse,
@@ -76,3 +78,28 @@ def get_forecast(
     db: Session = Depends(get_db),
 ) -> ForecastResponse:
     return AnalyticsService(db).forecast_month_end_balance(current_user.id, wallet_id)
+
+
+@router.get("/insights", response_model=list[AIInsightPublic])
+def get_insights(
+    refresh: bool = Query(default=False),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[AIInsightPublic]:
+    """Lazily regenerates (Azure call + AnalyticsService.spending_recommendations())
+    only when this user's cached insights are missing or older than
+    ai.personal_finance.insights.INSIGHT_TTL - see that module's docstring.
+    refresh=True (the dashboard's refresh button) bypasses the TTL."""
+    result = ai_insights.get_or_generate(db, current_user.id, force=refresh)
+    db.commit()
+    return result
+
+
+@router.post("/insights/{insight_id}/dismiss", status_code=204)
+def dismiss_insight(
+    insight_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    ai_insights.dismiss(db, current_user.id, insight_id)
+    db.commit()

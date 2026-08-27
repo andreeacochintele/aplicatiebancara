@@ -29,10 +29,12 @@ class AnalyticsRepository:
         return set(self.db.scalars(select(Wallet.id).where(Wallet.user_id == user_id)))
 
     def _is_real_spend(self, transaction: Transaction, own_wallet_ids: set[uuid.UUID]) -> bool:
-        """CASHBACK is incoming money, not spend. A TRANSFER only counts as spend
-        when it actually leaves the user — i.e. not a same-user wallet-to-wallet
-        move (see architecture.md §26 / the analytics redesign brief)."""
-        if transaction.type == TransactionType.CASHBACK:
+        """CASHBACK and SAVINGS_WITHDRAWAL are incoming money, not spend. A
+        TRANSFER only counts as spend when it actually leaves the user — i.e.
+        not a same-user wallet-to-wallet move (see architecture.md §26 / the
+        analytics redesign brief). SAVINGS_CONTRIBUTION is real money leaving
+        the wallet, so it counts same as any other outflow."""
+        if transaction.type in (TransactionType.CASHBACK, TransactionType.SAVINGS_WITHDRAWAL):
             return False
         if transaction.type == TransactionType.TRANSFER and transaction.destination_wallet_id in own_wallet_ids:
             return False
