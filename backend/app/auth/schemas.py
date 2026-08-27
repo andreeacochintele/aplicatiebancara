@@ -28,3 +28,12 @@ class TokenResponse(BaseModel):
 class AuthResponse(BaseModel):
     user: UserPublic
     tokens: TokenResponse
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class AccessTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
