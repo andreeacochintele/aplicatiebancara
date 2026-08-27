@@ -51,8 +51,8 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(email, password);
-      navigate("/dashboard");
+      const response = await login(email, password);
+      navigate(response.user.role === "ADMIN" ? "/admin" : "/dashboard");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Login failed");
     } finally {

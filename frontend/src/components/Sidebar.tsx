@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Wallet, CreditCard, Send, Receipt, FileText,
-  PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldCheck, Briefcase, type LucideIcon,
+  PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldAlert, Briefcase, LayoutGrid, type LucideIcon,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
@@ -33,6 +33,12 @@ const ACCOUNT_ITEMS: NavItem[] = [
   { to: "/profile", label: "Profile", icon: UserRound },
 ];
 
+const OPERATIONS_ITEMS: NavItem[] = [
+  { to: "/admin", label: "Dashboard", icon: LayoutGrid },
+  { to: "/admin/credit", label: "Credit & Loans", icon: Landmark },
+  { to: "/admin/fraud", label: "Fraud Review", icon: ShieldAlert },
+];
+
 function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
   return (
     <div className="sidebar__group">
@@ -40,7 +46,7 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
       <ul className="sidebar__nav">
         {items.map((item) => (
           <li key={item.to}>
-            <NavLink to={item.to} className={({ isActive }) => (isActive ? "active" : "")}>
+            <NavLink to={item.to} end className={({ isActive }) => (isActive ? "active" : "")}>
               <item.icon size={17} />
               {item.label}
             </NavLink>
@@ -53,6 +59,7 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
 
 export function Sidebar() {
   const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
 
   return (
     <nav className="sidebar aurora-sidebar">
@@ -60,14 +67,20 @@ export function Sidebar() {
         <span className="aurora-brand-mark" />
         <span className="aurora-brand-name">Banking App</span>
       </div>
-      <NavGroup label="Banking" items={BANKING_ITEMS} />
-      <NavGroup label="Intelligence" items={INTELLIGENCE_ITEMS} />
-      <NavGroup label="Account" items={ACCOUNT_ITEMS} />
-      {user?.user_type === "BUSINESS" && (
-        <NavGroup label="Business" items={[{ to: "/business/export", label: "Transaction Export", icon: Briefcase }]} />
-      )}
-      {user?.role === "ADMIN" && (
-        <NavGroup label="Operations" items={[{ to: "/admin", label: "Admin Dashboard", icon: ShieldCheck }]} />
+      {isAdmin ? (
+        <NavGroup label="Operations" items={OPERATIONS_ITEMS} />
+      ) : (
+        <>
+          <NavGroup label="Banking" items={BANKING_ITEMS} />
+          <NavGroup label="Intelligence" items={INTELLIGENCE_ITEMS} />
+          <NavGroup label="Account" items={ACCOUNT_ITEMS} />
+          {user?.user_type === "BUSINESS" && (
+            <NavGroup
+              label="Business"
+              items={[{ to: "/business/export", label: "Transaction Export", icon: Briefcase }]}
+            />
+          )}
+        </>
       )}
     </nav>
   );

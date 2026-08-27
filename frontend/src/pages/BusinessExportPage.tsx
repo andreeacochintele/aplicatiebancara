@@ -104,6 +104,7 @@ export function BusinessExportPage() {
   async function generatePreview() {
     if (!accessToken) return;
     setError(null);
+    setPreview(null);
     setBusy(true);
     try {
       const data = await apiRequest<BusinessExportPreview>(`/exports/preview?${buildParams().toString()}`, {
@@ -155,11 +156,11 @@ export function BusinessExportPage() {
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           <label style={{ flex: 1 }}>
             From
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            <input type="date" value={dateFrom} max={dateTo} onChange={(e) => setDateFrom(e.target.value)} />
           </label>
           <label style={{ flex: 1 }}>
             To
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            <input type="date" value={dateTo} min={dateFrom} onChange={(e) => setDateTo(e.target.value)} />
           </label>
           <label style={{ flex: 1 }}>
             Direction
