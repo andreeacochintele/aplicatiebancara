@@ -177,6 +177,18 @@
   border-color: var(--aurora-accent);
 }
 
+.aurora-shell .aurora-header .theme-toggle {
+  background: var(--aurora-surface-alt);
+  border: 1px solid var(--aurora-border);
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .aurora-header .theme-toggle:hover {
+  background: var(--aurora-accent-soft);
+  border-color: var(--aurora-accent);
+  color: var(--aurora-accent-dark);
+}
+
 .aurora-shell .notification-panel {
   right: 136px;
   background: var(--aurora-surface);

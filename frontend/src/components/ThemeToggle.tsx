@@ -13,7 +13,7 @@ export function ThemeToggle() {
       onClick={toggleTheme}
       className="theme-toggle"
     >
-      {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
+      {theme === "dark" ? <Sun size={22} strokeWidth={2.25} /> : <Moon size={22} strokeWidth={2.25} />}
     </button>
   );
 }
