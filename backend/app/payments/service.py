@@ -149,7 +149,11 @@ class IbanTransferService:
         if source.currency == target_currency:
             raise ValidationError("FX quote is not required for same-currency transfers")
 
-        rate = self.fx.get_rate(source.currency, target_currency)
+        # Must match the rate get_quote() itself will price with below (now
+        # the live rate, not the static table) — otherwise this estimate
+        # under-shoots by the live margin and the quote it produces can land
+        # short of the requested target amount.
+        rate = self.fx.get_market_rate(source.currency, target_currency)
         source_amount = self._source_amount_for_target(data.amount, rate)
         quote = self.fx.get_quote(
             initiator_user_id,

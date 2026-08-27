@@ -55,6 +55,7 @@ def test_generate_iban_produces_a_checksum_valid_iban():
 
     assert len(iban) == 24
     assert iban[:2] == "RO"
+    assert iban[4:8] == "EASY"  # bank code — must match the EasyB brand, not a leftover "AURO"
     rearranged = iban[4:] + iban[:4]
     numeric = "".join(str(ord(char) - 55) if char.isalpha() else char for char in rearranged)
     assert int(numeric) % 97 == 1
@@ -126,8 +127,10 @@ def test_close_wallet_sweeps_cross_currency_balance_into_main(db_session, seeded
     assert closed.status == WalletStatus.CLOSED
     assert closed.available_balance == Decimal("0.00")
     refreshed_main = service.repository.get_by_id(main.id)
-    # 100 EUR * 4.97 RON/EUR, minus the standard 0.5% fee, same as any other quote.
-    assert refreshed_main.available_balance == Decimal("494.52")
+    # 100 EUR at the live-rate-with-1%-margin quote rate (falls back to the
+    # static 4.97 EUR/RON here — network fetch is mocked off by default, see
+    # conftest.py — then 4.97 * 0.99 = 4.9203), minus the standard 0.5% fee.
+    assert refreshed_main.available_balance == Decimal("489.57")
 
 
 def test_close_wallet_rejects_the_main_wallet(db_session, seeded_user):

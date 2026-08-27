@@ -1,11 +1,17 @@
 """Deterministic FX pricing (architecture.md §5, §44 rule 3: exchange rates
 are computed in code, never by an LLM).
 
-`get_quote()` prices actual conversions off the mocked `_RATES_TO_RON` table
-so quote math in tests stays exact and offline. `get_market_rate()` is a
-separate, read-only path used only for *displaying* a real-world reference
-rate (e.g. on the Wallets page): it fetches live ECB rates with a small
-markup, falling back to the same static table on any network failure.
+get_quote() and get_market_rate() (the Wallets-page reference-rate display)
+now price off the exact same rate: live ECB rates with a small markup,
+falling back to the static _RATES_TO_RON table on any network failure. They
+used to diverge — get_quote() priced off the static table unconditionally
+while the display banner showed the live rate — which made the "Get quote"
+result contradict the number the user had just been shown. get_rate() (the
+static-only lookup) is kept for callers that intentionally want deterministic,
+offline pricing unrelated to a user-facing quote: cashback FX conversion
+(merchants), net-worth base-currency conversion (analytics), and one payments
+flow — none of those show a live rate to the user first, so there's nothing
+for them to contradict.
 """
 import json
 import uuid
@@ -170,8 +176,9 @@ class FXService:
         return _RATES_TO_RON[source_currency] / _RATES_TO_RON[target_currency]
 
     def get_market_rate(self, source_currency: str, target_currency: str) -> Decimal:
-        """Live reference rate for display only (e.g. Wallets), with a small
-        margin baked in — never used to price an actual quote/transfer."""
+        """Live reference rate with a small margin baked in. Used both for
+        display (Wallets) and to price get_quote() — same rate, same margin,
+        so what the user is shown is exactly what they get."""
         source_currency, target_currency = source_currency.upper(), target_currency.upper()
         rates = _rates_to_ron_for_display()
         if source_currency not in rates or target_currency not in rates:
@@ -214,7 +221,7 @@ class FXService:
         if source_currency == target_currency:
             raise ValidationError("Source and target currency must differ")
 
-        rate = self.get_rate(source_currency, target_currency)
+        rate = self.get_market_rate(source_currency, target_currency)
         fee = _round_money(data.source_amount * FEE_RATE)
         target_amount = _round_money((data.source_amount - fee) * rate)
 
