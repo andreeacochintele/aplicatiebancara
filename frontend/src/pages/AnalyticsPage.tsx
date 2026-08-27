@@ -2,14 +2,14 @@ import {
   Clock3, PiggyBank, PieChart as PieChartIcon, Plus, Target, TrendingUp, type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { CSSProperties, FormEvent } from "react";
+import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import {
   Area, AreaChart, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 
 import { apiRequest, ApiError } from "../api/apiClient";
-import { colorForType, friendlyTransactionType, monthLabel } from "../features/analytics/formatters";
+import { colorForType, monthLabel } from "../features/analytics/formatters";
 import { generateAnalyticsInsights, type AnalyticsInsight } from "../features/analytics/insights";
 import { useAuth } from "../hooks/useAuth";
 import type {
@@ -19,7 +19,7 @@ import type {
   NetWorthHistoryResponse,
   NetWorthResponse,
   SavingsGoal,
-  SpendingByTypeResponse,
+  SpendingByCategoryResponse,
 } from "../types";
 
 type NetWorthPeriod = "1m" | "3m" | "6m" | "1y";
@@ -75,7 +75,15 @@ function NetWorthTrendChart({ history }: { history: NetWorthHistoryResponse }) {
           <Tooltip
             formatter={(value: number) => [`${value.toFixed(2)} ${history.base_currency}`, "Net worth"]}
             labelFormatter={(label: string) => label}
-            contentStyle={{ borderRadius: 10, border: "1px solid var(--aurora-border)", fontSize: 12 }}
+            contentStyle={{
+              borderRadius: 10,
+              border: "1px solid var(--aurora-border)",
+              fontSize: 12,
+              background: "var(--aurora-surface)",
+              color: "var(--aurora-text)",
+            }}
+            itemStyle={{ color: "var(--aurora-text)" }}
+            labelStyle={{ color: "var(--aurora-text-soft)" }}
           />
           <Area type="monotone" dataKey="value" stroke="#fff" strokeWidth={2} fill="url(#netWorthFill)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
         </AreaChart>
@@ -99,7 +107,15 @@ function MonthlyTrendChart({ trend }: { trend: MonthlyTrendResponse }) {
         <YAxis tick={{ fontSize: 11, fill: "var(--aurora-text-faint)" }} axisLine={false} tickLine={false} width={44} />
         <Tooltip
           formatter={(value: number) => [`${value.toFixed(2)} ${trend.base_currency}`, "Spending"]}
-          contentStyle={{ borderRadius: 10, border: "1px solid var(--aurora-border)", fontSize: 12 }}
+          contentStyle={{
+            borderRadius: 10,
+            border: "1px solid var(--aurora-border)",
+            fontSize: 12,
+            background: "var(--aurora-surface)",
+            color: "var(--aurora-text)",
+          }}
+          itemStyle={{ color: "var(--aurora-text)" }}
+          labelStyle={{ color: "var(--aurora-text-soft)" }}
         />
         <Line type="monotone" dataKey="amount" stroke="var(--aurora-accent)" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
       </LineChart>
@@ -130,7 +146,15 @@ function ForecastChart({ forecast }: { forecast: ForecastResponse }) {
         <YAxis domain={[min - pad, max + pad]} hide />
         <Tooltip
           formatter={(value: number) => [`${value.toFixed(2)} ${forecast.currency}`, "Projected balance"]}
-          contentStyle={{ borderRadius: 10, border: "1px solid var(--aurora-border)", fontSize: 12 }}
+          contentStyle={{
+            borderRadius: 10,
+            border: "1px solid var(--aurora-border)",
+            fontSize: 12,
+            background: "var(--aurora-surface)",
+            color: "var(--aurora-text)",
+          }}
+          itemStyle={{ color: "var(--aurora-text)" }}
+          labelStyle={{ color: "var(--aurora-text-soft)" }}
         />
         <Area type="monotone" dataKey="balance" stroke="var(--aurora-accent)" strokeWidth={2} fill="url(#forecastFill)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
       </AreaChart>
@@ -153,7 +177,7 @@ export function AnalyticsPage() {
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
   const [netWorthHistory, setNetWorthHistory] = useState<NetWorthHistoryResponse | null>(null);
   const [netWorthPeriod, setNetWorthPeriod] = useState<NetWorthPeriod>("1m");
-  const [spendingByType, setSpendingByType] = useState<SpendingByTypeResponse | null>(null);
+  const [spendingByCategory, setSpendingByCategory] = useState<SpendingByCategoryResponse | null>(null);
   const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrendResponse | null>(null);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [budgets, setBudgets] = useState<Budget[]>([]);
@@ -176,9 +200,9 @@ export function AnalyticsPage() {
     apiRequest<NetWorthResponse>("/analytics/net-worth", { token: accessToken })
       .then((data) => !cancelled && setNetWorth(data))
       .catch(() => !cancelled && setLoadError(true));
-    apiRequest<SpendingByTypeResponse>("/analytics/spending-by-type", { token: accessToken })
-      .then((data) => !cancelled && setSpendingByType(data))
-      .catch(() => !cancelled && setSpendingByType(null));
+    apiRequest<SpendingByCategoryResponse>("/analytics/spending-by-category", { token: accessToken })
+      .then((data) => !cancelled && setSpendingByCategory(data))
+      .catch(() => !cancelled && setSpendingByCategory(null));
     apiRequest<MonthlyTrendResponse>("/analytics/monthly-trend?months=6", { token: accessToken })
       .then((data) => !cancelled && setMonthlyTrend(data))
       .catch(() => !cancelled && setMonthlyTrend(null));
@@ -208,14 +232,14 @@ export function AnalyticsPage() {
     };
   }, [accessToken, netWorthPeriod, reloadTick]);
 
-  const spendingCurrency = netWorth?.base_currency ?? spendingByType?.items[0]?.currency;
-  const spendingItems = spendingByType?.items.filter((item) => item.currency === spendingCurrency) ?? [];
+  const spendingCurrency = netWorth?.base_currency ?? spendingByCategory?.items[0]?.currency;
+  const spendingItems = spendingByCategory?.items.filter((item) => item.currency === spendingCurrency) ?? [];
   const spendingTotal = spendingItems.reduce((sum, item) => sum + Number(item.total_amount), 0);
   const donutData = spendingItems.map((item) => ({
-    key: `${item.type}-${item.currency}`,
-    name: friendlyTransactionType(item.type),
+    key: `${item.category}-${item.currency}`,
+    name: item.category,
     value: Number(item.total_amount),
-    color: colorForType(item.type),
+    color: colorForType(item.category),
   }));
 
   const insights = generateAnalyticsInsights({ monthlyTrend, spendingItems, budgets, forecast });
@@ -303,30 +327,6 @@ export function AnalyticsPage() {
           {netWorthHistory && <NetWorthTrendChart history={netWorthHistory} />}
         </div>
 
-        <div className="aurora-wallet-grid">
-          {netWorth?.wallets.map((wallet) => (
-            <Link
-              className="aurora-wallet-card"
-              key={wallet.wallet_id}
-              to="/wallets"
-              style={{ "--wallet-accent": colorForType(wallet.currency), textDecoration: "none", color: "inherit", display: "block" } as CSSProperties}
-            >
-              <div className="aurora-wallet-card__top">
-                <span className="aurora-wallet-card__code">{wallet.currency}</span>
-                {wallet.is_main && <span className="aurora-chip aurora-chip-violet">Main</span>}
-              </div>
-              <div className="aurora-wallet-card__amount" style={{ color: "var(--wallet-accent)" }}>
-                {wallet.available_balance}
-              </div>
-              {wallet.currency !== netWorth.base_currency && (
-                <div className="aurora-wallet-card__sub">
-                  ≈ {wallet.converted_available_balance} {netWorth.base_currency}
-                </div>
-              )}
-            </Link>
-          ))}
-        </div>
-
         <div className="aurora-analytics-grid">
           <div className="aurora-card">
             <div className="aurora-section-header">
@@ -347,7 +347,15 @@ export function AnalyticsPage() {
                       </Pie>
                       <Tooltip
                         formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]}
-                        contentStyle={{ borderRadius: 10, border: "1px solid var(--aurora-border)", fontSize: 12 }}
+                        contentStyle={{
+                          borderRadius: 10,
+                          border: "1px solid var(--aurora-border)",
+                          fontSize: 12,
+                          background: "var(--aurora-surface)",
+                          color: "var(--aurora-text)",
+                        }}
+                        itemStyle={{ color: "var(--aurora-text)" }}
+                        labelStyle={{ color: "var(--aurora-text-soft)" }}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -415,7 +423,14 @@ export function AnalyticsPage() {
               budgets.map((budget) => (
                 <div key={budget.id} style={{ marginBottom: "0.9rem" }}>
                   <div className="bar-row">
-                    <span className="bar-row__label">{budget.name}</span>
+                    <span className="bar-row__label">
+                      {budget.name}
+                      {budget.category && (
+                        <span className="aurora-chip aurora-chip-violet" style={{ marginLeft: "0.5rem" }}>
+                          {budget.category}
+                        </span>
+                      )}
+                    </span>
                     <div className="bar-row__track">
                       <div
                         className="bar-row__fill"
@@ -427,11 +442,17 @@ export function AnalyticsPage() {
                     </span>
                   </div>
                   <div className="aurora-tx-meta" style={{ paddingLeft: "0.1rem" }}>
-                    {budget.percent_used >= 100
-                      ? `Budget exceeded by ${(Number(budget.spent_amount) - Number(budget.limit_amount)).toFixed(2)} ${budget.currency}`
-                      : `${budget.percent_used}% used`}
-                    {" · "}
-                    {budget.period.toLowerCase()} · {budget.days_remaining} days left
+                    {budget.category === null ? (
+                      "No category linked — this budget isn't tracking any spending yet"
+                    ) : (
+                      <>
+                        {budget.percent_used >= 100
+                          ? `Budget exceeded by ${(Number(budget.spent_amount) - Number(budget.limit_amount)).toFixed(2)} ${budget.currency}`
+                          : `${budget.percent_used}% used`}
+                        {" · "}
+                        {budget.period.toLowerCase()} · {budget.days_remaining} days left
+                      </>
+                    )}
                   </div>
                 </div>
               ))

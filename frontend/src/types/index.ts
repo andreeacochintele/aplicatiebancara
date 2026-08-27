@@ -473,6 +473,19 @@ export interface SpendingByTypeResponse {
   items: SpendingByTypeItem[];
 }
 
+export interface SpendingByCategoryItem {
+  category: string;
+  total_amount: string;
+  currency: string;
+  transaction_count: number;
+}
+
+export interface SpendingByCategoryResponse {
+  period_start: string;
+  period_end: string;
+  items: SpendingByCategoryItem[];
+}
+
 export interface MonthlyTrendItem {
   year: number;
   month: number;
@@ -561,7 +574,7 @@ export interface Statement {
 export interface Budget {
   id: string;
   name: string;
-  category_id: string | null;
+  category: string | null;
   limit_amount: string;
   currency: string;
   period: "WEEKLY" | "MONTHLY";

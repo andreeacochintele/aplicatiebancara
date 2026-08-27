@@ -2,8 +2,7 @@
 // No LLM involved — every rule here is a plain comparison over data the page
 // already fetched (architecture.md: keep financial/derived-metric logic out
 // of the model, see CLAUDE.md §12).
-import type { Budget, ForecastResponse, MonthlyTrendResponse, SpendingByTypeItem } from "../../types";
-import { friendlyTransactionType } from "./formatters";
+import type { Budget, ForecastResponse, MonthlyTrendResponse, SpendingByCategoryItem } from "../../types";
 
 export type InsightKind = "trend" | "category" | "budget" | "forecast";
 
@@ -20,7 +19,7 @@ interface InsightInputs {
   // spendingItems) — summing across currencies here would silently mix them,
   // the same bug the donut chart next to these insights was already careful
   // to avoid.
-  spendingItems: SpendingByTypeItem[];
+  spendingItems: SpendingByCategoryItem[];
   budgets: Budget[];
   forecast: ForecastResponse | null;
 }
@@ -57,7 +56,7 @@ export function generateAnalyticsInsights({
     if (pct >= 40) {
       insights.push({
         id: "category",
-        message: `${friendlyTransactionType(top.type)} represent ${pct}% of your spending this month.`,
+        message: `${top.category} purchases represent ${pct}% of your spending this month.`,
         ctaLabel: "View breakdown",
         ctaTo: "/transactions",
       });
