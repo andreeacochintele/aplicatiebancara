@@ -32,6 +32,13 @@ export function loginUser(email: string, password: string) {
   });
 }
 
+export function refreshAccessToken(refreshToken: string) {
+  return apiRequest<{ access_token: string }>("/auth/refresh", {
+    method: "POST",
+    body: { refresh_token: refreshToken },
+  });
+}
+
 export function getMyFullProfile(token: string) {
   return apiRequest<UserFullProfile>("/users/me/profile", { token });
 }

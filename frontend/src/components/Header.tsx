@@ -6,6 +6,7 @@ import { ApiError, apiRequest } from "../api/apiClient";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
 import type { BillSplit, Notification, Wallet } from "../types";
+import { ThemeToggle } from "./ThemeToggle";
 
 const PAGE_INFO: Record<string, { title: string; subtitle: string }> = {
   "/dashboard": { title: "Dashboard", subtitle: "Personal banking overview" },
@@ -19,7 +20,10 @@ const PAGE_INFO: Record<string, { title: string; subtitle: string }> = {
   "/credit": { title: "Credit & Loans", subtitle: "Score, instalments and simulation" },
   "/assistant": { title: "Assistant", subtitle: "Orchestrator over specialised agents" },
   "/profile": { title: "Profile", subtitle: "Account details" },
+  "/business/export": { title: "Transaction Export", subtitle: "Business accounts only · CSV/XLSX export" },
   "/admin": { title: "Admin Dashboard", subtitle: "Operations overview" },
+  "/admin/credit": { title: "Credit & Loans", subtitle: "Applications, documents and credit score review" },
+  "/admin/fraud": { title: "Fraud Review", subtitle: "Deterministic engine · human decision" },
 };
 
 const HEADER_NOTIFICATIONS_PER_PAGE = 4;
@@ -172,9 +176,10 @@ export function Header() {
 
   return (
     <header className="header aurora-header">
-      <span className="header__title">{page?.title ?? "Banking App"}</span>
+      <span className="header__title">{page?.title ?? "EasyB"}</span>
       {page && <span className="header__subtitle">{page.subtitle}</span>}
       <div className="header__meta">
+        <ThemeToggle />
         <button
           aria-label="Notifications"
           className="aurora-bell"

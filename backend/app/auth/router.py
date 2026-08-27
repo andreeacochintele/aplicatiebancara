@@ -4,7 +4,14 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_session
 from app.auth.models import SessionStatus, UserSession
-from app.auth.schemas import AuthResponse, LoginRequest, RegisterRequest, TokenResponse
+from app.auth.schemas import (
+    AccessTokenResponse,
+    AuthResponse,
+    LoginRequest,
+    RefreshRequest,
+    RegisterRequest,
+    TokenResponse,
+)
 from app.auth.service import AuthService
 from app.database import get_db
 from app.users.schemas import UserCreate, UserPublic
@@ -22,6 +29,14 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthRes
         user=UserPublic.model_validate(user),
         tokens=TokenResponse(access_token=access_token, refresh_token=refresh_token),
     )
+
+
+@router.post("/refresh", response_model=AccessTokenResponse)
+def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> AccessTokenResponse:
+    service = AuthService(db)
+    access_token = service.refresh_access_token(payload.refresh_token)
+    db.commit()
+    return AccessTokenResponse(access_token=access_token)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

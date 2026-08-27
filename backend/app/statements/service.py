@@ -2,6 +2,7 @@
 for a wallet over a period (architecture.md §24). Read-only report over the
 existing ledger — no dedicated table; WalletLedgerEntry.balance_after is the
 source of truth for balances (architecture.md §7)."""
+import base64
 import csv
 import io
 import uuid
@@ -11,6 +12,8 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ValidationError
+from app.exports.models import ExportFormat, ExportJob, ExportType
+from app.exports.repository import ExportJobRepository
 from app.statements.repository import StatementRepository
 from app.statements.schemas import StatementPublic, StatementRequest, StatementTransaction
 from app.transactions.models import LedgerEntryType
@@ -22,6 +25,7 @@ class StatementService:
         self.db = db
         self.repository = StatementRepository(db)
         self.wallets = WalletRepository(db)
+        self.jobs = ExportJobRepository(db)
 
     def generate(self, user_id: uuid.UUID, data: StatementRequest) -> StatementPublic:
         wallet = self.wallets.get_by_id(data.wallet_id)
@@ -79,6 +83,58 @@ class StatementService:
             total_outgoing=total_outgoing,
             transactions=transactions,
         )
+
+    def generate_and_log(
+        self, user_id: uuid.UUID, data: StatementRequest, file_format: ExportFormat
+    ) -> tuple[ExportJob, bytes, str]:
+        """Generate the statement, render it, and log an ExportJob row (same
+        `exports` table business export uses — architecture.md's ExportType
+        has always distinguished STATEMENT from BUSINESS_TRANSACTIONS) so it
+        shows up in every user's statement history, not just business
+        accounts'."""
+        statement = self.generate(user_id, data)
+        if file_format == ExportFormat.PDF:
+            content = self.to_pdf(statement)
+            media_type = "application/pdf"
+            extension = "pdf"
+            stored_content = base64.b64encode(content).decode("ascii")
+        else:
+            content = self.to_csv(statement).encode("utf-8")
+            media_type = "text/csv"
+            extension = "csv"
+            stored_content = content.decode("utf-8")
+
+        job = self.jobs.add(
+            ExportJob(
+                user_id=user_id,
+                type=ExportType.STATEMENT,
+                format=file_format,
+                date_from=data.date_from,
+                date_to=data.date_to,
+                filters={
+                    "wallet_id": str(data.wallet_id),
+                    "transaction_type": data.transaction_type.value if data.transaction_type else None,
+                },
+                row_count=len(statement.transactions),
+                content=stored_content,
+            )
+        )
+        self.db.commit()
+        filename = f"statement_{statement.currency}_{data.date_from}_{data.date_to}.{extension}"
+        return job, content, f"{media_type}|{filename}"
+
+    def list_history(self, user_id: uuid.UUID) -> list[ExportJob]:
+        return [job for job in self.jobs.list_for_user(user_id) if job.type == ExportType.STATEMENT]
+
+    def download_job(self, user_id: uuid.UUID, job_id: uuid.UUID) -> tuple[ExportJob, bytes, str]:
+        job = self.jobs.get_owned_by_id(user_id, job_id)
+        if job is None or job.content is None or job.type != ExportType.STATEMENT:
+            raise NotFoundError("Statement export not found")
+        extension = job.format.value.lower()
+        media_type = "application/pdf" if job.format == ExportFormat.PDF else "text/csv"
+        content = base64.b64decode(job.content) if job.format == ExportFormat.PDF else job.content.encode("utf-8")
+        filename = f"statement_{job.date_from}_{job.date_to}.{extension}"
+        return job, content, f"{media_type}|{filename}"
 
     @staticmethod
     def to_csv(statement: StatementPublic) -> str:

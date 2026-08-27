@@ -1,5 +1,7 @@
 """Credit endpoints, scoped to the authenticated user."""
 import uuid
+from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -7,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import AuditService
 from app.auth.dependencies import get_current_user, require_admin
 from app.core.exceptions import ValidationError
-from app.credit.models import CreditApplicationType
+from app.credit.models import CreditApplicationType, LoanStatus
 from app.credit.schemas import (
     CreditApplicationCreate,
     CreditApplicationDecision,
@@ -23,6 +25,7 @@ from app.credit.schemas import (
     EarlyRepaymentPaymentResult,
     EarlyRepaymentResult,
     EarlyRepaymentSimulationRequest,
+    LoanAutopayUpdate,
     LoanCalculatorRequest,
     LoanCalculatorResult,
     LoanInstallmentPublic,
@@ -310,6 +313,44 @@ def make_regular_installment_payment(
     )
     db.commit()
     return result
+
+
+@router.patch("/loans/{loan_id}/autopay", response_model=LoanPublic)
+def update_loan_autopay(
+    loan_id: uuid.UUID,
+    payload: LoanAutopayUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LoanPublic:
+    service = CreditService(db)
+    loan = service.update_loan_autopay(
+        current_user.id,
+        loan_id,
+        payload.enabled,
+        payload.amount,
+        payload.source_wallet_id,
+        payload.source_card_id,
+        payload.next_run_on,
+    )
+    if payload.enabled and payload.next_run_on == date.today():
+        result = service.make_regular_installment_payment(
+            current_user.id,
+            loan_id,
+            payload.source_wallet_id,
+            payload.source_card_id,
+        )
+        extra_amount = (payload.amount or Decimal("0.00")) - result.amount
+        if extra_amount > Decimal("0.00") and result.loan_status == LoanStatus.ACTIVE:
+            service.make_early_repayment(
+                current_user.id,
+                loan_id,
+                payload.source_wallet_id,
+                extra_amount,
+                payload.source_card_id,
+            )
+        loan = service.get_loan_for_user(current_user.id, loan_id)
+    db.commit()
+    return loan
 
 
 @router.get("/applications/{application_id}", response_model=CreditApplicationPublic)

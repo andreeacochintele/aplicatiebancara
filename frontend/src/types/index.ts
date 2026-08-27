@@ -106,6 +106,7 @@ export interface Wallet {
   id: string;
   user_id: string;
   currency: string;
+  iban: string | null;
   available_balance: string;
   reserved_balance: string;
   is_main: boolean;
@@ -274,6 +275,7 @@ export interface Card {
   status: CardStatus;
   masked_pan: string;
   last_four: string;
+  has_pin: boolean;
   mock_pan: string;
   mock_cvv: string;
   expiration_month: number;
@@ -360,6 +362,12 @@ export interface EarlyRepaymentPaymentResult extends EarlyRepaymentResult {
   loan_status: Loan["status"];
 }
 
+export interface CardSensitiveDetails {
+  card_id: string;
+  mock_pan: string;
+  mock_cvv: string;
+}
+
 export interface RegularInstallmentPaymentResult {
   loan_id: string;
   installment_id: string;
@@ -371,6 +379,14 @@ export interface RegularInstallmentPaymentResult {
   remaining_principal: string;
   next_payment_date: string | null;
   loan_status: Loan["status"];
+}
+
+export interface LoanAutopayUpdate {
+  enabled: boolean;
+  amount?: string | null;
+  source_wallet_id?: string | null;
+  source_card_id?: string | null;
+  next_run_on?: string | null;
 }
 
 export interface Loan {
@@ -387,6 +403,11 @@ export interface Loan {
   start_date: string;
   maturity_date: string;
   next_payment_date: string;
+  autopay_enabled: boolean;
+  autopay_source_wallet_id: string | null;
+  autopay_source_card_id: string | null;
+  autopay_next_run_on: string | null;
+  autopay_amount: string | null;
   status: "ACTIVE" | "PAID" | "CLOSED" | "DEFAULTED";
   created_at: string;
   closed_at: string | null;

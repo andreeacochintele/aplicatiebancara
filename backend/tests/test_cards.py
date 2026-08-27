@@ -5,7 +5,7 @@ import pytest
 
 from app.cards.models import CardStatus, CardTier, CardType
 from app.cards.repository import CardRepository
-from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate
+from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate, CardPublic
 from app.cards.service import CardService
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.users.schemas import UserCreate
@@ -46,6 +46,40 @@ def test_create_mock_debit_card(db_session, user_with_wallet):
     assert card.mock_pan != card.masked_pan
     assert len(card.mock_cvv) == 3
     assert card.mock_cvv.isdigit()
+
+
+def test_public_card_payload_includes_pin_status(db_session, user_with_wallet):
+    user, wallet = user_with_wallet
+    card = CardService(db_session).create_card(user.id, CardCreate(default_wallet_id=wallet.id))
+    card.has_pin = False
+
+    payload = CardPublic.model_validate(card).model_dump()
+
+    assert payload["has_pin"] is False
+
+
+def test_card_pin_controls_sensitive_details(db_session, user_with_wallet):
+    user, wallet = user_with_wallet
+    service = CardService(db_session)
+    card = service.create_card(user.id, CardCreate(default_wallet_id=wallet.id))
+
+    with pytest.raises(ValidationError):
+        service.reveal_details(user.id, card.id, "1234")
+
+    with pytest.raises(ValidationError):
+        service.update_pin(user.id, card.id, "12a4")
+
+    updated = service.update_pin(user.id, card.id, "1234")
+    assert updated.has_pin is True
+    assert updated.pin_hash != "1234"
+
+    with pytest.raises(ValidationError):
+        service.reveal_details(user.id, card.id, "4321")
+
+    details = service.reveal_details(user.id, card.id, "1234")
+    assert details.card_id == card.id
+    assert details.mock_pan == card.mock_pan
+    assert details.mock_cvv == card.mock_cvv
 
 
 def test_create_debit_card_can_create_new_current_account(db_session, user_with_wallet):

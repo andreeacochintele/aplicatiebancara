@@ -11,6 +11,10 @@ settings = get_settings()
 
 
 def _register(client, email: str = "auth-user@example.com", phone: str = "+40711111111") -> str:
+    return _register_tokens(client, email, phone)["access_token"]
+
+
+def _register_tokens(client, email: str = "auth-user@example.com", phone: str = "+40711111111") -> dict[str, str]:
     response = client.post(
         "/api/v1/auth/register",
         json={
@@ -22,7 +26,7 @@ def _register(client, email: str = "auth-user@example.com", phone: str = "+40711
         },
     )
     assert response.status_code == 201
-    return response.json()["tokens"]["access_token"]
+    return response.json()["tokens"]
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -130,6 +134,75 @@ def test_token_without_a_sid_claim_is_rejected(client):
     response = client.get("/api/v1/users/me", headers=_headers(legacy_token))
 
     assert response.status_code == 401
+
+
+def test_refresh_issues_a_new_usable_access_token(client):
+    tokens = _register_tokens(client, "auth-refresh@example.com", "+40711111119")
+
+    refresh = client.post("/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+
+    assert refresh.status_code == 200
+    new_access_token = refresh.json()["access_token"]
+    assert new_access_token != tokens["access_token"]
+    response = client.get("/api/v1/users/me", headers=_headers(new_access_token))
+    assert response.status_code == 200
+
+
+def test_refresh_does_not_bump_last_activity_at(client, db_session):
+    tokens = _register_tokens(client, "auth-refresh-idle@example.com", "+40711111120")
+    session = _only_session(db_session)
+    stale_activity = datetime.now(timezone.utc) - timedelta(minutes=2)
+    session.last_activity_at = stale_activity
+    db_session.commit()
+
+    refresh = client.post("/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+
+    assert refresh.status_code == 200
+    db_session.expire(session)
+    assert session.last_activity_at.replace(tzinfo=timezone.utc) == stale_activity
+
+
+def test_refresh_after_idle_timeout_is_rejected_and_expires_the_session(client, db_session):
+    tokens = _register_tokens(client, "auth-refresh-idle-expired@example.com", "+40711111121")
+    session = _only_session(db_session)
+    session.last_activity_at = datetime.now(timezone.utc) - timedelta(
+        minutes=settings.SESSION_INACTIVITY_TIMEOUT_MINUTES + 1
+    )
+    db_session.commit()
+
+    refresh = client.post("/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+
+    assert refresh.status_code == 401
+    db_session.expire(session)
+    assert session.status == SessionStatus.EXPIRED
+
+
+def test_refresh_after_absolute_expiry_is_rejected(client, db_session):
+    tokens = _register_tokens(client, "auth-refresh-absolute-expiry@example.com", "+40711111122")
+    session = _only_session(db_session)
+    session.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db_session.commit()
+
+    refresh = client.post("/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+
+    assert refresh.status_code == 401
+
+
+def test_refresh_after_logout_is_rejected(client):
+    tokens = _register_tokens(client, "auth-refresh-logout@example.com", "+40711111123")
+    client.post("/api/v1/auth/logout", headers=_headers(tokens["access_token"]))
+
+    refresh = client.post("/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+
+    assert refresh.status_code == 401
+
+
+def test_refresh_with_an_access_token_is_rejected(client):
+    tokens = _register_tokens(client, "auth-refresh-wrong-type@example.com", "+40711111124")
+
+    refresh = client.post("/api/v1/auth/refresh", json={"refresh_token": tokens["access_token"]})
+
+    assert refresh.status_code == 401
 
 
 def test_token_with_an_unknown_session_id_is_rejected(client):

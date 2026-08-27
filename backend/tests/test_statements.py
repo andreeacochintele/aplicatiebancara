@@ -176,3 +176,78 @@ def test_statement_csv_and_pdf_export(db_session, wallets_with_transfer):
 
     pdf_bytes = service.to_pdf(statement)
     assert pdf_bytes[:4] == b"%PDF"
+
+
+def test_generate_and_log_records_statement_history(db_session, wallets_with_transfer):
+    from app.exports.models import ExportFormat, ExportType
+
+    sender, sender_wallet, _receiver, _receiver_wallet = wallets_with_transfer
+    date_from, date_to = _today_range()
+    service = StatementService(db_session)
+    request = StatementRequest(wallet_id=sender_wallet.id, date_from=date_from, date_to=date_to)
+
+    job, content, meta = service.generate_and_log(sender.id, request, ExportFormat.PDF)
+    media_type, filename = meta.split("|", 1)
+
+    assert job.type == ExportType.STATEMENT
+    assert media_type == "application/pdf"
+    assert filename.endswith(".pdf")
+    assert content[:4] == b"%PDF"
+
+    history = service.list_history(sender.id)
+    assert any(entry.id == job.id for entry in history)
+
+    _redl_job, redl_content, _redl_meta = service.download_job(sender.id, job.id)
+    assert redl_content == content
+
+
+def test_statement_history_is_isolated_per_user(db_session, wallets_with_transfer):
+    from app.exports.models import ExportFormat
+
+    sender, sender_wallet, receiver, _receiver_wallet = wallets_with_transfer
+    date_from, date_to = _today_range()
+    service = StatementService(db_session)
+    request = StatementRequest(wallet_id=sender_wallet.id, date_from=date_from, date_to=date_to)
+
+    job, _content, _meta = service.generate_and_log(sender.id, request, ExportFormat.CSV)
+
+    assert service.list_history(receiver.id) == []
+    with pytest.raises(NotFoundError):
+        service.download_job(receiver.id, job.id)
+
+
+def test_statement_export_endpoint_logs_history(client, db_session):
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "stmt-history@example.com",
+            "phone": "+40744444460",
+            "password": "Sup3rSecret!1",
+            "first_name": "Stmt",
+            "last_name": "History",
+        },
+    )
+    token = register.json()["tokens"]["access_token"]
+    wallet = client.post(
+        "/api/v1/wallets", headers={"Authorization": f"Bearer {token}"}, json={"currency": "RON"}
+    )
+    wallet_id = wallet.json()["id"]
+    date_from, date_to = _today_range()
+
+    export = client.get(
+        "/api/v1/statements/export",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"wallet_id": wallet_id, "date_from": str(date_from), "date_to": str(date_to)},
+    )
+    assert export.status_code == 200
+
+    history = client.get("/api/v1/statements/history", headers={"Authorization": f"Bearer {token}"})
+    assert history.status_code == 200
+    assert len(history.json()) == 1
+    job_id = history.json()[0]["id"]
+
+    redownload = client.get(
+        f"/api/v1/statements/history/{job_id}/download", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert redownload.status_code == 200
+    assert redownload.text == export.text

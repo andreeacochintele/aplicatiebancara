@@ -11,8 +11,9 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from app.exports.models import ExportJob
 from app.supabase import is_supabase_session
-from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, WalletLedgerEntry
+from app.transactions.models import LedgerEntryType, Transaction, TransactionCategory, TransactionStatus, WalletLedgerEntry
 from app.wallets.models import Wallet
 
 _ENTRY_TYPES_BY_DIRECTION = {
@@ -103,3 +104,44 @@ class ExportRepository:
         if category_id is not None:
             stmt = stmt.where(Transaction.category_id == category_id)
         return list(self.db.scalars(stmt))
+
+    def get_category_names(self, category_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+        if not category_ids:
+            return {}
+        if is_supabase_session(self.db):
+            joined = ",".join(str(category_id) for category_id in category_ids)
+            categories = self.db.fetch_many(TransactionCategory, {"id": f"in.({joined})"})
+            return {category.id: category.name for category in categories}
+        stmt = select(TransactionCategory).where(TransactionCategory.id.in_(category_ids))
+        return {category.id: category.name for category in self.db.scalars(stmt)}
+
+
+class ExportJobRepository:
+    """History of generated exports — see exports/models.py's ExportJob
+    docstring for how this deviates from architecture.md's async-job shape."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def add(self, job: ExportJob) -> ExportJob:
+        if is_supabase_session(self.db):
+            return self.db.add(job)
+        self.db.add(job)
+        self.db.flush()
+        return job
+
+    def list_for_user(self, user_id: uuid.UUID, limit: int = 50) -> list[ExportJob]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(
+                ExportJob, {"user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": str(limit)}
+            )
+        stmt = (
+            select(ExportJob).where(ExportJob.user_id == user_id).order_by(ExportJob.created_at.desc()).limit(limit)
+        )
+        return list(self.db.scalars(stmt))
+
+    def get_owned_by_id(self, user_id: uuid.UUID, job_id: uuid.UUID) -> ExportJob | None:
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(ExportJob, {"id": f"eq.{job_id}", "user_id": f"eq.{user_id}"})
+        stmt = select(ExportJob).where(ExportJob.id == job_id, ExportJob.user_id == user_id)
+        return self.db.scalar(stmt)

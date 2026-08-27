@@ -1,11 +1,23 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { getMyFullProfile, loginUser, registerUser, type AuthResponse, type AuthTokens } from "../features/auth";
+import { ApiError } from "../api/apiClient";
+import {
+  getMyFullProfile,
+  loginUser,
+  refreshAccessToken,
+  registerUser,
+  type AuthResponse,
+  type AuthTokens,
+} from "../features/auth";
 import type { RegisterPayload, User } from "../types";
 
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const IDLE_WARNING_MS = 30 * 1000;
 const ACTIVITY_EVENTS = ["mousedown", "mousemove", "keydown", "scroll", "touchstart"] as const;
+// Well under the backend's 15-minute access-token lifetime (ACCESS_TOKEN_EXPIRE_MINUTES):
+// without this, an actively-used tab was being force-logged-out the moment the access
+// token's own fixed expiry passed, regardless of how recently the user had clicked.
+const ACCESS_TOKEN_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 interface AuthContextValue {
   user: User | null;
@@ -130,6 +142,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       for (const event of ACTIVITY_EVENTS) window.removeEventListener(event, resetIdleTimer);
     };
   }, [stored, logout]);
+
+  useEffect(() => {
+    if (!stored) return;
+
+    // Deliberately independent of the idle timer above: this keeps the access
+    // token alive for as long as the session itself is valid, regardless of
+    // mouse/keyboard activity. A genuinely idle tab still gets logged out by
+    // the idle timer (client-side) and by the backend's own inactivity check
+    // (server-side) — this refresh call doesn't count as user activity.
+    const interval = setInterval(() => {
+      refreshAccessToken(stored.tokens.refresh_token)
+        .then((response) => {
+          storeAuth({ ...stored, tokens: { ...stored.tokens, access_token: response.access_token } });
+        })
+        .catch((err) => {
+          // Only a real session rejection (expired/revoked/idle-timed-out) should
+          // log the user out here — a network blip should just retry next tick.
+          if (err instanceof ApiError && err.status === 401) {
+            logout();
+          }
+        });
+    }, ACCESS_TOKEN_REFRESH_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [stored, storeAuth, logout]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

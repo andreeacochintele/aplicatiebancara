@@ -5,13 +5,14 @@ import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import jwt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.models import SessionStatus, UserDevice, UserSession
 from app.config import get_settings
 from app.core.exceptions import AuthenticationError
-from app.core.security import create_access_token, create_refresh_token, verify_password
+from app.core.security import create_access_token, create_refresh_token, decode_token, verify_password
 from app.supabase import is_supabase_session
 from app.users.models import User
 from app.users.repository import UserRepository
@@ -23,6 +24,13 @@ settings = get_settings()
 
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _as_aware_utc(value: datetime) -> datetime:
+    """SQLite (used in tests) drops tzinfo on round-trip even for
+    DateTime(timezone=True) columns; Postgres preserves it. Normalize so
+    comparisons against `datetime.now(timezone.utc)` work on both."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 class AuthService:
@@ -62,6 +70,46 @@ class AuthService:
         self.db.add(session)
         self.db.flush()
         return access_token, refresh_token
+
+    def refresh_access_token(self, refresh_token: str) -> str:
+        """Mint a new access token for a still-valid session. Deliberately does
+        NOT touch last_activity_at: this call is driven by the frontend's
+        background timer, not a real user action, so it must not itself
+        reset the 5-minute inactivity window (see get_current_session) —
+        otherwise a genuinely idle tab would stay "active" forever."""
+        try:
+            payload = decode_token(refresh_token)
+        except jwt.PyJWTError as exc:
+            raise AuthenticationError("Invalid or expired refresh token") from exc
+        if payload.get("type") != "refresh":
+            raise AuthenticationError("Invalid token type")
+        try:
+            user_id = uuid.UUID(payload["sub"])
+            session_id = uuid.UUID(payload["sid"])
+        except (KeyError, ValueError) as exc:
+            raise AuthenticationError("Invalid token") from exc
+
+        session = self.db.get(UserSession, session_id)
+        if session is None or session.user_id != user_id or session.token_hash != _hash_token(refresh_token):
+            raise AuthenticationError("Session not found")
+        if session.status != SessionStatus.ACTIVE:
+            raise AuthenticationError("Session is no longer active")
+
+        now = datetime.now(timezone.utc)
+        if _as_aware_utc(session.expires_at) <= now:
+            session.status = SessionStatus.EXPIRED
+            self.db.commit()
+            raise AuthenticationError("Session expired")
+
+        idle_cutoff = _as_aware_utc(session.last_activity_at) + timedelta(
+            minutes=settings.SESSION_INACTIVITY_TIMEOUT_MINUTES
+        )
+        if now > idle_cutoff:
+            session.status = SessionStatus.EXPIRED
+            self.db.commit()
+            raise AuthenticationError("Session expired due to inactivity")
+
+        return create_access_token(str(user_id), str(session_id))
 
     def _get_or_create_default_device(self, user: User) -> UserDevice:
         # A device is only genuinely "new" the first time it's ever seen —

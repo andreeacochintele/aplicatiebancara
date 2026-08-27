@@ -1,12 +1,16 @@
-import { Navigate, type RouteObject } from "react-router-dom";
+import type { RouteObject } from "react-router-dom";
 
+import { HomeRedirect } from "./components/HomeRedirect";
 import { InviteRedirect } from "./components/InviteRedirect";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthLayout } from "./layouts/AuthLayout";
 import { MainLayout } from "./layouts/MainLayout";
 import { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
+import { CreditReviewPage } from "./pages/admin/CreditReviewPage";
+import { FraudReviewPage } from "./pages/admin/FraudReviewPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { AssistantPage } from "./pages/AssistantPage";
+import { BusinessExportPage } from "./pages/BusinessExportPage";
 import { CardsPage } from "./pages/CardsPage";
 import { CreditPage } from "./pages/CreditPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -53,6 +57,7 @@ export const routes: RouteObject[] = [
       { path: "/assistant", element: <AssistantPage /> },
       { path: "/notifications", element: <NotificationsPage /> },
       { path: "/profile", element: <ProfilePage /> },
+      { path: "/business/export", element: <BusinessExportPage /> },
       {
         path: "/admin",
         element: (
@@ -61,8 +66,24 @@ export const routes: RouteObject[] = [
           </ProtectedRoute>
         ),
       },
+      {
+        path: "/admin/credit",
+        element: (
+          <ProtectedRoute requireRole="ADMIN">
+            <CreditReviewPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/admin/fraud",
+        element: (
+          <ProtectedRoute requireRole="ADMIN">
+            <FraudReviewPage />
+          </ProtectedRoute>
+        ),
+      },
     ],
   },
-  { path: "/", element: <Navigate to="/dashboard" replace /> },
-  { path: "*", element: <Navigate to="/dashboard" replace /> },
+  { path: "/", element: <HomeRedirect /> },
+  { path: "*", element: <HomeRedirect /> },
 ];

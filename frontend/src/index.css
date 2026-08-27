@@ -10,10 +10,32 @@
   --color-accent-soft: rgba(139, 127, 232, 0.16);
   --color-positive: #6fcf97;
   --color-warning: #e0a355;
+  --panel-bg: var(--color-surface);
+  --panel-bg-muted: var(--color-surface-raised);
+  --panel-border: var(--color-divider);
+  --panel-text: var(--color-text);
+  --panel-text-muted: var(--color-text-muted);
+  --panel-error: var(--color-warning);
+  --panel-success: var(--color-positive);
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="light"] {
+  --color-bg: #f6f6fb;
+  --color-surface: #ffffff;
+  --color-surface-raised: #fbfbfe;
+  --color-text: #15151f;
+  --color-text-muted: #6c6c82;
+  --color-divider: #ebebf3;
+  --color-accent: #5b5fef;
+  --color-accent-strong: #4548c9;
+  --color-accent-soft: #eef0ff;
+  --color-positive: #1ca063;
+  --color-warning: #b45309;
+  --shadow-sm: 0 1px 2px rgba(20, 20, 31, 0.12);
 }
 
 * {
@@ -25,6 +47,27 @@ body {
   font-family: system-ui, sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
+}
+
+.theme-toggle {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-divider);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent-strong);
 }
 
 /* ---- Shell layout ---- */
@@ -843,6 +886,58 @@ th {
   font-weight: 800;
 }
 
+.admin-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.admin-overview-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.5rem 0.9rem;
+  padding: 1.1rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.admin-overview-card:hover {
+  border-color: var(--color-accent, var(--aurora-accent-dark));
+}
+
+.admin-overview-card__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--color-surface-muted, rgba(127, 127, 127, 0.12));
+  color: var(--color-accent, var(--aurora-accent-dark));
+}
+
+.admin-overview-card__body {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.admin-overview-card__body strong {
+  font-size: 1.05rem;
+  color: var(--color-text);
+}
+
+.admin-overview-card__body span {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.admin-overview-card .tag {
+  grid-column: 2;
+  justify-self: start;
+}
+
 .admin-applications-scroll {
   overflow-x: auto;
   padding-bottom: 0.2rem;
@@ -919,9 +1014,9 @@ th {
   width: 86px;
   min-height: 26px;
   padding: 0;
-  border: 1px solid rgba(100, 116, 139, 0.18);
-  background: #f8fafc;
-  color: #475569;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg-muted);
+  color: var(--panel-text-muted);
   font-size: 0.68rem;
   font-weight: 800;
   line-height: 1;
@@ -935,10 +1030,10 @@ th {
   gap: 0.08rem;
   min-width: 86px;
   padding: 0.32rem 0.48rem;
-  border: 1px solid #dfe4ee;
+  border: 1px solid var(--panel-border);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #050b1f;
+  background: var(--panel-bg-muted);
+  color: var(--panel-text);
 }
 
 .admin-credit-score strong {
@@ -948,7 +1043,7 @@ th {
 }
 
 .admin-credit-score span {
-  color: #64708a;
+  color: var(--panel-text-muted);
   font-size: 0.68rem;
   font-weight: 800;
   line-height: 1.15;
@@ -1027,9 +1122,9 @@ th {
     "actions actions";
   gap: 0.28rem;
   padding: 0.36rem 0.45rem;
-  border: 1px solid rgba(148, 163, 184, 0.28);
+  border: 1px solid var(--panel-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--panel-bg);
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
 }
 
@@ -2433,6 +2528,60 @@ th {
   gap: 0.75rem;
 }
 
+.card-detail-pin {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.58rem;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-bg-muted);
+}
+
+.card-detail-pin label {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+  color: var(--panel-text-muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.card-detail-pin input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0.4rem 0.52rem;
+  border-color: var(--panel-border);
+  background: var(--panel-bg);
+  color: var(--panel-text);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.card-detail-pin__submit {
+  min-height: 34px;
+  padding: 0.42rem 0.65rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.card-detail-pin__submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.card-detail-pin__error {
+  grid-column: 1 / -1;
+  color: var(--panel-error);
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
 .card-panel__actions {
   display: flex;
   flex-wrap: wrap;
@@ -2446,6 +2595,22 @@ th {
   width: 34px;
   height: 34px;
   padding: 0;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
 }
 
 .card-panel__value {
@@ -2540,10 +2705,10 @@ th {
   max-width: 100%;
   overflow: hidden;
   padding: 0.65rem;
-  border: 1px solid #e5e7ef;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
-  background: #ffffff;
-  color: #050b1f;
+  background: var(--panel-bg);
+  color: var(--panel-text);
 }
 
 .credit-card-payment__summary {
@@ -2557,13 +2722,13 @@ th {
   gap: 0.12rem;
   min-width: 0;
   padding: 0.45rem 0.5rem;
-  border: 1px solid #e5e7ef;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
-  background: #f8fafc;
+  background: var(--panel-bg-muted);
 }
 
 .credit-card-payment__summary span {
-  color: #64708a;
+  color: var(--panel-text-muted);
   font-size: 0.7rem;
   font-weight: 800;
 }
@@ -2572,7 +2737,7 @@ th {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #050b1f;
+  color: var(--panel-text);
   font-size: 0.92rem;
   font-weight: 900;
 }
@@ -2587,7 +2752,7 @@ th {
 .credit-card-payment__grid label {
   gap: 0.22rem;
   min-width: 0;
-  color: #4f5b75;
+  color: var(--panel-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -2599,9 +2764,9 @@ th {
   max-width: 100%;
   min-height: 36px;
   padding: 0.42rem 0.55rem;
-  border-color: #dfe4ee;
-  background: #ffffff;
-  color: #050b1f;
+  border-color: var(--panel-border);
+  background: var(--panel-bg);
+  color: var(--panel-text);
   font-size: 0.88rem;
   font-weight: 700;
 }
@@ -2613,7 +2778,7 @@ th {
 }
 
 .credit-card-payment__amount > span {
-  color: #4f5b75;
+  color: var(--panel-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -2631,10 +2796,10 @@ th {
   gap: 0.35rem;
   min-height: 34px;
   padding: 0.38rem 0.5rem;
-  border: 1px solid #dfe4ee;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
-  background: #f8fafc;
-  color: #1f2a44;
+  background: var(--panel-bg-muted);
+  color: var(--panel-text);
   font-size: 0.78rem;
   font-weight: 900;
 }
@@ -2653,10 +2818,10 @@ th {
   display: block;
   min-height: 34px;
   padding: 0.42rem 0.55rem;
-  border: 1px solid #dfe4ee;
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-sm);
-  background: #f8fafc;
-  color: #050b1f;
+  background: var(--panel-bg-muted);
+  color: var(--panel-text);
   font-size: 0.9rem;
   font-weight: 900;
   font-variant-numeric: tabular-nums;
@@ -2666,7 +2831,7 @@ th {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #64708a;
+  color: var(--panel-text-muted);
   font-size: 0.72rem;
   font-weight: 800;
 }
@@ -2685,14 +2850,14 @@ th {
 
 .credit-card-payment__error,
 .credit-card-payment__message {
-  color: #8a3412;
+  color: var(--panel-error);
   font-size: 0.78rem;
   font-weight: 800;
   line-height: 1.35;
 }
 
 .credit-card-payment__message {
-  color: #166534;
+  color: var(--panel-success);
 }
 
 .card-panel__details-icon {
@@ -2717,18 +2882,18 @@ th {
 }
 
 .card-transactions::-webkit-scrollbar-track {
-  background: #eef2f7;
+  background: var(--panel-bg-muted);
   border-radius: 999px;
 }
 
 .card-transactions::-webkit-scrollbar-thumb {
-  background: #aab3c5;
+  background: var(--panel-border);
   border-radius: 999px;
 }
 
 .card-transactions__note {
   padding-bottom: 0.35rem;
-  color: #1f2a44;
+  color: var(--panel-text);
   font-size: 0.78rem;
   font-weight: 800;
   line-height: 1.35;
@@ -2736,9 +2901,9 @@ th {
 
 .card-transactions__empty {
   padding: 0.7rem;
-  border: 1px dashed var(--color-divider);
+  border: 1px dashed var(--panel-border);
   border-radius: var(--radius-sm);
-  color: #1f2a44;
+  color: var(--panel-text);
   font-size: 0.82rem;
   font-weight: 800;
   text-align: center;
@@ -2750,7 +2915,7 @@ th {
   gap: 0.65rem;
   align-items: center;
   padding: 0.65rem 0;
-  border-top: 1px solid var(--color-divider);
+  border-top: 1px solid var(--panel-border);
 }
 
 .card-transaction-row:first-child {
@@ -2781,7 +2946,7 @@ th {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #050b1f;
+  color: var(--panel-text);
   font-size: 0.92rem;
   font-weight: 900;
 }
@@ -3712,6 +3877,57 @@ th {
   padding: 0.42rem 0.8rem;
 }
 
+.loan-payment-progress {
+  display: grid;
+  gap: 0.42rem;
+  padding: 0.65rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--panel-bg-muted);
+}
+
+.loan-payment-progress__top,
+.loan-payment-progress__figures {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.loan-payment-progress__top span,
+.loan-payment-progress__figures span {
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.loan-payment-progress__top strong {
+  color: var(--color-text);
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
+.loan-payment-progress__track {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--panel-border);
+}
+
+.loan-payment-progress__track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
+}
+
+.loan-payment-progress__figures span:last-child {
+  text-align: right;
+}
+
 .early-repayment-card__result {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3745,7 +3961,7 @@ th {
 
 .early-repayment-card__error {
   margin: 0;
-  color: #8a3412;
+  color: var(--panel-error);
   font-size: 0.8rem;
   font-weight: 800;
 }
@@ -3759,7 +3975,7 @@ th {
 }
 
 .early-repayment-card__message {
-  color: #166534;
+  color: var(--panel-success);
 }
 
 .approved-offer-card__figures {

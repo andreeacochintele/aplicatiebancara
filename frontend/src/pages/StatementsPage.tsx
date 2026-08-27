@@ -6,10 +6,32 @@ import type { Statement, Wallet } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
+interface StatementExportJob {
+  id: string;
+  format: "CSV" | "XLSX" | "PDF";
+  date_from: string;
+  date_to: string;
+  status: string;
+  row_count: number;
+  created_at: string;
+}
+
 function todayMinus(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
   return d.toISOString().slice(0, 10);
+}
+
+async function downloadBlob(response: Response, fallbackName: string) {
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = match?.[1] ?? fallbackName;
+  link.click();
+  URL.revokeObjectURL(objectUrl);
 }
 
 export function StatementsPage() {
@@ -19,6 +41,7 @@ export function StatementsPage() {
   const [dateFrom, setDateFrom] = useState(todayMinus(30));
   const [dateTo, setDateTo] = useState(todayMinus(0));
   const [statement, setStatement] = useState<Statement | null>(null);
+  const [history, setHistory] = useState<StatementExportJob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -28,11 +51,23 @@ export function StatementsPage() {
       setWallets(list);
       if (list.length > 0) setWalletId((list.find((w) => w.is_main) ?? list[0]).id);
     });
+    loadHistory();
   }, [accessToken]);
+
+  async function loadHistory() {
+    if (!accessToken) return;
+    try {
+      const jobs = await apiRequest<StatementExportJob[]>("/statements/history", { token: accessToken });
+      setHistory(jobs);
+    } catch {
+      setHistory([]);
+    }
+  }
 
   async function generate() {
     if (!accessToken || !walletId) return;
     setError(null);
+    setStatement(null);
     setBusy(true);
     try {
       const params = new URLSearchParams({ wallet_id: walletId, date_from: dateFrom, date_to: dateTo });
@@ -55,13 +90,20 @@ export function StatementsPage() {
       setError("Export failed");
       return;
     }
-    const blob = await response.blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = `statement_${dateFrom}_${dateTo}.${format}`;
-    link.click();
-    URL.revokeObjectURL(objectUrl);
+    await downloadBlob(response, `statement_${dateFrom}_${dateTo}.${format}`);
+    await loadHistory();
+  }
+
+  async function redownload(job: StatementExportJob) {
+    if (!accessToken) return;
+    const response = await fetch(`${API_BASE_URL}/statements/history/${job.id}/download`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) {
+      setError("Could not re-download this statement");
+      return;
+    }
+    await downloadBlob(response, `statement_${job.date_from}_${job.date_to}.${job.format.toLowerCase()}`);
   }
 
   return (
@@ -80,11 +122,11 @@ export function StatementsPage() {
           </label>
           <label style={{ flex: 1 }}>
             From
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            <input type="date" value={dateFrom} max={dateTo} onChange={(e) => setDateFrom(e.target.value)} />
           </label>
           <label style={{ flex: 1 }}>
             To
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            <input type="date" value={dateTo} min={dateFrom} onChange={(e) => setDateTo(e.target.value)} />
           </label>
         </div>
         <button onClick={generate} disabled={busy || !walletId} style={{ marginTop: "0.75rem" }}>
@@ -157,6 +199,43 @@ export function StatementsPage() {
           </table>
         </div>
       )}
+
+      <div className="tile">
+        <div className="tile__header">
+          <span className="eyebrow">Statement history</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Generated</th>
+              <th>Period</th>
+              <th>Format</th>
+              <th>Rows</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.map((job) => (
+              <tr key={job.id}>
+                <td>{new Date(job.created_at).toLocaleString()}</td>
+                <td>
+                  {job.date_from} &rarr; {job.date_to}
+                </td>
+                <td>{job.format}</td>
+                <td>{job.row_count}</td>
+                <td>
+                  <button onClick={() => redownload(job)}>Download</button>
+                </td>
+              </tr>
+            ))}
+            {history.length === 0 && (
+              <tr>
+                <td colSpan={5}>No statements generated yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
