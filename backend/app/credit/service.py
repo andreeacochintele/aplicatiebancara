@@ -7,7 +7,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy.orm import Session
 
-from app.cards.models import CardStatus, CardTier, CardType
+from app.cards.models import CardStatus, CardTier, CardType, CreditCardAccount
 from app.cards.repository import CardRepository
 from app.cards.schemas import CardCreate
 from app.cards.service import CardService
@@ -49,6 +49,7 @@ from app.credit.schemas import (
     CreditScoreRecalculateRequest,
     LoanCalculatorRequest,
     LoanCalculatorResult,
+    RegularInstallmentPaymentResult,
 )
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.notifications.service import NotificationsService
@@ -389,9 +390,7 @@ class CreditService:
         if loan.outstanding_principal == Decimal("0.00"):
             loan.status = LoanStatus.CLOSED if is_supabase_session(self.db) else LoanStatus.PAID
             loan.closed_at = paid_at
-            for installment in self.repository.list_installments_for_loan(loan.id):
-                if installment.status == LoanInstallmentStatus.PENDING:
-                    installment.status = LoanInstallmentStatus.PAID
+        self._reschedule_pending_installments_after_early_repayment(loan)
 
         self.repository.add_loan_payment(
             LoanPayment(
@@ -413,6 +412,176 @@ class CreditService:
             transaction_id=transaction.id,
             loan_status=loan.status,
         )
+
+    def make_regular_installment_payment(
+        self,
+        user_id: uuid.UUID,
+        loan_id: uuid.UUID,
+        source_wallet_id: uuid.UUID | None,
+        source_card_id: uuid.UUID | None = None,
+    ) -> RegularInstallmentPaymentResult:
+        loan = self.get_loan_for_user(user_id, loan_id)
+        if loan.status != LoanStatus.ACTIVE:
+            raise ValidationError("Only active loans can receive installment payments")
+
+        pending_installments = [
+            installment
+            for installment in self.repository.list_installments_for_loan(loan.id)
+            if installment.status == LoanInstallmentStatus.PENDING
+        ]
+        if not pending_installments:
+            raise ValidationError("This loan has no pending installments")
+        installment = pending_installments[0]
+        amount = _money(installment.payment_amount)
+        source_card, wallet, account = self._validate_loan_payment_source(
+            user_id,
+            loan,
+            amount,
+            source_wallet_id,
+            source_card_id,
+        )
+
+        paid_at = utcnow()
+        transaction = self.transactions.add(
+            Transaction(
+                initiator_user_id=user_id,
+                source_wallet_id=wallet.id if wallet is not None else None,
+                card_id=source_card.id if source_card is not None else None,
+                type=TransactionType.LOAN_PAYMENT,
+                status=TransactionStatus.PROCESSING,
+                amount=amount,
+                currency=loan.currency,
+                description=f"Regular installment for loan {loan.id}",
+                processed_at=paid_at,
+            )
+        )
+
+        if wallet is not None:
+            wallet.available_balance = _money(wallet.available_balance - amount)
+            self.transactions.add_ledger_entry(
+                WalletLedgerEntry(
+                    wallet_id=wallet.id,
+                    transaction_id=transaction.id,
+                    entry_type=LedgerEntryType.DEBIT,
+                    amount=amount,
+                    currency=wallet.currency,
+                    balance_after=wallet.available_balance,
+                )
+            )
+        elif account is not None:
+            account.used_amount = _money(account.used_amount + amount)
+            account.updated_at = paid_at
+
+        installment.status = LoanInstallmentStatus.PAID
+        loan.outstanding_principal = _money(installment.remaining_principal)
+        next_installment = next(
+            (item for item in pending_installments[1:] if item.status == LoanInstallmentStatus.PENDING),
+            None,
+        )
+        if next_installment is None or loan.outstanding_principal == Decimal("0.00"):
+            loan.outstanding_principal = Decimal("0.00")
+            loan.status = LoanStatus.CLOSED if is_supabase_session(self.db) else LoanStatus.PAID
+            loan.closed_at = paid_at
+            next_payment_date = None
+        else:
+            loan.next_payment_date = next_installment.due_date
+            next_payment_date = loan.next_payment_date
+
+        self.repository.add_loan_payment(
+            LoanPayment(
+                loan_id=loan.id,
+                transaction_id=transaction.id,
+                amount=amount,
+                principal_paid=installment.principal_amount,
+                interest_paid=installment.interest_amount,
+                fees_paid=installment.fees_amount,
+                payment_type=LoanPaymentType.REGULAR,
+            )
+        )
+
+        transaction.status = TransactionStatus.COMPLETED
+        transaction.completed_at = paid_at
+        self.db.flush()
+
+        return RegularInstallmentPaymentResult(
+            loan_id=loan.id,
+            installment_id=installment.id,
+            transaction_id=transaction.id,
+            amount=amount,
+            principal_paid=installment.principal_amount,
+            interest_paid=installment.interest_amount,
+            fees_paid=installment.fees_amount,
+            remaining_principal=loan.outstanding_principal,
+            next_payment_date=next_payment_date,
+            loan_status=loan.status,
+        )
+
+    def _validate_loan_payment_source(
+        self,
+        user_id: uuid.UUID,
+        loan: Loan,
+        amount: Decimal,
+        source_wallet_id: uuid.UUID | None,
+        source_card_id: uuid.UUID | None,
+    ) -> tuple[object | None, Wallet | None, CreditCardAccount | None]:
+        source_card = None
+        if source_card_id is not None:
+            source_card = self.cards.get_by_id(source_card_id)
+            if source_card is None or source_card.user_id != user_id:
+                raise NotFoundError("Source card not found")
+            if source_card.status != CardStatus.ACTIVE:
+                raise ValidationError("Source card must be active")
+
+        wallet = self.wallets.get_by_id(source_wallet_id) if source_wallet_id is not None else None
+        account = None
+        if source_card is None or source_card.type != CardType.CREDIT:
+            if wallet is None or wallet.user_id != user_id:
+                raise NotFoundError("Source wallet not found")
+            if wallet.currency != loan.currency:
+                raise ValidationError("Payment source currency must match the loan currency")
+            if wallet.available_balance < amount:
+                raise ConflictError("Insufficient available balance")
+            if source_card is not None:
+                if source_card.type != CardType.DEBIT:
+                    raise ValidationError("Only debit or credit cards can be used as a loan payment card source")
+                if source_card.default_wallet_id != wallet.id:
+                    raise ValidationError("Source debit card must be linked to the selected wallet")
+        else:
+            account = CardService(self.db)._get_or_create_credit_account(source_card)
+            if account.currency != loan.currency:
+                raise ValidationError("Credit card currency must match the loan currency")
+            if account.available_credit < amount:
+                raise ConflictError("Insufficient available credit")
+        return source_card, wallet, account
+
+    def _reschedule_pending_installments_after_early_repayment(self, loan: Loan) -> None:
+        installments = self.repository.list_installments_for_loan(loan.id)
+        pending_installments = [
+            installment for installment in installments if installment.status == LoanInstallmentStatus.PENDING
+        ]
+        if not pending_installments:
+            return
+        if loan.outstanding_principal == Decimal("0.00"):
+            self.repository.delete_installments(pending_installments)
+            return
+
+        revised_schedule = _fixed_payment_payoff_schedule(
+            loan.outstanding_principal,
+            loan.interest_rate,
+            loan.monthly_payment,
+        )
+        for installment, item in zip(pending_installments, revised_schedule):
+            payment_amount, principal_amount, interest_amount, remaining_principal = item
+            installment.payment_amount = payment_amount
+            installment.principal_amount = principal_amount
+            installment.interest_amount = interest_amount
+            installment.fees_amount = Decimal("0.00")
+            installment.remaining_principal = remaining_principal
+            installment.status = LoanInstallmentStatus.PENDING
+
+        self.repository.delete_installments(pending_installments[len(revised_schedule):])
+        if revised_schedule:
+            loan.maturity_date = pending_installments[len(revised_schedule) - 1].due_date
 
     def list_applications(self, user_id: uuid.UUID) -> list[CreditApplication]:
         return self.repository.list_applications_for_user(user_id)
@@ -588,8 +757,8 @@ class CreditService:
         application = self.repository.get_application_by_id(application_id)
         if application is None:
             raise NotFoundError("Credit application not found")
-        if application.status not in {CreditApplicationStatus.PENDING, CreditApplicationStatus.DRAFT}:
-            raise ValidationError("Only draft or pending applications can be decided")
+        if application.status != CreditApplicationStatus.PENDING:
+            raise ValidationError("Only pending applications can be decided")
         if data.status not in {CreditApplicationStatus.APPROVED, CreditApplicationStatus.REJECTED}:
             raise ValidationError("Credit applications can only be approved or rejected")
 
@@ -597,6 +766,13 @@ class CreditService:
             if application.type == CreditApplicationType.PERSONAL_LOAN:
                 if application.loan_product_type is None:
                     raise ValidationError("Loan applications require a product type")
+                rejected_documents = [
+                    document
+                    for document in self._loan_application_documents(application)
+                    if document.status == CreditDocumentStatus.REJECTED
+                ]
+                if rejected_documents:
+                    raise ValidationError("Cannot approve a loan application with rejected supporting documents")
                 loan_product = get_loan_product(application.loan_product_type)
                 application.offered_amount = application.requested_amount
                 application.offered_interest_rate = loan_product.representative_apr
@@ -681,8 +857,8 @@ class CreditService:
         application = self.repository.get_application_by_id(application_id)
         if application is None:
             raise NotFoundError("Credit application not found")
-        if application.status not in {CreditApplicationStatus.PENDING, CreditApplicationStatus.DRAFT}:
-            raise ValidationError("Only draft or pending applications can request more information")
+        if application.status != CreditApplicationStatus.PENDING:
+            raise ValidationError("Only pending applications can request more information")
 
         documents = [
             document
@@ -735,17 +911,22 @@ class CreditService:
             if status == CreditApplicationStatus.APPROVED
             else "Document rejected with loan application."
         )
-        documents = [
-            document
-            for document in self.repository.list_documents()
-            if document.purpose == CreditDocumentPurpose.LOAN_APPLICATION and document.application_id == application.id
-        ]
+        documents = self._loan_application_documents(application)
         for document in documents:
+            if document.status in {CreditDocumentStatus.APPROVED, CreditDocumentStatus.REJECTED}:
+                continue
             document.status = document_status
             document.review_note = review_note
             document.reviewed_by_admin_id = admin_id
             document.reviewed_at = utcnow()
             self.repository.persist_document(document)
+
+    def _loan_application_documents(self, application: CreditApplication) -> list[CreditDocument]:
+        return [
+            document
+            for document in self.repository.list_documents()
+            if document.purpose == CreditDocumentPurpose.LOAN_APPLICATION and document.application_id == application.id
+        ]
 
     def _wallet_balance(self, user_id: uuid.UUID) -> Decimal:
         return sum((wallet.available_balance for wallet in self.wallets.list_for_user(user_id)), Decimal("0"))
@@ -954,26 +1135,35 @@ def _simulate_fixed_payment_payoff(
     annual_interest_rate: Decimal,
     monthly_payment: Decimal,
 ) -> tuple[int, Decimal]:
+    schedule = _fixed_payment_payoff_schedule(principal, annual_interest_rate, monthly_payment)
+    return len(schedule), _money(sum((item[2] for item in schedule), Decimal("0.00")))
+
+
+def _fixed_payment_payoff_schedule(
+    principal: Decimal,
+    annual_interest_rate: Decimal,
+    monthly_payment: Decimal,
+) -> list[tuple[Decimal, Decimal, Decimal, Decimal]]:
     remaining = _money(principal)
     if remaining == 0:
-        return 0, Decimal("0.00")
+        return []
     if monthly_payment <= 0:
         raise ValidationError("Loan monthly payment must be positive")
 
     monthly_rate = annual_interest_rate / Decimal("100") / Decimal("12")
-    total_interest = Decimal("0.00")
-    months = 0
+    schedule: list[tuple[Decimal, Decimal, Decimal, Decimal]] = []
     while remaining > 0:
         interest_amount = _money(remaining * monthly_rate)
-        principal_amount = _money(monthly_payment - interest_amount)
+        payment_amount = monthly_payment
+        principal_amount = _money(payment_amount - interest_amount)
         if principal_amount <= 0:
             raise ValidationError("Monthly payment is too low to reduce principal")
         if principal_amount > remaining:
             principal_amount = remaining
+            payment_amount = _money(principal_amount + interest_amount)
         remaining = _money(remaining - principal_amount)
-        total_interest = _money(total_interest + interest_amount)
-        months += 1
-    return months, total_interest
+        schedule.append((payment_amount, principal_amount, interest_amount, remaining))
+    return schedule
 
 
 def _remaining_interest_for_fixed_payment(

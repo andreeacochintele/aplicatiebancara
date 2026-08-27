@@ -99,6 +99,11 @@ class EarlyRepaymentPaymentRequest(BaseModel):
     source_card_id: uuid.UUID | None = None
 
 
+class RegularInstallmentPaymentRequest(BaseModel):
+    source_wallet_id: uuid.UUID | None = None
+    source_card_id: uuid.UUID | None = None
+
+
 class EarlyRepaymentResult(BaseModel):
     loan_id: uuid.UUID
     currency: str
@@ -116,6 +121,19 @@ class EarlyRepaymentResult(BaseModel):
 
 class EarlyRepaymentPaymentResult(EarlyRepaymentResult):
     transaction_id: uuid.UUID
+    loan_status: LoanStatus
+
+
+class RegularInstallmentPaymentResult(BaseModel):
+    loan_id: uuid.UUID
+    installment_id: uuid.UUID
+    transaction_id: uuid.UUID
+    amount: Decimal
+    principal_paid: Decimal
+    interest_paid: Decimal
+    fees_paid: Decimal
+    remaining_principal: Decimal
+    next_payment_date: date | None
     loan_status: LoanStatus
 
 

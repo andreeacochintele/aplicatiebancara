@@ -360,6 +360,19 @@ export interface EarlyRepaymentPaymentResult extends EarlyRepaymentResult {
   loan_status: Loan["status"];
 }
 
+export interface RegularInstallmentPaymentResult {
+  loan_id: string;
+  installment_id: string;
+  transaction_id: string;
+  amount: string;
+  principal_paid: string;
+  interest_paid: string;
+  fees_paid: string;
+  remaining_principal: string;
+  next_payment_date: string | null;
+  loan_status: Loan["status"];
+}
+
 export interface Loan {
   id: string;
   user_id: string;

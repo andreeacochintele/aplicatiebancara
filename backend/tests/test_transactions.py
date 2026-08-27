@@ -363,6 +363,42 @@ def test_card_payment_rejects_frozen_card(db_session, payer_with_wallet_and_merc
     assert wallet.available_balance == Decimal("500.00")
 
 
+def test_card_payment_rejects_and_marks_expired_card(db_session, payer_with_wallet_and_merchant):
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+    card.expiration_month = 1
+    card.expiration_year = 2000
+
+    with pytest.raises(ValidationError, match="expired"):
+        TransactionService(db_session).create_card_payment(
+            payer.id,
+            CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"), cvv=card.mock_cvv),
+        )
+
+    assert card.status == CardStatus.EXPIRED
+    assert wallet.available_balance == Decimal("500.00")
+
+
+def test_credit_card_payment_rejects_and_marks_expired_card(db_session, payer_with_wallet_and_merchant):
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(
+        payer.id, CardCreate(type=CardType.CREDIT, tier=CardTier.REGULAR)
+    )
+    card.expiration_month = 1
+    card.expiration_year = 2000
+
+    with pytest.raises(ValidationError, match="expired"):
+        TransactionService(db_session).create_card_payment(
+            payer.id,
+            CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("50.00"), cvv=card.mock_cvv),
+        )
+
+    assert card.status == CardStatus.EXPIRED
+    assert wallet.available_balance == Decimal("500.00")
+    assert card.credit_account is not None
+    assert card.credit_account.used_amount == Decimal("0.00")
+
+
 def test_card_payment_rejects_insufficient_balance(db_session, payer_with_wallet_and_merchant):
     payer, wallet, merchant = payer_with_wallet_and_merchant
     card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
