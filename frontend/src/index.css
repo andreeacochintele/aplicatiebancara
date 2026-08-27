@@ -904,7 +904,7 @@ th {
 }
 
 .admin-overview-card:hover {
-  border-color: var(--color-accent, var(--aurora-accent-dark));
+  border-color: var(--color-accent, var(--easyb-accent-dark));
 }
 
 .admin-overview-card__icon {
@@ -914,7 +914,7 @@ th {
   height: 40px;
   border-radius: 10px;
   background: var(--color-surface-muted, rgba(127, 127, 127, 0.12));
-  color: var(--color-accent, var(--aurora-accent-dark));
+  color: var(--color-accent, var(--easyb-accent-dark));
 }
 
 .admin-overview-card__body {
@@ -1708,7 +1708,7 @@ th {
   color: var(--color-text);
 }
 
-.aurora-wallet-history-toggle {
+.easyb-wallet-history-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1723,25 +1723,25 @@ th {
   font-weight: 800;
 }
 
-.aurora-wallet-history-toggle:hover {
+.easyb-wallet-history-toggle:hover {
   border-color: var(--wallet-accent, var(--color-accent));
   background: color-mix(in srgb, var(--wallet-accent, var(--color-accent)) 14%, var(--color-surface));
   color: var(--wallet-accent, var(--color-accent));
 }
 
-.aurora-wallet-history-toggle:focus-visible {
+.easyb-wallet-history-toggle:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--wallet-accent, var(--color-accent)) 35%, transparent);
   outline-offset: 2px;
 }
 
-.aurora-wallet-card__footer {
+.easyb-wallet-card__footer {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 28px;
 }
 
-.aurora-wallet-card__actions {
+.easyb-wallet-card__actions {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4888,9 +4888,9 @@ th {
   margin: 0;
   font-size: 1rem;
   /* No explicit color: inherits var(--color-text) from body normally, and
-     var(--aurora-text) under .aurora-shell (see .app-shell__content in
-     aurora.css) — setting it here directly used to pin it to the dark
-     theme's near-white text color even under the light Aurora theme,
+     var(--easyb-text) under .easyb-shell (see .app-shell__content in
+     easyb.css) — setting it here directly used to pin it to the dark
+     theme's near-white text color even under the light EasyB theme,
      which made this line nearly invisible against the hero's light
      gradient background. */
 }

@@ -6,7 +6,7 @@ import { Sidebar } from "../components/Sidebar";
 
 export function MainLayout() {
   return (
-    <div className="app-shell aurora-shell">
+    <div className="app-shell easyb-shell">
       <Sidebar />
       <div className="app-shell__main">
         <Header />

@@ -200,7 +200,7 @@ def run_supabase_rest() -> None:
             "email": "business@example.com",
             "phone": "+40700000003",
             "password_hash": hash_password(SEED_PASSWORD),
-            "first_name": "Aurora",
+            "first_name": "EasyB",
             "last_name": "Tech SRL",
             "role": UserRole.USER.value,
             "user_type": UserType.BUSINESS.value,
@@ -276,7 +276,7 @@ def run_supabase_rest() -> None:
         ("tx-fuel", user_id, ron_id, None, None, TransactionType.CARD_PAYMENT.value, Decimal("312.00"), "OMV - Fuel"),
         ("tx-shopping", user_id, ron_id, None, None, TransactionType.CARD_PAYMENT.value, Decimal("400.00"), "Nike - Shopping"),
         ("tx-cashback", user_id, None, ron_id, None, TransactionType.CASHBACK.value, Decimal("28.00"), "Cashback - Nike"),
-        ("tx-transfer-business", user_id, ron_id, business_ron_id, business_id, TransactionType.TRANSFER.value, Decimal("500.00"), "Invoice payment - Aurora Tech SRL"),
+        ("tx-transfer-business", user_id, ron_id, business_ron_id, business_id, TransactionType.TRANSFER.value, Decimal("500.00"), "Invoice payment - EasyB Tech SRL"),
     ]
     transaction_rows = [
         {
@@ -543,7 +543,7 @@ def run() -> None:
             email="business@example.com",
             phone="+40700000003",
             password_hash=hash_password(SEED_PASSWORD),
-            first_name="Aurora",
+            first_name="EasyB",
             last_name="Tech SRL",
             role=UserRole.USER,
             user_type=UserType.BUSINESS,
@@ -653,7 +653,7 @@ def run() -> None:
         debit(ron, TransactionType.CARD_PAYMENT, Decimal("312.00"), "OMV - Fuel")
         nike_purchase = debit(ron, TransactionType.CARD_PAYMENT, Decimal("400.00"), "Nike - Shopping")
         credit(ron, TransactionType.CASHBACK, Decimal("28.00"), "Cashback - Nike")
-        transfer(ron, business_ron, business.id, Decimal("500.00"), "Invoice payment - Aurora Tech SRL")
+        transfer(ron, business_ron, business.id, Decimal("500.00"), "Invoice payment - EasyB Tech SRL")
 
         # Merchants + cashback offers. First 5 are architecture.md §11's example
         # line-up; the rest just round out the catalog with more categories

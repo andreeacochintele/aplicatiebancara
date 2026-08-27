@@ -305,7 +305,7 @@ class RewardsService:
 
     @staticmethod
     def _generate_referral_code() -> str:
-        return f"AURORA-{secrets.token_hex(4).upper()}"
+        return f"EASYB-{secrets.token_hex(4).upper()}"
 
     def _account_to_public(self, account: RewardAccount) -> RewardAccountPublic:
         # record_processed()'s 0-point ADJUSTMENT rows exist purely as a

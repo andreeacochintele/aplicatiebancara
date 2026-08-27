@@ -81,7 +81,7 @@ _live_rate_cached_at: datetime | None = None
 def _get_json(url: str) -> dict:
     # Frankfurter sits behind Cloudflare, which 403s the default
     # "Python-urllib/x.y" user agent — send a normal one instead.
-    request = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; AuroraBankingApp/1.0)"})
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; EasyBBankingApp/1.0)"})
     with urlopen(request, timeout=5) as response:
         return json.loads(response.read())
 

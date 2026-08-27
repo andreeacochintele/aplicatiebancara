@@ -35,10 +35,10 @@ const PERIOD_LABEL: Record<NetWorthPeriod, string> = {
 };
 
 const INSIGHT_STYLE: Record<AnalyticsInsight["id"], { bg: string; fg: string; icon: LucideIcon }> = {
-  trend: { bg: "var(--aurora-violet-soft)", fg: "var(--aurora-violet)", icon: TrendingUp },
-  category: { bg: "var(--aurora-accent-soft)", fg: "var(--aurora-accent-dark)", icon: PieChartIcon },
-  budget: { bg: "var(--aurora-green-soft)", fg: "var(--aurora-green)", icon: Target },
-  forecast: { bg: "var(--aurora-pink-soft)", fg: "var(--aurora-pink)", icon: Clock3 },
+  trend: { bg: "var(--easyb-violet-soft)", fg: "var(--easyb-violet)", icon: TrendingUp },
+  category: { bg: "var(--easyb-accent-soft)", fg: "var(--easyb-accent-dark)", icon: PieChartIcon },
+  budget: { bg: "var(--easyb-green-soft)", fg: "var(--easyb-green)", icon: Target },
+  forecast: { bg: "var(--easyb-pink-soft)", fg: "var(--easyb-pink)", icon: Clock3 },
 };
 
 function shortDate(date: string): string {
@@ -48,7 +48,7 @@ function shortDate(date: string): string {
 function NetWorthTrendChart({ history }: { history: NetWorthHistoryResponse }) {
   const data = history.history.map((point) => ({ date: point.date, value: Number(point.value) }));
   if (data.length < 2) {
-    return <p className="aurora-eyebrow light">Not enough history yet to chart this period.</p>;
+    return <p className="easyb-eyebrow light">Not enough history yet to chart this period.</p>;
   }
   const values = data.map((d) => d.value);
   const min = Math.min(...values);
@@ -80,13 +80,13 @@ function NetWorthTrendChart({ history }: { history: NetWorthHistoryResponse }) {
             labelFormatter={(label: string) => label}
             contentStyle={{
               borderRadius: 10,
-              border: "1px solid var(--aurora-border)",
+              border: "1px solid var(--easyb-border)",
               fontSize: 12,
-              background: "var(--aurora-surface)",
-              color: "var(--aurora-text)",
+              background: "var(--easyb-surface)",
+              color: "var(--easyb-text)",
             }}
-            itemStyle={{ color: "var(--aurora-text)" }}
-            labelStyle={{ color: "var(--aurora-text-soft)" }}
+            itemStyle={{ color: "var(--easyb-text)" }}
+            labelStyle={{ color: "var(--easyb-text-soft)" }}
           />
           <Area type="monotone" dataKey="value" stroke="#fff" strokeWidth={2} fill="url(#netWorthFill)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
         </AreaChart>
@@ -101,26 +101,26 @@ function MonthlyTrendChart({ trend }: { trend: MonthlyTrendResponse }) {
     amount: Number(item.total_amount),
   }));
   if (data.length === 0) {
-    return <p className="aurora-tx-meta">No spending history yet.</p>;
+    return <p className="easyb-tx-meta">No spending history yet.</p>;
   }
   return (
     <ResponsiveContainer width="100%" height={180}>
       <LineChart data={data} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
-        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--aurora-text-faint)" }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: "var(--aurora-text-faint)" }} axisLine={false} tickLine={false} width={44} />
+        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--easyb-text-faint)" }} axisLine={false} tickLine={false} />
+        <YAxis tick={{ fontSize: 11, fill: "var(--easyb-text-faint)" }} axisLine={false} tickLine={false} width={44} />
         <Tooltip
           formatter={(value: number) => [`${value.toFixed(2)} ${trend.base_currency}`, "Spending"]}
           contentStyle={{
             borderRadius: 10,
-            border: "1px solid var(--aurora-border)",
+            border: "1px solid var(--easyb-border)",
             fontSize: 12,
-            background: "var(--aurora-surface)",
-            color: "var(--aurora-text)",
+            background: "var(--easyb-surface)",
+            color: "var(--easyb-text)",
           }}
-          itemStyle={{ color: "var(--aurora-text)" }}
-          labelStyle={{ color: "var(--aurora-text-soft)" }}
+          itemStyle={{ color: "var(--easyb-text)" }}
+          labelStyle={{ color: "var(--easyb-text-soft)" }}
         />
-        <Line type="monotone" dataKey="amount" stroke="var(--aurora-accent)" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+        <Line type="monotone" dataKey="amount" stroke="var(--easyb-accent)" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
       </LineChart>
     </ResponsiveContainer>
   );
@@ -129,7 +129,7 @@ function MonthlyTrendChart({ trend }: { trend: MonthlyTrendResponse }) {
 function ForecastChart({ forecast }: { forecast: ForecastResponse }) {
   const data = forecast.projected_series.map((point) => ({ date: point.date, balance: Number(point.projected_balance) }));
   if (data.length < 2) {
-    return <p className="aurora-tx-meta">Not enough days left this month to project a trend.</p>;
+    return <p className="easyb-tx-meta">Not enough days left this month to project a trend.</p>;
   }
   const values = data.map((d) => d.balance);
   const min = Math.min(...values);
@@ -141,25 +141,25 @@ function ForecastChart({ forecast }: { forecast: ForecastResponse }) {
       <AreaChart data={data} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
         <defs>
           <linearGradient id="forecastFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--aurora-accent)" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="var(--aurora-accent)" stopOpacity={0} />
+            <stop offset="0%" stopColor="var(--easyb-accent)" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="var(--easyb-accent)" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: "var(--aurora-text-faint)" }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
+        <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: "var(--easyb-text-faint)" }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
         <YAxis domain={[min - pad, max + pad]} hide />
         <Tooltip
           formatter={(value: number) => [`${value.toFixed(2)} ${forecast.currency}`, "Projected balance"]}
           contentStyle={{
             borderRadius: 10,
-            border: "1px solid var(--aurora-border)",
+            border: "1px solid var(--easyb-border)",
             fontSize: 12,
-            background: "var(--aurora-surface)",
-            color: "var(--aurora-text)",
+            background: "var(--easyb-surface)",
+            color: "var(--easyb-text)",
           }}
-          itemStyle={{ color: "var(--aurora-text)" }}
-          labelStyle={{ color: "var(--aurora-text-soft)" }}
+          itemStyle={{ color: "var(--easyb-text)" }}
+          labelStyle={{ color: "var(--easyb-text-soft)" }}
         />
-        <Area type="monotone" dataKey="balance" stroke="var(--aurora-accent)" strokeWidth={2} fill="url(#forecastFill)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+        <Area type="monotone" dataKey="balance" stroke="var(--easyb-accent)" strokeWidth={2} fill="url(#forecastFill)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -362,8 +362,8 @@ function SavingsMoneyModal({
               marginBottom: "0.75rem",
               padding: "0.6rem 0.75rem",
               borderRadius: "0.6rem",
-              background: "var(--aurora-surface-alt)",
-              border: "1px dashed var(--aurora-border)",
+              background: "var(--easyb-surface-alt)",
+              border: "1px dashed var(--easyb-border)",
             }}
           >
             {quote ? (
@@ -574,16 +574,16 @@ export function AnalyticsPage() {
   }
 
   return (
-    <div className="aurora-page">
-      <div className="aurora-col">
-        <div className="aurora-card aurora-hero">
-          <div className="aurora-hero-blob aurora-blob-1" />
-          <div className="aurora-hero-blob aurora-blob-2" />
-          <div className="aurora-hero-top">
+    <div className="easyb-page">
+      <div className="easyb-col">
+        <div className="easyb-card easyb-hero">
+          <div className="easyb-hero-blob easyb-blob-1" />
+          <div className="easyb-hero-blob easyb-blob-2" />
+          <div className="easyb-hero-top">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-              <div className="aurora-eyebrow light">Net worth</div>
+              <div className="easyb-eyebrow light">Net worth</div>
               <select
-                className="aurora-hero-select"
+                className="easyb-hero-select"
                 value={netWorthPeriod}
                 onChange={(e) => setNetWorthPeriod(e.target.value as NetWorthPeriod)}
               >
@@ -594,11 +594,11 @@ export function AnalyticsPage() {
                 ))}
               </select>
             </div>
-            <div className="aurora-hero-amount">
+            <div className="easyb-hero-amount">
               {netWorth ? `${netWorth.total_available_balance} ${netWorth.base_currency}` : "—"}
             </div>
             {netWorthChangePercent !== null && (
-              <div className="aurora-hero-sub" style={{ color: netWorthChangePercent >= 0 ? "#7ee3ab" : "#ff9b9b" }}>
+              <div className="easyb-hero-sub" style={{ color: netWorthChangePercent >= 0 ? "#7ee3ab" : "#ff9b9b" }}>
                 {netWorthChangePercent >= 0 ? "↑" : "↓"} {Math.abs(netWorthChangePercent).toFixed(1)}% vs {PERIOD_LABEL[netWorthPeriod].toLowerCase()} ago
               </div>
             )}
@@ -606,17 +606,17 @@ export function AnalyticsPage() {
           {netWorthHistory && <NetWorthTrendChart history={netWorthHistory} />}
         </div>
 
-        <div className="aurora-analytics-grid">
-          <div className="aurora-card">
-            <div className="aurora-section-header">
+        <div className="easyb-analytics-grid">
+          <div className="easyb-card">
+            <div className="easyb-section-header">
               <div>
-                <div className="aurora-eyebrow">This period</div>
+                <div className="easyb-eyebrow">This period</div>
                 <h2>Spending overview</h2>
               </div>
             </div>
             {donutData.length > 0 ? (
               <>
-                <div className="aurora-donut-wrap">
+                <div className="easyb-donut-wrap">
                   <ResponsiveContainer width="100%" height={150}>
                     <PieChart>
                       <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={68} paddingAngle={2} stroke="none">
@@ -628,32 +628,32 @@ export function AnalyticsPage() {
                         formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]}
                         contentStyle={{
                           borderRadius: 10,
-                          border: "1px solid var(--aurora-border)",
+                          border: "1px solid var(--easyb-border)",
                           fontSize: 12,
-                          background: "var(--aurora-surface)",
-                          color: "var(--aurora-text)",
+                          background: "var(--easyb-surface)",
+                          color: "var(--easyb-text)",
                         }}
-                        itemStyle={{ color: "var(--aurora-text)" }}
-                        labelStyle={{ color: "var(--aurora-text-soft)" }}
+                        itemStyle={{ color: "var(--easyb-text)" }}
+                        labelStyle={{ color: "var(--easyb-text-soft)" }}
                       />
                     </PieChart>
                   </ResponsiveContainer>
-                  <div className="aurora-donut-center">
-                    <div className="aurora-donut-total">{spendingTotal.toFixed(0)}</div>
-                    <div className="aurora-donut-label">{spendingCurrency ?? ""}</div>
+                  <div className="easyb-donut-center">
+                    <div className="easyb-donut-total">{spendingTotal.toFixed(0)}</div>
+                    <div className="easyb-donut-label">{spendingCurrency ?? ""}</div>
                   </div>
                 </div>
-                <div className="aurora-legend">
+                <div className="easyb-legend">
                   {donutData.map((item) => (
                     <Link
-                      className="aurora-legend-row"
+                      className="easyb-legend-row"
                       to="/transactions"
                       key={item.key}
                       style={{ textDecoration: "none", color: "inherit", cursor: "pointer" }}
                     >
-                      <span className="aurora-legend-dot" style={{ background: item.color }} />
-                      <span className="aurora-legend-name">{item.name}</span>
-                      <span className="aurora-legend-pct">
+                      <span className="easyb-legend-dot" style={{ background: item.color }} />
+                      <span className="easyb-legend-name">{item.name}</span>
+                      <span className="easyb-legend-pct">
                         {spendingTotal > 0 ? Math.round((item.value / spendingTotal) * 100) : 0}%
                       </span>
                     </Link>
@@ -661,20 +661,20 @@ export function AnalyticsPage() {
                 </div>
               </>
             ) : (
-              <p className="aurora-tx-meta">No spending activity for this period.</p>
+              <p className="easyb-tx-meta">No spending activity for this period.</p>
             )}
           </div>
 
-          <div className="aurora-card">
-            <div className="aurora-section-header">
+          <div className="easyb-card">
+            <div className="easyb-section-header">
               <h2>Monthly trend · last 6 months</h2>
             </div>
-            {monthlyTrend ? <MonthlyTrendChart trend={monthlyTrend} /> : <p className="aurora-tx-meta">We need more transaction history to show a trend.</p>}
+            {monthlyTrend ? <MonthlyTrendChart trend={monthlyTrend} /> : <p className="easyb-tx-meta">We need more transaction history to show a trend.</p>}
           </div>
         </div>
 
-        <div className="aurora-card">
-          <div className="aurora-section-header">
+        <div className="easyb-card">
+          <div className="easyb-section-header">
             <h2>Cash-flow forecast</h2>
           </div>
           {forecast ? (
@@ -682,23 +682,23 @@ export function AnalyticsPage() {
               <div className="balance-hero__amount" style={{ fontSize: "1.75rem" }}>
                 {forecast.projected_month_end_balance} {forecast.currency}
               </div>
-              <div className="aurora-tx-meta" style={{ marginBottom: 8 }}>
+              <div className="easyb-tx-meta" style={{ marginBottom: 8 }}>
                 Current balance: {forecast.current_balance} {forecast.currency} · {forecast.days_remaining} days left this month
               </div>
               <ForecastChart forecast={forecast} />
-              <p className="aurora-tx-meta" style={{ marginTop: 8 }}>{forecast.note}</p>
+              <p className="easyb-tx-meta" style={{ marginTop: 8 }}>{forecast.note}</p>
             </>
           ) : (
-            <p className="aurora-tx-meta">No forecast available yet.</p>
+            <p className="easyb-tx-meta">No forecast available yet.</p>
           )}
         </div>
 
-        <div className="aurora-card" id="analytics-savings-goals">
-          <div className="aurora-section-header">
+        <div className="easyb-card" id="analytics-savings-goals">
+          <div className="easyb-section-header">
             <h2>Savings goals</h2>
             <button
               type="button"
-              className="aurora-link-btn"
+              className="easyb-link-btn"
               onClick={() => setGoalFormOpen((open) => !open)}
               style={{ background: "none", marginLeft: "auto" }}
             >
@@ -713,13 +713,13 @@ export function AnalyticsPage() {
                     {goal.name}
                     {goal.status === "COMPLETED" && (
                       <span
-                        className="aurora-chip aurora-chip-green"
+                        className="easyb-chip easyb-chip-green"
                         style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}
                       >
                         <CheckCircle2 size={12} strokeWidth={2.4} /> Completed
                       </span>
                     )}
-                    {goal.status === "WITHDRAWN" && <span className="aurora-chip aurora-chip-neutral">Withdrawn</span>}
+                    {goal.status === "WITHDRAWN" && <span className="easyb-chip easyb-chip-neutral">Withdrawn</span>}
                   </span>
                   <span className="goal-card__amount">
                     {goal.current_amount} / {goal.target_amount} {goal.currency}
@@ -732,9 +732,9 @@ export function AnalyticsPage() {
                       width: `${Math.min(goal.percent_complete, 100)}%`,
                       background:
                         goal.status === "COMPLETED"
-                          ? "var(--aurora-green)"
+                          ? "var(--easyb-green)"
                           : goal.status === "WITHDRAWN"
-                            ? "var(--aurora-text-faint)"
+                            ? "var(--easyb-text-faint)"
                             : undefined,
                     }}
                   />
@@ -769,13 +769,13 @@ export function AnalyticsPage() {
               </div>
             ))
           ) : (
-            <p className="aurora-tx-meta">No savings goals yet.</p>
+            <p className="easyb-tx-meta">No savings goals yet.</p>
           )}
 
           {goalFormOpen && (
-            <form className="aurora-inline-form" onSubmit={submitGoal}>
+            <form className="easyb-inline-form" onSubmit={submitGoal}>
               {goalError && <p className="status-line status-line--error">{goalError}</p>}
-              <div className="aurora-inline-form-row">
+              <div className="easyb-inline-form-row">
                 <label>
                   Name
                   <input value={goalName} onChange={(e) => setGoalName(e.target.value)} placeholder="e.g. Emergency fund" required />
@@ -785,7 +785,7 @@ export function AnalyticsPage() {
                   <input type="number" min="1" step="0.01" value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} required />
                 </label>
               </div>
-              <div className="aurora-inline-form-row">
+              <div className="easyb-inline-form-row">
                 <label>
                   Currency
                   <select value={goalCurrency} onChange={(e) => setGoalCurrency(e.target.value)}>
@@ -814,9 +814,9 @@ export function AnalyticsPage() {
         </div>
       </div>
 
-      <div className="aurora-col">
-        <div className="aurora-card">
-          <div className="aurora-section-header">
+      <div className="easyb-col">
+        <div className="easyb-card">
+          <div className="easyb-section-header">
             <h2>Insights</h2>
           </div>
           {insights.length > 0 ? (
@@ -824,14 +824,14 @@ export function AnalyticsPage() {
               const style = INSIGHT_STYLE[insight.id];
               const Icon = style.icon;
               return (
-                <div className="aurora-insight-row" key={insight.id}>
-                  <span className="aurora-insight-icon" style={{ background: style.bg, color: style.fg }}>
+                <div className="easyb-insight-row" key={insight.id}>
+                  <span className="easyb-insight-icon" style={{ background: style.bg, color: style.fg }}>
                     <Icon size={16} />
                   </span>
                   <div>
-                    <div className="aurora-insight-text">{insight.message}</div>
+                    <div className="easyb-insight-text">{insight.message}</div>
                     {insight.ctaTo && (
-                      <Link className="aurora-link-btn" to={insight.ctaTo} style={{ fontSize: 12, marginTop: 4 }}>
+                      <Link className="easyb-link-btn" to={insight.ctaTo} style={{ fontSize: 12, marginTop: 4 }}>
                         {insight.ctaLabel}
                       </Link>
                     )}
@@ -840,13 +840,13 @@ export function AnalyticsPage() {
               );
             })
           ) : (
-            <p className="aurora-tx-meta">Not enough activity yet to generate insights.</p>
+            <p className="easyb-tx-meta">Not enough activity yet to generate insights.</p>
           )}
         </div>
 
-        <div className="aurora-card">
-          <div className="aurora-section-header">
-            <span className="aurora-eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+        <div className="easyb-card">
+          <div className="easyb-section-header">
+            <span className="easyb-eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
               <Sparkles size={14} strokeWidth={2.2} />
               Spending recommendations
             </span>
@@ -862,20 +862,20 @@ export function AnalyticsPage() {
             </button>
           </div>
           {aiInsights === null ? (
-            <p className="aurora-tx-meta">Checking your spending…</p>
+            <p className="easyb-tx-meta">Checking your spending…</p>
           ) : aiInsights.length > 0 ? (
             aiInsights.map((insight) => (
-              <div className="aurora-insight-row" key={insight.id}>
+              <div className="easyb-insight-row" key={insight.id}>
                 <span
-                  className="aurora-insight-icon"
-                  style={{ background: "var(--aurora-violet-soft)", color: "var(--aurora-violet)" }}
+                  className="easyb-insight-icon"
+                  style={{ background: "var(--easyb-violet-soft)", color: "var(--easyb-violet)" }}
                 >
                   <Sparkles size={16} />
                 </span>
                 <div style={{ flex: 1 }}>
-                  <div className="aurora-insight-text">{insight.message}</div>
+                  <div className="easyb-insight-text">{insight.message}</div>
                   {insight.category && (
-                    <span className="aurora-chip aurora-chip-violet" style={{ marginTop: "0.35rem" }}>
+                    <span className="easyb-chip easyb-chip-violet" style={{ marginTop: "0.35rem" }}>
                       {insight.category}
                       {insight.currency ? ` · ${insight.currency}` : ""}
                     </span>
@@ -893,11 +893,11 @@ export function AnalyticsPage() {
               </div>
             ))
           ) : (
-            <p className="aurora-tx-meta">No spending recommendations right now.</p>
+            <p className="easyb-tx-meta">No spending recommendations right now.</p>
           )}
         </div>
 
-        <div className="aurora-card aurora-savings-cta">
+        <div className="easyb-card easyb-savings-cta">
           <PiggyBank size={22} style={{ marginBottom: 8 }} />
           <h2>Set a savings goal</h2>
           <p>Create a goal and track your progress automatically.</p>

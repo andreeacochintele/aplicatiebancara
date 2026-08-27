@@ -18,13 +18,13 @@ const QUICK_ACTIONS: { to: string; label: string; sub: string; icon: LucideIcon 
 ];
 
 const STATUS_CHIP: Record<string, string> = {
-  COMPLETED: "aurora-chip-green",
-  PENDING_REVIEW: "aurora-chip-violet",
-  PROCESSING: "aurora-chip-violet",
-  CREATED: "aurora-chip-neutral",
-  FAILED: "aurora-chip-red",
-  REJECTED: "aurora-chip-red",
-  CANCELLED: "aurora-chip-red",
+  COMPLETED: "easyb-chip-green",
+  PENDING_REVIEW: "easyb-chip-violet",
+  PROCESSING: "easyb-chip-violet",
+  CREATED: "easyb-chip-neutral",
+  FAILED: "easyb-chip-red",
+  REJECTED: "easyb-chip-red",
+  CANCELLED: "easyb-chip-red",
 };
 
 function hueFromString(value: string): number {
@@ -126,16 +126,16 @@ export function DashboardPage() {
       : `${mainWallet?.currency ?? netWorth.base_currency} wallet balance`;
 
   return (
-    <div className="aurora-page">
-      <div className="aurora-col">
-        <div className="aurora-card aurora-hero">
-          <div className="aurora-hero-blob aurora-blob-1" />
-          <div className="aurora-hero-blob aurora-blob-2" />
-          <div className="aurora-hero-top">
-            <div className="aurora-eyebrow light">{heroLabel}</div>
-            <div className="aurora-hero-amount">
+    <div className="easyb-page">
+      <div className="easyb-col">
+        <div className="easyb-card easyb-hero">
+          <div className="easyb-hero-blob easyb-blob-1" />
+          <div className="easyb-hero-blob easyb-blob-2" />
+          <div className="easyb-hero-top">
+            <div className="easyb-eyebrow light">{heroLabel}</div>
+            <div className="easyb-hero-amount">
               {hidden ? "••••••" : (heroAmount ?? "—")}
-              <button className="aurora-icon-btn" onClick={() => setHidden((h) => !h)} aria-label="Toggle balance visibility">
+              <button className="easyb-icon-btn" onClick={() => setHidden((h) => !h)} aria-label="Toggle balance visibility">
                 {hidden ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
@@ -159,7 +159,7 @@ export function DashboardPage() {
               </button>
             )}
           </div>
-          <div className="aurora-hero-wallets">
+          <div className="easyb-hero-wallets">
             {netWorth?.wallets
               .filter((wallet) => wallet.is_main || Number(wallet.available_balance) !== 0)
               .map((wallet) => (
@@ -184,7 +184,7 @@ export function DashboardPage() {
                   cursor: wallet.is_main || settingMainId ? "default" : "pointer",
                 }}
               >
-                <span className="aurora-hero-wallet-code">
+                <span className="easyb-hero-wallet-code">
                   {wallet.currency}
                   {wallet.is_main ? " · main" : ""}
                 </span>
@@ -194,47 +194,47 @@ export function DashboardPage() {
           </div>
         </div>
 
-        <div className="aurora-quick-actions">
+        <div className="easyb-quick-actions">
           {QUICK_ACTIONS.map((action) => (
-            <Link className="aurora-quick-action" to={action.to} key={action.to}>
-              <span className="aurora-quick-icon">
+            <Link className="easyb-quick-action" to={action.to} key={action.to}>
+              <span className="easyb-quick-icon">
                 <action.icon size={18} />
               </span>
-              <span className="aurora-quick-label">{action.label}</span>
-              <span className="aurora-quick-sub">{action.sub}</span>
+              <span className="easyb-quick-label">{action.label}</span>
+              <span className="easyb-quick-sub">{action.sub}</span>
             </Link>
           ))}
         </div>
 
-        <div className="aurora-card">
-          <div className="aurora-section-header">
+        <div className="easyb-card">
+          <div className="easyb-section-header">
             <h2>Recent transactions</h2>
-            <Link className="aurora-link-btn" to="/transactions">
+            <Link className="easyb-link-btn" to="/transactions">
               View all <ChevronRight size={15} />
             </Link>
           </div>
-          <div className="aurora-tx-list">
+          <div className="easyb-tx-list">
             {recentTransactions.map((transaction) => {
               const { sign, text } = formatAmount(transaction, userWalletIds);
               const typeLabel = formatTransactionType(transaction, userWalletIds);
               return (
-                <div className="aurora-tx-row" key={transaction.id}>
-                  <div className="aurora-tx-left">
-                    <span className="aurora-cat-dot" style={{ background: colorForType(transaction.type) }}>
+                <div className="easyb-tx-row" key={transaction.id}>
+                  <div className="easyb-tx-left">
+                    <span className="easyb-cat-dot" style={{ background: colorForType(transaction.type) }}>
                       {sign === "+" ? <ArrowDownRight size={15} /> : <ArrowUpRight size={15} />}
                     </span>
                     <div>
-                      <div className="aurora-tx-name">{transaction.description ?? transaction.type}</div>
-                      <div className="aurora-tx-meta">
+                      <div className="easyb-tx-name">{transaction.description ?? transaction.type}</div>
+                      <div className="easyb-tx-meta">
                         {new Date(transaction.created_at).toLocaleDateString()} · {typeLabel}
                       </div>
                     </div>
                   </div>
-                  <div className="aurora-tx-right">
-                    <span className={`aurora-chip ${STATUS_CHIP[transaction.status] ?? "aurora-chip-neutral"}`}>
+                  <div className="easyb-tx-right">
+                    <span className={`easyb-chip ${STATUS_CHIP[transaction.status] ?? "easyb-chip-neutral"}`}>
                       {transaction.status}
                     </span>
-                    <span className={`aurora-tx-amount ${sign === "+" ? "up" : ""}`}>
+                    <span className={`easyb-tx-amount ${sign === "+" ? "up" : ""}`}>
                       {sign}
                       {text}
                     </span>
@@ -242,22 +242,22 @@ export function DashboardPage() {
                 </div>
               );
             })}
-            {recentTransactions.length === 0 && <p className="aurora-tx-meta">No transactions yet.</p>}
+            {recentTransactions.length === 0 && <p className="easyb-tx-meta">No transactions yet.</p>}
           </div>
         </div>
       </div>
 
-      <div className="aurora-col">
-        <div className="aurora-card">
-          <div className="aurora-section-header">
+      <div className="easyb-col">
+        <div className="easyb-card">
+          <div className="easyb-section-header">
             <div>
-              <div className="aurora-eyebrow">This period</div>
+              <div className="easyb-eyebrow">This period</div>
               <h2>Spending by type</h2>
             </div>
           </div>
           {donutData.length > 0 ? (
             <>
-              <div className="aurora-donut-wrap">
+              <div className="easyb-donut-wrap">
                 <ResponsiveContainer width="100%" height={150}>
                   <PieChart>
                     <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={68} paddingAngle={2} stroke="none">
@@ -265,20 +265,20 @@ export function DashboardPage() {
                         <Cell key={item.key} fill={item.color} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]} contentStyle={{ borderRadius: 10, border: "1px solid var(--aurora-border)", fontSize: 12 }} />
+                    <Tooltip formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]} contentStyle={{ borderRadius: 10, border: "1px solid var(--easyb-border)", fontSize: 12 }} />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="aurora-donut-center">
-                  <div className="aurora-donut-total">{spendingTotal.toFixed(0)}</div>
-                  <div className="aurora-donut-label">{spendingCurrency ?? ""}</div>
+                <div className="easyb-donut-center">
+                  <div className="easyb-donut-total">{spendingTotal.toFixed(0)}</div>
+                  <div className="easyb-donut-label">{spendingCurrency ?? ""}</div>
                 </div>
               </div>
-              <div className="aurora-legend">
+              <div className="easyb-legend">
                 {donutData.map((item) => (
-                  <div className="aurora-legend-row" key={item.key}>
-                    <span className="aurora-legend-dot" style={{ background: item.color }} />
-                    <span className="aurora-legend-name">{item.name.toLowerCase().replaceAll("_", " ")}</span>
-                    <span className="aurora-legend-pct">
+                  <div className="easyb-legend-row" key={item.key}>
+                    <span className="easyb-legend-dot" style={{ background: item.color }} />
+                    <span className="easyb-legend-name">{item.name.toLowerCase().replaceAll("_", " ")}</span>
+                    <span className="easyb-legend-pct">
                       {spendingTotal > 0 ? Math.round((item.value / spendingTotal) * 100) : 0}%
                     </span>
                   </div>
@@ -286,25 +286,25 @@ export function DashboardPage() {
               </div>
             </>
           ) : (
-            <p className="aurora-tx-meta">No completed transactions this period yet.</p>
+            <p className="easyb-tx-meta">No completed transactions this period yet.</p>
           )}
         </div>
 
         {creditScore && (
-          <div className="aurora-card">
-            <div className="aurora-section-header">
+          <div className="easyb-card">
+            <div className="easyb-section-header">
               <h2>Credit score</h2>
             </div>
-            <div className="aurora-score-wrap">
-              <div className="aurora-ring" style={{ background: `conic-gradient(var(--aurora-accent) ${scorePercent * 3.6}deg, var(--aurora-border) 0deg)` }}>
-                <div className="aurora-ring-hole">
-                  <div className="aurora-score-num">{creditScore.score}</div>
-                  <div className="aurora-score-tag">{creditScore.band.replaceAll("_", " ")}</div>
+            <div className="easyb-score-wrap">
+              <div className="easyb-ring" style={{ background: `conic-gradient(var(--easyb-accent) ${scorePercent * 3.6}deg, var(--easyb-border) 0deg)` }}>
+                <div className="easyb-ring-hole">
+                  <div className="easyb-score-num">{creditScore.score}</div>
+                  <div className="easyb-score-tag">{creditScore.band.replaceAll("_", " ")}</div>
                 </div>
               </div>
-              <div className="aurora-score-side">
-                <div className="aurora-score-line">/ 850</div>
-                <Link className="aurora-link-btn" to="/credit">
+              <div className="easyb-score-side">
+                <div className="easyb-score-line">/ 850</div>
+                <Link className="easyb-link-btn" to="/credit">
                   View details <ChevronRight size={14} />
                 </Link>
               </div>
@@ -312,16 +312,16 @@ export function DashboardPage() {
           </div>
         )}
 
-        <div className="aurora-card">
-          <div className="aurora-section-header">
+        <div className="easyb-card">
+          <div className="easyb-section-header">
             <h2>Needs your attention</h2>
           </div>
           {needsAttention.length > 0 ? (
-            <div className="aurora-attn-list">
+            <div className="easyb-attn-list">
               {needsAttention.map((transaction) => (
-                <div className="aurora-attn-row" key={transaction.id}>
-                  <span className="aurora-chip aurora-chip-violet">Review</span>
-                  <span className="aurora-attn-text">
+                <div className="easyb-attn-row" key={transaction.id}>
+                  <span className="easyb-chip easyb-chip-violet">Review</span>
+                  <span className="easyb-attn-text">
                     {transaction.description ?? transaction.type} · {transaction.amount} {transaction.currency} is on
                     hold pending verification.
                   </span>
@@ -329,7 +329,7 @@ export function DashboardPage() {
               ))}
             </div>
           ) : (
-            <p className="aurora-tx-meta">Nothing needs your attention right now.</p>
+            <p className="easyb-tx-meta">Nothing needs your attention right now.</p>
           )}
         </div>
       </div>

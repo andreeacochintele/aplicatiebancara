@@ -63,10 +63,10 @@ export function Sidebar() {
   const isAdmin = user?.role === "ADMIN";
 
   return (
-    <nav className="sidebar aurora-sidebar">
-      <div className="aurora-brand">
-        <BrandMark className="aurora-brand-mark" size={56} />
-        <span className="aurora-brand-name">EasyB</span>
+    <nav className="sidebar easyb-sidebar">
+      <div className="easyb-brand">
+        <BrandMark className="easyb-brand-mark" size={56} />
+        <span className="easyb-brand-name">EasyB</span>
       </div>
       {isAdmin ? (
         <NavGroup label="Operations" items={OPERATIONS_ITEMS} />

@@ -337,7 +337,7 @@ export function OnboardingPage() {
       <section className="onboarding-card">
         <div className="onboarding-card__header">
           <div>
-            <span className="eyebrow">Aurora onboarding</span>
+            <span className="eyebrow">EasyB onboarding</span>
             <h1>Finish setting up your account</h1>
           </div>
           <button type="button" className="button--ghost" onClick={logout}>

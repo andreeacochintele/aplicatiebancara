@@ -50,7 +50,7 @@ class UserService:
             self.notifications.create(
                 user.id,
                 type="SYSTEM",
-                title="Welcome to Aurora",
+                title="Welcome to EasyB",
                 message=f"Hi {user.first_name}, your account is ready. Set up your first wallet to get started.",
             )
         except Exception:

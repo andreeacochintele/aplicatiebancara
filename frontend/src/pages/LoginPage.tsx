@@ -180,7 +180,7 @@ export function LoginPage() {
           <input
             value={referralCode}
             onChange={(e) => setReferralCode(e.target.value)}
-            placeholder="AURORA-XXXXXXXX"
+            placeholder="EASYB-XXXXXXXX"
             maxLength={20}
           />
           <small className="auth-field-hint">Got a friend's code? Enter it and they'll earn 500 points.</small>

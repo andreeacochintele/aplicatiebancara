@@ -37,7 +37,7 @@ def test_referral_code_is_generated_once_and_persists(db_session, seeded_user):
     second = service.get_account(seeded_user.id)
 
     assert first.referral_code is not None
-    assert first.referral_code.startswith("AURORA-")
+    assert first.referral_code.startswith("EASYB-")
     assert first.referral_code == second.referral_code
 
 

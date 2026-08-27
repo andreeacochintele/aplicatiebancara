@@ -1,0 +1,2312 @@
+/*
+ * EasyB theme — shell/dashboard restyle (originally branch:
+ * experiment/aurora-ui-dashboard), scoped under .easyb-shell / .easyb-*
+ * classes. Ships a light palette by default and a dark variant under
+ * [data-theme="dark"], set by ThemeContext to match the light/dark toggle
+ * that also drives the --color-* tokens in index.css.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap");
+
+.easyb-shell {
+  --easyb-bg: #f6f6fb;
+  --easyb-surface: #ffffff;
+  --easyb-surface-alt: #fbfbfe;
+  --easyb-border: #ebebf3;
+  --easyb-text: #15151f;
+  --easyb-text-soft: #6c6c82;
+  --easyb-text-faint: #a5a5b8;
+  --easyb-accent: #5b5fef;
+  --easyb-accent-dark: #4548c9;
+  --easyb-accent-soft: #eef0ff;
+  --easyb-gradient: linear-gradient(135deg, #5b5fef 0%, #9b5de5 55%, #ff6fa5 100%);
+  --easyb-green: #1ca063;
+  --easyb-green-soft: #e5f6ec;
+  --easyb-red: #d8514f;
+  --easyb-red-soft: #fceaea;
+  --easyb-violet: #7a4fe0;
+  --easyb-violet-soft: #f1ecfd;
+  --easyb-pink: #d6488f;
+  --easyb-pink-soft: #fdebf3;
+  --easyb-amber: #a97a00;
+  --easyb-amber-soft: #fff3d6;
+  --panel-bg: var(--easyb-surface);
+  --panel-bg-muted: var(--easyb-surface-alt);
+  --panel-border: var(--easyb-border);
+  --panel-text: var(--easyb-text);
+  --panel-text-muted: var(--easyb-text-soft);
+  --panel-error: var(--easyb-amber);
+  --panel-success: var(--easyb-green);
+  --easyb-radius-lg: 20px;
+  --easyb-radius-md: 14px;
+  --easyb-radius-sm: 10px;
+  --easyb-shadow: 0 1px 2px rgba(20, 20, 31, 0.04), 0 12px 28px -10px rgba(20, 20, 31, 0.12);
+}
+
+[data-theme="dark"] .easyb-shell {
+  --easyb-bg: #0b0e17;
+  --easyb-surface: #141a29;
+  --easyb-surface-alt: #1a2136;
+  --easyb-border: #262f45;
+  --easyb-text: #e6e8ee;
+  --easyb-text-soft: #a7aec2;
+  --easyb-text-faint: #6b7386;
+  --easyb-accent: #8b7fe8;
+  --easyb-accent-dark: #a89ef2;
+  --easyb-accent-soft: rgba(139, 127, 232, 0.16);
+  --easyb-gradient: linear-gradient(135deg, #5b5fef 0%, #9b5de5 55%, #ff6fa5 100%);
+  --easyb-green: #6fcf97;
+  --easyb-green-soft: rgba(111, 207, 151, 0.16);
+  --easyb-red: #e0796f;
+  --easyb-red-soft: rgba(224, 121, 111, 0.16);
+  --easyb-violet: #a89ef2;
+  --easyb-violet-soft: rgba(168, 158, 242, 0.18);
+  --easyb-pink: #ff8fc0;
+  --easyb-pink-soft: rgba(255, 143, 192, 0.16);
+  --easyb-amber: #e0a355;
+  --easyb-amber-soft: rgba(224, 163, 85, 0.16);
+  --easyb-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -10px rgba(0, 0, 0, 0.5);
+}
+
+.easyb-shell h1,
+.easyb-shell h2 {
+  font-family: "Manrope", sans-serif;
+  margin: 0;
+}
+
+/* ---- Sidebar ---- */
+
+.easyb-shell .easyb-sidebar {
+  background: var(--easyb-surface);
+  border-right: 1px solid var(--easyb-border);
+  color: var(--easyb-text-soft);
+  padding: 22px 14px;
+}
+
+.easyb-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px 22px;
+}
+
+.easyb-brand-mark {
+  display: block;
+  width: 46px;
+  height: 46px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.easyb-brand-name {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  color: var(--easyb-text);
+}
+
+.easyb-shell .easyb-sidebar .sidebar__group-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--easyb-text-faint);
+  padding: 0 10px 8px;
+}
+
+.easyb-shell .easyb-sidebar .sidebar__nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--easyb-radius-sm);
+  color: var(--easyb-text-soft);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.easyb-shell .easyb-sidebar .sidebar__nav a:hover {
+  background: var(--easyb-surface-alt);
+  color: var(--easyb-text);
+}
+
+.easyb-shell .easyb-sidebar .sidebar__nav a.active {
+  background: var(--easyb-accent-soft);
+  color: var(--easyb-accent-dark);
+  font-weight: 700;
+}
+
+.easyb-shell .easyb-sidebar .sidebar__nav a::before {
+  display: none;
+}
+
+/* ---- Header ---- */
+
+.easyb-shell .easyb-header {
+  background: var(--easyb-surface);
+  border-bottom: 1px solid var(--easyb-border);
+  padding: 18px 32px;
+  align-items: center;
+  position: relative;
+}
+
+.easyb-shell .easyb-header .header__title {
+  font-family: "Manrope", sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--easyb-text);
+}
+
+.easyb-shell .easyb-header .header__subtitle {
+  color: var(--easyb-text-soft);
+  font-size: 13px;
+}
+
+.easyb-shell .easyb-header .easyb-bell {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--easyb-surface-alt);
+  border: 1px solid var(--easyb-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--easyb-text-soft);
+  flex-shrink: 0;
+}
+
+.easyb-shell .easyb-header .easyb-bell:hover {
+  background: var(--easyb-accent-soft);
+  border-color: var(--easyb-accent);
+}
+
+.easyb-shell .easyb-header .theme-toggle {
+  background: var(--easyb-surface-alt);
+  border: 1px solid var(--easyb-border);
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .easyb-header .theme-toggle:hover {
+  background: var(--easyb-accent-soft);
+  border-color: var(--easyb-accent);
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-shell .notification-panel {
+  right: 136px;
+  background: var(--easyb-surface);
+  border-color: var(--easyb-border);
+  box-shadow: var(--easyb-shadow);
+}
+
+.easyb-shell .notification-panel__header strong,
+.easyb-shell .notification-item strong {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .notification-item span:not(.eyebrow) {
+  color: var(--easyb-text-soft);
+  font-size: 12px;
+}
+
+.easyb-shell .notification-item__actions button {
+  min-width: 92px;
+}
+
+.easyb-shell .notification-badge {
+  background: var(--easyb-gradient);
+  color: #fff;
+}
+
+.easyb-shell .easyb-header .avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--easyb-gradient);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.easyb-shell .easyb-header button {
+  background: var(--easyb-surface-alt);
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-sm);
+  color: var(--easyb-text);
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 8px 14px;
+}
+
+.easyb-shell .easyb-header button:hover {
+  border-color: var(--easyb-accent);
+  color: var(--easyb-accent-dark);
+  background: var(--easyb-accent-soft);
+}
+
+/* ---- Content area ---- */
+
+.easyb-shell .app-shell__content {
+  background: var(--easyb-bg);
+  font-family: "Inter", sans-serif;
+}
+
+.easyb-page {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.easyb-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+@media (max-width: 980px) {
+  .easyb-page {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Card ---- */
+
+.easyb-card {
+  background: var(--easyb-surface);
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-lg);
+  box-shadow: var(--easyb-shadow);
+  padding: 20px 22px;
+  color: var(--easyb-text);
+}
+
+.easyb-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.easyb-section-header h2 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--easyb-text);
+}
+
+.easyb-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--easyb-text-faint);
+  margin-bottom: 2px;
+}
+
+.easyb-eyebrow.light {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.easyb-link-btn {
+  background: none;
+  border: none;
+  color: var(--easyb-accent-dark);
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  text-decoration: none;
+}
+
+/* ---- Wallet cards ---- */
+
+.easyb-wallet-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+/* Fixed column counts (not auto-fill) on purpose: with 1fr tracks, a
+   partial last row keeps each card at its normal width and just leaves
+   the remaining columns empty, instead of stretching to fill the row. */
+@media (max-width: 1180px) {
+  .easyb-wallet-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .easyb-wallet-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.easyb-wallet-card {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(165deg, color-mix(in srgb, var(--wallet-accent, var(--easyb-accent)) 18%, transparent), transparent 68%),
+    var(--easyb-surface);
+  border: 1px solid color-mix(in srgb, var(--wallet-accent, var(--easyb-border)) 40%, var(--easyb-border));
+  border-radius: var(--easyb-radius-md);
+  box-shadow: var(--easyb-shadow);
+  padding: 24px 24px 18px;
+}
+
+.easyb-wallet-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: var(--wallet-accent, var(--easyb-gradient));
+}
+
+.easyb-wallet-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.easyb-wallet-card__code {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  color: var(--wallet-accent, var(--easyb-text));
+}
+
+.easyb-wallet-card__amount {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 32px;
+  letter-spacing: -0.01em;
+  color: var(--easyb-text);
+}
+
+.easyb-wallet-card__sub {
+  font-size: 13px;
+  color: var(--easyb-text-soft);
+  margin-top: 4px;
+  margin-bottom: 16px;
+}
+
+.easyb-wallet-card__iban {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  margin-bottom: 10px;
+  border: 1px dashed var(--easyb-border);
+  border-radius: var(--easyb-radius-sm);
+  background: none;
+  color: var(--easyb-text-faint);
+  font-size: 11.5px;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.02em;
+}
+
+.easyb-wallet-card__iban span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.easyb-wallet-card__iban:hover {
+  border-color: var(--easyb-accent);
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-wallet-card__iban-copied {
+  flex-shrink: 0;
+  color: var(--easyb-green);
+  font-weight: 700;
+}
+
+.easyb-wallet-activity {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 12px;
+  padding: 10px;
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-sm);
+  background: color-mix(in srgb, var(--easyb-surface) 84%, white);
+}
+
+.easyb-wallet-history-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, auto) 18px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 38px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-sm);
+  background: color-mix(in srgb, var(--easyb-surface) 90%, white);
+  color: var(--easyb-accent-dark);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.easyb-wallet-history-toggle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.easyb-wallet-history-toggle:hover {
+  border-color: var(--easyb-accent);
+  background: color-mix(in srgb, var(--easyb-accent) 8%, white);
+}
+
+.easyb-wallet-activity__empty {
+  color: var(--easyb-text-soft);
+  font-size: 12px;
+}
+
+.easyb-wallet-activity__list {
+  display: grid;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+}
+
+.easyb-wallet-activity__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.easyb-wallet-activity__list::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--easyb-border) 70%, white);
+  border-radius: 999px;
+}
+
+.easyb-wallet-activity__list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--easyb-text-soft) 55%, white);
+  border-radius: 999px;
+}
+
+.easyb-wallet-activity__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--easyb-border);
+  font-size: 12px;
+}
+
+.easyb-wallet-activity__row:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.easyb-wallet-activity__row strong,
+.easyb-wallet-activity__row span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.easyb-wallet-activity__row strong {
+  color: var(--easyb-text);
+  font-size: 12px;
+}
+
+.easyb-wallet-activity__row span {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-wallet-activity__amount--in,
+.easyb-wallet-activity__amount--out {
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.easyb-wallet-activity__amount--in {
+  color: var(--easyb-green);
+}
+
+.easyb-wallet-activity__amount--out {
+  color: var(--easyb-red);
+}
+
+.easyb-wallet-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 12px;
+  border-top: 1px solid var(--easyb-border);
+}
+
+/* Scoped to .easyb-wallet-card__footer (two classes) on purpose: these are
+   meant to be flat ghost text-links, but the plain .easyb-wallet-card__set-main
+   / __delete selector (one class) loses on specificity to .easyb-shell button
+   (one class + one element), which repaints them with its gradient/pill button
+   look and no padding to match — that's what was causing the squeezed,
+   overlapping-looking "Set as main" / "Delete" text. */
+.easyb-wallet-card__footer .easyb-wallet-card__set-main {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  color: var(--easyb-accent-dark);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.easyb-wallet-card__footer .easyb-wallet-card__set-main:disabled {
+  color: var(--easyb-text-faint);
+  cursor: default;
+}
+
+.easyb-wallet-card__footer .easyb-wallet-card__delete {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  color: var(--easyb-red);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.easyb-wallet-card__footer .easyb-wallet-card__delete:hover {
+  text-decoration: underline;
+}
+
+.easyb-convert-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+}
+
+.easyb-convert-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.easyb-convert-grid input,
+.easyb-convert-grid select {
+  padding: 9px 10px;
+  font-size: 13.5px;
+}
+
+@media (max-width: 640px) {
+  .easyb-convert-grid { grid-template-columns: 1fr; }
+}
+
+.easyb-exchange-card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--easyb-accent) 5%, transparent), transparent 140px), var(--easyb-surface);
+}
+
+.easyb-rate-banner {
+  margin-top: 4px;
+  margin-bottom: 16px;
+  padding: 14px 16px 6px;
+  background: var(--easyb-accent-soft);
+  border: 1px solid var(--easyb-accent);
+  border-radius: var(--easyb-radius-md);
+}
+
+.easyb-rate-banner__headline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 17px;
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-rate-banner__sub {
+  font-size: 11px;
+  color: var(--easyb-text-soft);
+  margin-top: 2px;
+  margin-bottom: 10px;
+}
+
+.easyb-rate-banner__amount {
+  font-size: 13px;
+  color: var(--easyb-text-soft);
+  padding-top: 10px;
+  margin-top: 4px;
+  border-top: 1px dashed var(--easyb-accent);
+}
+
+.easyb-rate-banner__amount strong {
+  font-family: "Manrope", sans-serif;
+  color: var(--easyb-text);
+}
+
+.easyb-rate-chart {
+  margin: 10px -6px -4px;
+}
+
+.easyb-exchange-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.easyb-exchange-row .easyb-exchange-card {
+  flex: 1 1 340px;
+  max-width: 460px;
+}
+
+@media (max-width: 900px) {
+  .easyb-exchange-row .easyb-exchange-card {
+    max-width: none;
+  }
+}
+
+.easyb-add-account {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.easyb-add-account select {
+  padding: 7px 9px;
+  font-size: 13px;
+}
+
+.easyb-add-account button {
+  white-space: nowrap;
+  padding: 8px 14px;
+  font-size: 12.5px;
+}
+
+.easyb-convert-submit {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--easyb-border);
+}
+
+.easyb-convert-submit button {
+  width: 100%;
+  padding: 11px;
+}
+
+.easyb-quote-card {
+  margin-top: 16px;
+  background: var(--easyb-accent-soft);
+  border: 1px solid var(--easyb-accent);
+  border-radius: var(--easyb-radius-md);
+  padding: 14px 16px;
+}
+
+.easyb-quote-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.easyb-quote-card__close {
+  background: none;
+  border: none;
+  padding: 3px;
+  color: var(--easyb-text-soft);
+  display: flex;
+  border-radius: 50%;
+}
+
+.easyb-quote-card__close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--easyb-text);
+}
+
+.easyb-quote-card__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.easyb-quote-card__actions button {
+  flex: 1;
+}
+
+.easyb-shell button.easyb-btn-ghost {
+  background: transparent;
+  color: var(--easyb-accent-dark);
+  border: 1px solid var(--easyb-border);
+  font-weight: 700;
+}
+
+.easyb-shell button.easyb-btn-ghost:hover {
+  background: var(--easyb-accent-soft);
+  border-color: var(--easyb-accent);
+}
+
+.easyb-quote-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  font-size: 13px;
+  color: var(--easyb-text);
+}
+
+.easyb-quote-row.total {
+  font-weight: 800;
+  font-family: "Manrope", sans-serif;
+}
+
+/* ---- Hero balance card ---- */
+
+.easyb-hero {
+  position: relative;
+  background: linear-gradient(160deg, #17172a 0%, #23234a 55%, #2c2560 100%);
+  color: #fff;
+  overflow: hidden;
+  padding: 26px 26px 22px;
+  border: none;
+}
+
+.easyb-hero-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.55;
+}
+
+.easyb-blob-1 {
+  width: 260px;
+  height: 260px;
+  background: #7c5cf0;
+  top: -110px;
+  right: -60px;
+}
+
+.easyb-blob-2 {
+  width: 220px;
+  height: 220px;
+  background: #ff6fa5;
+  bottom: -100px;
+  left: 20%;
+  opacity: 0.35;
+}
+
+.easyb-hero-top {
+  position: relative;
+  z-index: 1;
+}
+
+.easyb-hero-amount {
+  font-family: "Manrope", sans-serif;
+  font-size: clamp(24px, 7vw, 36px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.easyb-hero-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+  margin-top: 8px;
+}
+
+.easyb-icon-btn {
+  background: rgba(255, 255, 255, 0.12);
+  border: none;
+  color: #fff;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.easyb-hero-wallets {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+  flex-wrap: wrap;
+}
+
+.easyb-hero-wallet {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.easyb-hero-wallet-code {
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+}
+
+/* ---- Quick actions ---- */
+
+.easyb-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .easyb-quick-actions {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.easyb-quick-action {
+  background: var(--easyb-surface);
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-md);
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  box-shadow: var(--easyb-shadow);
+  text-align: left;
+  transition: transform 0.15s;
+  text-decoration: none;
+  color: inherit;
+}
+
+.easyb-quick-action:hover {
+  transform: translateY(-2px);
+}
+
+.easyb-quick-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--easyb-accent-soft);
+  color: var(--easyb-accent-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.easyb-quick-label {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--easyb-text);
+}
+
+.easyb-quick-sub {
+  font-size: 12px;
+  color: var(--easyb-text-soft);
+}
+
+/* ---- Transaction rows ---- */
+
+.easyb-tx-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.easyb-tx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--easyb-border);
+  gap: 12px;
+}
+
+.easyb-tx-row:last-child {
+  border-bottom: none;
+}
+
+.easyb-tx-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.easyb-cat-dot {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.easyb-tx-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--easyb-text);
+}
+
+.easyb-tx-meta {
+  font-size: 12.5px;
+  color: var(--easyb-text-soft);
+}
+
+.easyb-tx-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.easyb-tx-amount {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--easyb-text);
+  white-space: nowrap;
+}
+
+.easyb-tx-amount.up {
+  color: var(--easyb-green);
+}
+
+/* ---- Chips ---- */
+
+.easyb-chip {
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+.easyb-chip-neutral {
+  background: var(--easyb-surface-alt);
+  color: var(--easyb-text-soft);
+  border: 1px solid var(--easyb-border);
+}
+
+.easyb-chip-violet {
+  background: var(--easyb-violet-soft);
+  color: var(--easyb-violet);
+}
+
+.easyb-chip-red {
+  background: var(--easyb-red-soft);
+  color: var(--easyb-red);
+}
+
+.easyb-chip-green {
+  background: var(--easyb-green-soft);
+  color: var(--easyb-green);
+}
+
+/* ---- Donut ---- */
+
+.easyb-donut-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.easyb-donut-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.easyb-donut-total {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--easyb-text);
+}
+
+.easyb-donut-label {
+  font-size: 11px;
+  color: var(--easyb-text-soft);
+}
+
+.easyb-legend {
+  margin-top: 10px;
+}
+
+.easyb-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.easyb-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.easyb-legend-name {
+  flex: 1;
+  color: var(--easyb-text-soft);
+  text-transform: capitalize;
+}
+
+.easyb-legend-pct {
+  font-weight: 700;
+  color: var(--easyb-text);
+}
+
+/* ---- Ring / score ---- */
+
+.easyb-ring {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.easyb-ring-hole {
+  position: absolute;
+  inset: 12px;
+  background: var(--easyb-surface);
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.easyb-score-num {
+  font-family: "Manrope", sans-serif;
+  font-weight: 800;
+  font-size: 24px;
+  color: var(--easyb-text);
+}
+
+.easyb-score-tag {
+  font-size: 11px;
+  color: var(--easyb-green);
+  font-weight: 700;
+}
+
+.easyb-score-wrap {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.easyb-score-side {
+  flex: 1;
+}
+
+.easyb-score-line {
+  font-size: 13px;
+  margin-bottom: 4px;
+  color: var(--easyb-text-soft);
+}
+
+/* ---- Attention list ---- */
+
+.easyb-attn-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.easyb-attn-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.easyb-attn-text {
+  font-size: 13px;
+  color: var(--easyb-text-soft);
+  line-height: 1.4;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reskin: every other page keeps its existing markup/classNames and  */
+/* data logic untouched — these overrides just re-theme the shared    */
+/* component vocabulary (.tile, .tag, forms, tables, etc. from        */
+/* index.css) to EasyB tokens whenever it renders under .easyb-shell. */
+/* ------------------------------------------------------------------ */
+
+.easyb-shell .app-shell__content,
+.easyb-shell .app-shell__content section,
+.easyb-shell .app-shell__content h2 {
+  color: var(--easyb-text);
+}
+
+.easyb-shell form {
+  gap: 0.85rem;
+}
+
+.easyb-shell label {
+  color: var(--easyb-text-soft);
+  font-family: "Inter", sans-serif;
+}
+
+.easyb-shell input,
+.easyb-shell select {
+  background: var(--easyb-surface-alt);
+  color: var(--easyb-text);
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-sm);
+  font-family: "Inter", sans-serif;
+}
+
+.easyb-shell input:focus,
+.easyb-shell select:focus {
+  outline: none;
+  border-color: var(--easyb-accent);
+}
+
+.easyb-shell select option {
+  background: var(--easyb-surface);
+  color: var(--easyb-text);
+}
+
+.easyb-shell button {
+  background: var(--easyb-gradient);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+  border-radius: var(--easyb-radius-sm);
+  font-family: "Inter", sans-serif;
+}
+
+.easyb-shell button:hover {
+  filter: brightness(1.05);
+}
+
+.easyb-shell button:disabled {
+  opacity: 0.55;
+}
+
+.easyb-shell table {
+  color: var(--easyb-text);
+}
+
+.easyb-shell th,
+.easyb-shell td {
+  border-bottom: 1px solid var(--easyb-border);
+}
+
+.easyb-shell th {
+  color: var(--easyb-text-faint);
+}
+
+/* ---- Tiles / cards / tags ---- */
+
+.easyb-shell .tile {
+  background: var(--easyb-surface);
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-lg);
+  box-shadow: var(--easyb-shadow);
+}
+
+.easyb-shell .tile__header a {
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-shell .eyebrow {
+  color: var(--easyb-text-faint);
+}
+
+.easyb-shell .balance-hero__amount {
+  color: var(--easyb-text);
+  font-family: "Manrope", sans-serif;
+}
+
+.easyb-shell .wallet-chip {
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-md);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .wallet-chip__amount,
+.easyb-shell .card-panel__value,
+.easyb-shell .stat-big {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .tag {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.easyb-shell .tag--accent {
+  background: var(--easyb-accent-soft);
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-shell .tag--neutral {
+  background: var(--easyb-surface-alt);
+  color: var(--easyb-text-soft);
+  border: 1px solid var(--easyb-border);
+}
+
+.easyb-shell .tag--outline {
+  background: transparent;
+  color: var(--easyb-text-soft);
+  border: 1px solid var(--easyb-border);
+}
+
+.easyb-shell .tag--warning {
+  background: var(--easyb-amber-soft);
+  color: var(--easyb-amber);
+}
+
+.easyb-shell .category-badge--travel,
+.easyb-shell .category-pill--travel {
+  background: var(--easyb-accent-soft);
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-shell .category-badge--entertainment,
+.easyb-shell .category-pill--entertainment {
+  background: var(--easyb-violet-soft);
+  color: var(--easyb-violet);
+}
+
+.easyb-shell .category-badge--retail,
+.easyb-shell .category-pill--retail {
+  background: var(--easyb-pink-soft);
+  color: var(--easyb-pink);
+}
+
+.easyb-shell .category-badge--fuel,
+.easyb-shell .category-pill--fuel {
+  background: var(--easyb-amber-soft);
+  color: var(--easyb-amber);
+}
+
+.easyb-shell .category-badge--food,
+.easyb-shell .category-pill--food {
+  background: var(--easyb-green-soft);
+  color: var(--easyb-green);
+}
+
+.easyb-shell .category-badge--lounge,
+.easyb-shell .category-pill--lounge {
+  background: var(--easyb-violet-soft);
+  color: var(--easyb-violet);
+}
+
+.easyb-shell .category-badge--insurance,
+.easyb-shell .category-pill--insurance {
+  background: var(--easyb-amber-soft);
+  color: var(--easyb-amber);
+}
+
+.easyb-shell .category-badge--other,
+.easyb-shell .category-pill--other {
+  background: var(--easyb-surface-alt);
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .points-pill {
+  background: var(--easyb-surface-alt);
+  color: var(--easyb-text-soft);
+  border: 1px solid var(--easyb-border);
+}
+
+.easyb-shell .avatar,
+.easyb-shell .beneficiary-avatar {
+  background: var(--easyb-gradient);
+  color: #fff;
+}
+
+.easyb-shell .empty-state,
+.easyb-shell .card-empty {
+  color: var(--easyb-text-soft);
+  border-color: var(--easyb-border);
+}
+
+.easyb-shell .status-line {
+  border-left-color: var(--easyb-accent);
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .status-line--error {
+  border-left-color: var(--easyb-red);
+  color: var(--easyb-red);
+}
+
+/* ---- Profile page ---- */
+
+.easyb-shell .profile-section__toggle {
+  background: transparent;
+  color: var(--easyb-text);
+}
+
+.easyb-shell .profile-section__toggle:hover {
+  filter: none;
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-shell .country-select__list {
+  background: var(--easyb-surface);
+  border-color: var(--easyb-border);
+  box-shadow: var(--easyb-shadow);
+}
+
+.easyb-shell .country-select__list button {
+  background: transparent;
+  color: var(--easyb-text);
+  font-weight: 500;
+}
+
+.easyb-shell .country-select__list button:hover {
+  filter: none;
+  background: var(--easyb-accent-soft);
+}
+
+.easyb-shell .country-select__empty {
+  color: var(--easyb-text-faint);
+}
+
+.easyb-shell .button-link {
+  background: transparent;
+  color: var(--easyb-accent);
+  font-weight: 700;
+  border: none;
+  padding: 0;
+}
+
+.easyb-shell .button-link:hover {
+  filter: none;
+  background: transparent;
+  color: var(--easyb-accent-dark);
+}
+
+/* ---- Payments ---- */
+
+.easyb-shell .payment-tabs {
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-sm);
+  overflow: hidden;
+}
+
+.easyb-shell .payment-tabs__button {
+  background: var(--easyb-surface);
+  color: var(--easyb-text-soft);
+  border-right: 1px solid var(--easyb-border);
+  border-radius: 0;
+}
+
+.easyb-shell .payment-tabs__button.active,
+.easyb-shell .payment-tabs__button:hover {
+  background: var(--easyb-accent-soft);
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-shell .button--ghost,
+.easyb-shell .button--danger {
+  background: transparent;
+  border: 1px solid var(--easyb-border);
+  font-weight: 700;
+}
+
+.easyb-shell .button--ghost {
+  color: var(--easyb-accent-dark);
+  border-color: var(--easyb-accent-soft);
+}
+
+.easyb-shell .button--ghost:hover {
+  background: var(--easyb-accent-soft);
+}
+
+.easyb-shell .button--wide {
+  min-width: 150px;
+  min-height: 38px;
+}
+
+.easyb-shell .split-builder {
+  padding: 16px 18px;
+  border: 1px solid rgba(106, 90, 249, 0.2);
+  background:
+    linear-gradient(135deg, rgba(91, 95, 239, 0.07), rgba(255, 111, 165, 0.05)),
+    var(--easyb-surface);
+  box-shadow: var(--easyb-shadow-sm);
+}
+
+.easyb-shell .split-builder__summary {
+  border-color: var(--easyb-border);
+  background: rgba(91, 95, 239, 0.035);
+}
+
+.easyb-shell .split-participant-row {
+  background: #19213a;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.easyb-shell .split-participant-row label {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.easyb-shell .split-participant-row input {
+  min-height: 36px;
+}
+
+.easyb-shell .split-participant-row__amount {
+  color: #fff;
+}
+
+.easyb-shell .transaction-split-requests {
+  margin-bottom: 18px;
+}
+
+.easyb-shell .transaction-split-request {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(106, 90, 249, 0.22);
+  background:
+    linear-gradient(135deg, rgba(91, 95, 239, 0.12), rgba(255, 111, 165, 0.08)),
+    var(--easyb-surface);
+  box-shadow: var(--easyb-shadow-sm);
+}
+
+.easyb-shell .transaction-split-request strong {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .transaction-split-request span:not(.eyebrow) {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .folder-modal-backdrop {
+  background: rgba(17, 24, 39, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.easyb-shell .folder-modal {
+  box-shadow: var(--easyb-shadow);
+}
+
+.easyb-shell .folder-modal__create {
+  padding: 12px;
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-md);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .folder-choice {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface-alt);
+  color: var(--easyb-text);
+}
+
+.easyb-shell .folder-choice:hover,
+.easyb-shell .folder-choice--active {
+  border-color: var(--easyb-accent);
+  background: var(--easyb-accent-soft);
+  filter: none;
+}
+
+.easyb-shell .folder-choice small,
+.easyb-shell .folder-readonly-card__header span,
+.easyb-shell .folder-transaction-row span {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .folder-readonly-card {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .folder-readonly-card--active {
+  border-color: var(--easyb-accent);
+  background: var(--easyb-accent-soft);
+}
+
+.easyb-shell .folder-split-participant {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .folder-split-participant__amount span {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .folder-transaction-row {
+  border-top-color: var(--easyb-border);
+}
+
+.easyb-shell .button--favorite {
+  background: var(--easyb-accent-soft);
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-shell .card-panel__icon-action {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.easyb-shell .button--danger {
+  color: var(--easyb-red);
+  border-color: var(--easyb-red-soft);
+}
+
+.easyb-shell .button--danger:hover {
+  background: var(--easyb-red-soft);
+}
+
+.easyb-shell .fraud-analysis-block,
+.easyb-shell .fraud-metric-grid div {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .fraud-analysis-block h4,
+.easyb-shell .fraud-rule-list li,
+.easyb-shell .fraud-signal-list li,
+.easyb-shell .fraud-agent-summary strong,
+.easyb-shell .fraud-metric-grid strong {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .fraud-detail-panel__top span,
+.easyb-shell .fraud-rule-list p,
+.easyb-shell .fraud-agent-summary p,
+.easyb-shell .fraud-analysis-empty,
+.easyb-shell .fraud-metric-grid span {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .fraud-agent-summary {
+  border-color: var(--easyb-accent);
+  background: var(--easyb-accent-soft);
+}
+
+.easyb-shell .fraud-rule-list span,
+.easyb-shell .fraud-signal-list--risk li::marker {
+  color: var(--easyb-red);
+}
+
+.easyb-shell .fraud-signal-list--good li::marker {
+  color: var(--easyb-green);
+}
+
+.easyb-shell .fraud-signal-list--gap li::marker {
+  color: var(--easyb-text-faint);
+}
+
+.easyb-shell .fraud-signal-list--check li::marker {
+  color: var(--easyb-accent);
+}
+
+.easyb-shell .beneficiary-row {
+  border-radius: var(--easyb-radius-sm);
+}
+
+.easyb-shell .beneficiary-row--favorite {
+  background: var(--easyb-accent-soft);
+  border-color: var(--easyb-accent);
+}
+
+.easyb-shell .beneficiary-meta span,
+.easyb-shell .quote-row,
+.easyb-shell .quote-expiry,
+.easyb-shell .qr-result__details span,
+.easyb-shell .request-summary span {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .quote-row strong,
+.easyb-shell .qr-result__details code {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .fx-quote-card,
+.easyb-shell .match-card,
+.easyb-shell .request-summary {
+  background: var(--easyb-accent-soft);
+  border-color: var(--easyb-accent);
+  border-radius: var(--easyb-radius-sm);
+}
+
+.easyb-shell .qr-result {
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-sm);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .qr-code {
+  border-color: var(--easyb-surface);
+  background-color: var(--easyb-text);
+}
+
+.easyb-shell .scheduled-row {
+  border-bottom: 1px solid var(--easyb-border);
+}
+
+.easyb-shell .bill-split-table {
+  gap: 0;
+}
+
+.easyb-shell .bill-split-row {
+  min-height: 72px;
+  padding: 12px 2px;
+  border-bottom: 1px solid var(--easyb-border);
+}
+
+.easyb-shell .bill-split-row__main {
+  grid-template-columns: minmax(220px, 1fr) 112px 94px 126px;
+}
+
+.easyb-shell .bill-split-row__main span {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .bill-split-participant {
+  min-width: 340px;
+  min-height: 38px;
+  grid-template-columns: 58px minmax(88px, 1fr) 74px auto;
+  padding: 6px 8px;
+  border-color: rgba(91, 95, 239, 0.55);
+  background:
+    linear-gradient(135deg, rgba(91, 95, 239, 0.08), rgba(255, 111, 165, 0.045)),
+    var(--easyb-surface-alt);
+}
+
+.easyb-shell .bill-split-participant strong {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .bill-split-participant span:not(.eyebrow) {
+  color: var(--easyb-text-soft);
+  font-size: 12px;
+}
+
+.easyb-shell .bill-split-participant button {
+  min-width: 132px;
+  min-height: 34px;
+  padding-block: 6px;
+}
+
+.easyb-shell .scheduled-row--head {
+  color: var(--easyb-text-faint);
+}
+
+.easyb-shell .scheduled-status--active {
+  color: var(--easyb-green);
+  border-color: var(--easyb-green);
+}
+
+.easyb-shell .scheduled-status--paused {
+  color: var(--easyb-amber);
+  border-color: var(--easyb-amber);
+}
+
+.easyb-shell .scheduled-status--cancelled {
+  color: var(--easyb-red);
+  border-color: var(--easyb-red);
+}
+
+/* ---- Cards ---- */
+
+.easyb-shell .card-panel {
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-md);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .goal-card {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .goal-card__name {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .goal-card__amount {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .goal-card__track {
+  background: var(--easyb-border);
+}
+
+.easyb-shell .goal-card__fill {
+  background: var(--easyb-accent);
+}
+
+.easyb-shell .goal-card__percent {
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-shell .goal-card__meta {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .bank-card {
+  border-radius: var(--easyb-radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.easyb-shell .bank-card--debit {
+  background: linear-gradient(135deg, #4a4fe0 0%, #7b84f5 100%);
+}
+
+.easyb-shell .bank-card--credit {
+  background: linear-gradient(135deg, #8a4fe0 0%, #e86fa8 100%);
+}
+
+.easyb-shell .bank-card--debit.bank-card--regular {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(125, 211, 252, 0.3), transparent 32%),
+    linear-gradient(135deg, rgba(24, 128, 118, 0.98), rgba(23, 53, 70, 0.97) 58%, rgba(16, 24, 36, 0.96));
+}
+
+.easyb-shell .bank-card--credit.bank-card--regular {
+  background:
+    radial-gradient(circle at 88% 4%, rgba(196, 181, 253, 0.28), transparent 34%),
+    linear-gradient(135deg, rgba(86, 75, 178, 0.98), rgba(35, 56, 92, 0.97) 58%, rgba(16, 24, 36, 0.96));
+}
+
+.easyb-shell .bank-card--debit.bank-card--gold,
+.easyb-shell .bank-card--credit.bank-card--gold {
+  background:
+    linear-gradient(110deg, rgba(255, 244, 194, 0.18), transparent 24%),
+    linear-gradient(145deg, #20170b 0%, #604015 24%, #c89a3d 52%, #6f4916 78%, #1f180f 100%);
+  border-color: rgba(231, 197, 111, 0.5);
+  box-shadow:
+    0 18px 34px -22px rgba(198, 151, 55, 0.76),
+    inset 0 1px 0 rgba(255, 237, 183, 0.28),
+    inset 0 -1px 0 rgba(34, 24, 11, 0.78);
+}
+
+.easyb-shell .bank-card--debit.bank-card--platinum,
+.easyb-shell .bank-card--credit.bank-card--platinum {
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.13), transparent 24%),
+    linear-gradient(145deg, #0f141b 0%, #2d3440 28%, #6d7683 52%, #2a3038 78%, #0d1117 100%);
+  border-color: rgba(195, 205, 217, 0.4);
+  box-shadow:
+    0 18px 34px -22px rgba(88, 98, 112, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(8, 12, 18, 0.82);
+}
+
+.easyb-shell .bank-card--one-time {
+  background: linear-gradient(135deg, #9598ac 0%, #c3c6d6 100%);
+  opacity: 0.85;
+}
+
+.easyb-shell .bank-card__reveal {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.easyb-shell .bank-card__reveal:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.34);
+}
+
+.easyb-shell .bank-card__lock {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.easyb-shell .bank-card__lock:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.34);
+}
+
+.easyb-shell .selected-tier-overview,
+.easyb-shell .one-time-tier-note,
+.easyb-shell .credit-issue-controls,
+.easyb-shell .card-choice-explainer,
+.easyb-shell .compact-tier-option,
+.easyb-shell .card-tier-option {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .credit-issue-mode button,
+.easyb-shell .credit-tier-limit {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface);
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .credit-issue-mode button.active {
+  border-color: var(--easyb-accent);
+  background: var(--easyb-accent-soft);
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-shell .credit-tier-limit strong {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .credit-tier-limit span {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .compact-tier-option:hover,
+.easyb-shell .compact-tier-option.active,
+.easyb-shell .card-tier-option:hover,
+.easyb-shell .card-tier-option.active {
+  border-color: var(--easyb-accent);
+  background: var(--easyb-accent-soft);
+}
+
+.easyb-shell .selected-tier-overview strong,
+.easyb-shell .one-time-tier-note strong,
+.easyb-shell .card-choice-explainer strong,
+.easyb-shell .compact-tier-option strong,
+.easyb-shell .card-tier__name {
+  color: var(--easyb-text);
+  font-family: "Manrope", sans-serif;
+}
+
+.easyb-shell .selected-tier-overview span:last-child,
+.easyb-shell .one-time-tier-note span:last-child,
+.easyb-shell .card-choice-explainer p,
+.easyb-shell .card-choice-explainer small,
+.easyb-shell .card-panel__subvalue,
+.easyb-shell .compact-tier-option span,
+.easyb-shell .card-tier-option__description {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .card-choice-explainer__chips span,
+.easyb-shell .card-tier__rewards span {
+  border-color: var(--easyb-border);
+  color: var(--easyb-text-soft);
+  background: var(--easyb-surface);
+}
+
+.easyb-shell .checkbox-row input {
+  accent-color: var(--easyb-accent);
+}
+
+/* ---- Credit ---- */
+
+.easyb-shell .credit-score-ring {
+  background:
+    radial-gradient(circle at center, var(--easyb-surface) 0 58%, transparent 59%),
+    conic-gradient(var(--easyb-accent) var(--score-percent), var(--easyb-border) 0);
+}
+
+.easyb-shell .credit-score-ring span {
+  color: var(--easyb-text);
+  font-family: "Manrope", sans-serif;
+}
+
+.easyb-shell .credit-score-ring small,
+.easyb-shell .credit-profile-meta,
+.easyb-shell .income-document-upload__surface span {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .credit-profile-meta strong {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .income-document-upload__surface {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .income-document-upload__surface strong {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .credit-factor,
+.easyb-shell .loan-product-panel,
+.easyb-shell .loan-estimate-card,
+.easyb-shell .down-payment-breakdown,
+.easyb-shell .approved-offers__header,
+.easyb-shell .approved-offer-card {
+  border: 1px solid var(--easyb-border);
+  border-radius: var(--easyb-radius-md);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .loan-estimate-card__figures > div,
+.easyb-shell .loan-estimate-card__schedule > div,
+.easyb-shell .down-payment-breakdown div,
+.easyb-shell .approved-offer-card__main-payment,
+.easyb-shell .approved-offer-card__figures > div,
+.easyb-shell .approved-offer-card__schedule > div {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface);
+}
+
+.easyb-shell .loan-product-panel__summary {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface);
+}
+
+.easyb-shell .loan-product-panel__summary h3,
+.easyb-shell .loan-product-metrics dd,
+.easyb-shell .loan-estimate-card > strong,
+.easyb-shell .loan-estimate-card__figures strong,
+.easyb-shell .loan-estimate-card__schedule strong,
+.easyb-shell .down-payment-breakdown strong,
+.easyb-shell .approved-offers__header strong,
+.easyb-shell .approved-offer-card__summary h3,
+.easyb-shell .approved-offer-card__main-payment strong,
+.easyb-shell .approved-offer-card__figures strong,
+.easyb-shell .approved-offer-card__schedule strong {
+  color: var(--easyb-text);
+  font-family: "Manrope", sans-serif;
+}
+
+.easyb-shell .loan-product-panel__summary p,
+.easyb-shell .loan-product-callouts p,
+.easyb-shell .loan-product-metrics dt,
+.easyb-shell .loan-disclosure-list ul,
+.easyb-shell .loan-estimate-card__figures span,
+.easyb-shell .loan-estimate-card__schedule span,
+.easyb-shell .loan-estimate-card__empty,
+.easyb-shell .down-payment-breakdown span,
+.easyb-shell .approved-offer-card__summary p,
+.easyb-shell .approved-offer-card__main-payment > span:not(.eyebrow),
+.easyb-shell .approved-offer-card__schedule span,
+.easyb-shell .approved-offer-card__schedule small,
+.easyb-shell .approved-offer-card__loading {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .loan-product-metrics div,
+.easyb-shell .loan-product-callouts > div,
+.easyb-shell .down-payment-breakdown div {
+  border-color: var(--easyb-border);
+}
+
+.easyb-shell .early-repayment-card {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface);
+}
+
+.easyb-shell .early-repayment-card__top strong,
+.easyb-shell .loan-payment-progress__top strong,
+.easyb-shell .early-repayment-card__result strong {
+  color: var(--easyb-text);
+  font-family: "Manrope", sans-serif;
+}
+
+.easyb-shell .early-repayment-card__form label,
+.easyb-shell .loan-payment-progress__top span,
+.easyb-shell .loan-payment-progress__figures span,
+.easyb-shell .early-repayment-card__result span,
+.easyb-shell .early-repayment-card__source-balance {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .loan-payment-progress,
+.easyb-shell .early-repayment-card__result div {
+  border-color: var(--easyb-border);
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .loan-payment-progress__track {
+  background: var(--easyb-border);
+}
+
+/* ---- Analytics redesign ---- */
+
+.easyb-analytics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .easyb-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.easyb-hero-select {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+}
+
+.easyb-hero-select option {
+  color: var(--easyb-text);
+}
+
+.easyb-insight-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--easyb-border);
+}
+
+.easyb-insight-row:last-child {
+  border-bottom: none;
+}
+
+.easyb-insight-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.easyb-insight-text {
+  font-size: 13px;
+  color: var(--easyb-text);
+  line-height: 1.4;
+}
+
+.easyb-savings-cta {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #7c5cf0 0%, #d6488f 100%);
+  color: #fff;
+  border: none;
+}
+
+.easyb-savings-cta h2 {
+  font-family: "Manrope", sans-serif;
+  font-size: 16px;
+  margin: 0;
+}
+
+.easyb-savings-cta p {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 6px 0 14px;
+  line-height: 1.4;
+}
+
+.easyb-savings-cta button {
+  background: #fff;
+  color: #7c5cf0;
+}
+
+.easyb-inline-form {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--easyb-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.easyb-inline-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 480px) {
+  .easyb-inline-form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Analytics bar rows ---- */
+
+.easyb-shell .bar-row__label {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .bar-row__track {
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .bar-row__fill {
+  background: var(--easyb-accent);
+}
+
+.easyb-shell .bar-row__value {
+  color: var(--easyb-text-soft);
+}
+
+/* ---- Assistant ---- */
+
+.easyb-shell .assistant-sidebar__new {
+  background: var(--easyb-gradient);
+}
+
+.easyb-shell .assistant-sidebar__new:hover {
+  filter: brightness(1.05);
+}
+
+.easyb-shell .assistant-sidebar__search {
+  background: var(--easyb-surface-alt);
+  border: 1px solid var(--easyb-border);
+  color: var(--easyb-text);
+}
+
+.easyb-shell .assistant-conversation:hover {
+  background: var(--easyb-surface-alt);
+}
+
+.easyb-shell .assistant-conversation--active {
+  background: var(--easyb-accent-soft);
+  border-color: var(--easyb-accent);
+}
+
+/* .easyb-shell button (the app-wide default) fills every plain <button>
+   with the gradient + white bold text — explicitly reset here, otherwise
+   these two buttons (not meant to look like CTAs) inherit it by
+   specificity regardless of source order, which is what made every
+   conversation row and its delete icon render as a solid gradient pill
+   instead of only the active row getting a highlight. */
+.easyb-shell .assistant-conversation__open {
+  background: transparent;
+  color: var(--easyb-text);
+  font-weight: 400;
+}
+
+.easyb-shell .assistant-conversation__icon {
+  background: var(--easyb-gradient);
+}
+
+.easyb-shell .assistant-conversation--active .assistant-conversation__open {
+  color: var(--easyb-accent-dark);
+  font-weight: 700;
+}
+
+.easyb-shell .assistant-conversation__delete {
+  background: transparent;
+  color: var(--easyb-text-faint);
+}
+
+.easyb-shell .assistant-conversation__delete:hover {
+  background: var(--easyb-red-soft);
+  color: var(--easyb-red);
+}
+
+.easyb-shell .assistant-hero {
+  border-color: var(--easyb-border);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--easyb-violet) 12%, transparent),
+      color-mix(in srgb, var(--easyb-pink) 10%, transparent) 70%
+    ),
+    var(--easyb-surface);
+}
+
+.easyb-shell .assistant-hero__avatar {
+  background: var(--easyb-gradient);
+}
+
+.easyb-shell .assistant-hero__subtitle {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .assistant-quick-action {
+  background: var(--easyb-surface-alt);
+  border-color: var(--easyb-border);
+  color: var(--easyb-text);
+}
+
+.easyb-shell .assistant-quick-action:hover {
+  border-color: var(--easyb-accent);
+  color: var(--easyb-accent-dark);
+  background: var(--easyb-accent-soft);
+}
+
+/* Same generic .easyb-shell button reset as the conversation-row buttons
+   above — this is a plain icon button, not a CTA. */
+.easyb-shell .assistant-message__copy {
+  background: transparent;
+  color: var(--easyb-text-faint);
+  font-weight: 400;
+}
+
+.easyb-shell .assistant-message__copy:hover {
+  background: var(--easyb-accent-soft);
+  color: var(--easyb-accent-dark);
+}
+
+.easyb-shell .assistant-bubble--assistant {
+  background: var(--easyb-surface-alt);
+  color: var(--easyb-text);
+  border: 1px solid var(--easyb-border);
+}
+
+.easyb-shell .assistant-bubble--user {
+  background: var(--easyb-accent);
+}
+
+.easyb-shell .assistant-message__agent {
+  color: var(--easyb-text-faint);
+}
+
+.easyb-shell .assistant-followup {
+  background: var(--easyb-surface-alt);
+  border-color: var(--easyb-border);
+  color: var(--easyb-text);
+}
+
+.easyb-shell .assistant-followup:hover {
+  border-color: var(--easyb-accent);
+  color: var(--easyb-accent-dark);
+  background: var(--easyb-accent-soft);
+}

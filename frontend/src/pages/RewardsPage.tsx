@@ -428,7 +428,7 @@ export function RewardsPage() {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       {/* 1. Rewards balance hero */}
-      <div className="tile" style={{ background: "var(--aurora-gradient, #5b5fef)", color: "#fff", border: "none" }}>
+      <div className="tile" style={{ background: "var(--easyb-gradient, #5b5fef)", color: "#fff", border: "none" }}>
         <div className="eyebrow" style={{ color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
           <Sparkles size={14} strokeWidth={2.2} />
           Your balance
@@ -479,7 +479,7 @@ export function RewardsPage() {
                     <div className={cardToneClass(card)}>
                       <div className="bank-card__top">
                         <div className="bank-card__identity">
-                          <span className="bank-card__brand">AURORA</span>
+                          <span className="bank-card__brand">EASYB</span>
                           <span className="bank-card__product">
                             {card.tier
                               ? `${formatCardTierLabel(card.tier)} ${formatCardTypeLabel(card.type)}`
@@ -638,7 +638,7 @@ export function RewardsPage() {
                       width: "2rem",
                       height: "2rem",
                       borderRadius: "0.65rem",
-                      background: "var(--aurora-gradient, #5b5fef)",
+                      background: "var(--easyb-gradient, #5b5fef)",
                       color: "#fff",
                       flexShrink: 0,
                     }}
@@ -802,7 +802,7 @@ export function RewardsPage() {
           </div>
 
           {/* 6. Referral / earn more points */}
-          <div className="tile" style={{ background: "var(--aurora-gradient, #5b5fef)", color: "#fff", border: "none" }}>
+          <div className="tile" style={{ background: "var(--easyb-gradient, #5b5fef)", color: "#fff", border: "none" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div className="eyebrow" style={{ color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <Users size={14} strokeWidth={2.2} />
@@ -893,7 +893,7 @@ export function RewardsPage() {
                         <span
                           style={{
                             fontWeight: 700,
-                            color: tx.points >= 0 ? "var(--aurora-green, #2e9e5b)" : "var(--color-text-muted)",
+                            color: tx.points >= 0 ? "var(--easyb-green, #2e9e5b)" : "var(--color-text-muted)",
                             whiteSpace: "nowrap",
                           }}
                         >
@@ -947,7 +947,7 @@ export function RewardsPage() {
                         alignItems: "flex-start",
                         gap: "0.75rem",
                         padding: "0.6rem 0",
-                        borderBottom: "1px solid var(--aurora-border, rgba(0,0,0,0.08))",
+                        borderBottom: "1px solid var(--easyb-border, rgba(0,0,0,0.08))",
                       }}
                     >
                       <div>
@@ -1038,7 +1038,7 @@ export function RewardsPage() {
             <div className={cardToneClass(selectedCard)} style={{ marginBottom: "0.85rem" }}>
               <div className="bank-card__top">
                 <div className="bank-card__identity">
-                  <span className="bank-card__brand">AURORA</span>
+                  <span className="bank-card__brand">EASYB</span>
                   <span className="bank-card__product">
                     {selectedCard.tier
                       ? `${formatCardTierLabel(selectedCard.tier)} ${formatCardTypeLabel(selectedCard.type)}`
@@ -1118,7 +1118,7 @@ export function RewardsPage() {
             />
           </label>
           {error && (
-            <p role="alert" style={{ color: "var(--aurora-danger, #d1435b)", marginTop: "0.5rem" }}>
+            <p role="alert" style={{ color: "var(--easyb-danger, #d1435b)", marginTop: "0.5rem" }}>
               {error}
             </p>
           )}
@@ -1150,7 +1150,7 @@ export function RewardsPage() {
               maxWidth: "420px",
               width: "100%",
               textAlign: "center",
-              background: "var(--aurora-gradient, #5b5fef)",
+              background: "var(--easyb-gradient, #5b5fef)",
               color: "#fff",
               border: "none",
             }}

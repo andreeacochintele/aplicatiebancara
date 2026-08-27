@@ -55,16 +55,16 @@ function statusBreakdown<T extends string>(items: T[], colors: Record<T, string>
 
 function StatusDonut({ title, data, total }: { title: string; data: ReturnType<typeof statusBreakdown>; total: number }) {
   return (
-    <div className="aurora-card">
-      <div className="aurora-section-header">
+    <div className="easyb-card">
+      <div className="easyb-section-header">
         <div>
-          <div className="aurora-eyebrow">Status breakdown</div>
+          <div className="easyb-eyebrow">Status breakdown</div>
           <h2>{title}</h2>
         </div>
       </div>
       {data.length > 0 ? (
         <>
-          <div className="aurora-donut-wrap">
+          <div className="easyb-donut-wrap">
             <ResponsiveContainer width="100%" height={150}>
               <PieChart>
                 <Pie data={data} dataKey="value" nameKey="name" innerRadius={48} outerRadius={68} paddingAngle={2} stroke="none">
@@ -74,27 +74,27 @@ function StatusDonut({ title, data, total }: { title: string; data: ReturnType<t
                 </Pie>
                 <Tooltip
                   formatter={(value: number, name: string) => [value, name]}
-                  contentStyle={{ borderRadius: 10, border: "1px solid var(--aurora-border)", fontSize: 12 }}
+                  contentStyle={{ borderRadius: 10, border: "1px solid var(--easyb-border)", fontSize: 12 }}
                 />
               </PieChart>
             </ResponsiveContainer>
-            <div className="aurora-donut-center">
-              <div className="aurora-donut-total">{total}</div>
-              <div className="aurora-donut-label">total</div>
+            <div className="easyb-donut-center">
+              <div className="easyb-donut-total">{total}</div>
+              <div className="easyb-donut-label">total</div>
             </div>
           </div>
-          <div className="aurora-legend">
+          <div className="easyb-legend">
             {data.map((item) => (
-              <div className="aurora-legend-row" key={item.key}>
-                <span className="aurora-legend-dot" style={{ background: item.color }} />
-                <span className="aurora-legend-name">{item.name}</span>
-                <span className="aurora-legend-pct">{total > 0 ? Math.round((item.value / total) * 100) : 0}%</span>
+              <div className="easyb-legend-row" key={item.key}>
+                <span className="easyb-legend-dot" style={{ background: item.color }} />
+                <span className="easyb-legend-name">{item.name}</span>
+                <span className="easyb-legend-pct">{total > 0 ? Math.round((item.value / total) * 100) : 0}%</span>
               </div>
             ))}
           </div>
         </>
       ) : (
-        <p className="aurora-tx-meta">No data yet.</p>
+        <p className="easyb-tx-meta">No data yet.</p>
       )}
     </div>
   );
@@ -219,7 +219,7 @@ export function AdminDashboardPage() {
           <input type="date" value={dateTo} min={dateFrom} onChange={(e) => setDateTo(e.target.value)} />
         </label>
       </div>
-      <div className="aurora-analytics-grid">
+      <div className="easyb-analytics-grid">
         <StatusDonut title="Credit applications" data={creditBreakdown} total={applicationsInRange.length} />
         <StatusDonut title="Fraud cases" data={fraudBreakdown} total={casesInRange.length} />
       </div>

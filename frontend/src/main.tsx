@@ -5,7 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import "./features/auth/flags.css";
 import "./index.css";
-import "./styles/aurora.css";
+import "./styles/easyb.css";
 import { AuthProvider } from "./store/AuthContext";
 import { ThemeProvider } from "./store/ThemeContext";
 
