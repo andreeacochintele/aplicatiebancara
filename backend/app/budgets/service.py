@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.budgets.models import Budget, BudgetPeriod
 from app.budgets.repository import BudgetRepository
 from app.budgets.schemas import BudgetCreate, BudgetPublic
-from app.core.exceptions import ValidationError
+from app.core.exceptions import NotFoundError, ValidationError
 
 
 class BudgetService:
@@ -40,6 +40,12 @@ class BudgetService:
 
     def list_budgets(self, user_id: uuid.UUID) -> list[BudgetPublic]:
         return [self._to_public(budget) for budget in self.repository.list_for_user(user_id)]
+
+    def delete_budget(self, user_id: uuid.UUID, budget_id: uuid.UUID) -> None:
+        budget = self.repository.get_by_id(budget_id)
+        if budget is None or budget.user_id != user_id:
+            raise NotFoundError("Budget not found")
+        self.repository.delete(budget)
 
     def _to_public(self, budget: Budget) -> BudgetPublic:
         now = datetime.now(timezone.utc)

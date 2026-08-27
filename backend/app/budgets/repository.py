@@ -33,6 +33,13 @@ class BudgetRepository:
             return self.db.fetch_many(Budget, {"user_id": f"eq.{user_id}", "order": "created_at.desc"})
         return list(self.db.scalars(select(Budget).where(Budget.user_id == user_id)))
 
+    def delete(self, budget: Budget) -> None:
+        if is_supabase_session(self.db):
+            self.db.delete(budget)
+            return
+        self.db.delete(budget)
+        self.db.flush()
+
     def spent_amount(
         self,
         user_id: uuid.UUID,

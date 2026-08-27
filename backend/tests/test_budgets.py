@@ -1,12 +1,14 @@
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
 
 from app.budgets.models import BudgetPeriod
+from app.budgets.repository import BudgetRepository
 from app.budgets.schemas import BudgetCreate
 from app.budgets.service import BudgetService
-from app.core.exceptions import ValidationError
+from app.core.exceptions import NotFoundError, ValidationError
 from app.merchants.models import Merchant
 from app.transactions.models import Transaction, TransactionStatus, TransactionType
 from app.users.schemas import UserCreate
@@ -97,3 +99,29 @@ def test_weekly_budget_period_spans_at_most_seven_days(db_session, seeded_user):
     )
 
     assert 0 <= budget.days_remaining <= 6
+
+
+def test_delete_budget_removes_it(db_session, seeded_user):
+    service = BudgetService(db_session)
+    budget = service.create_budget(seeded_user.id, BudgetCreate(name="Stale test budget", limit_amount=Decimal("500.00")))
+
+    service.delete_budget(seeded_user.id, budget.id)
+
+    assert BudgetRepository(db_session).get_by_id(budget.id) is None
+
+
+def test_delete_unknown_budget_raises_not_found(db_session, seeded_user):
+    service = BudgetService(db_session)
+    with pytest.raises(NotFoundError):
+        service.delete_budget(seeded_user.id, uuid.uuid4())
+
+
+def test_delete_someone_elses_budget_raises_not_found(db_session, seeded_user):
+    other_user = UserService(db_session).create_user(
+        UserCreate(email="other-budget-user@example.com", password="Sup3rSecret!", first_name="Other", last_name="User")
+    )
+    service = BudgetService(db_session)
+    budget = service.create_budget(seeded_user.id, BudgetCreate(name="Mine", limit_amount=Decimal("100.00")))
+
+    with pytest.raises(NotFoundError):
+        service.delete_budget(other_user.id, budget.id)
