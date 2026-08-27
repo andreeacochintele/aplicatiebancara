@@ -394,6 +394,42 @@
   margin-bottom: 16px;
 }
 
+.aurora-wallet-card__iban {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  margin-bottom: 10px;
+  border: 1px dashed var(--aurora-border);
+  border-radius: var(--aurora-radius-sm);
+  background: none;
+  color: var(--aurora-text-faint);
+  font-size: 11.5px;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.02em;
+}
+
+.aurora-wallet-card__iban span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.aurora-wallet-card__iban:hover {
+  border-color: var(--aurora-accent);
+  color: var(--aurora-accent-dark);
+}
+
+.aurora-wallet-card__iban-copied {
+  flex-shrink: 0;
+  color: var(--aurora-green);
+  font-weight: 700;
+}
+
 .aurora-wallet-activity {
   display: grid;
   gap: 8px;

@@ -6,6 +6,7 @@ import pytest
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.users.schemas import UserCreate
 from app.users.service import UserService
+from app.wallets.iban import generate_iban
 from app.wallets.models import WalletStatus
 from app.wallets.schemas import WalletCreate
 from app.wallets.service import WalletService
@@ -31,6 +32,32 @@ def test_first_wallet_is_automatically_main(db_session, seeded_user):
     assert wallet.currency == "RON"
     assert wallet.is_main is True
     assert wallet.available_balance == Decimal("0")
+
+
+def test_new_wallet_gets_an_iban(db_session, seeded_user):
+    service = WalletService(db_session)
+    wallet = service.create_wallet(seeded_user.id, WalletCreate(currency="ron"))
+
+    assert wallet.iban.startswith("RO")
+    assert len(wallet.iban) == 24
+
+
+def test_each_wallet_gets_a_distinct_iban(db_session, seeded_user):
+    service = WalletService(db_session)
+    ron = service.create_wallet(seeded_user.id, WalletCreate(currency="ron"))
+    eur = service.create_wallet(seeded_user.id, WalletCreate(currency="eur"))
+
+    assert ron.iban != eur.iban
+
+
+def test_generate_iban_produces_a_checksum_valid_iban():
+    iban = generate_iban()
+
+    assert len(iban) == 24
+    assert iban[:2] == "RO"
+    rearranged = iban[4:] + iban[:4]
+    numeric = "".join(str(ord(char) - 55) if char.isalpha() else char for char in rearranged)
+    assert int(numeric) % 97 == 1
 
 
 def test_oversized_currency_code_is_rejected(db_session, seeded_user):
