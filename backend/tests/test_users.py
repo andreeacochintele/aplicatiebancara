@@ -149,7 +149,7 @@ def test_register_with_invalid_referral_code_is_rejected(client):
             "password": "Sup3rSecret!",
             "first_name": "Bad",
             "last_name": "Referral",
-            "referral_code": "AURORA-NOTREAL1",
+            "referral_code": "EASYB-NOTREAL1",
         },
     )
     assert response.status_code == 422

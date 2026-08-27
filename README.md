@@ -1,4 +1,4 @@
-# Aurora — banking app
+# EasyB — banking app
 
 A modular-monolith banking web application: React/TypeScript frontend, FastAPI/SQLAlchemy/Alembic backend, PostgreSQL, Docker Compose. See [docs/architecture.md](docs/architecture.md) and [docs/architecture_diagrams.md](docs/architecture_diagrams.md) for the full domain architecture.
 
@@ -78,14 +78,23 @@ API docs: `http://localhost:8000/docs`. Health check: `http://localhost:8000/hea
 
 ### Frontend
 
+We don't have `npm`/Node.js installed locally on dev machines — run the frontend through Docker instead, even when the backend runs locally:
+
+```bash
+cp .env.example .env
+docker compose up --build frontend
+```
+
+Opens at `http://localhost:5173`. If the backend isn't already running locally, either start it with `uvicorn` as above (in another terminal) or bring it up alongside via `docker compose up --build backend frontend`.
+
+If you do have `npm` available (e.g. CI, or a machine that has Node installed), the native flow is:
+
 ```bash
 cd frontend
 npm install
 cp .env.example .env
 npm run dev
 ```
-
-Opens at `http://localhost:5173`.
 
 ### Tests
 
@@ -121,6 +130,7 @@ Not imported by the app itself — run it explicitly after migrating.
 - Notifications: built once, wired into transfers, split bills, cashback, credit and registration across every domain
 - Analytics: spending breakdown, trends, net worth (with history/forecast), monthly trend series
 - Wallet statements (`GET /api/v1/statements`, `GET /api/v1/statements/export?format=csv|pdf`)
+- Business transaction export (`/api/v1/exports`: preview, generate, list export history, download)
 - A deterministic fraud engine (rule-based scoring, evidence tracking) plus an admin fraud-review dashboard section — the engine flags/holds, a human makes the final call
 - Budgets and savings goals
 - `/health` and `/api/v1/health`
@@ -131,7 +141,6 @@ Not imported by the app itself — run it explicitly after migrating.
 ## What's still a placeholder
 
 - All AI agents (`orchestrator, personal_finance, credit, fraud`) and `ai/tools` — structure only; agents must go `Agent → Tool → Backend Service → Database`, never straight to the DB
-- Business transaction export
 - Loan servicing: no endpoint to pay down an existing loan's principal or run an early-repayment simulation, despite `EARLY_REPAYMENT` existing as an enum value — the loan calculator only simulates a schedule
 - Admin audit log
 

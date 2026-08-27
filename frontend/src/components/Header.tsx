@@ -175,14 +175,14 @@ export function Header() {
   );
 
   return (
-    <header className="header aurora-header">
+    <header className="header easyb-header">
       <span className="header__title">{page?.title ?? "EasyB"}</span>
       {page && <span className="header__subtitle">{page.subtitle}</span>}
       <div className="header__meta">
         <ThemeToggle />
         <button
           aria-label="Notifications"
-          className="aurora-bell"
+          className="easyb-bell"
           onClick={() => setNotificationsOpen((open) => !open)}
           type="button"
         >

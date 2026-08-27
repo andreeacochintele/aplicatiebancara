@@ -18,7 +18,7 @@ export interface CategoryStyle {
   key: string;
 }
 
-// Style key drives color (aurora.css .category-badge--<key> / .category-pill--<key>).
+// Style key drives color (easyb.css .category-badge--<key> / .category-pill--<key>).
 // Categories from different rewards sections (merchant offer categories like
 // "Retail", benefit categories like "RETAIL_DISCOUNT") intentionally share a
 // style key where they represent the same real-world concept, so the same

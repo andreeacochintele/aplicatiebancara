@@ -7,7 +7,7 @@ import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { FXMarketRate, FXQuote, FXRateHistory, Transaction, Wallet } from "../types";
 
-const RATE_ACCENT = "#5b5fef"; // same violet as --aurora-accent, kept as one deliberate hue for the trend line
+const RATE_ACCENT = "#5b5fef"; // same violet as --easyb-accent, kept as one deliberate hue for the trend line
 // matches backend/app/fx/service.py's _RATES_TO_RON — keep both in sync
 const SUPPORTED_CURRENCIES = [
   "RON", "EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD", "PLN", "TRY",
@@ -45,7 +45,7 @@ function RateTrendChart({ history }: { history: FXRateHistory }) {
   const domain: [number, number] = [min - pad, max + pad];
 
   return (
-    <div className="aurora-rate-chart">
+    <div className="easyb-rate-chart">
       <ResponsiveContainer width="100%" height={160}>
         <AreaChart data={data} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
           <defs>
@@ -57,7 +57,7 @@ function RateTrendChart({ history }: { history: FXRateHistory }) {
           <XAxis
             dataKey="date"
             tickFormatter={short}
-            tick={{ fontSize: 10, fill: "var(--aurora-text-faint)" }}
+            tick={{ fontSize: 10, fill: "var(--easyb-text-faint)" }}
             axisLine={false}
             tickLine={false}
             interval="preserveStartEnd"
@@ -67,7 +67,7 @@ function RateTrendChart({ history }: { history: FXRateHistory }) {
           <Tooltip
             formatter={(value: number) => [value.toFixed(4), `1 ${history.source_currency} =`]}
             labelFormatter={(label: string) => label}
-            contentStyle={{ borderRadius: 10, border: "1px solid var(--aurora-border)", fontSize: 12 }}
+            contentStyle={{ borderRadius: 10, border: "1px solid var(--easyb-border)", fontSize: 12 }}
           />
           <Area
             type="monotone"
@@ -315,15 +315,15 @@ export function WalletsPage() {
   }
 
   return (
-    <div className="aurora-col">
-      <div className="aurora-card">
-        <div className="aurora-section-header">
+    <div className="easyb-col">
+      <div className="easyb-card">
+        <div className="easyb-section-header">
           <div>
-            <div className="aurora-eyebrow">Your accounts</div>
+            <div className="easyb-eyebrow">Your accounts</div>
             <h2>Wallets</h2>
           </div>
           {missingCurrencies.length > 0 && (
-            <div className="aurora-add-account">
+            <div className="easyb-add-account">
               <select value={newCurrency || missingCurrencies[0]} onChange={(e) => setNewCurrency(e.target.value)}>
                 {missingCurrencies.map((c) => (
                   <option key={c} value={c}>
@@ -339,7 +339,7 @@ export function WalletsPage() {
           )}
         </div>
 
-        <div className="aurora-wallet-grid">
+        <div className="easyb-wallet-grid">
           {activeWallets.map((wallet) => {
             const isTransactionsExpanded = expandedTransactionWalletIds.has(wallet.id);
             const walletTransactions = (transactionsByWallet[wallet.id] ?? [])
@@ -347,35 +347,35 @@ export function WalletsPage() {
               .slice(0, 8);
             return (
               <div
-                className="aurora-wallet-card"
+                className="easyb-wallet-card"
                 key={wallet.id}
                 style={{ "--wallet-accent": colorForCurrency(wallet.currency) } as CSSProperties}
               >
-                <div className="aurora-wallet-card__top">
-                  <span className="aurora-wallet-card__code">{wallet.currency}</span>
-                  {wallet.is_main && <span className="aurora-chip aurora-chip-violet">Main</span>}
+                <div className="easyb-wallet-card__top">
+                  <span className="easyb-wallet-card__code">{wallet.currency}</span>
+                  {wallet.is_main && <span className="easyb-chip easyb-chip-violet">Main</span>}
                 </div>
-                <div className="aurora-wallet-card__amount" style={{ color: "var(--wallet-accent)" }}>
+                <div className="easyb-wallet-card__amount" style={{ color: "var(--wallet-accent)" }}>
                   {wallet.available_balance}
                 </div>
-                <div className="aurora-wallet-card__sub">
+                <div className="easyb-wallet-card__sub">
                   {wallet.reserved_balance !== "0" && wallet.reserved_balance !== "0.00"
                     ? `${wallet.reserved_balance} ${wallet.currency} reserved`
                     : "Nothing on hold"}
                 </div>
                 <button
                   type="button"
-                  className="aurora-wallet-card__iban"
+                  className="easyb-wallet-card__iban"
                   onClick={() => copyIban(wallet)}
                   title="Copy IBAN"
                 >
                   <span>{wallet.iban}</span>
                   <Copy size={12} />
-                  {copiedWalletId === wallet.id && <span className="aurora-wallet-card__iban-copied">Copied</span>}
+                  {copiedWalletId === wallet.id && <span className="easyb-wallet-card__iban-copied">Copied</span>}
                 </button>
                 <button
                   type="button"
-                  className="aurora-wallet-history-toggle"
+                  className="easyb-wallet-history-toggle"
                   onClick={() => toggleWalletTransactions(wallet.id)}
                   aria-expanded={isTransactionsExpanded}
                 >
@@ -383,20 +383,20 @@ export function WalletsPage() {
                   {isTransactionsExpanded ? <ChevronUp size={16} strokeWidth={2.2} /> : <ChevronDown size={16} strokeWidth={2.2} />}
                 </button>
                 {isTransactionsExpanded && (
-                  <div className="aurora-wallet-activity">
+                  <div className="easyb-wallet-activity">
                     {walletTransactions.length === 0 ? (
-                      <div className="aurora-wallet-activity__empty">No account transactions yet.</div>
+                      <div className="easyb-wallet-activity__empty">No account transactions yet.</div>
                     ) : (
-                      <div className="aurora-wallet-activity__list">
+                      <div className="easyb-wallet-activity__list">
                         {walletTransactions.map((transaction) => {
                           const isIncoming = transaction.destination_wallet_id === wallet.id;
                           return (
-                            <div className="aurora-wallet-activity__row" key={transaction.id}>
+                            <div className="easyb-wallet-activity__row" key={transaction.id}>
                               <div>
                                 <strong>{transaction.description || formatTransactionType(transaction.type)}</strong>
                                 <span>{formatTransactionDate(transaction.created_at)}</span>
                               </div>
-                              <div className={isIncoming ? "aurora-wallet-activity__amount--in" : "aurora-wallet-activity__amount--out"}>
+                              <div className={isIncoming ? "easyb-wallet-activity__amount--in" : "easyb-wallet-activity__amount--out"}>
                                 {isIncoming ? "+" : "-"}
                                 {Number(transaction.amount).toLocaleString(undefined, {
                                   minimumFractionDigits: 2,
@@ -411,13 +411,13 @@ export function WalletsPage() {
                     )}
                   </div>
                 )}
-                <div className="aurora-wallet-card__footer">
+                <div className="easyb-wallet-card__footer">
                   <span aria-hidden="true" />
                   {!wallet.is_main && wallet.status === "ACTIVE" && (
-                    <div className="aurora-wallet-card__actions">
+                    <div className="easyb-wallet-card__actions">
                       <button
                         type="button"
-                        className="aurora-wallet-card__set-main"
+                        className="easyb-wallet-card__set-main"
                         onClick={() => setMainWallet(wallet.id)}
                         disabled={settingMainId === wallet.id}
                       >
@@ -426,7 +426,7 @@ export function WalletsPage() {
                       </button>
                       <button
                         type="button"
-                        className="aurora-wallet-card__delete"
+                        className="easyb-wallet-card__delete"
                         onClick={() => setDeletingWallet(wallet)}
                       >
                         <Trash2 size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
@@ -438,17 +438,17 @@ export function WalletsPage() {
               </div>
             );
           })}
-          {activeWallets.length === 0 && <p className="aurora-tx-meta">No wallets yet.</p>}
+          {activeWallets.length === 0 && <p className="easyb-tx-meta">No wallets yet.</p>}
         </div>
         {error && <p role="alert">{error}</p>}
       </div>
 
       {activeWallets.length >= 2 && (
-        <div className="aurora-exchange-row">
-          <div className="aurora-card aurora-exchange-card">
-            <div className="aurora-section-header">
+        <div className="easyb-exchange-row">
+          <div className="easyb-card easyb-exchange-card">
+            <div className="easyb-section-header">
               <div>
-                <div className="aurora-eyebrow">Currency</div>
+                <div className="easyb-eyebrow">Currency</div>
                 <h2>
                   <ArrowLeftRight size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
                   Exchange
@@ -457,21 +457,21 @@ export function WalletsPage() {
             </div>
 
             {bankRate !== null && convertRate && (
-              <div className="aurora-rate-banner">
-                <div className="aurora-rate-banner__headline">
+              <div className="easyb-rate-banner">
+                <div className="easyb-rate-banner__headline">
                   <TrendingUp size={16} />
                   1 {convertRate.source_currency} = {bankRate.toFixed(4)} {convertRate.target_currency}
                 </div>
-                <div className="aurora-rate-banner__sub">Bank rate, fee included</div>
+                <div className="easyb-rate-banner__sub">Bank rate, fee included</div>
                 {convertedAmount !== null && (
-                  <div className="aurora-rate-banner__amount">
+                  <div className="easyb-rate-banner__amount">
                     {amount} {convertRate.source_currency} = <strong>{convertedAmount.toFixed(2)} {convertRate.target_currency}</strong>
                   </div>
                 )}
               </div>
             )}
 
-            <div className="aurora-convert-grid">
+            <div className="easyb-convert-grid">
               <label>
                 From
                 <select value={sourceId} onChange={(e) => { setSourceId(e.target.value); setQuote(null); }}>
@@ -507,7 +507,7 @@ export function WalletsPage() {
               <input value={amount} onChange={(e) => { setAmount(e.target.value); setQuote(null); }} />
             </label>
 
-            <div className="aurora-convert-submit">
+            <div className="easyb-convert-submit">
               <button onClick={getQuote} disabled={busy || !source || !targetCurrency}>
                 Get quote
               </button>
@@ -517,35 +517,35 @@ export function WalletsPage() {
             {result && <p>{result}</p>}
 
             {quote && (
-              <div className="aurora-quote-card">
-                <div className="aurora-quote-card__header">
-                  <div className="aurora-eyebrow" style={{ marginBottom: 0 }}>
+              <div className="easyb-quote-card">
+                <div className="easyb-quote-card__header">
+                  <div className="easyb-eyebrow" style={{ marginBottom: 0 }}>
                     Quote expires {new Date(quote.expires_at).toLocaleTimeString()}
                   </div>
-                  <button type="button" className="aurora-quote-card__close" onClick={() => setQuote(null)} aria-label="Cancel this quote">
+                  <button type="button" className="easyb-quote-card__close" onClick={() => setQuote(null)} aria-label="Cancel this quote">
                     <X size={14} />
                   </button>
                 </div>
-                <div className="aurora-quote-row">
+                <div className="easyb-quote-row">
                   <span>Rate</span>
                   <span>
                     1 {quote.source_currency} = {Number(quote.exchange_rate).toFixed(4)} {quote.target_currency}
                   </span>
                 </div>
-                <div className="aurora-quote-row">
+                <div className="easyb-quote-row">
                   <span>Fee</span>
                   <span>
                     {quote.fee} {quote.source_currency}
                   </span>
                 </div>
-                <div className="aurora-quote-row total">
+                <div className="easyb-quote-row total">
                   <span>You receive</span>
                   <span>
                     {quote.target_amount} {quote.target_currency}
                   </span>
                 </div>
-                <div className="aurora-quote-card__actions">
-                  <button className="aurora-btn-ghost" onClick={() => setQuote(null)} disabled={busy}>
+                <div className="easyb-quote-card__actions">
+                  <button className="easyb-btn-ghost" onClick={() => setQuote(null)} disabled={busy}>
                     Cancel
                   </button>
                   <button onClick={acceptQuote} disabled={busy}>
@@ -556,15 +556,15 @@ export function WalletsPage() {
             )}
           </div>
 
-          <div className="aurora-card aurora-exchange-card">
-            <div className="aurora-section-header">
+          <div className="easyb-card easyb-exchange-card">
+            <div className="easyb-section-header">
               <div>
-                <div className="aurora-eyebrow">Live · ECB, 14 days</div>
+                <div className="easyb-eyebrow">Live · ECB, 14 days</div>
                 <h2>Rate trend</h2>
               </div>
             </div>
 
-            <div className="aurora-convert-grid">
+            <div className="easyb-convert-grid">
               <label>
                 From
                 <select value={chartSourceCurrency} onChange={(e) => setChartSourceCurrency(e.target.value)}>
@@ -590,7 +590,7 @@ export function WalletsPage() {
             {rateHistory && rateHistory.points.length > 1 ? (
               <RateTrendChart history={rateHistory} />
             ) : (
-              <p className="aurora-tx-meta" style={{ marginTop: 14 }}>
+              <p className="easyb-tx-meta" style={{ marginTop: 14 }}>
                 Not enough history for this pair yet.
               </p>
             )}
@@ -600,12 +600,12 @@ export function WalletsPage() {
 
       {deletingWallet && (
         <div className="folder-modal-backdrop" onClick={() => !closingAccount && setDeletingWallet(null)}>
-          <div className="aurora-card" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
-            <div className="aurora-eyebrow">Close account</div>
+          <div className="easyb-card" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+            <div className="easyb-eyebrow">Close account</div>
             <h2 style={{ marginBottom: 10 }}>{deletingWallet.currency} wallet</h2>
-            <p style={{ fontSize: 13.5, color: "var(--aurora-text-soft)", lineHeight: 1.6 }}>
+            <p style={{ fontSize: 13.5, color: "var(--easyb-text-soft)", lineHeight: 1.6 }}>
               This account currently holds{" "}
-              <strong style={{ color: "var(--aurora-text)" }}>
+              <strong style={{ color: "var(--easyb-text)" }}>
                 {deletingWallet.available_balance} {deletingWallet.currency}
               </strong>
               .{" "}
@@ -615,8 +615,8 @@ export function WalletsPage() {
               This can't be undone, but you can reopen a {deletingWallet.currency} account later.
             </p>
             {error && <p role="alert">{error}</p>}
-            <div className="aurora-quote-card__actions" style={{ marginTop: 6 }}>
-              <button className="aurora-btn-ghost" onClick={() => setDeletingWallet(null)} disabled={closingAccount}>
+            <div className="easyb-quote-card__actions" style={{ marginTop: 6 }}>
+              <button className="easyb-btn-ghost" onClick={() => setDeletingWallet(null)} disabled={closingAccount}>
                 Cancel
               </button>
               <button onClick={confirmDeleteAccount} disabled={closingAccount}>

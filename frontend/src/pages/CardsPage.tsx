@@ -59,7 +59,7 @@ const CARD_TIER_PRODUCT_LIST = [
 const MOCK_CARD_MERCHANTS = ["Carrefour", "Netflix", "OMV", "Starbucks", "eMAG", "Uber"];
 type CreditPaymentSourceType = "ACCOUNT" | "DEBIT_CARD";
 type CreditPaymentAmountMode = "FULL_BALANCE" | "CUSTOM";
-const CARD_PIN_STORAGE_PREFIX = "aurora-card-pin:";
+const CARD_PIN_STORAGE_PREFIX = "easyb-card-pin:";
 
 interface CardTransactionDisplay {
   id: string;
@@ -1165,7 +1165,7 @@ export function CardsPage() {
                   <div className={cardToneClass(card)}>
                     <div className="bank-card__top">
                       <div className="bank-card__identity">
-                        <span className="bank-card__brand">AURORA</span>
+                        <span className="bank-card__brand">EASYB</span>
                         <span className="bank-card__product">
                           {card.tier ? `${formatCardTier(card.tier)} ${formatCardType(card.type)}` : "One-time"}
                         </span>
