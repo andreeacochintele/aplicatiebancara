@@ -12,7 +12,7 @@ export function BrandMark({ className, size = 46 }: BrandMarkProps) {
 
   return (
     <img
-      src={animated ? "/logo-animated.webp" : "/logo-idle.webp"}
+      src={animated ? "/logo-animated.webp" : "/logo.svg"}
       alt=""
       className={className}
       style={{ width: size, height: size, objectFit: "contain", flexShrink: 0 }}
