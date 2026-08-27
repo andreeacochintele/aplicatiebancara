@@ -1,16 +1,19 @@
 """Business logic for user creation. Enforces uniqueness of email/phone."""
+import logging
 import uuid
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, ValidationError
+from app.core.exceptions import ConflictError, ValidationError, is_unique_violation
 from app.core.security import hash_password
 from app.notifications.service import NotificationsService
 from app.rewards.service import REFERRAL_BONUS_POINTS, RewardsService
 from app.users.models import KycDocumentStatus, User, UserAddress, UserEmploymentProfile, UserOnboardingState, UserProfile
 from app.users.repository import UserRepository
 from app.users.schemas import OnboardingStep2Update, OnboardingStep4Update, ProfileUpdate, UserCreate, UserFullProfilePublic
+
+logger = logging.getLogger(__name__)
 
 
 class UserService:
@@ -41,7 +44,16 @@ class UserService:
             last_name=data.last_name,
             user_type=data.user_type,
         )
-        self.repository.add(user)
+        try:
+            self.repository.add(user)
+        except Exception as exc:
+            if not is_unique_violation(exc):
+                raise
+            self.db.rollback()
+            # The precondition checks above already ran, so this only fires
+            # when a concurrent request won the race between check and
+            # insert — same outer message either check would have raised.
+            raise ConflictError("Email or phone is already registered") from None
         self.ensure_profile_records(user, legacy_completed=False)
 
         # Best-effort: a notification failure must never make registration
@@ -54,7 +66,7 @@ class UserService:
                 message=f"Hi {user.first_name}, your account is ready. Set up your first wallet to get started.",
             )
         except Exception:
-            pass
+            logger.exception("Failed to create welcome notification for user %s", user.id)
 
         # Also best-effort: the referral code was already validated above, so
         # this should always succeed, but a hiccup crediting points must not
@@ -73,7 +85,7 @@ class UserService:
                     message=f"{user.first_name} {user.last_name} joined using your referral code. You earned {REFERRAL_BONUS_POINTS} points.",
                 )
             except Exception:
-                pass
+                logger.exception("Failed to credit referral bonus for referrer %s", referrer_user_id)
 
         return user
 
@@ -94,7 +106,13 @@ class UserService:
         self._apply_step_2(user.id, profile, address, data)
         state.pending_step = 3
         state.completed = False
-        self.repository.flush()
+        try:
+            self.repository.flush()
+        except Exception as exc:
+            if not is_unique_violation(exc):
+                raise
+            self.db.rollback()
+            raise ConflictError("CNP is already registered") from None
         return self.get_full_profile(user)
 
     def create_identity_document_placeholder(self, user: User) -> UserFullProfilePublic:
@@ -143,13 +161,23 @@ class UserService:
             if existing and existing.id != user.id:
                 raise ConflictError(f"Phone '{data.phone}' is already registered")
             user.phone = data.phone
-        if data.step_2 is not None:
-            _state, profile, address, _employment = self.ensure_profile_records(user)
-            self._apply_step_2(user.id, profile, address, data.step_2)
-        if data.employment is not None:
-            _state, _profile, _address, employment = self.ensure_profile_records(user)
-            self._apply_employment(employment, data.employment)
-        self.repository.flush()
+        if data.step_2 is not None or data.employment is not None:
+            state, profile, address, employment = self.ensure_profile_records(user)
+            if state.pending_step is not None:
+                raise ValidationError(
+                    "Onboarding is not complete yet — finish the onboarding steps before editing your profile"
+                )
+            if data.step_2 is not None:
+                self._apply_step_2(user.id, profile, address, data.step_2)
+            if data.employment is not None:
+                self._apply_employment(employment, data.employment)
+        try:
+            self.repository.flush()
+        except Exception as exc:
+            if not is_unique_violation(exc):
+                raise
+            self.db.rollback()
+            raise ConflictError("Email, phone, or CNP is already registered") from None
         return self.get_full_profile(user)
 
     def ensure_profile_records(

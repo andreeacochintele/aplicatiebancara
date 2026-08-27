@@ -37,6 +37,24 @@ def test_create_user_duplicate_email_raises(db_session):
         service.create_user(_user_create(phone="+40722222222"))
 
 
+def test_create_user_concurrent_race_raises_conflict_not_a_bare_500(db_session, monkeypatch):
+    """Simulates two requests racing past the pre-check (e.g. two tabs
+    registering the same email at once): the DB-level unique constraint is
+    what actually stops the second insert, surfacing as an IntegrityError at
+    flush() — must become a clean ConflictError, not a bare 500."""
+    from sqlalchemy.exc import IntegrityError
+
+    service = UserService(db_session)
+
+    def _boom(*args, **kwargs):
+        raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed: users.email"))
+
+    monkeypatch.setattr(service.repository, "add", _boom)
+
+    with pytest.raises(ConflictError):
+        service.create_user(_user_create())
+
+
 def test_register_endpoint(client):
     response = client.post(
         "/api/v1/auth/register",
