@@ -1,15 +1,25 @@
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
+import uuid
+
 import pytest
 
 from app.core.enums import UserType
 from app.core.exceptions import NotFoundError, ValidationError
+from app.exports.models import ExportFormat
 from app.exports.schemas import TransactionExportRequest
 from app.exports.service import ExportService
 from app.merchants.schemas import MerchantCreate
 from app.merchants.service import MerchantService
-from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
+from app.transactions.models import (
+    LedgerEntryType,
+    Transaction,
+    TransactionCategory,
+    TransactionStatus,
+    TransactionType,
+    WalletLedgerEntry,
+)
 from app.transactions.schemas import InternalTransferCreate
 from app.transactions.service import TransactionService
 from app.users.schemas import UserCreate
@@ -62,41 +72,42 @@ def test_export_lists_outgoing_transaction_for_business_sender(db_session, walle
     business, _business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
     date_from, date_to = _today_range()
 
-    rows = ExportService(db_session).list_transactions(
+    preview = ExportService(db_session).build_preview(
         business.id, TransactionExportRequest(date_from=date_from, date_to=date_to)
     )
 
-    assert len(rows) == 1
-    assert rows[0].amount == Decimal("120.00")
-    assert rows[0].currency == "RON"
-    assert rows[0].description == "Rent"
-    assert rows[0].type == TransactionType.TRANSFER
+    assert preview.row_count == 1
+    assert preview.transactions[0].amount == Decimal("120.00")
+    assert preview.transactions[0].currency == "RON"
+    assert preview.transactions[0].description == "Rent"
+    assert preview.transactions[0].type == TransactionType.TRANSFER
+    assert preview.transactions[0].category is None
 
 
 def test_export_direction_filter_excludes_non_matching_entries(db_session, wallets_with_transfer):
     business, _business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
     date_from, date_to = _today_range()
 
-    incoming = ExportService(db_session).list_transactions(
+    incoming = ExportService(db_session).build_preview(
         business.id, TransactionExportRequest(date_from=date_from, date_to=date_to, direction="incoming")
     )
-    outgoing = ExportService(db_session).list_transactions(
+    outgoing = ExportService(db_session).build_preview(
         business.id, TransactionExportRequest(date_from=date_from, date_to=date_to, direction="outgoing")
     )
 
-    assert incoming == []
-    assert len(outgoing) == 1
+    assert incoming.transactions == []
+    assert len(outgoing.transactions) == 1
 
 
 def test_export_wallet_filter_narrows_to_one_wallet(db_session, wallets_with_transfer):
     business, business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
     date_from, date_to = _today_range()
 
-    rows = ExportService(db_session).list_transactions(
+    preview = ExportService(db_session).build_preview(
         business.id, TransactionExportRequest(date_from=date_from, date_to=date_to, wallet_id=business_wallet.id)
     )
 
-    assert len(rows) == 1
+    assert preview.row_count == 1
 
 
 def test_export_rejects_another_users_wallet(db_session, wallets_with_transfer):
@@ -104,7 +115,7 @@ def test_export_rejects_another_users_wallet(db_session, wallets_with_transfer):
     date_from, date_to = _today_range()
 
     with pytest.raises(NotFoundError):
-        ExportService(db_session).list_transactions(
+        ExportService(db_session).build_preview(
             business.id, TransactionExportRequest(date_from=date_from, date_to=date_to, wallet_id=receiver_wallet.id)
         )
 
@@ -113,16 +124,16 @@ def test_export_status_filter(db_session, wallets_with_transfer):
     business, _business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
     date_from, date_to = _today_range()
 
-    completed = ExportService(db_session).list_transactions(
+    completed = ExportService(db_session).build_preview(
         business.id,
         TransactionExportRequest(date_from=date_from, date_to=date_to, status=TransactionStatus.COMPLETED),
     )
-    failed = ExportService(db_session).list_transactions(
+    failed = ExportService(db_session).build_preview(
         business.id, TransactionExportRequest(date_from=date_from, date_to=date_to, status=TransactionStatus.FAILED)
     )
 
-    assert len(completed) == 1
-    assert failed == []
+    assert len(completed.transactions) == 1
+    assert failed.transactions == []
 
 
 def test_export_excludes_entries_outside_period(db_session, wallets_with_transfer):
@@ -130,18 +141,18 @@ def test_export_excludes_entries_outside_period(db_session, wallets_with_transfe
     future_from = date.today() + timedelta(days=10)
     future_to = date.today() + timedelta(days=20)
 
-    rows = ExportService(db_session).list_transactions(
+    preview = ExportService(db_session).build_preview(
         business.id, TransactionExportRequest(date_from=future_from, date_to=future_to)
     )
 
-    assert rows == []
+    assert preview.transactions == []
 
 
 def test_export_rejects_inverted_date_range(db_session, wallets_with_transfer):
     business, _business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
 
     with pytest.raises(ValidationError):
-        ExportService(db_session).list_transactions(
+        ExportService(db_session).build_preview(
             business.id,
             TransactionExportRequest(date_from=date.today(), date_to=date.today() - timedelta(days=1)),
         )
@@ -177,26 +188,124 @@ def test_export_resolves_merchant_counterparty(db_session, wallets_with_transfer
     db_session.flush()
     date_from, date_to = _today_range()
 
-    rows = ExportService(db_session).list_transactions(
+    preview = ExportService(db_session).build_preview(
         business.id, TransactionExportRequest(date_from=date_from, date_to=date_to, currency="RON")
     )
 
-    coffee_row = next(row for row in rows if row.description == "Coffee")
+    coffee_row = next(row for row in preview.transactions if row.description == "Coffee")
     assert coffee_row.counterparty == "CoffeeCo"
 
 
-def test_export_csv_contains_expected_columns_and_values(db_session, wallets_with_transfer):
+def test_export_resolves_category_name(db_session, wallets_with_transfer):
+    business, business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
+    category = TransactionCategory(id=uuid.uuid4(), name="Bills")
+    db_session.add(category)
+    db_session.flush()
+    payment = Transaction(
+        initiator_user_id=business.id,
+        source_wallet_id=business_wallet.id,
+        category_id=category.id,
+        type=TransactionType.CARD_PAYMENT,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("40.00"),
+        currency="RON",
+        description="Electricity",
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add(payment)
+    db_session.flush()
+    db_session.add(
+        WalletLedgerEntry(
+            wallet_id=business_wallet.id,
+            transaction_id=payment.id,
+            entry_type=LedgerEntryType.DEBIT,
+            amount=Decimal("40.00"),
+            currency="RON",
+            balance_after=Decimal("340.00"),
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    db_session.flush()
+    date_from, date_to = _today_range()
+
+    preview = ExportService(db_session).build_preview(
+        business.id, TransactionExportRequest(date_from=date_from, date_to=date_to, currency="RON")
+    )
+
+    bill_row = next(row for row in preview.transactions if row.description == "Electricity")
+    assert bill_row.category == "Bills"
+
+
+def test_export_summary_totals_by_currency(db_session, wallets_with_transfer):
+    business, _business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
+    date_from, date_to = _today_range()
+
+    preview = ExportService(db_session).build_preview(
+        business.id, TransactionExportRequest(date_from=date_from, date_to=date_to)
+    )
+
+    assert len(preview.totals) == 1
+    assert preview.totals[0].currency == "RON"
+    assert preview.totals[0].total_outgoing == Decimal("120.00")
+    assert preview.totals[0].total_incoming == Decimal("0")
+
+
+def test_export_csv_contains_expected_columns_and_totals(db_session, wallets_with_transfer):
     business, _business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
     date_from, date_to = _today_range()
     service = ExportService(db_session)
 
-    rows = service.list_transactions(business.id, TransactionExportRequest(date_from=date_from, date_to=date_to))
-    csv_text = service.to_csv(rows)
+    preview = service.build_preview(business.id, TransactionExportRequest(date_from=date_from, date_to=date_to))
+    csv_text = service.to_csv(preview)
 
     header = csv_text.splitlines()[0]
-    assert header == "date,transaction_id,type,counterparty,description,amount,currency,status"
+    assert header == "date,transaction_id,type,counterparty,description,category,amount,currency,status"
     assert "Rent" in csv_text
     assert "120.00" in csv_text
+    assert "TOTALS" in csv_text
+
+
+def test_export_xlsx_is_a_real_workbook(db_session, wallets_with_transfer):
+    business, _business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
+    date_from, date_to = _today_range()
+    service = ExportService(db_session)
+
+    preview = service.build_preview(business.id, TransactionExportRequest(date_from=date_from, date_to=date_to))
+    xlsx_bytes = service.to_xlsx(preview)
+
+    assert xlsx_bytes[:2] == b"PK"  # xlsx is a zip container
+
+
+def test_generate_and_log_records_history_and_supports_redownload(db_session, wallets_with_transfer):
+    business, _business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
+    date_from, date_to = _today_range()
+    service = ExportService(db_session)
+    request = TransactionExportRequest(date_from=date_from, date_to=date_to)
+
+    job, content, meta = service.generate_and_log(business.id, request, ExportFormat.CSV)
+    media_type, filename = meta.split("|", 1)
+
+    assert media_type == "text/csv"
+    assert filename.endswith(".csv")
+    assert b"Rent" in content
+
+    history = service.list_history(business.id)
+    assert any(entry.id == job.id for entry in history)
+
+    _redownload_job, redownload_content, _redownload_meta = service.download_job(business.id, job.id)
+    assert redownload_content == content
+
+
+def test_download_job_rejects_other_users_export(db_session, wallets_with_transfer):
+    business, _business_wallet, receiver, _receiver_wallet = wallets_with_transfer
+    date_from, date_to = _today_range()
+    service = ExportService(db_session)
+    job, _content, _meta = service.generate_and_log(
+        business.id, TransactionExportRequest(date_from=date_from, date_to=date_to), ExportFormat.CSV
+    )
+
+    with pytest.raises(NotFoundError):
+        service.download_job(receiver.id, job.id)
 
 
 def test_export_endpoint_rejects_personal_user(client):
@@ -252,4 +361,43 @@ def test_export_endpoint_returns_csv_for_business_user(client, db_session):
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
-    assert response.text.splitlines()[0] == "date,transaction_id,type,counterparty,description,amount,currency,status"
+    assert (
+        response.text.splitlines()[0]
+        == "date,transaction_id,type,counterparty,description,category,amount,currency,status"
+    )
+
+    history = client.get("/api/v1/exports", headers={"Authorization": f"Bearer {token}"})
+    assert history.status_code == 200
+    assert len(history.json()) == 1
+
+    job_id = history.json()[0]["id"]
+    redownload = client.get(f"/api/v1/exports/{job_id}/download", headers={"Authorization": f"Bearer {token}"})
+    assert redownload.status_code == 200
+    assert redownload.text == response.text
+
+
+def test_export_endpoint_supports_xlsx_format(client, db_session):
+    UserService(db_session).create_user(
+        UserCreate(
+            email="export-biz-xlsx@example.com",
+            phone="+40744444452",
+            password="Sup3rSecret!",
+            first_name="Biz",
+            last_name="Xlsx",
+            user_type=UserType.BUSINESS,
+        )
+    )
+    db_session.commit()
+    login = client.post("/api/v1/auth/login", json={"email": "export-biz-xlsx@example.com", "password": "Sup3rSecret!"})
+    token = login.json()["tokens"]["access_token"]
+    date_from, date_to = _today_range()
+
+    response = client.get(
+        "/api/v1/exports/transactions",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"date_from": str(date_from), "date_to": str(date_to), "format": "xlsx"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert response.content[:2] == b"PK"
