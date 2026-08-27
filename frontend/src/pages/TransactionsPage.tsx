@@ -28,6 +28,21 @@ function isIncomingOnly(transaction: Transaction, userWalletIds: Set<string>): b
   return isIncoming && !isOutgoing;
 }
 
+// Mirrors backend/app/payments/service.py's SPLITTABLE_TRANSACTION_TYPES /
+// FOLDER_ELIGIBLE_TRANSACTION_TYPES: transfers, FX conversions, loan
+// installments, and bill-split settlements are never a "payment" either
+// feature is meant for.
+const SPLITTABLE_TRANSACTION_TYPES = new Set(["CARD_PAYMENT", "SCHEDULED_PAYMENT"]);
+const FOLDER_ELIGIBLE_TRANSACTION_TYPES = new Set([...SPLITTABLE_TRANSACTION_TYPES, "CASHBACK"]);
+
+function isSplittable(transaction: Transaction): boolean {
+  return SPLITTABLE_TRANSACTION_TYPES.has(transaction.type);
+}
+
+function isFolderEligible(transaction: Transaction): boolean {
+  return FOLDER_ELIGIBLE_TRANSACTION_TYPES.has(transaction.type);
+}
+
 function formatAmount(transaction: Transaction, userWalletIds: Set<string>): string {
   const sign = isIncomingOnly(transaction, userWalletIds) ? "+" : "-";
   return `${sign}${transaction.amount} ${transaction.currency}`;
@@ -651,7 +666,7 @@ export function TransactionsPage() {
         ) : transactions.length === 0 ? (
           <div className="empty-state">No transactions found for {user?.first_name ?? "this user"}.</div>
         ) : (
-          <table>
+          <table className="transactions-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -674,19 +689,19 @@ export function TransactionsPage() {
                   <td>{tx.status}</td>
                   <td>
                     <div className="transaction-actions">
-                      {tx.status === "COMPLETED" && (
-                        <>
-                          {isIncomingOnly(tx, userWalletIds) ? (
-                            <span />
-                          ) : (
-                            <button className="button--ghost button--wide" onClick={() => openSplit(tx)} type="button">
-                              Split bill
-                            </button>
-                          )}
-                          <button className="button--ghost button--wide" onClick={() => openFolderModal(tx)} type="button">
-                            Add to folder
-                          </button>
-                        </>
+                      {tx.status === "COMPLETED" && isSplittable(tx) ? (
+                        <button className="button--ghost button--wide" onClick={() => openSplit(tx)} type="button">
+                          Split bill
+                        </button>
+                      ) : (
+                        <span className="button--ghost button--wide transaction-actions__placeholder" aria-hidden="true" />
+                      )}
+                      {tx.status === "COMPLETED" && isFolderEligible(tx) ? (
+                        <button className="button--ghost button--wide" onClick={() => openFolderModal(tx)} type="button">
+                          Add to folder
+                        </button>
+                      ) : (
+                        <span className="button--ghost button--wide transaction-actions__placeholder" aria-hidden="true" />
                       )}
                     </div>
                   </td>

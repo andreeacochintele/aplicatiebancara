@@ -136,6 +136,22 @@ def test_fetching_an_added_row_reuses_the_tracked_instance(session, record_bodie
     assert body["verified"] is True
 
 
+def test_fetch_many_skips_a_row_with_a_value_unknown_to_the_current_schema(monkeypatch, session):
+    """Regression test: one row written by a value the running code's enums
+    don't recognize (legacy data, or a column shared with an unmerged
+    branch) must not 500 every other row in the same list for every other
+    caller -- it should be skipped, not fatal to the batch."""
+    good_row = _merchant_row(uuid.uuid4())
+    bad_row = _merchant_row(uuid.uuid4())
+    bad_row["status"] = "NOT_A_REAL_STATUS"
+
+    monkeypatch.setattr(session, "request", lambda method, table, **kwargs: [bad_row, good_row])
+
+    results = session.fetch_many(Merchant, {})
+
+    assert [str(m.id) for m in results] == [good_row["id"]]
+
+
 @pytest.fixture()
 def record_bodies(monkeypatch, session):
     calls: list[tuple[str, str, object]] = []

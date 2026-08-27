@@ -284,6 +284,127 @@ def test_bill_split_rejects_incoming_transaction_as_source(client, db_session):
     assert response.status_code == 422
 
 
+def test_bill_split_rejects_outgoing_transfer_as_source(client, db_session):
+    owner = _register(client, "split-transfer-owner@example.com", "+40770333340")
+    receiver = _register(client, "split-transfer-receiver@example.com", "+40770333341")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    receiver_wallet = _create_wallet(db_session, receiver["user"]["id"], "RON")
+    transfer = TransactionService(db_session).create_internal_transfer(
+        UUID(owner["user"]["id"]),
+        InternalTransferCreate(
+            source_wallet_id=owner_wallet.id,
+            destination_wallet_id=receiver_wallet.id,
+            amount=Decimal("60.00"),
+            description="Sent to a friend",
+        ),
+    )
+
+    response = client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Should fail",
+            "total_amount": "60.00",
+            "currency": "RON",
+            "source_transaction_id": str(transfer.id),
+            "participants": [{"name": "Friend", "phone": "+40770333342", "amount": "60.00"}],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_bill_split_rejects_loan_payment_as_source(client, db_session):
+    owner = _register(client, "split-loan-owner@example.com", "+40770333343")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    loan_payment = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        source_wallet_id=owner_wallet.id,
+        type=TransactionType.LOAN_PAYMENT,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("120.00"),
+        currency="RON",
+        description="Loan installment",
+    )
+    db_session.add(loan_payment)
+    db_session.flush()
+
+    response = client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Should fail",
+            "total_amount": "120.00",
+            "currency": "RON",
+            "source_transaction_id": str(loan_payment.id),
+            "participants": [{"name": "Friend", "phone": "+40770333344", "amount": "120.00"}],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_bill_split_rejects_fx_conversion_as_source(client, db_session):
+    owner = _register(client, "split-fx-owner@example.com", "+40770333345")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    fx_transaction = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        source_wallet_id=owner_wallet.id,
+        type=TransactionType.FX,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("100.00"),
+        currency="EUR",
+        description="Converted RON to EUR",
+    )
+    db_session.add(fx_transaction)
+    db_session.flush()
+
+    response = client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Should fail",
+            "total_amount": "100.00",
+            "currency": "EUR",
+            "source_transaction_id": str(fx_transaction.id),
+            "participants": [{"name": "Friend", "phone": "+40770333346", "amount": "100.00"}],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_bill_split_accepts_completed_card_payment_as_source(client, db_session):
+    owner = _register(client, "split-card-owner@example.com", "+40770333347")
+    _register(client, "split-card-friend@example.com", "+40770333348")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    card_payment = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        source_wallet_id=owner_wallet.id,
+        type=TransactionType.CARD_PAYMENT,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("80.00"),
+        currency="RON",
+        description="Dinner",
+    )
+    db_session.add(card_payment)
+    db_session.flush()
+
+    response = client.post(
+        "/api/v1/payments/bill-splits",
+        headers=_auth_header(owner),
+        json={
+            "title": "Dinner split",
+            "total_amount": "80.00",
+            "currency": "RON",
+            "source_transaction_id": str(card_payment.id),
+            "participants": [{"name": "Friend", "phone": "+40770333348", "amount": "80.00"}],
+        },
+    )
+
+    assert response.status_code == 201
+
+
 def test_participant_can_pay_bill_split(client, db_session):
     owner = _register(client, "split-pay-owner@example.com", "+40770444444")
     participant = _register(client, "split-pay-participant@example.com", "+40770555555")

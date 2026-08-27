@@ -83,18 +83,18 @@ def test_transaction_folder_rejects_duplicate_name(client):
 
 def test_add_and_remove_transaction_from_folder(client, db_session):
     owner = _register(client, "folder-tx-owner@example.com", "+40771333333")
-    receiver = _register(client, "folder-tx-receiver@example.com", "+40771444444")
     owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
-    receiver_wallet = _create_wallet(db_session, receiver["user"]["id"], "RON")
-    transaction = TransactionService(db_session).create_internal_transfer(
-        UUID(owner["user"]["id"]),
-        InternalTransferCreate(
-            source_wallet_id=owner_wallet.id,
-            destination_wallet_id=receiver_wallet.id,
-            amount=Decimal("75.00"),
-            description="Folder me",
-        ),
+    transaction = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        source_wallet_id=owner_wallet.id,
+        type=TransactionType.CARD_PAYMENT,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("75.00"),
+        currency="RON",
+        description="Folder me",
     )
+    db_session.add(transaction)
+    db_session.flush()
     folder = client.post(
         "/api/v1/payments/transaction-folders",
         headers=_auth_header(owner),
@@ -181,3 +181,119 @@ def test_transaction_folder_rejects_other_users_transaction(client, db_session):
     )
 
     assert response.status_code == 404
+
+
+def test_transaction_folder_rejects_transfer_transaction(client, db_session):
+    owner = _register(client, "folder-transfer-owner@example.com", "+40771888888")
+    receiver = _register(client, "folder-transfer-receiver@example.com", "+40771888889")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    receiver_wallet = _create_wallet(db_session, receiver["user"]["id"], "RON")
+    transfer = TransactionService(db_session).create_internal_transfer(
+        UUID(owner["user"]["id"]),
+        InternalTransferCreate(
+            source_wallet_id=owner_wallet.id,
+            destination_wallet_id=receiver_wallet.id,
+            amount=Decimal("60.00"),
+            description="Sent to a friend",
+        ),
+    )
+    folder = client.post(
+        "/api/v1/payments/transaction-folders",
+        headers=_auth_header(owner),
+        json={"name": "Not a payment"},
+    ).json()
+
+    response = client.post(
+        f"/api/v1/payments/transaction-folders/{folder['id']}/transactions",
+        headers=_auth_header(owner),
+        json={"transaction_id": str(transfer.id)},
+    )
+
+    assert response.status_code == 422
+
+
+def test_transaction_folder_rejects_loan_payment_transaction(client, db_session):
+    owner = _register(client, "folder-loan-owner@example.com", "+40771999999")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    loan_payment = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        source_wallet_id=owner_wallet.id,
+        type=TransactionType.LOAN_PAYMENT,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("120.00"),
+        currency="RON",
+        description="Loan installment",
+    )
+    db_session.add(loan_payment)
+    db_session.flush()
+    folder = client.post(
+        "/api/v1/payments/transaction-folders",
+        headers=_auth_header(owner),
+        json={"name": "Loans"},
+    ).json()
+
+    response = client.post(
+        f"/api/v1/payments/transaction-folders/{folder['id']}/transactions",
+        headers=_auth_header(owner),
+        json={"transaction_id": str(loan_payment.id)},
+    )
+
+    assert response.status_code == 422
+
+
+def test_transaction_folder_rejects_fx_conversion_transaction(client, db_session):
+    owner = _register(client, "folder-fx-owner@example.com", "+40772000000")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    fx_transaction = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        source_wallet_id=owner_wallet.id,
+        type=TransactionType.FX,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("100.00"),
+        currency="EUR",
+        description="Converted RON to EUR",
+    )
+    db_session.add(fx_transaction)
+    db_session.flush()
+    folder = client.post(
+        "/api/v1/payments/transaction-folders",
+        headers=_auth_header(owner),
+        json={"name": "Conversions"},
+    ).json()
+
+    response = client.post(
+        f"/api/v1/payments/transaction-folders/{folder['id']}/transactions",
+        headers=_auth_header(owner),
+        json={"transaction_id": str(fx_transaction.id)},
+    )
+
+    assert response.status_code == 422
+
+
+def test_transaction_folder_accepts_cashback_transaction(client, db_session):
+    owner = _register(client, "folder-cashback-owner@example.com", "+40772111111")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    cashback = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        destination_wallet_id=owner_wallet.id,
+        type=TransactionType.CASHBACK,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("5.00"),
+        currency="RON",
+        description="Cashback reward",
+    )
+    db_session.add(cashback)
+    db_session.flush()
+    folder = client.post(
+        "/api/v1/payments/transaction-folders",
+        headers=_auth_header(owner),
+        json={"name": "Groceries"},
+    ).json()
+
+    response = client.post(
+        f"/api/v1/payments/transaction-folders/{folder['id']}/transactions",
+        headers=_auth_header(owner),
+        json={"transaction_id": str(cashback.id)},
+    )
+
+    assert response.status_code == 200

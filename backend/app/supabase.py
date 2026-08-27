@@ -4,6 +4,7 @@ This is intentionally narrow: it preserves the service/repository shape while
 we migrate modules gradually from SQLAlchemy sessions to Supabase REST calls.
 """
 import json
+import logging
 import re
 import uuid
 from collections.abc import Iterable, Mapping
@@ -18,6 +19,8 @@ from urllib.request import Request, urlopen
 from sqlalchemy import inspect as sa_inspect
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 ModelT = TypeVar("ModelT")
 
@@ -60,7 +63,21 @@ class SupabaseRestSession:
 
     def fetch_many(self, model: type[ModelT], params: Mapping[str, str]) -> list[ModelT]:
         rows = self.request("GET", self._table_name(model), params=params) or []
-        return [self._hydrate(model, row) for row in rows]
+        hydrated: list[ModelT] = []
+        for row in rows:
+            try:
+                hydrated.append(self._hydrate(model, row))
+            except ValueError:
+                # A row with a value the current code's enums don't recognize
+                # (legacy/orphaned data, or a column shared with an
+                # in-progress branch) shouldn't 500 every other row in the
+                # same list for every other user. Skip it, not the batch.
+                logger.warning(
+                    "Skipping %s row %s: value not recognized by the current schema",
+                    self._table_name(model),
+                    row.get("id", "<unknown>"),
+                )
+        return hydrated
 
     def request(
         self,
