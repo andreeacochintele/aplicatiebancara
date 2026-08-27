@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, utcnow
+from app.wallets.iban import generate_iban
 
 
 class WalletStatus(str, enum.Enum):
@@ -30,6 +31,7 @@ class Wallet(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    iban: Mapped[str] = mapped_column(String(34), unique=True, nullable=False, default=generate_iban)
     available_balance: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     reserved_balance: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"), nullable=False)
     is_main: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

@@ -19,6 +19,7 @@ class WalletPublic(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     currency: str
+    iban: str
     available_balance: Decimal
     reserved_balance: Decimal
     is_main: bool

@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ChevronDown, ChevronUp, Plus, Star, Trash2, TrendingUp, X } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ChevronUp, Copy, Plus, Star, Trash2, TrendingUp, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -105,6 +105,14 @@ export function WalletsPage() {
   const [chartTargetCurrency, setChartTargetCurrency] = useState("");
   const [rateHistory, setRateHistory] = useState<FXRateHistory | null>(null);
   const [expandedTransactionWalletIds, setExpandedTransactionWalletIds] = useState<Set<string>>(() => new Set());
+  const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
+
+  function copyIban(wallet: Wallet) {
+    navigator.clipboard.writeText(wallet.iban).then(() => {
+      setCopiedWalletId(wallet.id);
+      setTimeout(() => setCopiedWalletId((current) => (current === wallet.id ? null : current)), 1500);
+    });
+  }
 
   function loadWallets() {
     if (!accessToken) return;
@@ -355,6 +363,16 @@ export function WalletsPage() {
                     ? `${wallet.reserved_balance} ${wallet.currency} reserved`
                     : "Nothing on hold"}
                 </div>
+                <button
+                  type="button"
+                  className="aurora-wallet-card__iban"
+                  onClick={() => copyIban(wallet)}
+                  title="Copy IBAN"
+                >
+                  <span>{wallet.iban}</span>
+                  <Copy size={12} />
+                  {copiedWalletId === wallet.id && <span className="aurora-wallet-card__iban-copied">Copied</span>}
+                </button>
                 <button
                   type="button"
                   className="aurora-wallet-history-toggle"
