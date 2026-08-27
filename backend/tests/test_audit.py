@@ -37,14 +37,18 @@ def test_log_action_and_list_all(db_session, admin_user):
 
 
 def test_list_all_filters_by_entity_type(db_session, admin_user):
+    # Entity types here are synthetic (this tests AuditService.list_all()'s
+    # own filtering, not any specific router's wiring) — "CARD" specifically
+    # avoided since card freeze/unfreeze is user self-service, not an admin
+    # action, and is never actually logged here (see audit/models.py).
     service = AuditService(db_session)
-    service.log_action(admin_user.id, action="FREEZE", entity_type="CARD", entity_id=uuid.uuid4())
+    service.log_action(admin_user.id, action="APPROVE", entity_type="TEST_KIND_A", entity_id=uuid.uuid4())
     service.log_action(admin_user.id, action="APPROVE", entity_type="FRAUD_CASE", entity_id=uuid.uuid4())
 
-    card_logs = service.list_all(entity_type="CARD")
+    filtered_logs = service.list_all(entity_type="TEST_KIND_A")
 
-    assert all(log.entity_type == "CARD" for log in card_logs)
-    assert any(log.action == "FREEZE" for log in card_logs)
+    assert all(log.entity_type == "TEST_KIND_A" for log in filtered_logs)
+    assert any(log.action == "APPROVE" for log in filtered_logs)
 
 
 def test_list_all_orders_most_recent_first(db_session, admin_user):

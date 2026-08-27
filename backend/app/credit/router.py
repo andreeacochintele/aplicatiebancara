@@ -157,10 +157,18 @@ def list_all_documents(
 @router.get("/admin/documents/{document_id}/content", response_model=CreditDocumentContentPublic)
 def get_admin_document_content(
     document_id: uuid.UUID,
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> CreditDocumentContentPublic:
-    return CreditService(db).get_document_content_for_admin(document_id)
+    content = CreditService(db).get_document_content_for_admin(document_id)
+    AuditService(db).log_action(
+        admin.id,
+        action="VIEW_CONTENT",
+        entity_type="CREDIT_DOCUMENT",
+        entity_id=document_id,
+    )
+    db.commit()
+    return content
 
 
 @router.patch("/admin/documents/{document_id}/review", response_model=CreditDocumentPublic)

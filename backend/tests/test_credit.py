@@ -4,6 +4,7 @@ from uuid import UUID
 
 import pytest
 
+from app.audit.models import AdminAuditLog
 from app.cards.models import CardType
 from app.cards.schemas import CardCreate
 from app.cards.service import CardService
@@ -1818,6 +1819,14 @@ def test_credit_document_upload_and_admin_review_flow(client, db_session):
     assert content_response.json()["file_name"] == "salary.pdf"
     assert content_response.json()["content_base64"] == "c2FsYXJ5LXBkZg=="
 
+    view_log = (
+        db_session.query(AdminAuditLog)
+        .filter_by(entity_id=UUID(document_id), action="VIEW_CONTENT")
+        .one()
+    )
+    assert view_log.admin_user_id == admin.id
+    assert view_log.entity_type == "CREDIT_DOCUMENT"
+
     review_response = client.patch(
         f"/api/v1/credit/admin/documents/{document_id}/review",
         headers={"Authorization": f"Bearer {admin_token}"},
@@ -1829,6 +1838,15 @@ def test_credit_document_upload_and_admin_review_flow(client, db_session):
     assert body["status"] == "APPROVED"
     assert body["evaluation_score"] == 92
     assert body["reviewed_by_admin_id"] == str(admin.id)
+
+    review_log = (
+        db_session.query(AdminAuditLog)
+        .filter_by(entity_id=UUID(document_id), action="APPROVED")
+        .one()
+    )
+    assert review_log.admin_user_id == admin.id
+    assert review_log.old_data == {"status": "UPLOADED"}
+    assert review_log.new_data == {"status": "APPROVED"}
 
 
 def test_credit_document_upload_rejects_invalid_content_size(db_session):

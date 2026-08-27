@@ -73,7 +73,7 @@ def decide_fraud_case(
 @router.post("/cases/{case_id}/investigate", response_model=FraudCaseDetail)
 def investigate_fraud_case(
     case_id: uuid.UUID,
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> FraudCaseDetail:
     """Runs the Fraud Investigation Agent for this case on demand and caches
@@ -85,5 +85,12 @@ def investigate_fraud_case(
     case = service.get_case(case_id)
     result = fraud_investigation_agent.investigate(case_id, db)
     service.save_agent_analysis(case, result.risk_level, result.explanation, **result.analysis_sections())
+    AuditService(db).log_action(
+        admin.id,
+        action="INVESTIGATE",
+        entity_type="FRAUD_CASE",
+        entity_id=case.id,
+        new_data={"risk_level": result.risk_level},
+    )
     db.commit()
     return service.to_detail(case)
