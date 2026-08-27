@@ -1,4 +1,4 @@
-import { CreditCard, Gift, ShieldCheck, Sparkles, Store, Users, X } from "lucide-react";
+import { CreditCard, Gift, RefreshCw, ShieldCheck, Sparkles, Store, Users, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
@@ -145,6 +145,7 @@ export function RewardsPage() {
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [inviteCopyFeedback, setInviteCopyFeedback] = useState(false);
   const [markingUsedId, setMarkingUsedId] = useState<string | null>(null);
+  const [refreshingHistory, setRefreshingHistory] = useState(false);
 
   function loadRewards() {
     if (!accessToken) return;
@@ -240,6 +241,22 @@ export function RewardsPage() {
 
   function syncRewardsFromTransactions() {
     syncRewards();
+  }
+
+  // A real card payment only becomes a reward transaction once sync-rewards
+  // runs (see syncRewards above), which otherwise only happens on page load
+  // and right after a payment made from this page's own pay form — a
+  // payment made elsewhere (Cards page, another tab) needs this manual
+  // nudge instead of a full page reload.
+  async function refreshPointsHistory() {
+    if (!accessToken || refreshingHistory) return;
+    setRefreshingHistory(true);
+    try {
+      await syncRewards();
+    } finally {
+      loadRewards();
+      setRefreshingHistory(false);
+    }
   }
 
   useEffect(loadRewards, [accessToken]);
@@ -838,6 +855,16 @@ export function RewardsPage() {
           <div className="tile">
             <div className="tile__header">
               <span className="eyebrow">Points history</span>
+              <button
+                type="button"
+                className="button--ghost card-panel__icon-action"
+                onClick={refreshPointsHistory}
+                disabled={refreshingHistory}
+                aria-label="Refresh points history"
+                style={{ marginLeft: "auto" }}
+              >
+                <RefreshCw size={14} strokeWidth={2.2} className={refreshingHistory ? "spin" : undefined} />
+              </button>
             </div>
             {history.length > 0 ? (
               <>

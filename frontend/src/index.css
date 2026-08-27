@@ -2393,6 +2393,22 @@ th {
   padding: 0;
 }
 
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
 .card-panel__value {
   margin-top: 0.2rem;
   font-size: 0.95rem;
