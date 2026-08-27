@@ -2,8 +2,7 @@
 // No LLM involved — every rule here is a plain comparison over data the page
 // already fetched (architecture.md: keep financial/derived-metric logic out
 // of the model, see CLAUDE.md §12).
-import type { Budget, ForecastResponse, MonthlyTrendResponse, SpendingByTypeResponse } from "../../types";
-import { friendlyTransactionType } from "./formatters";
+import type { Budget, ForecastResponse, MonthlyTrendResponse, SpendingByCategoryItem } from "../../types";
 
 export type InsightKind = "trend" | "category" | "budget" | "forecast";
 
@@ -16,14 +15,18 @@ export interface AnalyticsInsight {
 
 interface InsightInputs {
   monthlyTrend: MonthlyTrendResponse | null;
-  spendingByType: SpendingByTypeResponse | null;
+  // Already filtered to a single currency by the caller (see AnalyticsPage's
+  // spendingItems) — summing across currencies here would silently mix them,
+  // the same bug the donut chart next to these insights was already careful
+  // to avoid.
+  spendingItems: SpendingByCategoryItem[];
   budgets: Budget[];
   forecast: ForecastResponse | null;
 }
 
 export function generateAnalyticsInsights({
   monthlyTrend,
-  spendingByType,
+  spendingItems,
   budgets,
   forecast,
 }: InsightInputs): AnalyticsInsight[] {
@@ -46,15 +49,14 @@ export function generateAnalyticsInsights({
     }
   }
 
-  const items = spendingByType?.items ?? [];
-  const totalSpend = items.reduce((sum, item) => sum + Number(item.total_amount), 0);
+  const totalSpend = spendingItems.reduce((sum, item) => sum + Number(item.total_amount), 0);
   if (totalSpend > 0) {
-    const top = [...items].sort((a, b) => Number(b.total_amount) - Number(a.total_amount))[0];
+    const top = [...spendingItems].sort((a, b) => Number(b.total_amount) - Number(a.total_amount))[0];
     const pct = Math.round((Number(top.total_amount) / totalSpend) * 100);
     if (pct >= 40) {
       insights.push({
         id: "category",
-        message: `${friendlyTransactionType(top.type)} represent ${pct}% of your spending this month.`,
+        message: `${top.category} purchases represent ${pct}% of your spending this month.`,
         ctaLabel: "View breakdown",
         ctaTo: "/transactions",
       });

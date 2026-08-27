@@ -1,4 +1,6 @@
 """Budget endpoints, scoped to the authenticated user."""
+import uuid
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -28,3 +30,13 @@ def create_budget(
     budget = BudgetService(db).create_budget(current_user.id, payload)
     db.commit()
     return budget
+
+
+@router.delete("/{budget_id}", status_code=204)
+def delete_budget(
+    budget_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    BudgetService(db).delete_budget(current_user.id, budget_id)
+    db.commit()

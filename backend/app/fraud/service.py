@@ -1034,6 +1034,7 @@ class FraudService:
             risk_score=case.risk_score,
             status=case.status,
             hold_amount=case.hold_amount,
+            hold_currency=transaction.currency,
             created_at=case.created_at,
             flag_codes=[flag.code for flag in flags],
             decided_by_admin_id=case.decided_by_admin_id,
@@ -1048,6 +1049,7 @@ class FraudService:
 
     def _to_summary(self, case: FraudCase) -> FraudCaseSummary:
         flags = self.repository.list_flags_for_case(case.id)
+        transaction = self.transactions.get_by_id(case.transaction_id)
         return FraudCaseSummary(
             id=case.id,
             transaction_id=case.transaction_id,
@@ -1055,6 +1057,7 @@ class FraudService:
             risk_score=case.risk_score,
             status=case.status,
             hold_amount=case.hold_amount,
+            hold_currency=transaction.currency if transaction is not None else "RON",
             created_at=case.created_at,
             flag_codes=[flag.code for flag in flags],
         )

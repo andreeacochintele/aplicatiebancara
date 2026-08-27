@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.analytics.repository import AnalyticsRepository
 from app.analytics.schemas import (
+    CategorySpendingFlag,
     ForecastPoint,
     ForecastResponse,
     MonthlyTrendItem,
@@ -18,8 +19,11 @@ from app.analytics.schemas import (
     NetWorthHistoryPoint,
     NetWorthHistoryResponse,
     NetWorthResponse,
+    SpendingByCategory,
+    SpendingByCategoryResponse,
     SpendingByType,
     SpendingByTypeResponse,
+    SpendingComparisonPoint,
     WalletBalanceItem,
 )
 from app.core.exceptions import NotFoundError, ValidationError
@@ -41,6 +45,12 @@ _HISTORY_PERIOD_DAYS = {"3m": 90, "6m": 182, "1y": 365}
 
 _CENTS = Decimal("0.01")
 
+# Thresholds for spending_recommendations() — deliberately visible/tunable
+# constants, not derived from any real usage data. Defaults match the
+# examples given when this feature was scoped.
+SPENDING_INCREASE_THRESHOLD_PERCENT = Decimal("20")
+CATEGORY_CONCENTRATION_THRESHOLD_PERCENT = Decimal("40")
+
 
 class AnalyticsService:
     def __init__(self, db: Session) -> None:
@@ -49,7 +59,7 @@ class AnalyticsService:
         self.wallet_repository = WalletRepository(db)
         self.fx_service = FXService(db)
 
-    def spending_by_type(self, user_id: uuid.UUID, year: int | None, month: int | None) -> SpendingByTypeResponse:
+    def _month_period_bounds(self, year: int | None, month: int | None) -> tuple[datetime, datetime]:
         if (year is None) != (month is None):
             raise ValidationError("year and month must be provided together")
 
@@ -62,6 +72,10 @@ class AnalyticsService:
         period_start = datetime(year, month, 1, tzinfo=timezone.utc)
         days_in_month = calendar.monthrange(year, month)[1]
         period_end = datetime(year, month, days_in_month, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        return period_start, period_end
+
+    def spending_by_type(self, user_id: uuid.UUID, year: int | None, month: int | None) -> SpendingByTypeResponse:
+        period_start, period_end = self._month_period_bounds(year, month)
 
         rows = self.repository.spending_by_type(user_id, period_start, period_end)
         items = [
@@ -71,6 +85,125 @@ class AnalyticsService:
         return SpendingByTypeResponse(
             period_start=period_start.date(), period_end=period_end.date(), items=items
         )
+
+    def spending_by_category(
+        self, user_id: uuid.UUID, year: int | None, month: int | None
+    ) -> SpendingByCategoryResponse:
+        period_start, period_end = self._month_period_bounds(year, month)
+
+        rows = self.repository.spending_by_merchant_category(user_id, period_start, period_end)
+        items = [
+            SpendingByCategory(category=category, total_amount=total, currency=currency, transaction_count=count)
+            for category, currency, total, count in rows
+        ]
+        return SpendingByCategoryResponse(
+            period_start=period_start.date(), period_end=period_end.date(), items=items
+        )
+
+    def spending_recommendations(self, user_id: uuid.UUID) -> list[CategorySpendingFlag]:
+        """Pure calculation, no AI — see ai/personal_finance/insights.py for
+        the LLM phrasing layer that consumes this list. A category is
+        flagged when any comparison below crosses its threshold:
+
+        - week-over-week: this week's spend in a category vs last week's,
+          up more than SPENDING_INCREASE_THRESHOLD_PERCENT.
+        - month-vs-3m-average: this month's spend (month-to-date) in a
+          category vs that category's own average over the prior 3
+          complete calendar months, up more than
+          SPENDING_INCREASE_THRESHOLD_PERCENT.
+        - concentration: one category is more than
+          CATEGORY_CONCENTRATION_THRESHOLD_PERCENT of this month's total
+          spend across all categories (same currency).
+
+        All three are scoped per currency — a category's RON spend is
+        never compared against or blended with its USD spend, same
+        convention spending_by_category()'s donut view already uses.
+        Only flagged categories are returned; a quiet category (nothing
+        crossed a threshold) doesn't appear in the result at all.
+        """
+        now = datetime.now(timezone.utc)
+
+        week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+        last_week_start = week_start - timedelta(days=7)
+
+        month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+        three_months_start = self._months_before(month_start, 3)
+
+        this_week = self._category_totals(user_id, week_start, now)
+        last_week = self._category_totals(user_id, last_week_start, week_start)
+        this_month = self._category_totals(user_id, month_start, now)
+        prior_three_months = self._category_totals(user_id, three_months_start, month_start)
+
+        this_month_total_by_currency: dict[str, Decimal] = {}
+        for (_category, currency), amount in this_month.items():
+            this_month_total_by_currency[currency] = this_month_total_by_currency.get(currency, Decimal("0")) + amount
+
+        flags: list[CategorySpendingFlag] = []
+        for category, currency in sorted(set(this_week) | set(this_month)):
+            reasons: list[str] = []
+
+            week_point = None
+            current_week_amount = this_week.get((category, currency), Decimal("0"))
+            prior_week_amount = last_week.get((category, currency), Decimal("0"))
+            if current_week_amount > 0 or prior_week_amount > 0:
+                change = self._percent_change(prior_week_amount, current_week_amount)
+                week_point = SpendingComparisonPoint(
+                    current_amount=current_week_amount, comparison_amount=prior_week_amount, change_percent=change
+                )
+                if change is not None and change > float(SPENDING_INCREASE_THRESHOLD_PERCENT):
+                    reasons.append("WEEK_OVER_WEEK_INCREASE")
+
+            month_point = None
+            current_month_amount = this_month.get((category, currency), Decimal("0"))
+            avg_prior_amount = (prior_three_months.get((category, currency), Decimal("0")) / Decimal("3")).quantize(
+                _CENTS
+            )
+            if current_month_amount > 0 or avg_prior_amount > 0:
+                change = self._percent_change(avg_prior_amount, current_month_amount)
+                month_point = SpendingComparisonPoint(
+                    current_amount=current_month_amount, comparison_amount=avg_prior_amount, change_percent=change
+                )
+                if change is not None and change > float(SPENDING_INCREASE_THRESHOLD_PERCENT):
+                    reasons.append("MONTH_VS_AVERAGE_INCREASE")
+
+            share_percent = None
+            month_total = this_month_total_by_currency.get(currency, Decimal("0"))
+            if month_total > 0 and current_month_amount > 0:
+                share_percent = round(float((current_month_amount / month_total) * 100), 1)
+                if share_percent > float(CATEGORY_CONCENTRATION_THRESHOLD_PERCENT):
+                    reasons.append("CATEGORY_CONCENTRATION")
+
+            if reasons:
+                flags.append(
+                    CategorySpendingFlag(
+                        category=category,
+                        currency=currency,
+                        reasons=reasons,
+                        week_over_week=week_point,
+                        month_vs_three_month_average=month_point,
+                        share_of_total_percent=share_percent,
+                    )
+                )
+        return flags
+
+    def _category_totals(
+        self, user_id: uuid.UUID, period_start: datetime, period_end: datetime
+    ) -> dict[tuple[str, str], Decimal]:
+        rows = self.repository.spending_by_merchant_category(user_id, period_start, period_end)
+        return {(category, currency): total for category, currency, total, _count in rows}
+
+    @staticmethod
+    def _percent_change(before: Decimal, after: Decimal) -> float | None:
+        if before <= 0:
+            return None
+        return float(((after - before) / before) * 100)
+
+    @staticmethod
+    def _months_before(dt: datetime, months: int) -> datetime:
+        month_index = dt.month - 1 - months
+        year = dt.year + month_index // 12
+        month = month_index % 12 + 1
+        return dt.replace(year=year, month=month)
 
     def monthly_trend(
         self, user_id: uuid.UUID, months: int, base_currency: str | None = None
@@ -108,6 +241,20 @@ class AnalyticsService:
         for (year, month, currency), b in buckets.items():
             converted = (b["total"] * self._rate_to(currency, base)).quantize(_CENTS, rounding=ROUND_HALF_UP)
             totals_by_month[(year, month)] = totals_by_month.get((year, month), Decimal("0")) + converted
+
+        # Backfilled with a zero entry for every month in the requested
+        # window that had no activity at all, not just the months that
+        # actually had a transaction — a brand-new account (or any account
+        # with a quiet month) would otherwise get back a single isolated
+        # data point instead of a real "last N months" trend line.
+        cursor_year, cursor_month = start_year, start_month
+        for _ in range(months):
+            totals_by_month.setdefault((cursor_year, cursor_month), Decimal("0"))
+            cursor_month += 1
+            if cursor_month > 12:
+                cursor_month = 1
+                cursor_year += 1
+
         totals = [
             MonthlyTrendTotal(year=year, month=month, total_amount=total)
             for (year, month), total in sorted(totals_by_month.items())

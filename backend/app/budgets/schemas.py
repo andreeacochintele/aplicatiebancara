@@ -13,13 +13,13 @@ class BudgetCreate(BaseModel):
     limit_amount: Decimal
     currency: str = "RON"
     period: BudgetPeriod = BudgetPeriod.MONTHLY
-    category_id: uuid.UUID | None = None
+    category: str | None = None
 
 
 class BudgetPublic(BaseModel):
     id: uuid.UUID
     name: str
-    category_id: uuid.UUID | None
+    category: str | None
     limit_amount: Decimal
     currency: str
     period: BudgetPeriod

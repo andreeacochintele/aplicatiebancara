@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 
 from app.ai.observability import log_tool_call
 from app.ai.tools.base import ToolContext, ToolDataUnavailableError
-from app.analytics.schemas import ForecastResponse, SpendingByTypeResponse
+from app.analytics.schemas import CategorySpendingFlag, ForecastResponse, SpendingByTypeResponse
 from app.analytics.service import AnalyticsService
 from app.budgets.schemas import BudgetPublic
 from app.budgets.service import BudgetService
@@ -44,6 +44,19 @@ def get_spending_by_category(ctx: ToolContext) -> SpendingByTypeResponse:
     §10). Present this to the user as "by type", not "by category"."""
     now = datetime.now(timezone.utc)
     return AnalyticsService(ctx.db).spending_by_type(ctx.user_id, now.year, now.month)
+
+
+@log_tool_call
+def get_spending_recommendations(ctx: ToolContext) -> list[CategorySpendingFlag]:
+    """Real per-category spend, unlike get_spending_by_category above —
+    reuses AnalyticsService.spending_recommendations(), which groups by
+    the paying merchant's own category and only returns categories that
+    actually crossed a week-over-week, month-vs-3m-average, or
+    concentration threshold. Used by insights.py to phrase the Analytics
+    dashboard's "Spending recommendations" panel; the LLM only phrases
+    what this tool already decided to flag, never which categories to
+    flag (CLAUDE.md §12)."""
+    return AnalyticsService(ctx.db).spending_recommendations(ctx.user_id)
 
 
 @log_tool_call

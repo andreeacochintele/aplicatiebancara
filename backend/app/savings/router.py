@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db
-from app.savings.schemas import SavingsContribution, SavingsGoalCreate, SavingsGoalPublic
+from app.savings.schemas import (
+    SavingsContribution,
+    SavingsGoalCreate,
+    SavingsGoalDeleteRequest,
+    SavingsGoalPublic,
+    SavingsWithdrawal,
+)
 from app.savings.service import SavingsService
 from app.users.models import User
 
@@ -39,6 +45,29 @@ def contribute_to_goal(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SavingsGoalPublic:
-    goal = SavingsService(db).contribute(current_user.id, goal_id, payload.amount)
+    goal = SavingsService(db).contribute(current_user.id, goal_id, payload)
     db.commit()
     return goal
+
+
+@router.post("/{goal_id}/withdraw", response_model=SavingsGoalPublic)
+def withdraw_from_goal(
+    goal_id: uuid.UUID,
+    payload: SavingsWithdrawal,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SavingsGoalPublic:
+    goal = SavingsService(db).withdraw(current_user.id, goal_id, payload)
+    db.commit()
+    return goal
+
+
+@router.delete("/{goal_id}", status_code=204)
+def delete_goal(
+    goal_id: uuid.UUID,
+    payload: SavingsGoalDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    SavingsService(db).delete_goal(current_user.id, goal_id, payload)
+    db.commit()

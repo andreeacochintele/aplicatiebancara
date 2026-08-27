@@ -6,6 +6,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.ai.orchestrator import models as ai_orchestrator_models  # noqa: F401
+from app.ai.personal_finance import models as ai_personal_finance_models  # noqa: F401
 from app.auth import models as auth_models  # noqa: F401
 from app.cards import models as cards_models  # noqa: F401
 from app.config import get_settings

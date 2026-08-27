@@ -24,6 +24,7 @@ class FraudCaseSummary(BaseModel):
     risk_score: Decimal
     status: FraudCaseStatus
     hold_amount: Decimal
+    hold_currency: str
     created_at: datetime
     flag_codes: list[FraudFlagCode]
 

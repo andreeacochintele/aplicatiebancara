@@ -214,11 +214,18 @@ class MerchantService:
         tier: CardTier | None = None,
         wallet_id: uuid.UUID | None = None,
     ) -> PurchaseResult:
-        # Partner-offer cashback: the merchant's own CashbackOffer percent,
-        # gated by minimum_spend and capped at maximum_cashback — both in the
-        # transaction's own currency (no FX needed: the wallet being
+        # CashbackOffer.minimum_spend/maximum_cashback carry no currency of
+        # their own (architecture.md §11's examples are all RON) — they're
+        # RON-denominated thresholds, same as CARD_TIER_POINT_MULTIPLIER's
+        # points-per-RON rate below. Converted via FXService so a 500 USD
+        # payment doesn't clear a "500" minimum meant for 500 RON, and a
+        # maximum_cashback cap is enforced in RON-equivalent terms even
+        # though the cashback itself is credited in the payment's own
+        # currency (no FX needed for the credit itself — the wallet being
         # credited is always the same currency as the payment).
-        #
+        fx_rate = self.fx.get_rate(currency, "RON")
+        amount_in_ron = amount * fx_rate
+
         # payment_date is the transaction's own created_at, not the date the
         # sync happens to run on — a payment held for fraud review can be
         # approved days later, and it must still earn whatever offer was
@@ -227,23 +234,24 @@ class MerchantService:
         offer = self.repository.active_offer_for_merchant(merchant.id, payment_date)
         partner_cashback_percent = Decimal("0")
         partner_cashback_amount = Decimal("0")
-        if offer is not None and (offer.minimum_spend is None or amount >= offer.minimum_spend):
+        if offer is not None and (offer.minimum_spend is None or amount_in_ron >= offer.minimum_spend):
             partner_cashback_percent = offer.cashback_percent
             partner_cashback_amount = (amount * offer.cashback_percent / Decimal("100")).quantize(
                 Decimal("0.01"), rounding=ROUND_DOWN
             )
             if offer.maximum_cashback is not None:
-                partner_cashback_amount = min(partner_cashback_amount, offer.maximum_cashback)
+                max_in_payment_currency = (offer.maximum_cashback / fx_rate).quantize(
+                    Decimal("0.01"), rounding=ROUND_DOWN
+                )
+                partner_cashback_amount = min(partner_cashback_amount, max_in_payment_currency)
 
         # Points depend ONLY on the paying card's tier multiplier — cashback
         # has zero effect on this number (a previous version incorrectly
         # folded cashback into points; that coupling has been removed).
         # 100 RON spent -> 100 points at the 1x base rate (architecture.md
         # §11). A payment from a non-RON wallet is converted to its RON
-        # equivalent first (via FXService) so 1 EUR doesn't earn the same
-        # points as 1 RON.
-        fx_rate = self.fx.get_rate(currency, "RON")
-        amount_in_ron = amount * fx_rate
+        # equivalent first (via FXService, above) so 1 EUR doesn't earn the
+        # same points as 1 RON.
         multiplier = CARD_TIER_POINT_MULTIPLIER.get(tier, DEFAULT_POINT_MULTIPLIER)
         points_earned = int(amount_in_ron * multiplier)
 

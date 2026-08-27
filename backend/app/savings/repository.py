@@ -28,3 +28,10 @@ class SavingsGoalRepository:
         if is_supabase_session(self.db):
             return self.db.fetch_many(SavingsGoal, {"user_id": f"eq.{user_id}", "order": "created_at.desc"})
         return list(self.db.scalars(select(SavingsGoal).where(SavingsGoal.user_id == user_id)))
+
+    def delete(self, goal: SavingsGoal) -> None:
+        if is_supabase_session(self.db):
+            self.db.delete(goal)
+            return
+        self.db.delete(goal)
+        self.db.flush()

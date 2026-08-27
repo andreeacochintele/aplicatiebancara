@@ -7,9 +7,12 @@ from decimal import Decimal
 from sqlalchemy import and_, func, not_, select
 from sqlalchemy.orm import Session
 
+from app.merchants.models import Merchant
 from app.supabase import is_supabase_session
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.wallets.models import Wallet
+
+_UNCATEGORIZED = "Other"
 
 
 class AnalyticsRepository:
@@ -26,10 +29,12 @@ class AnalyticsRepository:
         return set(self.db.scalars(select(Wallet.id).where(Wallet.user_id == user_id)))
 
     def _is_real_spend(self, transaction: Transaction, own_wallet_ids: set[uuid.UUID]) -> bool:
-        """CASHBACK is incoming money, not spend. A TRANSFER only counts as spend
-        when it actually leaves the user — i.e. not a same-user wallet-to-wallet
-        move (see architecture.md §26 / the analytics redesign brief)."""
-        if transaction.type == TransactionType.CASHBACK:
+        """CASHBACK and SAVINGS_WITHDRAWAL are incoming money, not spend. A
+        TRANSFER only counts as spend when it actually leaves the user — i.e.
+        not a same-user wallet-to-wallet move (see architecture.md §26 / the
+        analytics redesign brief). SAVINGS_CONTRIBUTION is real money leaving
+        the wallet, so it counts same as any other outflow."""
+        if transaction.type in (TransactionType.CASHBACK, TransactionType.SAVINGS_WITHDRAWAL):
             return False
         if transaction.type == TransactionType.TRANSFER and transaction.destination_wallet_id in own_wallet_ids:
             return False
@@ -81,6 +86,56 @@ class AnalyticsRepository:
                 ),
             )
             .group_by(Transaction.type, Transaction.currency)
+        )
+        return list(self.db.execute(stmt).all())
+
+    def spending_by_merchant_category(
+        self, user_id: uuid.UUID, period_start: datetime, period_end: datetime
+    ) -> list[tuple]:
+        """Card payments only, grouped by the paying merchant's own category
+        — transfers and loan payments are never "spending at a merchant" and
+        are excluded outright rather than filtered via _is_real_spend, which
+        only knows how to tell real spend apart within a much broader set of
+        transaction types than this view needs."""
+        if is_supabase_session(self.db):
+            transactions = self.db.fetch_many(
+                Transaction,
+                {
+                    "initiator_user_id": f"eq.{user_id}",
+                    "status": f"eq.{TransactionStatus.COMPLETED.value}",
+                    "type": f"eq.{TransactionType.CARD_PAYMENT.value}",
+                    "and": f"(created_at.gte.{period_start.isoformat()},created_at.lt.{period_end.isoformat()})",
+                },
+            )
+            merchants_by_id = {m.id: m for m in self.db.fetch_many(Merchant, {})}
+            totals: dict[tuple[str, str], dict[str, object]] = {}
+            for transaction in transactions:
+                merchant = merchants_by_id.get(transaction.merchant_id) if transaction.merchant_id else None
+                category = merchant.category if merchant is not None else _UNCATEGORIZED
+                key = (category, transaction.currency)
+                bucket = totals.setdefault(key, {"total": Decimal("0"), "count": 0})
+                bucket["total"] += transaction.amount
+                bucket["count"] += 1
+            return [(category, currency, item["total"], item["count"]) for (category, currency), item in totals.items()]
+
+        category_col = func.coalesce(Merchant.category, _UNCATEGORIZED)
+        stmt = (
+            select(
+                category_col,
+                Transaction.currency,
+                func.sum(Transaction.amount),
+                func.count(Transaction.id),
+            )
+            .select_from(Transaction)
+            .outerjoin(Merchant, Merchant.id == Transaction.merchant_id)
+            .where(
+                Transaction.initiator_user_id == user_id,
+                Transaction.status == TransactionStatus.COMPLETED,
+                Transaction.type == TransactionType.CARD_PAYMENT,
+                Transaction.created_at >= period_start,
+                Transaction.created_at < period_end,
+            )
+            .group_by(category_col, Transaction.currency)
         )
         return list(self.db.execute(stmt).all())
 
