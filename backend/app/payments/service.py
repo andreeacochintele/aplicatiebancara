@@ -189,7 +189,9 @@ class IbanTransferService:
         # normal internal-transfer path (source debit + destination credit)
         # instead of treating it as money leaving the bank.
         destination = self.wallets.get_by_iban(data.iban)
-        if destination is not None and destination.id != source.id and destination.currency == currency:
+        if destination is not None and destination.id == source.id:
+            raise ValidationError("Cannot transfer to the same account")
+        if destination is not None and destination.currency == currency:
             transaction = self.transactions.create_internal_transfer(
                 initiator_user_id,
                 InternalTransferCreate(

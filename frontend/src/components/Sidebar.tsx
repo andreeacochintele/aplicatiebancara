@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
+import { BrandMark } from "./BrandMark";
 import { useAuth } from "../hooks/useAuth";
 
 interface NavItem {
@@ -64,7 +65,7 @@ export function Sidebar() {
   return (
     <nav className="sidebar easyb-sidebar">
       <div className="easyb-brand">
-        <img src="/logo.svg" alt="" className="easyb-brand-mark" />
+        <BrandMark className="easyb-brand-mark" size={56} />
         <span className="easyb-brand-name">EasyB</span>
       </div>
       {isAdmin ? (
