@@ -184,6 +184,34 @@ class IbanTransferService:
             raise ConflictError("Insufficient available balance")
 
         description = data.description or f"Transfer to {data.beneficiary_name} - {data.iban}"
+
+        # On-us: the IBAN belongs to another EasyB wallet, so route through the
+        # normal internal-transfer path (source debit + destination credit)
+        # instead of treating it as money leaving the bank.
+        destination = self.wallets.get_by_iban(data.iban)
+        if destination is not None and destination.id != source.id and destination.currency == currency:
+            transaction = self.transactions.create_internal_transfer(
+                initiator_user_id,
+                InternalTransferCreate(
+                    source_wallet_id=source.id,
+                    destination_wallet_id=destination.id,
+                    amount=debit_amount,
+                    fx_quote_id=data.fx_quote_id,
+                    description=description,
+                ),
+            )
+            if data.save_beneficiary:
+                self.beneficiaries.add(
+                    Beneficiary(
+                        owner_user_id=initiator_user_id,
+                        name=data.beneficiary_name,
+                        iban=data.iban,
+                        is_favorite=data.is_favorite,
+                    )
+                )
+            self.db.flush()
+            return transaction
+
         transaction = self.transactions.repository.add(
             Transaction(
                 initiator_user_id=initiator_user_id,
