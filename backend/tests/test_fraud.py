@@ -251,7 +251,7 @@ def test_high_velocity_flags_five_transactions_in_five_minutes(db_session, seede
 
     decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
 
-    assert decision.score == Decimal("15")
+    assert decision.score == Decimal("30")
 
 
 def test_reward_abuse_pattern_flags_three_near_identical_payments(db_session, seeded_user):
@@ -266,7 +266,7 @@ def test_reward_abuse_pattern_flags_three_near_identical_payments(db_session, se
 
     decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
 
-    assert decision.score == Decimal("20")
+    assert decision.score == Decimal("35")
 
 
 def test_identical_payment_burst_scores_abuse_pattern_only_not_velocity_too(db_session, seeded_user):
@@ -285,8 +285,8 @@ def test_identical_payment_burst_scores_abuse_pattern_only_not_velocity_too(db_s
     decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
 
     # 5 near-identical payments total -> 2 over the minimum trigger count of 3,
-    # so 20 base + 6*2 = 32 (still under the 40 cap).
-    assert decision.score == Decimal("32")
+    # so 35 base + 10*2 = 55 (still under the 70 cap).
+    assert decision.score == Decimal("55")
 
 
 def test_velocity_still_flags_the_non_matching_activity_around_a_repeat_pattern(db_session, seeded_user):
@@ -304,15 +304,18 @@ def test_velocity_still_flags_the_non_matching_activity_around_a_repeat_pattern(
     decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
 
     # matching = 2 prior + this one = 3 -> REWARD_ABUSE_PATTERN at its minimum
-    # trigger (base 20 points). velocity = the 4 unrelated transactions (2
-    # matching ones excluded) + this one = 5 -> HIGH_VELOCITY at its minimum
-    # trigger too (base 15 points) - still fires on the genuinely separate
-    # activity. Two flags co-occurring: (20 + 15) * 1.15 = 40.25. Unaffected
-    # by FIX 2's raised caps (both flags sit at their unchanged minimum-
-    # trigger base points) - two bare-minimum flags still do NOT cross the
-    # 65-point threshold together, per last session's deliberate finding.
-    assert decision.score == Decimal("40.25")
-    assert decision.blocked is False
+    # trigger (base 35 points, recalibrated tighter - see the constant's
+    # docstring). velocity = the 4 unrelated transactions (2 matching ones
+    # excluded) + this one = 5 -> HIGH_VELOCITY at its minimum trigger too
+    # (base 30 points, also recalibrated tighter) - still fires on the
+    # genuinely separate activity, proving the matching_ids exclusion in
+    # _velocity_and_abuse_flags still works post-recalibration. Two flags
+    # co-occurring: (35 + 30) * 1.15 = 74.75 - with both flags tightened,
+    # two bare-minimum-trigger flags now cross the 65-point threshold
+    # together, where the pre-recalibration numbers (20 + 15) * 1.15 = 40.25
+    # did not.
+    assert decision.score == Decimal("74.75")
+    assert decision.blocked is True
 
 
 def test_transactions_with_no_merchant_never_match_each_other_for_abuse_pattern(db_session, seeded_user):
@@ -546,7 +549,7 @@ def test_extreme_velocity_burst_alone_crosses_threshold_without_a_second_flag(db
     decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
 
     # total_velocity = 14 + 1 = 15, 10 over the minimum trigger count of 5:
-    # 15 base + 6*10 = 75, capped at 70 -> a single HIGH_VELOCITY flag alone
+    # 30 base + 12*10 = 150, capped at 70 -> a single HIGH_VELOCITY flag alone
     # (amount stays at 1x the user's average, so HIGH_AMOUNT never fires)
     # crosses the 65-point threshold by itself.
     assert decision.score == Decimal("70")
@@ -571,7 +574,7 @@ def test_extreme_reward_abuse_burst_alone_crosses_threshold_without_a_second_fla
     decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
 
     # total_matching = 11 + 1 = 12, 9 over the minimum trigger count of 3:
-    # 20 base + 6*9 = 74, capped at 70 -> a single REWARD_ABUSE_PATTERN flag
+    # 35 base + 10*9 = 125, capped at 70 -> a single REWARD_ABUSE_PATTERN flag
     # alone crosses the 65-point threshold by itself. (The 11 matching
     # history payments are excluded from HIGH_VELOCITY's own count, so it
     # never co-fires - see _velocity_and_abuse_flags.)

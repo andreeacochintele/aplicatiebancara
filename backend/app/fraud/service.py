@@ -109,27 +109,34 @@ HIGH_AMOUNT_POINTS_PER_EXTRA_MULTIPLE = Decimal("8")
 HIGH_AMOUNT_MAX_POINTS = Decimal("70")
 
 # HIGH_VELOCITY: proportional, same base/per-extra/cap pattern keyed on how
-# many transactions beyond HIGH_VELOCITY_MIN_COUNT fell inside the window. As
-# with HIGH_AMOUNT above, the cap is set above FRAUD_SCORE_THRESHOLD so a
-# sufficiently extreme burst (well past the minimum-count trigger) can cross
-# the threshold alone, while a burst right at the minimum count is unchanged
-# (still scores exactly BASE_POINTS, same as before this recalibration).
+# many transactions beyond HIGH_VELOCITY_MIN_COUNT fell inside the window.
+# Recalibrated tighter alongside REWARD_ABUSE_PATTERN above, for the same
+# reason: 14 transactions in 5 minutes to cross the threshold on this flag
+# alone (the original 15 base / +6 per extra) was too permissive. 30 base /
+# +12 per extra crosses the threshold alone at the 8th transaction in the
+# window (30, 42, 54, 66 for transactions 5, 6, 7, 8) - 3 over the minimum
+# trigger count, same margin as REWARD_ABUSE_PATTERN's now uses relative to
+# its own minimum.
 HIGH_VELOCITY_WINDOW = timedelta(minutes=5)
 HIGH_VELOCITY_MIN_COUNT = 5
-HIGH_VELOCITY_BASE_POINTS = Decimal("15")
-HIGH_VELOCITY_POINTS_PER_EXTRA = Decimal("6")
+HIGH_VELOCITY_BASE_POINTS = Decimal("30")
+HIGH_VELOCITY_POINTS_PER_EXTRA = Decimal("12")
 HIGH_VELOCITY_MAX_POINTS = Decimal("70")
 
 # REWARD_ABUSE_PATTERN: proportional, same pattern keyed on how many
 # near-identical repeats beyond REWARD_ABUSE_MIN_COUNT fell inside the
-# window. Same rationale as HIGH_AMOUNT/HIGH_VELOCITY above: the cap is set
-# above FRAUD_SCORE_THRESHOLD so a large enough repeat-burst (well past the
-# minimum trigger count) can cross the threshold alone, while a bare-minimum
-# 3-repeat case is unchanged (still scores exactly BASE_POINTS).
+# window. Recalibrated tighter than HIGH_AMOUNT/HIGH_VELOCITY above: 11
+# identical repeats to cross the threshold on this flag alone (the original
+# 20 base / +6 per extra) proved far too permissive in practice — an
+# obvious same-merchant, same-amount repeat-payment burst should hold well
+# before a dozen repeats. 35 base / +10 per extra crosses the threshold
+# alone at the 6th near-identical repeat (35, 45, 55, 65 for repeats
+# 3, 4, 5, 6), while the bare-minimum 3-repeat case still just flags at
+# BASE_POINTS rather than holding outright.
 REWARD_ABUSE_WINDOW = timedelta(minutes=10)
 REWARD_ABUSE_MIN_COUNT = 3
-REWARD_ABUSE_BASE_POINTS = Decimal("20")
-REWARD_ABUSE_POINTS_PER_EXTRA = Decimal("6")
+REWARD_ABUSE_BASE_POINTS = Decimal("35")
+REWARD_ABUSE_POINTS_PER_EXTRA = Decimal("10")
 REWARD_ABUSE_MAX_POINTS = Decimal("70")
 
 # UNUSUAL_TIME: binary — a payment inside this UTC window with no precedent of
