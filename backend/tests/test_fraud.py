@@ -508,7 +508,11 @@ def test_high_amount_points_scale_with_ratio_over_average(db_session, seeded_use
 
 
 def test_high_amount_points_cap_at_max_for_extreme_outliers(db_session, seeded_user):
-    wallet = _wallet(db_session, seeded_user.id)
+    # Balance must comfortably cover the hold below — this test is about
+    # score capping for an extreme relative-to-average amount, not about
+    # insufficient funds (a real hold this large against the default 1000
+    # balance would now correctly hit wallets' non-negative CHECK constraint).
+    wallet = _wallet(db_session, seeded_user.id, balance=Decimal("10000.00"))
     for _ in range(3):
         _completed_card_payment(db_session, seeded_user.id, Decimal("10.00"))
     transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("5000.00"))  # 500x average
@@ -762,6 +766,16 @@ def test_investigate_endpoint_admin_triggers_agent_and_persists_analysis(client,
     assert "elevated risk" in body["agent_analysis"]["explanation"].lower()
     assert body["agent_analysis"]["summary"] == "Elevated risk."
     assert body["agent_analysis"]["case_overview"]["deterministic_risk_score"] == "74.75"
+
+    from app.audit.models import AdminAuditLog
+
+    log = (
+        db_session.query(AdminAuditLog)
+        .filter_by(entity_id=case.id, action="INVESTIGATE", entity_type="FRAUD_CASE")
+        .one()
+    )
+    assert log.admin_user_id == admin.id
+    assert log.new_data == {"risk_level": "HIGH"}
     assert body["agent_analysis"]["suspicious_signals"] == ["NEW_DEVICE: Payment from an untrusted device"]
     assert body["agent_analysis"]["recommended_checks"] == [
         "Confirm whether the latest active device belongs to the customer."

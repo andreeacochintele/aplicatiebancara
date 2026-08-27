@@ -3,7 +3,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError, is_unique_violation
 from app.wallets.iban import generate_iban
 from app.wallets.models import Wallet, WalletStatus
 from app.wallets.repository import WalletRepository
@@ -50,6 +50,11 @@ class WalletService:
                 raise NotFoundError("Wallet not found")
             existing.status = WalletStatus.ACTIVE
             existing.is_main = make_main
+            # Deliberate: a closed account's IBAN is retired, same as a real
+            # bank would — a reopened account is a new account that happens
+            # to reuse this row (schema-forced, see above), not a resumption
+            # of the old one.
+            existing.iban = generate_iban()
             self.db.flush()
             return existing
 
@@ -58,7 +63,16 @@ class WalletService:
         # attributes as-is and never triggers SQLAlchemy's Python-side
         # INSERT defaults, so a left-unset iban would hit the DB as null.
         wallet = Wallet(user_id=user_id, currency=currency, is_main=make_main, iban=generate_iban())
-        return self.repository.add(wallet)
+        try:
+            return self.repository.add(wallet)
+        except Exception as exc:
+            if not is_unique_violation(exc):
+                raise
+            self.db.rollback()
+            # The precondition check above already ran, so this only fires
+            # when a concurrent request won the race between check and
+            # insert.
+            raise ConflictError(f"Wallet for currency '{currency}' already exists") from None
 
     def list_wallets(self, user_id: uuid.UUID) -> list[Wallet]:
         return self.repository.list_for_user(user_id)
