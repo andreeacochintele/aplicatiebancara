@@ -77,6 +77,37 @@ class PaymentRequestRepository:
             return self.db.get(PaymentRequest, request_id)
         return self.db.get(PaymentRequest, request_id)
 
+    def get_owned_by_id(self, creator_user_id: uuid.UUID, request_id: uuid.UUID) -> PaymentRequest | None:
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(
+                PaymentRequest, {"id": f"eq.{request_id}", "creator_user_id": f"eq.{creator_user_id}"}
+            )
+        return self.db.scalar(
+            select(PaymentRequest).where(
+                PaymentRequest.id == request_id, PaymentRequest.creator_user_id == creator_user_id
+            )
+        )
+
+    def list_for_creator(self, creator_user_id: uuid.UUID, limit: int = 100, offset: int = 0) -> list[PaymentRequest]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(
+                PaymentRequest,
+                {
+                    "creator_user_id": f"eq.{creator_user_id}",
+                    "order": "created_at.desc",
+                    "limit": str(limit),
+                    "offset": str(offset),
+                },
+            )
+        stmt = (
+            select(PaymentRequest)
+            .where(PaymentRequest.creator_user_id == creator_user_id)
+            .order_by(PaymentRequest.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(self.db.scalars(stmt))
+
     def add(self, payment_request: PaymentRequest) -> PaymentRequest:
         if is_supabase_session(self.db):
             return self.db.add(payment_request)
