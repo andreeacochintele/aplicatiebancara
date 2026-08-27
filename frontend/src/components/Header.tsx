@@ -6,6 +6,7 @@ import { ApiError, apiRequest } from "../api/apiClient";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
 import type { BillSplit, Notification, Wallet } from "../types";
+import { ThemeToggle } from "./ThemeToggle";
 
 const PAGE_INFO: Record<string, { title: string; subtitle: string }> = {
   "/dashboard": { title: "Dashboard", subtitle: "Personal banking overview" },
@@ -178,6 +179,7 @@ export function Header() {
       <span className="header__title">{page?.title ?? "Banking App"}</span>
       {page && <span className="header__subtitle">{page.subtitle}</span>}
       <div className="header__meta">
+        <ThemeToggle />
         <button
           aria-label="Notifications"
           className="aurora-bell"

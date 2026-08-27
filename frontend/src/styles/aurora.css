@@ -1,7 +1,9 @@
 /*
- * Aurora theme — experimental pilot restyle (branch: experiment/aurora-ui-dashboard).
- * Scoped entirely under .aurora-shell / .aurora-* classes so the existing dark
- * design system in index.css (used by every other page) is left untouched.
+ * Aurora theme — shell/dashboard restyle (originally branch:
+ * experiment/aurora-ui-dashboard), scoped under .aurora-shell / .aurora-*
+ * classes. Ships a light palette by default and a dark variant under
+ * [data-theme="dark"], set by ThemeContext to match the light/dark toggle
+ * that also drives the --color-* tokens in index.css.
  */
 @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap");
 
@@ -31,6 +33,31 @@
   --aurora-radius-md: 14px;
   --aurora-radius-sm: 10px;
   --aurora-shadow: 0 1px 2px rgba(20, 20, 31, 0.04), 0 12px 28px -10px rgba(20, 20, 31, 0.12);
+}
+
+[data-theme="dark"] .aurora-shell {
+  --aurora-bg: #0b0e17;
+  --aurora-surface: #141a29;
+  --aurora-surface-alt: #1a2136;
+  --aurora-border: #262f45;
+  --aurora-text: #e6e8ee;
+  --aurora-text-soft: #a7aec2;
+  --aurora-text-faint: #6b7386;
+  --aurora-accent: #8b7fe8;
+  --aurora-accent-dark: #a89ef2;
+  --aurora-accent-soft: rgba(139, 127, 232, 0.16);
+  --aurora-gradient: linear-gradient(135deg, #5b5fef 0%, #9b5de5 55%, #ff6fa5 100%);
+  --aurora-green: #6fcf97;
+  --aurora-green-soft: rgba(111, 207, 151, 0.16);
+  --aurora-red: #e0796f;
+  --aurora-red-soft: rgba(224, 121, 111, 0.16);
+  --aurora-violet: #a89ef2;
+  --aurora-violet-soft: rgba(168, 158, 242, 0.18);
+  --aurora-pink: #ff8fc0;
+  --aurora-pink-soft: rgba(255, 143, 192, 0.16);
+  --aurora-amber: #e0a355;
+  --aurora-amber-soft: rgba(224, 163, 85, 0.16);
+  --aurora-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 28px -10px rgba(0, 0, 0, 0.5);
 }
 
 .aurora-shell h1,
@@ -148,6 +175,18 @@
 .aurora-shell .aurora-header .aurora-bell:hover {
   background: var(--aurora-accent-soft);
   border-color: var(--aurora-accent);
+}
+
+.aurora-shell .aurora-header .theme-toggle {
+  background: var(--aurora-surface-alt);
+  border: 1px solid var(--aurora-border);
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .aurora-header .theme-toggle:hover {
+  background: var(--aurora-accent-soft);
+  border-color: var(--aurora-accent);
+  color: var(--aurora-accent-dark);
 }
 
 .aurora-shell .notification-panel {

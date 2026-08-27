@@ -7,13 +7,16 @@ import "./features/auth/flags.css";
 import "./index.css";
 import "./styles/aurora.css";
 import { AuthProvider } from "./store/AuthContext";
+import { ThemeProvider } from "./store/ThemeContext";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ThemeProvider>
     </BrowserRouter>
   </StrictMode>,
 );
