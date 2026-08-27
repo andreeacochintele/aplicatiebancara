@@ -38,5 +38,11 @@ def get_db() -> Generator[Session | SupabaseRestSession, None, None]:
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        # Explicit, rather than relying on Session.close()'s implicit
+        # rollback-on-close — makes the abort-on-failure behavior visible
+        # here instead of an incidental side effect of cleanup.
+        db.rollback()
+        raise
     finally:
         db.close()
