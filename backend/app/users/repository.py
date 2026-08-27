@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.supabase import is_supabase_session
-from app.users.models import User, UserAddress, UserEmploymentProfile, UserOnboardingState, UserProfile
+from app.users.models import IdentityDocument, User, UserAddress, UserEmploymentProfile, UserOnboardingState, UserProfile
 
 
 class UserRepository:
@@ -83,6 +83,19 @@ class UserRepository:
                     return None
                 raise
         return self.db.scalar(select(UserEmploymentProfile).where(UserEmploymentProfile.user_id == user_id))
+
+    def get_identity_document(self, user_id: uuid.UUID) -> IdentityDocument | None:
+        if is_supabase_session(self.db):
+            try:
+                return self.db.fetch_one(IdentityDocument, {"user_id": f"eq.{user_id}"})
+            except RuntimeError as exc:
+                if self._is_missing_supabase_table(exc, IdentityDocument):
+                    return None
+                raise
+        return self.db.scalar(select(IdentityDocument).where(IdentityDocument.user_id == user_id))
+
+    def add_identity_document(self, document: IdentityDocument) -> IdentityDocument:
+        return self._add_related(document)
 
     def add_onboarding_state(self, state: UserOnboardingState) -> UserOnboardingState:
         return self._add_related(state)

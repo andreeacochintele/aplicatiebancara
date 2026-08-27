@@ -2,6 +2,7 @@ import pytest
 
 from app.core.security import hash_password
 from app.users.models import User, UserOnboardingState
+from tests.mrz_fixtures import build_td1_card_base64
 
 
 def _create_legacy_user(db_session, email: str = "legacy@example.com", phone: str = "+40710009999") -> User:
@@ -125,6 +126,165 @@ def test_completed_new_user_is_considered_onboarded_after_login(client):
     body = profile.json()
     assert body["onboarding"]["completed"] is True
     assert body["onboarding"]["pending_step"] is None
+
+
+def _advance_to_step_3(client, email: str, phone: str) -> str:
+    token = _register(client, email, phone)
+    client.patch("/api/v1/users/me/onboarding/step-2", headers=_headers(token), json=_step_2_payload())
+    return token
+
+
+def test_step_3_upload_verifies_and_advances_to_step_4(client):
+    # Matches the default _step_2_payload(): first/last name "Ana Ionescu"
+    # (from _register), cnp "1900101123457" (1990-01-01).
+    token = _advance_to_step_3(client, "id-verified@example.com", "+40710000021")
+    photo = build_td1_card_base64(surname="IONESCU", given_names="ANA")
+
+    response = client.post(
+        "/api/v1/users/me/onboarding/step-3/identity-document",
+        headers=_headers(token),
+        json={"front_image_base64": photo, "back_image_base64": photo},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["identity_document"]["status"] == "VERIFIED"
+    assert body["identity_document"]["mrz_checks_passed"] is True
+    assert body["identity_document"]["cross_check_passed"] is True
+    assert body["identity_document"]["detected_format"] == "TD1"
+    assert body["onboarding"]["pending_step"] == 4
+
+
+def test_step_3_upload_rejects_name_mismatch_and_allows_retry(client):
+    token = _advance_to_step_3(client, "id-name-mismatch@example.com", "+40710000022")
+    photo = build_td1_card_base64(surname="POPESCU", given_names="MARIA")
+
+    response = client.post(
+        "/api/v1/users/me/onboarding/step-3/identity-document",
+        headers=_headers(token),
+        json={"front_image_base64": photo, "back_image_base64": photo},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["identity_document"]["status"] == "NOT_STARTED"
+    assert body["identity_document"]["cross_check_passed"] is False
+    assert body["identity_document"]["attempt_count"] == 1
+    assert "name" in body["identity_document"]["failure_reason"].lower()
+    assert body["onboarding"]["pending_step"] == 3  # still retryable
+
+
+def test_step_3_upload_rejects_expired_document(client):
+    token = _advance_to_step_3(client, "id-expired@example.com", "+40710000023")
+    photo = build_td1_card_base64(surname="IONESCU", given_names="ANA", expiry="200101")  # 2020-01-01
+
+    response = client.post(
+        "/api/v1/users/me/onboarding/step-3/identity-document",
+        headers=_headers(token),
+        json={"front_image_base64": photo, "back_image_base64": photo},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "expired" in body["identity_document"]["failure_reason"].lower()
+    assert body["onboarding"]["pending_step"] == 3
+
+
+def test_step_3_upload_needs_review_after_three_failed_attempts(client):
+    token = _advance_to_step_3(client, "id-needs-review@example.com", "+40710000024")
+    mismatched_photo = build_td1_card_base64(surname="POPESCU", given_names="MARIA")
+
+    for _ in range(3):
+        response = client.post(
+            "/api/v1/users/me/onboarding/step-3/identity-document",
+            headers=_headers(token),
+            json={"front_image_base64": mismatched_photo, "back_image_base64": mismatched_photo},
+        )
+        assert response.status_code == 200
+
+    body = response.json()
+    assert body["identity_document"]["status"] == "NEEDS_REVIEW"
+    assert body["identity_document"]["attempt_count"] == 3
+
+    # Blocked from resubmitting once it's in admin review.
+    blocked = client.post(
+        "/api/v1/users/me/onboarding/step-3/identity-document",
+        headers=_headers(token),
+        json={"front_image_base64": mismatched_photo, "back_image_base64": mismatched_photo},
+    )
+    assert blocked.status_code == 422
+
+
+def test_step_3_upload_rejects_unreadable_photo(client):
+    token = _advance_to_step_3(client, "id-unreadable@example.com", "+40710000025")
+
+    response = client.post(
+        "/api/v1/users/me/onboarding/step-3/identity-document",
+        headers=_headers(token),
+        json={"front_image_base64": "not-a-real-image", "back_image_base64": "not-a-real-image"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["identity_document"]["mrz_checks_passed"] is False
+    assert body["identity_document"]["attempt_count"] == 1
+
+
+def _advance_to_verified(client, email: str, phone: str) -> str:
+    """Completes onboarding all the way through, with a genuinely VERIFIED
+    identity document (not skipped/placeholder)."""
+    token = _advance_to_step_3(client, email, phone)
+    photo = build_td1_card_base64(surname="IONESCU", given_names="ANA")
+    step_3 = client.post(
+        "/api/v1/users/me/onboarding/step-3/identity-document",
+        headers=_headers(token),
+        json={"front_image_base64": photo, "back_image_base64": photo},
+    )
+    assert step_3.json()["identity_document"]["status"] == "VERIFIED"
+    client.post("/api/v1/users/me/onboarding/step-4/skip", headers=_headers(token))
+    return token
+
+
+def test_profile_page_can_re_verify_an_already_verified_identity_document(client):
+    token = _advance_to_verified(client, "id-renew@example.com", "+40710000026")
+    renewed_photo = build_td1_card_base64(surname="IONESCU", given_names="ANA", expiry="350101")
+
+    response = client.post(
+        "/api/v1/users/me/onboarding/step-3/identity-document",
+        headers=_headers(token),
+        json={"front_image_base64": renewed_photo, "back_image_base64": renewed_photo},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["identity_document"]["status"] == "VERIFIED"
+    assert body["onboarding"]["completed"] is True  # unaffected — onboarding stays finished
+
+
+def test_profile_page_re_verification_failure_does_not_disturb_the_existing_verified_record(client):
+    token = _advance_to_verified(client, "id-renew-fails@example.com", "+40710000027")
+    mismatched_photo = build_td1_card_base64(surname="POPESCU", given_names="MARIA")
+
+    response = client.post(
+        "/api/v1/users/me/onboarding/step-3/identity-document",
+        headers=_headers(token),
+        json={"front_image_base64": mismatched_photo, "back_image_base64": mismatched_photo},
+    )
+    assert response.status_code == 422
+
+    # No admin escalation, no attempt burned — the existing verified record
+    # is completely untouched, and the user can just try again.
+    profile = client.get("/api/v1/users/me/profile", headers=_headers(token))
+    body = profile.json()
+    assert body["identity_document"]["status"] == "VERIFIED"
+    assert body["identity_document"]["attempt_count"] == 1  # only the original onboarding attempt
+
+    retry = client.post(
+        "/api/v1/users/me/onboarding/step-3/identity-document",
+        headers=_headers(token),
+        json={"front_image_base64": mismatched_photo, "back_image_base64": mismatched_photo},
+    )
+    assert retry.status_code == 422  # still not blocked by any 3-attempt/NEEDS_REVIEW mechanism
 
 
 def _step_4_payload(**overrides) -> dict:
