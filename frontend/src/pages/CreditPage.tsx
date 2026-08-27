@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
+import { Download } from "lucide-react";
 import { ApiError, apiRequest } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type {
@@ -22,6 +23,17 @@ import type {
 
 const CREDIT_CURRENCIES = ["RON", "EUR", "USD", "GBP"];
 const DOWN_PAYMENT_LOAN_TYPES = new Set<LoanProductType>(["MORTGAGE", "AUTO_LOAN", "HOME_IMPROVEMENT"]);
+
+type PaymentPlanExportRow = {
+  number: number;
+  dueDate: string | null;
+  paymentAmount: string;
+  principalAmount: string;
+  interestAmount: string;
+  remainingPrincipal: string;
+  status: string | null;
+};
+
 const DEFAULT_LOAN_PRODUCTS: LoanProduct[] = [
   {
     product_type: "PERSONAL_LOAN",
@@ -95,6 +107,15 @@ function formatProductType(type: LoanProductType | null): string {
 
 function formatMoney(value: string, currency = "RON"): string {
   return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+}
+
+function escapeExcelCell(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function formatExcelNumber(value: string): string {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue.toFixed(2) : "0.00";
 }
 
 function readFileAsBase64(file: File): Promise<string> {
@@ -490,6 +511,74 @@ export function CreditPage() {
     } finally {
       setLoadingPaymentPlanLoanId(null);
     }
+  }
+
+  function downloadPaymentPlan(
+    application: CreditApplication,
+    breakdown: LoanCalculatorResult,
+    rows: PaymentPlanExportRow[],
+  ) {
+    if (rows.length === 0) return;
+
+    const amount = application.offered_amount ?? application.requested_amount;
+    const generatedAt = new Date().toLocaleString();
+    const title = `Loan payment plan - ${formatMoney(amount, application.currency)}`;
+    const tableRows = rows
+      .map((installment) => {
+        const dueDate = installment.dueDate ? new Date(installment.dueDate).toLocaleDateString() : "";
+        return `<tr>
+          <td>${installment.number}</td>
+          <td>${escapeExcelCell(dueDate)}</td>
+          <td>${formatExcelNumber(installment.paymentAmount)}</td>
+          <td>${formatExcelNumber(installment.principalAmount)}</td>
+          <td>${formatExcelNumber(installment.interestAmount)}</td>
+          <td>${formatExcelNumber(installment.remainingPrincipal)}</td>
+          <td>${escapeExcelCell(installment.status ?? "")}</td>
+        </tr>`;
+      })
+      .join("");
+    const workbook = `<!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            table { border-collapse: collapse; font-family: Arial, sans-serif; }
+            th, td { border: 1px solid #999; padding: 6px 8px; }
+            th { background: #eef2ff; font-weight: 700; }
+          </style>
+        </head>
+        <body>
+          <h2>${escapeExcelCell(title)}</h2>
+          <p>Generated: ${escapeExcelCell(generatedAt)}</p>
+          <p>APR: ${escapeExcelCell(String(application.offered_interest_rate ?? breakdown.annual_interest_rate))}%</p>
+          <p>Term: ${breakdown.term_months} months</p>
+          <p>Currency: ${escapeExcelCell(breakdown.currency)}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Payment #</th>
+                <th>Due date</th>
+                <th>Payment amount</th>
+                <th>Principal</th>
+                <th>Interest</th>
+                <th>Remaining principal</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </body>
+      </html>`;
+    const blob = new Blob([workbook], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeAmount = amount.replace(/[^0-9a-z]/gi, "");
+    link.href = url;
+    link.download = `loan_payment_plan_${safeAmount || "loan"}_${breakdown.currency}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   function loanPaymentSourceOptions(currency: string) {
@@ -1585,7 +1674,18 @@ export function CreditPage() {
                                   <span className="eyebrow">Payment plan</span>
                                   <strong>{paymentPlanRows.length || breakdown.term_months} monthly payments</strong>
                                 </div>
-                                <span className="tag tag--neutral">{breakdown.term_months} months</span>
+                                <div className="loan-payment-plan__actions">
+                                  <span className="tag tag--neutral">{breakdown.term_months} months</span>
+                                  <button
+                                    type="button"
+                                    className="button--ghost loan-payment-plan__download"
+                                    onClick={() => downloadPaymentPlan(application, breakdown, paymentPlanRows)}
+                                    disabled={paymentPlanRows.length === 0}
+                                  >
+                                    <Download size={16} aria-hidden="true" />
+                                    Download Excel
+                                  </button>
+                                </div>
                               </div>
                               {paymentPlanError ? (
                                 <p className="early-repayment-card__error">{paymentPlanError}</p>
