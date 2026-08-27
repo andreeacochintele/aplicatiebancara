@@ -308,7 +308,16 @@ class RewardsService:
         return f"AURORA-{secrets.token_hex(4).upper()}"
 
     def _account_to_public(self, account: RewardAccount) -> RewardAccountPublic:
-        transactions = self.repository.list_transactions(account.id)
+        # record_processed()'s 0-point ADJUSTMENT rows exist purely as a
+        # dedup marker (see its docstring) — they carry no balance change and
+        # aren't a reward event, so they're excluded here. The row itself is
+        # kept in the table: get_synced_transaction_ids reads straight from
+        # the repository, not this filtered view, so dedup is unaffected.
+        transactions = [
+            tx
+            for tx in self.repository.list_transactions(account.id)
+            if not (tx.type == RewardTransactionType.ADJUSTMENT and tx.points == 0)
+        ]
         redemptions = self.repository.list_redemptions(account.id)
 
         return RewardAccountPublic(
