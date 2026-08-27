@@ -46,7 +46,7 @@ class BudgetService:
         period_start, period_end = self._period_bounds(budget.period, now)
 
         spent = (
-            self.repository.spent_amount(budget.user_id, budget.category_id, period_start, period_end)
+            self.repository.spent_amount(budget.user_id, budget.category_id, budget.currency, period_start, period_end)
             if budget.category_id is not None
             else Decimal("0")
         )
