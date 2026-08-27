@@ -4,6 +4,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.wallets.iban import generate_iban
 from app.wallets.models import Wallet, WalletStatus
 from app.wallets.repository import WalletRepository
 from app.wallets.schemas import WalletCreate
@@ -52,7 +53,11 @@ class WalletService:
             self.db.flush()
             return existing
 
-        wallet = Wallet(user_id=user_id, currency=currency, is_main=make_main)
+        # iban is explicit here (rather than relying on the model's
+        # column default) because the Supabase REST session serializes
+        # attributes as-is and never triggers SQLAlchemy's Python-side
+        # INSERT defaults, so a left-unset iban would hit the DB as null.
+        wallet = Wallet(user_id=user_id, currency=currency, is_main=make_main, iban=generate_iban())
         return self.repository.add(wallet)
 
     def list_wallets(self, user_id: uuid.UUID) -> list[Wallet]:

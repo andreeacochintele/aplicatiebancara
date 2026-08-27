@@ -108,7 +108,6 @@ export function WalletsPage() {
   const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
 
   function copyIban(wallet: Wallet) {
-    if (!wallet.iban) return;
     navigator.clipboard.writeText(wallet.iban).then(() => {
       setCopiedWalletId(wallet.id);
       setTimeout(() => setCopiedWalletId((current) => (current === wallet.id ? null : current)), 1500);
@@ -364,18 +363,16 @@ export function WalletsPage() {
                     ? `${wallet.reserved_balance} ${wallet.currency} reserved`
                     : "Nothing on hold"}
                 </div>
-                {wallet.iban && (
-                  <button
-                    type="button"
-                    className="aurora-wallet-card__iban"
-                    onClick={() => copyIban(wallet)}
-                    title="Copy IBAN"
-                  >
-                    <span>{wallet.iban}</span>
-                    <Copy size={12} />
-                    {copiedWalletId === wallet.id && <span className="aurora-wallet-card__iban-copied">Copied</span>}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="aurora-wallet-card__iban"
+                  onClick={() => copyIban(wallet)}
+                  title="Copy IBAN"
+                >
+                  <span>{wallet.iban}</span>
+                  <Copy size={12} />
+                  {copiedWalletId === wallet.id && <span className="aurora-wallet-card__iban-copied">Copied</span>}
+                </button>
                 <button
                   type="button"
                   className="aurora-wallet-history-toggle"
