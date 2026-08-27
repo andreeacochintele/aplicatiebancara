@@ -14,6 +14,8 @@ flow — none of those show a live rate to the user first, so there's nothing
 for them to contradict.
 """
 import json
+import logging
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
@@ -23,6 +25,8 @@ from urllib.request import Request, urlopen
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+
+logger = logging.getLogger(__name__)
 from app.fx.models import FXQuote, FXQuoteStatus
 from app.fx.repository import FXQuoteRepository
 from app.fx.schemas import FXQuoteRequest, FXRatePoint
@@ -82,6 +86,11 @@ _MARKET_MARKUP = Decimal("0.01")  # 1% bank margin over the raw market rate
 _RATE_PRECISION = Decimal("0.0001")
 _live_rate_cache: dict[str, Decimal] | None = None
 _live_rate_cached_at: datetime | None = None
+# Guards the check-then-fetch-then-cache sequence below: without it, every
+# request racing past an expired cache fires its own blocking 5s HTTP call
+# (a "thundering herd" at the TTL boundary) instead of one request fetching
+# and the rest reusing that result.
+_live_rate_lock = threading.Lock()
 
 
 def _get_json(url: str) -> dict:
@@ -111,9 +120,25 @@ def _rates_to_ron_for_display() -> dict[str, Decimal]:
     now = datetime.now(timezone.utc)
     if _live_rate_cache is not None and _live_rate_cached_at is not None and now - _live_rate_cached_at < _LIVE_RATE_TTL:
         return _live_rate_cache
-    live = _fetch_live_rates_to_ron()
-    rates = live if live is not None else dict(_RATES_TO_RON)
-    _live_rate_cache, _live_rate_cached_at = rates, now
+    with _live_rate_lock:
+        # Re-check: another thread may have already refreshed the cache
+        # while this one was waiting on the lock.
+        now = datetime.now(timezone.utc)
+        if (
+            _live_rate_cache is not None
+            and _live_rate_cached_at is not None
+            and now - _live_rate_cached_at < _LIVE_RATE_TTL
+        ):
+            return _live_rate_cache
+        live = _fetch_live_rates_to_ron()
+        if live is None:
+            # Every caller sharing this cache (the Wallets display banner
+            # and get_quote() alike) is about to silently price off the
+            # static table instead of a live rate — the one place this is
+            # otherwise invisible.
+            logger.warning("FX live-rate fetch failed; falling back to the static rate table for %s", _LIVE_RATE_TTL)
+        rates = live if live is not None else dict(_RATES_TO_RON)
+        _live_rate_cache, _live_rate_cached_at = rates, now
     return rates
 
 
