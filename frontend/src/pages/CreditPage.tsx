@@ -14,6 +14,7 @@ import type {
   Loan,
   LoanCalculatorResult,
   LoanAutopayUpdate,
+  LoanInstallment,
   LoanProduct,
   LoanProductType,
   Wallet,
@@ -161,6 +162,10 @@ export function CreditPage() {
   const [areApprovedOffersExpanded, setAreApprovedOffersExpanded] = useState(false);
   const [arePastLoansExpanded, setArePastLoansExpanded] = useState(false);
   const [expandedOfferIds, setExpandedOfferIds] = useState<Set<string>>(() => new Set());
+  const [expandedPaymentPlanIds, setExpandedPaymentPlanIds] = useState<Set<string>>(() => new Set());
+  const [loanInstallmentsByLoanId, setLoanInstallmentsByLoanId] = useState<Record<string, LoanInstallment[]>>({});
+  const [loadingPaymentPlanLoanId, setLoadingPaymentPlanLoanId] = useState<string | null>(null);
+  const [paymentPlanErrors, setPaymentPlanErrors] = useState<Record<string, string>>({});
   const [requestedAmount, setRequestedAmount] = useState("");
   const [assetPrice, setAssetPrice] = useState("");
   const [downPayment, setDownPayment] = useState("");
@@ -311,6 +316,7 @@ export function CreditPage() {
       if (loansResult.status === "fulfilled") {
         setAreLoansLoaded(true);
         setLoans(loansResult.value);
+        setLoanInstallmentsByLoanId({});
         const loanDebt = loansResult.value
           .filter((loan) => loan.status === "ACTIVE")
           .reduce((total, loan) => total + Number(loan.outstanding_principal), 0);
@@ -448,6 +454,42 @@ export function CreditPage() {
       }
       return next;
     });
+  }
+
+  async function togglePaymentPlan(applicationId: string, loan?: Loan) {
+    const isOpen = expandedPaymentPlanIds.has(applicationId);
+    setExpandedPaymentPlanIds((current) => {
+      const next = new Set(current);
+      if (isOpen) {
+        next.delete(applicationId);
+      } else {
+        next.add(applicationId);
+      }
+      return next;
+    });
+    if (isOpen || !loan || loanInstallmentsByLoanId[loan.id] || loadingPaymentPlanLoanId === loan.id || !accessToken) return;
+
+    setLoadingPaymentPlanLoanId(loan.id);
+    setPaymentPlanErrors((current) => {
+      const next = { ...current };
+      delete next[applicationId];
+      return next;
+    });
+    try {
+      const installments = await apiRequest<LoanInstallment[]>(`/credit/loans/${loan.id}/installments`, { token: accessToken });
+      setLoanInstallmentsByLoanId((current) => ({ ...current, [loan.id]: installments }));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setPaymentPlanErrors((current) => ({
+        ...current,
+        [applicationId]: err instanceof ApiError ? err.message : "Could not load payment plan.",
+      }));
+    } finally {
+      setLoadingPaymentPlanLoanId(null);
+    }
   }
 
   function loanPaymentSourceOptions(currency: string) {
@@ -599,6 +641,11 @@ export function CreditPage() {
         apiRequest<Card[]>("/cards", { token: accessToken }),
       ]);
       setLoans(freshLoans);
+      setLoanInstallmentsByLoanId((current) => {
+        const next = { ...current };
+        delete next[loan.id];
+        return next;
+      });
       setWallets(freshWallets);
       setCards(freshCards);
       closeAutopayConfig(loan.id);
@@ -758,6 +805,11 @@ export function CreditPage() {
             : item,
         ),
       );
+      setLoanInstallmentsByLoanId((current) => {
+        const next = { ...current };
+        delete next[loan.id];
+        return next;
+      });
       setWallets(freshWallets);
       setCards(freshCards);
       setEarlyRepaymentMessages((current) => ({
@@ -1363,7 +1415,9 @@ export function CreditPage() {
                   const selectedAdditionalDocuments = additionalLoanDocuments[application.id] ?? [];
                   const canActivate = areLoansLoaded && application.type === "PERSONAL_LOAN" && isApproved && !existingLoan;
                   const isOfferExpanded = expandedOfferIds.has(application.id);
+                  const isPaymentPlanExpanded = expandedPaymentPlanIds.has(application.id);
                   const breakdownId = `approved-offer-breakdown-${application.id}`;
+                  const paymentPlanId = `payment-plan-${application.id}`;
                   const loanStatusLabel =
                     existingLoan?.status === "ACTIVE"
                       ? "Loan active"
@@ -1393,6 +1447,29 @@ export function CreditPage() {
                   const loanPaidPercent = activeLoan
                     ? Math.min(100, Math.max(0, (loanPaidPrincipal / Math.max(Number(activeLoan.principal_amount), 1)) * 100))
                     : 0;
+                  const realInstallments = activeLoan ? loanInstallmentsByLoanId[activeLoan.id] : undefined;
+                  const calculatedPaymentPlanRows =
+                    breakdown?.schedule.map((installment) => ({
+                      number: installment.installment_number,
+                      dueDate: null,
+                      paymentAmount: installment.payment_amount,
+                      principalAmount: installment.principal_amount,
+                      interestAmount: installment.interest_amount,
+                      remainingPrincipal: installment.remaining_principal,
+                      status: null,
+                    })) ?? [];
+                  const paymentPlanRows = realInstallments && realInstallments.length > 0
+                    ? realInstallments.map((installment) => ({
+                        number: installment.installment_number,
+                        dueDate: installment.due_date,
+                        paymentAmount: installment.payment_amount,
+                        principalAmount: installment.principal_amount,
+                        interestAmount: installment.interest_amount,
+                        remainingPrincipal: installment.remaining_principal,
+                        status: installment.status,
+                      }))
+                    : calculatedPaymentPlanRows;
+                  const paymentPlanError = paymentPlanErrors[application.id];
                   return (
                     <article
                       className={`approved-offer-card${isOfferExpanded ? "" : " approved-offer-card--collapsed"}`}
@@ -1464,7 +1541,77 @@ export function CreditPage() {
                             >
                               {isOfferExpanded ? "Retract" : "Show details"}
                             </button>
+                            <button
+                              type="button"
+                              className="button--ghost approved-offer-card__toggle"
+                              onClick={() => void togglePaymentPlan(application.id, activeLoan ?? undefined)}
+                              aria-expanded={isPaymentPlanExpanded}
+                              aria-controls={paymentPlanId}
+                              disabled={loadingPaymentPlanLoanId === activeLoan?.id}
+                            >
+                              {loadingPaymentPlanLoanId === activeLoan?.id
+                                ? "Loading plan..."
+                                : isPaymentPlanExpanded
+                                  ? "Retract plan"
+                                  : "Payment plan"}
+                            </button>
                           </div>
+                          {isOfferExpanded && (
+                            <div className="approved-offer-card__details" id={breakdownId}>
+                              <div className="approved-offer-card__figures">
+                                <div>
+                                  <span className="eyebrow">Annual rate</span>
+                                  <strong>{application.offered_interest_rate ?? breakdown.annual_interest_rate}%</strong>
+                                </div>
+                                <div>
+                                  <span className="eyebrow">Term</span>
+                                  <strong>{breakdown.term_months} months</strong>
+                                </div>
+                                <div>
+                                  <span className="eyebrow">Total interest</span>
+                                  <strong>{formatMoney(breakdown.total_interest, breakdown.currency)}</strong>
+                                </div>
+                                <div>
+                                  <span className="eyebrow">Total repayment</span>
+                                  <strong>{formatMoney(breakdown.total_payment, breakdown.currency)}</strong>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {isPaymentPlanExpanded && (
+                            <div className="loan-payment-plan" id={paymentPlanId}>
+                              <div className="loan-payment-plan__header">
+                                <div>
+                                  <span className="eyebrow">Payment plan</span>
+                                  <strong>{paymentPlanRows.length || breakdown.term_months} monthly payments</strong>
+                                </div>
+                                <span className="tag tag--neutral">{breakdown.term_months} months</span>
+                              </div>
+                              {paymentPlanError ? (
+                                <p className="early-repayment-card__error">{paymentPlanError}</p>
+                              ) : paymentPlanRows.length === 0 ? (
+                                <p className="approved-offer-card__loading">Preparing payment plan...</p>
+                              ) : (
+                                <div className="loan-payment-plan__rows">
+                                  {paymentPlanRows.map((installment) => (
+                                    <div className="loan-payment-plan__row" key={installment.number}>
+                                      <span>
+                                        #{installment.number}
+                                        {installment.dueDate ? ` - ${new Date(installment.dueDate).toLocaleDateString()}` : ""}
+                                      </span>
+                                      <strong>{formatMoney(installment.paymentAmount, breakdown.currency)}</strong>
+                                      <small>
+                                        Principal {formatMoney(installment.principalAmount, breakdown.currency)} / Interest{" "}
+                                        {formatMoney(installment.interestAmount, breakdown.currency)}
+                                      </small>
+                                      <small>{formatMoney(installment.remainingPrincipal, breakdown.currency)} remaining</small>
+                                      {installment.status && <span className="tag tag--outline">{installment.status}</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {activeLoan && (
                             <div className="early-repayment-card">
                               <div className="early-repayment-card__top">
@@ -1686,41 +1833,6 @@ export function CreditPage() {
                                   </div>
                                 </div>
                               )}
-                            </div>
-                          )}
-                          {isOfferExpanded && (
-                            <div className="approved-offer-card__details" id={breakdownId}>
-                              <div className="approved-offer-card__figures">
-                                <div>
-                                  <span className="eyebrow">Annual rate</span>
-                                  <strong>{application.offered_interest_rate ?? breakdown.annual_interest_rate}%</strong>
-                                </div>
-                                <div>
-                                  <span className="eyebrow">Term</span>
-                                  <strong>{breakdown.term_months} months</strong>
-                                </div>
-                                <div>
-                                  <span className="eyebrow">Total interest</span>
-                                  <strong>{formatMoney(breakdown.total_interest, breakdown.currency)}</strong>
-                                </div>
-                                <div>
-                                  <span className="eyebrow">Total repayment</span>
-                                  <strong>{formatMoney(breakdown.total_payment, breakdown.currency)}</strong>
-                                </div>
-                              </div>
-                              <div className="approved-offer-card__schedule">
-                                <span className="eyebrow">First payments</span>
-                                {breakdown.schedule.slice(0, 3).map((installment) => (
-                                  <div key={installment.installment_number}>
-                                    <span>Month {installment.installment_number}</span>
-                                    <strong>{formatMoney(installment.payment_amount, breakdown.currency)}</strong>
-                                    <small>
-                                      Principal {formatMoney(installment.principal_amount, breakdown.currency)} / Interest{" "}
-                                      {formatMoney(installment.interest_amount, breakdown.currency)}
-                                    </small>
-                                  </div>
-                                ))}
-                              </div>
                             </div>
                           )}
                         </>
