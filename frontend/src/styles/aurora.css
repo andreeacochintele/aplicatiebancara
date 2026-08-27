@@ -83,10 +83,12 @@
 }
 
 .aurora-brand-mark {
+  display: block;
   width: 30px;
   height: 30px;
   border-radius: 9px;
   background: var(--aurora-gradient);
+  object-fit: cover;
   flex-shrink: 0;
 }
 

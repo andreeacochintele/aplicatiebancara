@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # App
-    APP_NAME: str = "Banking App API"
+    APP_NAME: str = "EasyB API"
     ENVIRONMENT: str = "development"
     API_V1_PREFIX: str = "/api/v1"
 

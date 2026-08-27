@@ -176,7 +176,7 @@ export function Header() {
 
   return (
     <header className="header aurora-header">
-      <span className="header__title">{page?.title ?? "Banking App"}</span>
+      <span className="header__title">{page?.title ?? "EasyB"}</span>
       {page && <span className="header__subtitle">{page.subtitle}</span>}
       <div className="header__meta">
         <ThemeToggle />

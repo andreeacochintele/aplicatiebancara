@@ -64,8 +64,8 @@ export function Sidebar() {
   return (
     <nav className="sidebar aurora-sidebar">
       <div className="aurora-brand">
-        <span className="aurora-brand-mark" />
-        <span className="aurora-brand-name">Banking App</span>
+        <img src="/logo.svg" alt="" className="aurora-brand-mark" />
+        <span className="aurora-brand-name">EasyB</span>
       </div>
       {isAdmin ? (
         <NavGroup label="Operations" items={OPERATIONS_ITEMS} />

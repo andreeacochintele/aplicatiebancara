@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="EasyB">
+  <defs>
+    <linearGradient id="easyb-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#5b5fef" />
+      <stop offset="55%" stop-color="#9b5de5" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" rx="26" fill="url(#easyb-gradient)" />
+  <text
+    x="50"
+    y="58"
+    text-anchor="middle"
+    font-family="Manrope, 'Segoe UI', system-ui, sans-serif"
+    font-weight="800"
+    font-size="42"
+    fill="#ffffff"
+  >EB</text>
+</svg>
