@@ -718,6 +718,7 @@ export interface FraudCaseSummary {
   risk_score: string;
   status: FraudCaseStatus;
   hold_amount: string;
+  hold_currency: string;
   created_at: string;
   flag_codes: FraudFlagCode[];
 }

@@ -202,7 +202,7 @@ export function FraudReviewSection() {
                 <Fragment key={fraudCase.id}>
                   <tr>
                     <td>{fraudCase.transaction_id.slice(0, 8)}</td>
-                    <td>{formatMoney(fraudCase.hold_amount, detail?.transaction_currency ?? "RON")}</td>
+                    <td>{formatMoney(fraudCase.hold_amount, fraudCase.hold_currency)}</td>
                     <td>{fraudCase.risk_score}</td>
                     <td>
                       <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
