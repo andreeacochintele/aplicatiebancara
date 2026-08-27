@@ -12,6 +12,7 @@ from app.budgets import models as budgets_models  # noqa: F401
 from app.cards import models as cards_models  # noqa: F401
 from app.credit import models as credit_models  # noqa: F401
 from app.database import Base, get_db
+from app.exports import models as exports_models  # noqa: F401
 from app.fraud import models as fraud_models  # noqa: F401
 from app.fx import models as fx_models  # noqa: F401
 from app.main import app

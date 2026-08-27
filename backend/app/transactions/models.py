@@ -101,3 +101,17 @@ class WalletLedgerEntry(Base):
 
     wallet = relationship("Wallet", back_populates="ledger_entries")
     transaction = relationship("Transaction", back_populates="ledger_entries")
+
+
+class TransactionCategory(Base):
+    """A fixed, global category list — Transaction.category_id points here.
+    Nothing in the app assigns a category to a transaction yet; this exists
+    so the id can at least resolve to a real name wherever it's set (e.g.
+    business export), without taking on transaction categorisation as a
+    feature."""
+
+    __tablename__ = "transaction_categories"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
