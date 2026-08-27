@@ -97,13 +97,6 @@
   flex-shrink: 0;
 }
 
-/* The mark is a flat raster asset (PNG/WebP), not an SVG with paths to
-   recolor — brightness(0) invert(1) turns its dark artwork into a solid
-   white silhouette so it stays visible against the dark surfaces below,
-   for both the static and hover-animated frames. */
-[data-theme="dark"] .easyb-brand-mark {
-  filter: brightness(0) invert(1);
-}
 
 .easyb-brand-name {
   font-family: "Manrope", sans-serif;
