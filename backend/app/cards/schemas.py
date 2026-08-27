@@ -46,12 +46,27 @@ class CardPublic(BaseModel):
     last_four: str
     mock_pan: str
     mock_cvv: str
+    has_pin: bool = False
     expiration_month: int
     expiration_year: int
     one_time_remaining: int | None
     credit_account: CreditCardAccountPublic | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class CardPinUpdate(BaseModel):
+    pin: str
+
+
+class CardRevealRequest(BaseModel):
+    pin: str
+
+
+class CardSensitiveDetails(BaseModel):
+    card_id: uuid.UUID
+    mock_pan: str
+    mock_cvv: str
 
 
 class CardPaymentPreferencesUpdate(BaseModel):

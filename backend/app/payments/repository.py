@@ -1,5 +1,6 @@
 """Data-access layer for payment beneficiaries."""
 import uuid
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from app.payments.models import (
     BillSplitParticipant,
     PaymentRequest,
     ScheduledPayment,
+    ScheduledPaymentStatus,
     TransactionFolder,
     TransactionFolderItem,
 )
@@ -119,6 +121,30 @@ class ScheduledPaymentRepository:
             .order_by(ScheduledPayment.next_run_on.asc(), ScheduledPayment.created_at.desc())
             .limit(limit)
             .offset(offset)
+        )
+        return list(self.db.scalars(stmt))
+
+    def list_due_loan_autopayments(self, run_on: date) -> list[ScheduledPayment]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(
+                ScheduledPayment,
+                {
+                    "status": "eq.ACTIVE",
+                    "next_run_on": f"lte.{run_on.isoformat()}",
+                    "description": "like.LOAN_AUTOPAY:*",
+                    "order": "next_run_on.asc",
+                    "limit": "500",
+                },
+            )
+        stmt = (
+            select(ScheduledPayment)
+            .where(
+                ScheduledPayment.status == ScheduledPaymentStatus.ACTIVE,
+                ScheduledPayment.next_run_on <= run_on,
+                ScheduledPayment.description.like("LOAN_AUTOPAY:%"),
+            )
+            .order_by(ScheduledPayment.next_run_on.asc())
+            .limit(500)
         )
         return list(self.db.scalars(stmt))
 
