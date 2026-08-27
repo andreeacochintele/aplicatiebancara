@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -893,6 +894,157 @@ def test_make_regular_installment_payment_pays_next_installment_and_advances_due
     assert ledger_entry.amount == first_installment.payment_amount
 
 
+def test_update_loan_autopay_accepts_current_account(db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    _approve_application(application, Decimal("10000.00"), Decimal("12.00"))
+    loan = service.create_loan_from_application(user.id, application.id)
+
+    updated = service.update_loan_autopay(
+        user.id,
+        loan.id,
+        True,
+        loan.monthly_payment,
+        wallet.id,
+        next_run_on=loan.next_payment_date,
+    )
+
+    assert updated.autopay_enabled is True
+    assert updated.autopay_source_wallet_id == wallet.id
+    assert updated.autopay_source_card_id is None
+    assert updated.autopay_next_run_on == loan.next_payment_date
+    assert updated.autopay_amount == loan.monthly_payment
+
+
+def test_update_loan_autopay_accepts_debit_card(db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    debit_card = CardService(db_session).create_card(
+        user.id,
+        CardCreate(type="DEBIT", tier="REGULAR", default_wallet_id=wallet.id),
+    )
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    _approve_application(application, Decimal("10000.00"), Decimal("12.00"))
+    loan = service.create_loan_from_application(user.id, application.id)
+
+    updated = service.update_loan_autopay(
+        user.id,
+        loan.id,
+        True,
+        loan.monthly_payment,
+        wallet.id,
+        debit_card.id,
+        loan.next_payment_date,
+    )
+
+    assert updated.autopay_enabled is True
+    assert updated.autopay_source_wallet_id == wallet.id
+    assert updated.autopay_source_card_id == debit_card.id
+    assert updated.autopay_next_run_on == loan.next_payment_date
+    assert updated.autopay_amount == loan.monthly_payment
+
+
+def test_update_loan_autopay_rejects_credit_card_source(db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    credit_card = CardService(db_session).create_card(
+        user.id,
+        CardCreate(type="CREDIT", tier="REGULAR"),
+    )
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    _approve_application(application, Decimal("10000.00"), Decimal("12.00"))
+    loan = service.create_loan_from_application(user.id, application.id)
+
+    with pytest.raises(ValidationError, match="current account or debit card"):
+        service.update_loan_autopay(user.id, loan.id, True, loan.monthly_payment, None, credit_card.id, loan.next_payment_date)
+
+    assert loan.autopay_enabled is False
+
+
+def test_update_loan_autopay_rejects_amount_below_next_installment(db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    _approve_application(application, Decimal("10000.00"), Decimal("12.00"))
+    loan = service.create_loan_from_application(user.id, application.id)
+
+    with pytest.raises(ValidationError, match="cover the next installment"):
+        service.update_loan_autopay(
+            user.id,
+            loan.id,
+            True,
+            Decimal("1.00"),
+            wallet.id,
+            next_run_on=loan.next_payment_date,
+        )
+
+
+def test_process_due_loan_autopayments_pays_due_installment(db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    _approve_application(application, Decimal("10000.00"), Decimal("12.00"))
+    loan = service.create_loan_from_application(user.id, application.id)
+    first_installment = service.list_installments_for_loan(user.id, loan.id)[0]
+    loan.next_payment_date = date.today()
+    service.update_loan_autopay(user.id, loan.id, True, loan.monthly_payment, wallet.id, next_run_on=date.today())
+
+    results = service.process_due_loan_autopayments(date.today())
+
+    assert len(results) == 1
+    assert results[0].installment_id == first_installment.id
+    assert first_installment.status == LoanInstallmentStatus.PAID
+    assert loan.outstanding_principal == first_installment.remaining_principal
+    assert loan.autopay_next_run_on == loan.next_payment_date
+    assert wallet.available_balance == Decimal("15000.00") - first_installment.payment_amount
+
+
 def test_admin_decides_credit_application(db_session):
     user = _create_user(db_session)
     service = CreditService(db_session)
@@ -1339,6 +1491,139 @@ def test_regular_installment_payment_endpoint_pays_next_due_installment(client, 
     db_session.refresh(wallet)
     assert loan.outstanding_principal == first_installment.remaining_principal
     assert wallet.available_balance == Decimal("15000.00") - first_installment.payment_amount
+
+
+def test_loan_autopay_endpoint_enables_current_account_source(client, db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    _approve_application(application, Decimal("10000.00"), Decimal("12.00"))
+    loan = service.create_loan_from_application(user.id, application.id)
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "credit-owner@example.com", "password": "Sup3rSecret!"},
+    )
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.patch(
+        f"/api/v1/credit/loans/{loan.id}/autopay",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "enabled": True,
+            "amount": str(loan.monthly_payment),
+            "source_wallet_id": str(wallet.id),
+            "next_run_on": loan.next_payment_date.isoformat(),
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["autopay_enabled"] is True
+    assert body["autopay_source_wallet_id"] == str(wallet.id)
+    assert body["autopay_source_card_id"] is None
+    assert body["autopay_next_run_on"] == loan.next_payment_date.isoformat()
+    assert body["autopay_amount"] == str(loan.monthly_payment)
+    db_session.refresh(loan)
+    assert loan.autopay_enabled is True
+    assert loan.autopay_source_wallet_id == wallet.id
+
+
+def test_loan_autopay_endpoint_processes_today_payment_immediately(client, db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    _approve_application(application, Decimal("10000.00"), Decimal("12.00"))
+    loan = service.create_loan_from_application(user.id, application.id)
+    first_installment = loan.installments[0]
+    original_balance = wallet.available_balance
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "credit-owner@example.com", "password": "Sup3rSecret!"},
+    )
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.patch(
+        f"/api/v1/credit/loans/{loan.id}/autopay",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "enabled": True,
+            "amount": str(loan.monthly_payment),
+            "source_wallet_id": str(wallet.id),
+            "next_run_on": date.today().isoformat(),
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["outstanding_principal"] == str(first_installment.remaining_principal)
+    assert body["autopay_next_run_on"] == loan.installments[1].due_date.isoformat()
+    db_session.refresh(wallet)
+    assert wallet.available_balance == original_balance - first_installment.payment_amount
+
+
+def test_loan_autopay_endpoint_rebuilds_missing_installments_for_today_payment(client, db_session):
+    user = _create_user(db_session)
+    wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="RON"))
+    wallet.available_balance = Decimal("5000.00")
+    service = CreditService(db_session)
+    application = service.create_application(
+        user.id,
+        CreditApplicationCreate(
+            type=CreditApplicationType.PERSONAL_LOAN,
+            requested_amount=Decimal("10000.00"),
+            requested_term_months=12,
+        ),
+    )
+    _approve_application(application, Decimal("10000.00"), Decimal("12.00"))
+    loan = service.create_loan_from_application(user.id, application.id)
+    for installment in list(loan.installments):
+        db_session.delete(installment)
+    db_session.flush()
+    original_outstanding = loan.outstanding_principal
+    original_balance = wallet.available_balance
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "credit-owner@example.com", "password": "Sup3rSecret!"},
+    )
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.patch(
+        f"/api/v1/credit/loans/{loan.id}/autopay",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "enabled": True,
+            "amount": str(loan.monthly_payment),
+            "source_wallet_id": str(wallet.id),
+            "next_run_on": date.today().isoformat(),
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    db_session.refresh(wallet)
+    assert Decimal(body["outstanding_principal"]) < original_outstanding
+    assert wallet.available_balance == original_balance - Decimal(body["autopay_amount"])
+    installments = service.list_installments_for_loan(user.id, loan.id)
+    assert installments[0].status == LoanInstallmentStatus.PAID
+    assert any(installment.status == LoanInstallmentStatus.PENDING for installment in installments)
 
 
 def test_early_repayment_endpoint_records_source_debit_card(client, db_session):

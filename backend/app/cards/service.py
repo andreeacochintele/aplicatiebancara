@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.cards.models import Card, CardPaymentPreferences, CardStatus, CardTier, CardType, CreditCardAccount
 from app.cards.repository import CardRepository
-from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate
+from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate, CardSensitiveDetails
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.security import hash_password, verify_password
 from app.database import utcnow
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
@@ -170,6 +171,7 @@ class CardService:
     def list_cards(self, user_id: uuid.UUID) -> list[Card]:
         cards = self.repository.list_for_user(user_id)
         for card in cards:
+            self._attach_pin_status(card)
             if card.type == CardType.CREDIT:
                 card.credit_account = self._get_or_create_credit_account(card)
         return cards
@@ -178,9 +180,26 @@ class CardService:
         card = self.repository.get_by_id(card_id)
         if card is None or card.user_id != user_id:
             raise NotFoundError("Card not found")
+        self._attach_pin_status(card)
         if card.type == CardType.CREDIT:
             card.credit_account = self._get_or_create_credit_account(card)
         return card
+
+    def update_pin(self, user_id: uuid.UUID, card_id: uuid.UUID, pin: str) -> Card:
+        card = self.get_for_user(user_id, card_id)
+        self._validate_pin(pin)
+        card.pin_hash = hash_password(pin)
+        self._attach_pin_status(card)
+        self.db.flush()
+        return card
+
+    def reveal_details(self, user_id: uuid.UUID, card_id: uuid.UUID, pin: str) -> CardSensitiveDetails:
+        card = self.get_for_user(user_id, card_id)
+        if not card.pin_hash:
+            raise ValidationError("Set a card PIN before viewing card details")
+        if not verify_password(pin, card.pin_hash):
+            raise ValidationError("Incorrect card PIN")
+        return CardSensitiveDetails(card_id=card.id, mock_pan=card.mock_pan, mock_cvv=card.mock_cvv)
 
     def _get_or_create_credit_account(self, card: Card) -> CreditCardAccount:
         account = self.repository.get_credit_account(card.id)
@@ -277,6 +296,13 @@ class CardService:
 
     def _money(self, value: Decimal) -> Decimal:
         return Decimal(value).quantize(Decimal("0.01"))
+
+    def _attach_pin_status(self, card: Card) -> None:
+        card.has_pin = bool(card.pin_hash)
+
+    def _validate_pin(self, pin: str) -> None:
+        if len(pin) != 4 or not pin.isdigit():
+            raise ValidationError("Card PIN must be exactly 4 digits")
 
     def freeze_card(self, user_id: uuid.UUID, card_id: uuid.UUID) -> Card:
         card = self.get_for_user(user_id, card_id)

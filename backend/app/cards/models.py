@@ -53,6 +53,7 @@ class Card(Base):
     last_four: Mapped[str] = mapped_column(String(4), nullable=False)
     mock_pan: Mapped[str] = mapped_column(String(19), nullable=False)
     mock_cvv: Mapped[str] = mapped_column(String(3), nullable=False)
+    pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     expiration_month: Mapped[int] = mapped_column(Integer, nullable=False)
     expiration_year: Mapped[int] = mapped_column(Integer, nullable=False)
     one_time_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)

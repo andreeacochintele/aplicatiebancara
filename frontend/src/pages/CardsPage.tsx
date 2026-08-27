@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Copy, Eye, EyeOff, Lock, Trash2, Unlock } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, Eye, EyeOff, Lock, Settings, Trash2, Unlock } from "lucide-react";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { cardTierRewardBullets } from "../config/rewardPolicy";
 import { useAuth } from "../hooks/useAuth";
-import type { Card, CardTier, CardType, CreditApplication, Transaction, Wallet } from "../types";
+import type { Card, CardSensitiveDetails, CardTier, CardType, CreditApplication, Transaction, Wallet } from "../types";
 
 const CARD_TYPES: CardType[] = ["DEBIT", "CREDIT", "ONE_TIME"];
 const CREDIT_CARD_CURRENCIES = ["RON", "EUR", "USD", "GBP"];
@@ -59,6 +59,7 @@ const CARD_TIER_PRODUCT_LIST = [
 const MOCK_CARD_MERCHANTS = ["Carrefour", "Netflix", "OMV", "Starbucks", "eMAG", "Uber"];
 type CreditPaymentSourceType = "ACCOUNT" | "DEBIT_CARD";
 type CreditPaymentAmountMode = "FULL_BALANCE" | "CUSTOM";
+const CARD_PIN_STORAGE_PREFIX = "aurora-card-pin:";
 
 interface CardTransactionDisplay {
   id: string;
@@ -177,6 +178,20 @@ function cardTransactionDirection(transaction: Transaction, card: Card): "in" | 
   return "out";
 }
 
+function cardPinStorageKey(cardId: string): string {
+  return `${CARD_PIN_STORAGE_PREFIX}${cardId}`;
+}
+
+async function hashCardPin(pin: string): Promise<string> {
+  const input = new TextEncoder().encode(pin);
+  const digest = await crypto.subtle.digest("SHA-256", input);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function hasStoredCardPin(cardId: string): boolean {
+  return Boolean(window.localStorage.getItem(cardPinStorageKey(cardId)));
+}
+
 export function CardsPage() {
   const { accessToken, logout, user } = useAuth();
   const [cards, setCards] = useState<Card[]>([]);
@@ -195,6 +210,15 @@ export function CardsPage() {
   const [actionCardId, setActionCardId] = useState<string | null>(null);
   const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
   const [revealedCardIds, setRevealedCardIds] = useState<Set<string>>(() => new Set());
+  const [cardDetailsById, setCardDetailsById] = useState<Record<string, CardSensitiveDetails>>({});
+  const [pinPromptCardId, setPinPromptCardId] = useState<string | null>(null);
+  const [pinSettingsCardIds, setPinSettingsCardIds] = useState<Set<string>>(() => new Set());
+  const [pinInputs, setPinInputs] = useState<Record<string, string>>({});
+  const [pinSettingsInputs, setPinSettingsInputs] = useState<Record<string, string>>({});
+  const [pinActionCardId, setPinActionCardId] = useState<string | null>(null);
+  const [pinSettingsVersion, setPinSettingsVersion] = useState(0);
+  const [cardSecurityErrors, setCardSecurityErrors] = useState<Record<string, string>>({});
+  const [cardSecurityMessages, setCardSecurityMessages] = useState<Record<string, string>>({});
   const [copiedCardId, setCopiedCardId] = useState<string | null>(null);
   const [expandedTransactionCardIds, setExpandedTransactionCardIds] = useState<Set<string>>(() => new Set());
   const [paymentPanelCardId, setPaymentPanelCardId] = useState<string | null>(null);
@@ -473,6 +497,11 @@ export function CardsPage() {
         next.delete(card.id);
         return next;
       });
+      setCardDetailsById((current) => {
+        const next = { ...current };
+        delete next[card.id];
+        return next;
+      });
       setExpandedTransactionCardIds((current) => {
         const next = new Set(current);
         next.delete(card.id);
@@ -489,16 +518,143 @@ export function CardsPage() {
     }
   }
 
-  function toggleCardReveal(cardId: string) {
+  function clearCardSecurityFeedback(cardId: string) {
+    setCardSecurityErrors((current) => {
+      const next = { ...current };
+      delete next[cardId];
+      return next;
+    });
+    setCardSecurityMessages((current) => {
+      const next = { ...current };
+      delete next[cardId];
+      return next;
+    });
+  }
+
+  function toggleCardReveal(card: Card) {
     setRevealedCardIds((current) => {
       const next = new Set(current);
-      if (next.has(cardId)) {
-        next.delete(cardId);
+      if (next.has(card.id)) {
+        next.delete(card.id);
+        return next;
+      }
+      if (cardDetailsById[card.id]) next.add(card.id);
+      return next;
+    });
+    if (!cardDetailsById[card.id]) {
+      if (hasStoredCardPin(card.id)) {
+        setPinPromptCardId(card.id);
       } else {
-        next.add(cardId);
+        setPinSettingsCardIds((current) => {
+          const next = new Set(current);
+          next.add(card.id);
+          return next;
+        });
+      }
+      clearCardSecurityFeedback(card.id);
+    }
+  }
+
+  function togglePinSettings(card: Card) {
+    setPinSettingsCardIds((current) => {
+      const next = new Set(current);
+      if (next.has(card.id)) {
+        next.delete(card.id);
+      } else {
+        next.add(card.id);
       }
       return next;
     });
+    setPinSettingsInputs((current) => ({ ...current, [card.id]: "" }));
+    clearCardSecurityFeedback(card.id);
+  }
+
+  async function updateCardPin(card: Card) {
+    if (!accessToken || pinActionCardId) return;
+    const pin = pinSettingsInputs[card.id] ?? "";
+    clearCardSecurityFeedback(card.id);
+    if (!/^\d{4}$/.test(pin)) {
+      setCardSecurityErrors((current) => ({ ...current, [card.id]: "PIN must be 4 digits." }));
+      return;
+    }
+
+    setPinActionCardId(card.id);
+    try {
+      const pinHash = await hashCardPin(pin);
+      window.localStorage.setItem(cardPinStorageKey(card.id), pinHash);
+      setPinSettingsVersion((current) => current + 1);
+      setPinSettingsInputs((current) => ({ ...current, [card.id]: "" }));
+      setPinSettingsCardIds((current) => {
+        const next = new Set(current);
+        next.delete(card.id);
+        return next;
+      });
+      setCardSecurityMessages((current) => ({ ...current, [card.id]: "PIN saved." }));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setCardSecurityErrors((current) => ({
+        ...current,
+        [card.id]: err instanceof ApiError ? err.message : "Could not save PIN.",
+      }));
+    } finally {
+      setPinActionCardId(null);
+    }
+  }
+
+  async function revealCardDetails(card: Card) {
+    if (!accessToken || pinActionCardId) return;
+    const pin = pinInputs[card.id] ?? "";
+    clearCardSecurityFeedback(card.id);
+    if (!/^\d{4}$/.test(pin)) {
+      setCardSecurityErrors((current) => ({ ...current, [card.id]: "Enter the 4-digit PIN." }));
+      return;
+    }
+
+    setPinActionCardId(card.id);
+    try {
+      const storedPinHash = window.localStorage.getItem(cardPinStorageKey(card.id));
+      if (!storedPinHash) {
+        setPinSettingsCardIds((current) => {
+          const next = new Set(current);
+          next.add(card.id);
+          return next;
+        });
+        throw new Error("Set a PIN before viewing card details.");
+      }
+      if ((await hashCardPin(pin)) !== storedPinHash) {
+        throw new Error("Incorrect card PIN.");
+      }
+      if (!card.mock_pan || !card.mock_cvv) {
+        throw new Error("Card details are not available.");
+      }
+      const details: CardSensitiveDetails = {
+        card_id: card.id,
+        mock_pan: card.mock_pan,
+        mock_cvv: card.mock_cvv,
+      };
+      setCardDetailsById((current) => ({ ...current, [card.id]: details }));
+      setRevealedCardIds((current) => {
+        const next = new Set(current);
+        next.add(card.id);
+        return next;
+      });
+      setPinInputs((current) => ({ ...current, [card.id]: "" }));
+      setPinPromptCardId(null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setCardSecurityErrors((current) => ({
+        ...current,
+        [card.id]: err instanceof ApiError || err instanceof Error ? err.message : "Could not reveal card details.",
+      }));
+    } finally {
+      setPinActionCardId(null);
+    }
   }
 
   function copyCardNumberFallback(cardNumber: string) {
@@ -520,7 +676,22 @@ export function CardsPage() {
   }
 
   async function copyCardNumber(card: Card) {
-    const cardNumber = card.mock_pan.replace(/\s/g, "");
+    const details = cardDetailsById[card.id];
+    if (!details) {
+      if (hasStoredCardPin(card.id)) {
+        setPinPromptCardId(card.id);
+        setCardSecurityErrors((current) => ({ ...current, [card.id]: "Enter PIN to copy card number." }));
+      } else {
+        setPinSettingsCardIds((current) => {
+          const next = new Set(current);
+          next.add(card.id);
+          return next;
+        });
+        setCardSecurityErrors((current) => ({ ...current, [card.id]: "Set a PIN before copying card number." }));
+      }
+      return;
+    }
+    const cardNumber = details.mock_pan.replace(/\s/g, "");
 
     try {
       if (navigator.clipboard?.writeText) {
@@ -924,6 +1095,12 @@ export function CardsPage() {
             {cards.map((card) => {
               const wallet = wallets.find((item) => item.id === card.default_wallet_id);
               const isRevealed = revealedCardIds.has(card.id);
+              const sensitiveDetails = cardDetailsById[card.id];
+              const isPinPromptOpen = pinPromptCardId === card.id;
+              const isPinSettingsOpen = pinSettingsCardIds.has(card.id);
+              const hasLocalPin = pinSettingsVersion >= 0 && hasStoredCardPin(card.id);
+              const cardSecurityError = cardSecurityErrors[card.id];
+              const cardSecurityMessage = cardSecurityMessages[card.id];
               const isTransactionsExpanded = expandedTransactionCardIds.has(card.id);
               const isAccountLinkedCard = card.type === "DEBIT" || card.type === "ONE_TIME";
               const cardTransactions = transactions
@@ -1016,7 +1193,7 @@ export function CardsPage() {
                       <span className="bank-card__mark">{card.type === "ONE_TIME" ? "1x" : card.type}</span>
                     </div>
                     <div className="bank-card__number-row">
-                      <div className="bank-card__number">{isRevealed ? card.mock_pan : card.masked_pan}</div>
+                      <div className="bank-card__number">{isRevealed && sensitiveDetails ? sensitiveDetails.mock_pan : card.masked_pan}</div>
                       <button
                         type="button"
                         className={`bank-card__copy${copiedCardId === card.id ? " bank-card__copy--copied" : ""}`}
@@ -1029,7 +1206,7 @@ export function CardsPage() {
                       <button
                         type="button"
                         className="bank-card__reveal"
-                        onClick={() => toggleCardReveal(card.id)}
+                        onClick={() => toggleCardReveal(card)}
                         aria-label={isRevealed ? "Hide card details" : "Reveal card details"}
                         title={isRevealed ? "Hide card details" : "Reveal card details"}
                       >
@@ -1048,10 +1225,39 @@ export function CardsPage() {
                         <span>
                           EXP {String(card.expiration_month).padStart(2, "0")}/{card.expiration_year}
                         </span>
-                        <span>Mock CVV {isRevealed ? card.mock_cvv : "***"}</span>
+                        <span>Mock CVV {isRevealed && sensitiveDetails ? sensitiveDetails.mock_cvv : "***"}</span>
                       </span>
                     </div>
                   </div>
+
+                  {isPinPromptOpen && (
+                    <div className="card-detail-pin">
+                      <label>
+                        PIN
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          maxLength={4}
+                          value={pinInputs[card.id] ?? ""}
+                          onChange={(event) => {
+                            const pin = event.target.value.replace(/\D/g, "").slice(0, 4);
+                            setPinInputs((current) => ({ ...current, [card.id]: pin }));
+                            clearCardSecurityFeedback(card.id);
+                          }}
+                          placeholder="0000"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="card-detail-pin__submit"
+                        onClick={() => revealCardDetails(card)}
+                        disabled={pinActionCardId === card.id}
+                      >
+                        {pinActionCardId === card.id ? "Checking..." : "View details"}
+                      </button>
+                      {cardSecurityError && <div className="card-detail-pin__error">{cardSecurityError}</div>}
+                    </div>
+                  )}
 
                   <div className="card-panel__meta">
                     <div>
@@ -1075,6 +1281,15 @@ export function CardsPage() {
                       )}
                     </div>
                     <div className="card-panel__actions">
+                      <button
+                        type="button"
+                        className="card-panel__icon-action"
+                        onClick={() => togglePinSettings(card)}
+                        aria-label="Card settings"
+                        title="Card settings"
+                      >
+                        <Settings size={16} strokeWidth={2.2} />
+                      </button>
                       <button
                         type="button"
                         className="card-panel__icon-action button--danger"
@@ -1112,6 +1327,41 @@ export function CardsPage() {
                       </span>
                     </button>
                   </div>
+
+                  {(isPinSettingsOpen || (!isPinPromptOpen && cardSecurityError) || cardSecurityMessage) && (
+                    <div className="credit-card-payment">
+                      {isPinSettingsOpen && (
+                        <div className="credit-card-payment__grid">
+                          <label>
+                            Card PIN
+                            <input
+                              type="password"
+                              inputMode="numeric"
+                              maxLength={4}
+                              value={pinSettingsInputs[card.id] ?? ""}
+                              onChange={(event) => {
+                                const pin = event.target.value.replace(/\D/g, "").slice(0, 4);
+                                setPinSettingsInputs((current) => ({ ...current, [card.id]: pin }));
+                                clearCardSecurityFeedback(card.id);
+                              }}
+                              placeholder="0000"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="credit-card-payment__submit"
+                            onClick={() => updateCardPin(card)}
+                            disabled={pinActionCardId === card.id}
+                          >
+                            {pinActionCardId === card.id ? "Saving..." : hasLocalPin ? "Update PIN" : "Set PIN"}
+                          </button>
+                        </div>
+                      )}
+
+                      {!isPinPromptOpen && cardSecurityError && <div className="credit-card-payment__error">{cardSecurityError}</div>}
+                      {cardSecurityMessage && <div className="credit-card-payment__message">{cardSecurityMessage}</div>}
+                    </div>
+                  )}
 
                   {isCreditCard && isPaymentPanelOpen && (
                     <div className="credit-card-payment">
