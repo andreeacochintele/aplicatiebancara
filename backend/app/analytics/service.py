@@ -18,6 +18,8 @@ from app.analytics.schemas import (
     NetWorthHistoryPoint,
     NetWorthHistoryResponse,
     NetWorthResponse,
+    SpendingByCategory,
+    SpendingByCategoryResponse,
     SpendingByType,
     SpendingByTypeResponse,
     WalletBalanceItem,
@@ -49,7 +51,7 @@ class AnalyticsService:
         self.wallet_repository = WalletRepository(db)
         self.fx_service = FXService(db)
 
-    def spending_by_type(self, user_id: uuid.UUID, year: int | None, month: int | None) -> SpendingByTypeResponse:
+    def _month_period_bounds(self, year: int | None, month: int | None) -> tuple[datetime, datetime]:
         if (year is None) != (month is None):
             raise ValidationError("year and month must be provided together")
 
@@ -62,6 +64,10 @@ class AnalyticsService:
         period_start = datetime(year, month, 1, tzinfo=timezone.utc)
         days_in_month = calendar.monthrange(year, month)[1]
         period_end = datetime(year, month, days_in_month, 23, 59, 59, 999999, tzinfo=timezone.utc)
+        return period_start, period_end
+
+    def spending_by_type(self, user_id: uuid.UUID, year: int | None, month: int | None) -> SpendingByTypeResponse:
+        period_start, period_end = self._month_period_bounds(year, month)
 
         rows = self.repository.spending_by_type(user_id, period_start, period_end)
         items = [
@@ -69,6 +75,20 @@ class AnalyticsService:
             for tx_type, currency, total, count in rows
         ]
         return SpendingByTypeResponse(
+            period_start=period_start.date(), period_end=period_end.date(), items=items
+        )
+
+    def spending_by_category(
+        self, user_id: uuid.UUID, year: int | None, month: int | None
+    ) -> SpendingByCategoryResponse:
+        period_start, period_end = self._month_period_bounds(year, month)
+
+        rows = self.repository.spending_by_merchant_category(user_id, period_start, period_end)
+        items = [
+            SpendingByCategory(category=category, total_amount=total, currency=currency, transaction_count=count)
+            for category, currency, total, count in rows
+        ]
+        return SpendingByCategoryResponse(
             period_start=period_start.date(), period_end=period_end.date(), items=items
         )
 
@@ -108,6 +128,20 @@ class AnalyticsService:
         for (year, month, currency), b in buckets.items():
             converted = (b["total"] * self._rate_to(currency, base)).quantize(_CENTS, rounding=ROUND_HALF_UP)
             totals_by_month[(year, month)] = totals_by_month.get((year, month), Decimal("0")) + converted
+
+        # Backfilled with a zero entry for every month in the requested
+        # window that had no activity at all, not just the months that
+        # actually had a transaction — a brand-new account (or any account
+        # with a quiet month) would otherwise get back a single isolated
+        # data point instead of a real "last N months" trend line.
+        cursor_year, cursor_month = start_year, start_month
+        for _ in range(months):
+            totals_by_month.setdefault((cursor_year, cursor_month), Decimal("0"))
+            cursor_month += 1
+            if cursor_month > 12:
+                cursor_month = 1
+                cursor_year += 1
+
         totals = [
             MonthlyTrendTotal(year=year, month=month, total_amount=total)
             for (year, month), total in sorted(totals_by_month.items())

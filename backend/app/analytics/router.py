@@ -9,6 +9,7 @@ from app.analytics.schemas import (
     MonthlyTrendResponse,
     NetWorthHistoryResponse,
     NetWorthResponse,
+    SpendingByCategoryResponse,
     SpendingByTypeResponse,
 )
 from app.analytics.service import AnalyticsService
@@ -27,6 +28,16 @@ def get_spending_by_type(
     db: Session = Depends(get_db),
 ) -> SpendingByTypeResponse:
     return AnalyticsService(db).spending_by_type(current_user.id, year, month)
+
+
+@router.get("/spending-by-category", response_model=SpendingByCategoryResponse)
+def get_spending_by_category(
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SpendingByCategoryResponse:
+    return AnalyticsService(db).spending_by_category(current_user.id, year, month)
 
 
 @router.get("/monthly-trend", response_model=MonthlyTrendResponse)

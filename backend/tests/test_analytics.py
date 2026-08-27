@@ -49,14 +49,15 @@ def seeded_user_with_wallet(db_session):
     return user, wallet
 
 
-def _add_transaction(db_session, user, wallet, tx_type, amount, status, created_at):
+def _add_transaction(db_session, user, wallet, tx_type, amount, status, created_at, merchant_id=None, currency="RON"):
     tx = Transaction(
         initiator_user_id=user.id,
         source_wallet_id=wallet.id,
         type=tx_type,
         status=status,
         amount=Decimal(amount),
-        currency="RON",
+        currency=currency,
+        merchant_id=merchant_id,
         created_at=created_at,
     )
     db_session.add(tx)
@@ -114,6 +115,45 @@ def test_spending_by_type_rejects_partial_period(db_session, seeded_user_with_wa
         AnalyticsService(db_session).spending_by_type(user.id, year=2026, month=None)
 
 
+def test_spending_by_category_groups_by_merchant_category_not_transaction_type(db_session, seeded_user_with_wallet):
+    from app.merchants.models import Merchant
+
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    COMPLETED = TransactionStatus.COMPLETED
+    nike = Merchant(name="Nike", category="Retail", verified=True)
+    starbucks = Merchant(name="Starbucks", category="Food", verified=True)
+    db_session.add_all([nike, starbucks])
+    db_session.flush()
+
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "120.50", COMPLETED, now, merchant_id=nike.id)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "45.00", COMPLETED, now, merchant_id=nike.id)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "12.00", COMPLETED, now, merchant_id=starbucks.id)
+    # Not a merchant purchase at all - must never appear in a category breakdown.
+    _add_transaction(db_session, user, wallet, TransactionType.LOAN_PAYMENT, "1600.00", COMPLETED, now)
+    _add_transaction(db_session, user, wallet, TransactionType.TRANSFER, "500.00", COMPLETED, now)
+
+    result = AnalyticsService(db_session).spending_by_category(user.id, year=None, month=None)
+
+    by_category = {item.category: item for item in result.items}
+    assert set(by_category) == {"Retail", "Food"}
+    assert by_category["Retail"].total_amount == Decimal("165.50")
+    assert by_category["Retail"].transaction_count == 2
+    assert by_category["Food"].total_amount == Decimal("12.00")
+
+
+def test_spending_by_category_groups_unmatched_merchant_as_other(db_session, seeded_user_with_wallet):
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "30.00", TransactionStatus.COMPLETED, now)
+
+    result = AnalyticsService(db_session).spending_by_category(user.id, year=None, month=None)
+
+    assert len(result.items) == 1
+    assert result.items[0].category == "Other"
+    assert result.items[0].total_amount == Decimal("30.00")
+
+
 def _months_ago(dt: datetime, months: int) -> datetime:
     year, month = dt.year, dt.month - months
     while month <= 0:
@@ -139,6 +179,27 @@ def test_monthly_trend_groups_by_month_within_window(db_session, seeded_user_wit
     prev = _months_ago(now, 1)
     assert by_month[(prev.year, prev.month)].total_amount == Decimal("200.00")
     assert (_months_ago(now, 5).year, _months_ago(now, 5).month) not in by_month
+
+
+def test_monthly_trend_totals_by_month_backfills_quiet_months(db_session, seeded_user_with_wallet):
+    """A brand-new account (or any account with a quiet month) must still get
+    a full N-point trend line back, not a single isolated data point."""
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", TransactionStatus.COMPLETED, now)
+
+    result = AnalyticsService(db_session).monthly_trend(user.id, months=3)
+
+    assert len(result.totals_by_month) == 3
+    by_month = {(item.year, item.month): item.total_amount for item in result.totals_by_month}
+    assert by_month[(now.year, now.month)] == Decimal("100.00")
+    prev = _months_ago(now, 1)
+    assert by_month[(prev.year, prev.month)] == Decimal("0")
+    prev2 = _months_ago(now, 2)
+    assert by_month[(prev2.year, prev2.month)] == Decimal("0")
+    # items (the per-currency breakdown) is intentionally NOT backfilled -
+    # only totals_by_month, which is what the trend chart plots.
+    assert len(result.items) == 1
 
 
 def test_monthly_trend_rejects_out_of_range_months(db_session, seeded_user_with_wallet):

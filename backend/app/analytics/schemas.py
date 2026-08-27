@@ -21,6 +21,25 @@ class SpendingByTypeResponse(BaseModel):
     items: list[SpendingByType]
 
 
+class SpendingByCategory(BaseModel):
+    category: str
+    total_amount: Decimal
+    currency: str
+    transaction_count: int
+
+
+class SpendingByCategoryResponse(BaseModel):
+    """Card payments only, grouped by the merchant's own category (Retail,
+    Food, Travel, ...) instead of transaction type — unlike
+    SpendingByTypeResponse, transfers and loan payments never appear here,
+    since neither is a merchant purchase. A payment to an unmatched/unset
+    merchant is grouped under "Other" rather than dropped."""
+
+    period_start: date
+    period_end: date
+    items: list[SpendingByCategory]
+
+
 class MonthlyTrendItem(BaseModel):
     year: int
     month: int
