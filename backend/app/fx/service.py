@@ -59,6 +59,11 @@ _RATES_TO_RON: dict[str, Decimal] = {
 }
 _NON_EUR_CURRENCIES = [c for c in _RATES_TO_RON if c not in ("RON", "EUR")]
 
+# Public alias: any currency a wallet can be opened in must be in here (see
+# wallets/service.py::create_wallet). Kept alongside _RATES_TO_RON so the two
+# can never drift out of sync.
+SUPPORTED_CURRENCIES: frozenset[str] = frozenset(_RATES_TO_RON)
+
 FEE_RATE = Decimal("0.005")  # 0.5% of the source amount
 QUOTE_VALIDITY_MINUTES = 5
 _CENTS = Decimal("0.01")
@@ -240,6 +245,14 @@ class FXService:
             raise ConflictError(f"FX quote is {quote.status.value}, not usable")
         if _as_aware_utc(quote.expires_at) < datetime.now(timezone.utc):
             quote.status = FXQuoteStatus.EXPIRED
+            # Must persist despite the ConflictError below aborting the
+            # caller's own commit — no service in this codebase otherwise
+            # calls db.commit() (routers do, on success), but this status
+            # transition needs to survive independent of the surrounding
+            # transfer's failure. Safe here specifically because both call
+            # sites (transactions/payments) invoke this as the first step of
+            # their flow, before any wallet mutation is pending.
+            self.db.commit()
             raise ConflictError("FX quote has expired")
         return quote
 

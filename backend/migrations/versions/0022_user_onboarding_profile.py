@@ -17,6 +17,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    sa.Enum("NOT_STARTED", "PLACEHOLDER", name="kyc_document_status").create(bind, checkfirst=True)
+    sa.Enum(
+        "EMPLOYED", "SELF_EMPLOYED", "STUDENT", "UNEMPLOYED", "RETIRED", "OTHER", name="employment_status"
+    ).create(bind, checkfirst=True)
+
     kyc_document_status = postgresql.ENUM(
         "NOT_STARTED",
         "PLACEHOLDER",
@@ -33,11 +39,6 @@ def upgrade() -> None:
         name="employment_status",
         create_type=False,
     )
-    # No explicit .create() here: op.create_table() below auto-creates each
-    # Enum-typed column's Postgres type as part of table creation (no
-    # checkfirst), so calling .create() first for the same type collides
-    # with "type already exists" — the same duplicate-CREATE-TYPE bug found
-    # and fixed elsewhere in this project's migration history.
 
     op.create_table(
         "user_onboarding_states",

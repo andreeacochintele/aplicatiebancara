@@ -16,6 +16,13 @@ class WalletService:
 
     def create_wallet(self, user_id: uuid.UUID, data: WalletCreate) -> Wallet:
         currency = data.currency.upper()
+        # Local import: avoids a module-level cycle, same as the FX import in
+        # close_wallet below.
+        from app.fx.service import SUPPORTED_CURRENCIES
+
+        if currency not in SUPPORTED_CURRENCIES:
+            raise ValidationError(f"Unsupported currency '{currency}'")
+
         existing = self.repository.get_by_user_and_currency(user_id, currency)
         if existing is not None and existing.status != WalletStatus.CLOSED:
             raise ConflictError(f"Wallet for currency '{currency}' already exists")

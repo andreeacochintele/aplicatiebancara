@@ -114,7 +114,7 @@ def test_partially_onboarded_new_user_resumes_correct_step(client):
 
 
 def test_completed_new_user_is_considered_onboarded_after_login(client):
-    token = _register(client, "completed-onboarding@example.com", "+40710000010")
+    token = _advance_to_step_4(client, "completed-onboarding@example.com", "+40710000010")
     response = client.post("/api/v1/users/me/onboarding/step-4/skip", headers=_headers(token))
     assert response.status_code == 200
 
@@ -243,7 +243,7 @@ def test_step_4_accepts_dropdown_other_free_text(client):
 
 
 def test_skip_step_4_completes_onboarding(client):
-    token = _register(client, "skip-step-4@example.com", "+40710000003")
+    token = _advance_to_step_4(client, "skip-step-4@example.com", "+40710000003")
 
     response = client.post("/api/v1/users/me/onboarding/step-4/skip", headers=_headers(token))
 
@@ -422,3 +422,73 @@ def test_editing_address_after_completion_does_not_reopen_onboarding(client):
     assert body["address"]["city"] == "Cluj-Napoca"
     assert body["onboarding"]["completed"] is True
     assert body["onboarding"]["pending_step"] is None
+
+
+# ---- onboarding steps can no longer be skipped/reordered ----
+
+
+def test_step_4_skip_immediately_after_registration_is_rejected(client):
+    token = _register(client, "skip-too-early@example.com", "+40710000022")
+
+    response = client.post("/api/v1/users/me/onboarding/step-4/skip", headers=_headers(token))
+
+    assert response.status_code == 422
+
+
+def test_step_4_immediately_after_registration_is_rejected(client):
+    token = _register(client, "step-4-too-early@example.com", "+40710000023")
+
+    response = client.patch(
+        "/api/v1/users/me/onboarding/step-4",
+        headers=_headers(token),
+        json=_step_4_payload(),
+    )
+
+    assert response.status_code == 422
+
+
+def test_step_3_before_step_2_is_rejected(client):
+    token = _register(client, "step-3-too-early@example.com", "+40710000024")
+
+    response = client.post(
+        "/api/v1/users/me/onboarding/step-3/identity-document-placeholder",
+        headers=_headers(token),
+    )
+
+    assert response.status_code == 422
+
+
+def test_step_2_cannot_be_repeated_once_step_3_is_reached(client):
+    token = _register(client, "step-2-repeat@example.com", "+40710000025")
+    first = client.patch(
+        "/api/v1/users/me/onboarding/step-2",
+        headers=_headers(token),
+        json=_step_2_payload(),
+    )
+    assert first.status_code == 200
+
+    second = client.patch(
+        "/api/v1/users/me/onboarding/step-2",
+        headers=_headers(token),
+        json=_step_2_payload(),
+    )
+
+    assert second.status_code == 422
+
+
+def test_step_4_cannot_be_repeated_after_completion(client):
+    token = _advance_to_step_4(client, "step-4-repeat@example.com", "+40710000026")
+    first = client.patch(
+        "/api/v1/users/me/onboarding/step-4",
+        headers=_headers(token),
+        json=_step_4_payload(),
+    )
+    assert first.status_code == 200
+
+    second = client.patch(
+        "/api/v1/users/me/onboarding/step-4",
+        headers=_headers(token),
+        json=_step_4_payload(),
+    )
+
+    assert second.status_code == 422

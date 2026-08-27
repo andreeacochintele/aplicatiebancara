@@ -89,6 +89,8 @@ class UserService:
 
     def update_onboarding_step_2(self, user: User, data: OnboardingStep2Update) -> UserFullProfilePublic:
         state, profile, address, _employment = self.ensure_profile_records(user)
+        if state.pending_step != 2:
+            raise ValidationError("Onboarding step 2 is not the current pending step")
         self._apply_step_2(user.id, profile, address, data)
         state.pending_step = 3
         state.completed = False
@@ -97,6 +99,8 @@ class UserService:
 
     def create_identity_document_placeholder(self, user: User) -> UserFullProfilePublic:
         state, _profile, _address, _employment = self.ensure_profile_records(user)
+        if state.pending_step != 3:
+            raise ValidationError("Onboarding step 3 is not the current pending step")
         state.identity_document_status = KycDocumentStatus.PLACEHOLDER
         state.pending_step = 4
         state.completed = False
@@ -105,6 +109,8 @@ class UserService:
 
     def update_onboarding_step_4(self, user: User, data: OnboardingStep4Update) -> UserFullProfilePublic:
         state, _profile, _address, employment = self.ensure_profile_records(user)
+        if state.pending_step != 4:
+            raise ValidationError("Onboarding step 4 is not the current pending step")
         self._apply_employment(employment, data)
         state.step_4_skipped = False
         state.pending_step = None
@@ -114,6 +120,8 @@ class UserService:
 
     def skip_onboarding_step_4(self, user: User) -> UserFullProfilePublic:
         state, _profile, _address, _employment = self.ensure_profile_records(user)
+        if state.pending_step != 4:
+            raise ValidationError("Onboarding step 4 is not the current pending step")
         state.step_4_skipped = True
         state.pending_step = None
         state.completed = True

@@ -20,10 +20,13 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
     return pwd_context.verify(plain_password, password_hash)
 
 
-def _create_token(subject: str, expires_delta: timedelta, token_type: Literal["access", "refresh"]) -> str:
+def _create_token(
+    subject: str, session_id: str, expires_delta: timedelta, token_type: Literal["access", "refresh"]
+) -> str:
     now = datetime.now(timezone.utc)
     payload: dict[str, Any] = {
         "sub": subject,
+        "sid": session_id,
         "type": token_type,
         "iat": now,
         "exp": now + expires_delta,
@@ -32,12 +35,12 @@ def _create_token(subject: str, expires_delta: timedelta, token_type: Literal["a
     return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_access_token(user_id: str) -> str:
-    return _create_token(user_id, timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES), "access")
+def create_access_token(user_id: str, session_id: str) -> str:
+    return _create_token(user_id, session_id, timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES), "access")
 
 
-def create_refresh_token(user_id: str) -> str:
-    return _create_token(user_id, timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS), "refresh")
+def create_refresh_token(user_id: str, session_id: str) -> str:
+    return _create_token(user_id, session_id, timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS), "refresh")
 
 
 def decode_token(token: str) -> dict[str, Any]:
