@@ -1,5 +1,6 @@
 import { Outlet } from "react-router-dom";
 
+import { BrandMark } from "../components/BrandMark";
 import { ThemeToggle } from "../components/ThemeToggle";
 
 export function AuthLayout() {
@@ -10,7 +11,7 @@ export function AuthLayout() {
           <ThemeToggle />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-          <img src="/logo.svg" alt="" style={{ width: 32, height: 32, borderRadius: 9 }} />
+          <BrandMark size={72} />
           <h1 style={{ margin: 0 }}>EasyB</h1>
         </div>
         <Outlet />
