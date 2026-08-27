@@ -37,3 +37,7 @@ class RefreshRequest(BaseModel):
 class AccessTokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class RevokedSessionsResponse(BaseModel):
+    revoked_sessions: int

@@ -10,6 +10,7 @@ from app.auth.schemas import (
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
+    RevokedSessionsResponse,
     TokenResponse,
 )
 from app.auth.service import AuthService
@@ -47,6 +48,16 @@ def logout(
     session.status = SessionStatus.REVOKED
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/logout-others", response_model=RevokedSessionsResponse)
+def logout_other_sessions(
+    session: UserSession = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> RevokedSessionsResponse:
+    revoked = AuthService(db).revoke_other_sessions(session.user_id, session.id)
+    db.commit()
+    return RevokedSessionsResponse(revoked_sessions=revoked)
 
 
 @router.post("/login", response_model=AuthResponse)
