@@ -53,6 +53,8 @@ from app.credit.schemas import (
 )
 from app.credit.scoring import calculate_credit_score, credit_band
 from app.notifications.service import NotificationsService
+from app.payments.models import ScheduledPayment, ScheduledPaymentFrequency, ScheduledPaymentStatus
+from app.payments.repository import ScheduledPaymentRepository
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
 from app.supabase import is_supabase_session
@@ -60,6 +62,9 @@ from app.wallets.models import Wallet, WalletStatus
 from app.wallets.repository import WalletRepository
 from app.wallets.schemas import WalletCreate
 from app.wallets.service import WalletService
+
+
+LOAN_AUTOPAY_DESCRIPTION_PREFIX = "LOAN_AUTOPAY:"
 
 
 class CreditService:
@@ -70,6 +75,7 @@ class CreditService:
         self.cards = CardRepository(db)
         self.transactions = TransactionRepository(db)
         self.notifications = NotificationsService(db)
+        self.scheduled_payments = ScheduledPaymentRepository(db)
 
     def get_or_create_profile(self, user_id: uuid.UUID) -> CreditProfile:
         profile = self.repository.get_profile_by_user(user_id)
@@ -246,12 +252,16 @@ class CreditService:
         return loan
 
     def list_loans(self, user_id: uuid.UUID) -> list[Loan]:
-        return self.repository.list_loans_for_user(user_id)
+        loans = self.repository.list_loans_for_user(user_id)
+        for loan in loans:
+            self._attach_loan_autopay_metadata(loan)
+        return loans
 
     def get_loan_for_user(self, user_id: uuid.UUID, loan_id: uuid.UUID) -> Loan:
         loan = self.repository.get_loan_by_id(loan_id)
         if loan is None or loan.user_id != user_id:
             raise NotFoundError("Loan not found")
+        self._attach_loan_autopay_metadata(loan)
         return loan
 
     def list_installments_for_loan(self, user_id: uuid.UUID, loan_id: uuid.UUID) -> list[LoanInstallment]:
@@ -430,6 +440,8 @@ class CreditService:
             if installment.status == LoanInstallmentStatus.PENDING
         ]
         if not pending_installments:
+            pending_installments = self._rebuild_missing_pending_installments(loan)
+        if not pending_installments:
             raise ValidationError("This loan has no pending installments")
         installment = pending_installments[0]
         amount = _money(installment.payment_amount)
@@ -482,9 +494,15 @@ class CreditService:
             loan.outstanding_principal = Decimal("0.00")
             loan.status = LoanStatus.CLOSED if is_supabase_session(self.db) else LoanStatus.PAID
             loan.closed_at = paid_at
+            self._disable_loan_autopay_schedule(user_id, loan.id)
             next_payment_date = None
         else:
             loan.next_payment_date = next_installment.due_date
+            autopay_schedule = self._loan_autopay_schedule(user_id, loan.id)
+            if autopay_schedule is not None:
+                autopay_schedule.next_run_on = next_installment.due_date
+                autopay_schedule.updated_at = paid_at
+                self._attach_loan_autopay_metadata(loan)
             next_payment_date = loan.next_payment_date
 
         self.repository.add_loan_payment(
@@ -516,6 +534,184 @@ class CreditService:
             loan_status=loan.status,
         )
 
+    def update_loan_autopay(
+        self,
+        user_id: uuid.UUID,
+        loan_id: uuid.UUID,
+        enabled: bool,
+        amount: Decimal | None,
+        source_wallet_id: uuid.UUID | None,
+        source_card_id: uuid.UUID | None = None,
+        next_run_on: date | None = None,
+    ) -> Loan:
+        loan = self.get_loan_for_user(user_id, loan_id)
+        if loan.status != LoanStatus.ACTIVE:
+            raise ValidationError("Only active loans can use recurring installment payments")
+
+        if not enabled:
+            self._disable_loan_autopay_schedule(user_id, loan.id)
+            self._attach_loan_autopay_metadata(loan)
+            self.db.flush()
+            return loan
+
+        if next_run_on is None:
+            raise ValidationError("Recurring loan payments require a payment date")
+        if next_run_on < date.today():
+            raise ValidationError("Recurring loan payment date cannot be in the past")
+        if amount is None or amount <= 0:
+            raise ValidationError("Recurring loan payments require a positive amount")
+
+        recurring_amount = _money(amount)
+        next_installment = self._next_pending_installment(loan)
+        minimum_amount = _money(next_installment.payment_amount if next_installment is not None else loan.monthly_payment)
+        if recurring_amount < minimum_amount:
+            raise ValidationError("Recurring loan payment amount must cover the next installment")
+
+        source_card, wallet, _account = self._validate_loan_payment_source(
+            user_id,
+            loan,
+            recurring_amount,
+            source_wallet_id,
+            source_card_id,
+            allow_credit_card=False,
+        )
+        if wallet is None:
+            raise ValidationError("Recurring loan payments require a current account or debit card source")
+
+        schedule = self._loan_autopay_schedule(user_id, loan.id)
+        description = self._loan_autopay_description(loan.id, source_card.id if source_card is not None else None)
+        if schedule is None:
+            self.scheduled_payments.add(
+                ScheduledPayment(
+                    owner_user_id=user_id,
+                    source_wallet_id=wallet.id,
+                    beneficiary_name="Loan installment",
+                    iban=f"LOAN{loan.id.hex[:30]}",
+                    amount=recurring_amount,
+                    currency=loan.currency,
+                    frequency=ScheduledPaymentFrequency.MONTHLY,
+                    next_run_on=next_run_on,
+                    notify_days_before=0,
+                    status=ScheduledPaymentStatus.ACTIVE,
+                    description=description,
+                )
+            )
+        else:
+            schedule.source_wallet_id = wallet.id
+            schedule.amount = recurring_amount
+            schedule.currency = loan.currency
+            schedule.frequency = ScheduledPaymentFrequency.MONTHLY
+            schedule.next_run_on = next_run_on
+            schedule.status = ScheduledPaymentStatus.ACTIVE
+            schedule.description = description
+            schedule.updated_at = utcnow()
+
+        self._attach_loan_autopay_metadata(loan)
+        self.db.flush()
+        return loan
+
+    def process_due_loan_autopayments(self, run_on: date | None = None) -> list[RegularInstallmentPaymentResult]:
+        run_on = run_on or date.today()
+        results: list[RegularInstallmentPaymentResult] = []
+        for scheduled_payment in self._due_loan_autopay_schedules(run_on):
+            try:
+                loan_id, source_card_id = self._parse_loan_autopay_description(scheduled_payment.description)
+                if loan_id is None:
+                    continue
+                result = self.make_regular_installment_payment(
+                    scheduled_payment.owner_user_id,
+                    loan_id,
+                    scheduled_payment.source_wallet_id,
+                    source_card_id,
+                )
+                results.append(result)
+                extra_amount = _money(scheduled_payment.amount - result.amount)
+                if extra_amount > Decimal("0.00") and result.loan_status == LoanStatus.ACTIVE:
+                    self.make_early_repayment(
+                        scheduled_payment.owner_user_id,
+                        loan_id,
+                        scheduled_payment.source_wallet_id,
+                        extra_amount,
+                        source_card_id,
+                    )
+            except (ConflictError, NotFoundError, ValidationError):
+                continue
+        self.db.flush()
+        return results
+
+    def _attach_loan_autopay_metadata(self, loan: Loan) -> None:
+        schedule = self._loan_autopay_schedule(loan.user_id, loan.id)
+        if schedule is None:
+            setattr(loan, "autopay_enabled", False)
+            setattr(loan, "autopay_source_wallet_id", None)
+            setattr(loan, "autopay_source_card_id", None)
+            setattr(loan, "autopay_next_run_on", None)
+            setattr(loan, "autopay_amount", None)
+            return
+
+        _loan_id, source_card_id = self._parse_loan_autopay_description(schedule.description)
+        setattr(loan, "autopay_enabled", schedule.status == ScheduledPaymentStatus.ACTIVE)
+        setattr(loan, "autopay_source_wallet_id", schedule.source_wallet_id)
+        setattr(loan, "autopay_source_card_id", source_card_id)
+        setattr(loan, "autopay_next_run_on", schedule.next_run_on)
+        setattr(loan, "autopay_amount", schedule.amount)
+
+    def _next_pending_installment(self, loan: Loan) -> LoanInstallment | None:
+        return next(
+            (
+                installment
+                for installment in self.repository.list_installments_for_loan(loan.id)
+                if installment.status == LoanInstallmentStatus.PENDING
+            ),
+            None,
+        )
+
+    def _loan_autopay_schedule(self, user_id: uuid.UUID, loan_id: uuid.UUID) -> ScheduledPayment | None:
+        prefix = self._loan_autopay_description_prefix(loan_id)
+        for scheduled_payment in self.scheduled_payments.list_for_owner(user_id, limit=500):
+            if (scheduled_payment.description or "").startswith(prefix):
+                if scheduled_payment.status != ScheduledPaymentStatus.CANCELLED:
+                    return scheduled_payment
+        return None
+
+    def _disable_loan_autopay_schedule(self, user_id: uuid.UUID, loan_id: uuid.UUID) -> None:
+        schedule = self._loan_autopay_schedule(user_id, loan_id)
+        if schedule is not None:
+            schedule.status = ScheduledPaymentStatus.CANCELLED
+            schedule.updated_at = utcnow()
+
+    def _due_loan_autopay_schedules(self, run_on: date) -> list[ScheduledPayment]:
+        return [
+            scheduled_payment
+            for scheduled_payment in self.scheduled_payments.list_due_loan_autopayments(run_on)
+            if (scheduled_payment.description or "").startswith(LOAN_AUTOPAY_DESCRIPTION_PREFIX)
+        ]
+
+    def _loan_autopay_description_prefix(self, loan_id: uuid.UUID) -> str:
+        return f"{LOAN_AUTOPAY_DESCRIPTION_PREFIX}{loan_id}"
+
+    def _loan_autopay_description(self, loan_id: uuid.UUID, source_card_id: uuid.UUID | None) -> str:
+        card_part = f";card={source_card_id}" if source_card_id is not None else ""
+        return f"{self._loan_autopay_description_prefix(loan_id)}{card_part}"
+
+    def _parse_loan_autopay_description(self, description: str | None) -> tuple[uuid.UUID | None, uuid.UUID | None]:
+        if not description or not description.startswith(LOAN_AUTOPAY_DESCRIPTION_PREFIX):
+            return None, None
+        parts = description.split(";")
+        loan_id_value = parts[0].removeprefix(LOAN_AUTOPAY_DESCRIPTION_PREFIX)
+        try:
+            loan_id = uuid.UUID(loan_id_value)
+        except ValueError:
+            return None, None
+        source_card_id = None
+        for part in parts[1:]:
+            if part.startswith("card="):
+                try:
+                    source_card_id = uuid.UUID(part.removeprefix("card="))
+                except ValueError:
+                    source_card_id = None
+        return loan_id, source_card_id
+
     def _validate_loan_payment_source(
         self,
         user_id: uuid.UUID,
@@ -523,6 +719,7 @@ class CreditService:
         amount: Decimal,
         source_wallet_id: uuid.UUID | None,
         source_card_id: uuid.UUID | None,
+        allow_credit_card: bool = True,
     ) -> tuple[object | None, Wallet | None, CreditCardAccount | None]:
         source_card = None
         if source_card_id is not None:
@@ -547,6 +744,8 @@ class CreditService:
                 if source_card.default_wallet_id != wallet.id:
                     raise ValidationError("Source debit card must be linked to the selected wallet")
         else:
+            if not allow_credit_card:
+                raise ValidationError("Recurring loan payments can only use a current account or debit card")
             account = CardService(self.db)._get_or_create_credit_account(source_card)
             if account.currency != loan.currency:
                 raise ValidationError("Credit card currency must match the loan currency")
@@ -582,6 +781,41 @@ class CreditService:
         self.repository.delete_installments(pending_installments[len(revised_schedule):])
         if revised_schedule:
             loan.maturity_date = pending_installments[len(revised_schedule) - 1].due_date
+
+    def _rebuild_missing_pending_installments(self, loan: Loan) -> list[LoanInstallment]:
+        if loan.outstanding_principal <= Decimal("0.00"):
+            return []
+
+        schedule = _fixed_payment_payoff_schedule(
+            loan.outstanding_principal,
+            loan.interest_rate,
+            loan.monthly_payment,
+        )
+        if not schedule:
+            return []
+
+        existing_installments = self.repository.list_installments_for_loan(loan.id)
+        next_number = max((installment.installment_number for installment in existing_installments), default=0) + 1
+        first_due_date = loan.next_payment_date or date.today()
+        rebuilt = [
+            LoanInstallment(
+                loan_id=loan.id,
+                installment_number=next_number + index,
+                due_date=_add_months(first_due_date, index),
+                payment_amount=payment_amount,
+                principal_amount=principal_amount,
+                interest_amount=interest_amount,
+                fees_amount=Decimal("0.00"),
+                remaining_principal=remaining_principal,
+                status=LoanInstallmentStatus.PENDING,
+            )
+            for index, (payment_amount, principal_amount, interest_amount, remaining_principal) in enumerate(schedule)
+        ]
+        self.repository.add_installments(rebuilt)
+        if rebuilt:
+            loan.next_payment_date = rebuilt[0].due_date
+            loan.maturity_date = rebuilt[-1].due_date
+        return rebuilt
 
     def list_applications(self, user_id: uuid.UUID) -> list[CreditApplication]:
         return self.repository.list_applications_for_user(user_id)

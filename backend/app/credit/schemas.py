@@ -104,6 +104,14 @@ class RegularInstallmentPaymentRequest(BaseModel):
     source_card_id: uuid.UUID | None = None
 
 
+class LoanAutopayUpdate(BaseModel):
+    enabled: bool
+    amount: Decimal | None = None
+    source_wallet_id: uuid.UUID | None = None
+    source_card_id: uuid.UUID | None = None
+    next_run_on: date | None = None
+
+
 class EarlyRepaymentResult(BaseModel):
     loan_id: uuid.UUID
     currency: str
@@ -212,6 +220,11 @@ class LoanPublic(BaseModel):
     start_date: date
     maturity_date: date
     next_payment_date: date
+    autopay_enabled: bool = False
+    autopay_source_wallet_id: uuid.UUID | None = None
+    autopay_source_card_id: uuid.UUID | None = None
+    autopay_next_run_on: date | None = None
+    autopay_amount: Decimal | None = None
     status: LoanStatus
     created_at: datetime
     closed_at: datetime | None
