@@ -1,9 +1,9 @@
 """Budget business rules.
 
-Spend-vs-limit tracking only works for budgets that carry a `category_id` —
-until `transaction_categories` exists (owned by the Payments module), a
-budget without one simply reports zero spent rather than guessing a match
-from free-text transaction descriptions.
+Spend-vs-limit tracking only works for budgets that carry a `category` —
+matched against the paying merchant's own Merchant.category (see
+BudgetRepository.spent_amount). A budget without one simply reports zero
+spent rather than guessing a match from free-text transaction descriptions.
 """
 import calendar
 import uuid
@@ -29,7 +29,7 @@ class BudgetService:
 
         budget = Budget(
             user_id=user_id,
-            category_id=data.category_id,
+            category=data.category,
             name=data.name,
             limit_amount=data.limit_amount,
             currency=data.currency.upper(),
@@ -46,8 +46,8 @@ class BudgetService:
         period_start, period_end = self._period_bounds(budget.period, now)
 
         spent = (
-            self.repository.spent_amount(budget.user_id, budget.category_id, budget.currency, period_start, period_end)
-            if budget.category_id is not None
+            self.repository.spent_amount(budget.user_id, budget.category, budget.currency, period_start, period_end)
+            if budget.category is not None
             else Decimal("0")
         )
         percent_used = round(float(spent / budget.limit_amount) * 100, 1) if budget.limit_amount else 0.0
@@ -56,7 +56,7 @@ class BudgetService:
         return BudgetPublic(
             id=budget.id,
             name=budget.name,
-            category_id=budget.category_id,
+            category=budget.category,
             limit_amount=budget.limit_amount,
             currency=budget.currency,
             period=budget.period,

@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -8,6 +7,7 @@ from app.budgets.models import BudgetPeriod
 from app.budgets.schemas import BudgetCreate
 from app.budgets.service import BudgetService
 from app.core.exceptions import ValidationError
+from app.merchants.models import Merchant
 from app.transactions.models import Transaction, TransactionStatus, TransactionType
 from app.users.schemas import UserCreate
 from app.users.service import UserService
@@ -30,18 +30,22 @@ def test_budget_without_category_reports_zero_spent(db_session, seeded_user):
     service = BudgetService(db_session)
     budget = service.create_budget(seeded_user.id, BudgetCreate(name="Restaurants", limit_amount=Decimal("1000.00")))
 
-    assert budget.category_id is None
+    assert budget.category is None
     assert budget.spent_amount == Decimal("0")
     assert budget.percent_used == 0.0
     assert budget.remaining_amount == Decimal("1000.00")
 
 
 def test_budget_with_category_computes_spent_and_remaining(db_session, seeded_user):
-    category_id = uuid.uuid4()
     service = BudgetService(db_session)
     service.create_budget(
-        seeded_user.id, BudgetCreate(name="Restaurants", limit_amount=Decimal("1000.00"), category_id=category_id)
+        seeded_user.id, BudgetCreate(name="Restaurants", limit_amount=Decimal("1000.00"), category="Food")
     )
+
+    food_merchant = Merchant(name="KFC", category="Food", verified=True)
+    retail_merchant = Merchant(name="Zara", category="Retail", verified=True)
+    db_session.add_all([food_merchant, retail_merchant])
+    db_session.flush()
 
     now = datetime.now(timezone.utc)
     matching = [
@@ -51,7 +55,7 @@ def test_budget_with_category_computes_spent_and_remaining(db_session, seeded_us
             status=TransactionStatus.COMPLETED,
             amount=amount,
             currency="RON",
-            category_id=category_id,
+            merchant_id=food_merchant.id,
             created_at=now,
         )
         for amount in (Decimal("300.00"), Decimal("500.00"))
@@ -62,10 +66,21 @@ def test_budget_with_category_computes_spent_and_remaining(db_session, seeded_us
         status=TransactionStatus.COMPLETED,
         amount=Decimal("999.00"),
         currency="RON",
-        category_id=uuid.uuid4(),
+        merchant_id=retail_merchant.id,
         created_at=now,
     )
-    db_session.add_all([*matching, other_category])
+    # A transfer to the same "Food" category ID would be meaningless (no
+    # merchant, not a purchase) - confirms the type filter, not just the
+    # category match, is doing real work.
+    not_a_purchase = Transaction(
+        initiator_user_id=seeded_user.id,
+        type=TransactionType.LOAN_PAYMENT,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("1600.00"),
+        currency="RON",
+        created_at=now,
+    )
+    db_session.add_all([*matching, other_category, not_a_purchase])
     db_session.flush()
 
     result = service.list_budgets(seeded_user.id)[0]

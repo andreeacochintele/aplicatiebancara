@@ -1,9 +1,10 @@
 """Budget — user-defined spending limit for a category or period (architecture.md §13).
 
-`category_id` is nullable and has no FK yet: `transaction_categories` doesn't
-exist in the schema yet (owned by the Payments module). Until it lands, spend
-tracking against a budget without a category simply reports zero spent —
-see BudgetService — rather than guessing a match from free text.
+`category` tracks against the paying merchant's own category (Merchant.category
+— Retail, Food, Travel, ...), the same dimension AnalyticsRepository's
+spending-by-category view groups by; there is no separate transaction_categories
+table. A budget without a category simply reports zero spent — see
+BudgetService — rather than guessing a match from free text.
 """
 import enum
 import uuid
@@ -27,7 +28,7 @@ class Budget(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    category_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    category: Mapped[str | None] = mapped_column(String(50), nullable=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     limit_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
