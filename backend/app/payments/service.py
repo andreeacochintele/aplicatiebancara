@@ -467,6 +467,15 @@ class PaymentRequestService:
             raise ConflictError(f"Payment request is {payment_request.status.value}")
         if _as_aware_utc(payment_request.expires_at) < datetime.now(timezone.utc):
             payment_request.status = PaymentRequestStatus.EXPIRED
+            # Must persist despite the ConflictError below aborting the
+            # caller's own commit -- no service in this codebase otherwise
+            # calls db.commit() (routers do, on success), but this status
+            # transition needs to survive independent of the surrounding
+            # request's failure. Safe here specifically because both call
+            # sites (get_active_payment_request's GET route, and the start
+            # of pay_payment_request) invoke this before any wallet
+            # mutation is pending. Same pattern as FXService.get_valid_quote_for_user.
+            self.db.commit()
             raise ConflictError("Payment request has expired")
 
 
