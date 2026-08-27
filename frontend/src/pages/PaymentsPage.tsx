@@ -1924,11 +1924,17 @@ export function PaymentsPage() {
                 value={billSplitForm.source_transaction_id}
               >
                 <option value="">No linked transaction</option>
-                {transactions.map((transaction) => (
-                  <option key={transaction.id} value={transaction.id}>
-                    {transaction.description || transaction.type} - {transaction.amount} {transaction.currency}
-                  </option>
-                ))}
+                {transactions
+                  .filter(
+                    (transaction) =>
+                      transaction.status === "COMPLETED" &&
+                      (transaction.type === "CARD_PAYMENT" || transaction.type === "SCHEDULED_PAYMENT"),
+                  )
+                  .map((transaction) => (
+                    <option key={transaction.id} value={transaction.id}>
+                      {transaction.description || transaction.type} - {transaction.amount} {transaction.currency}
+                    </option>
+                  ))}
               </select>
             </label>
 

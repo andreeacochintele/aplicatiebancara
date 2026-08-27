@@ -1239,6 +1239,61 @@ th {
   display: grid;
   grid-template-columns: 140px 140px;
   gap: 1.5rem;
+  justify-content: end;
+}
+
+/* Same box model as a real .button--ghost.button--wide, just invisible --
+   guarantees an empty action slot takes up exactly as much height as a
+   real button, so row height never depends on which buttons a row has.
+   It's a <span>, not a <button>, so it needs its own border/radius: the
+   base `button { border; border-radius }` rule is a tag selector and
+   never reaches it. */
+.transaction-actions__placeholder {
+  visibility: hidden;
+  display: inline-block;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+/* Fixed, content-independent column widths so the table doesn't
+   reshuffle between pages of results with differently-sized content. */
+.transactions-table {
+  table-layout: fixed;
+}
+
+.transactions-table th:nth-child(1),
+.transactions-table td:nth-child(1) {
+  width: 16%;
+}
+
+.transactions-table th:nth-child(2),
+.transactions-table td:nth-child(2) {
+  width: 12%;
+}
+
+.transactions-table th:nth-child(3),
+.transactions-table td:nth-child(3) {
+  width: 27%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.transactions-table th:nth-child(4),
+.transactions-table td:nth-child(4) {
+  width: 11%;
+}
+
+.transactions-table th:nth-child(5),
+.transactions-table td:nth-child(5) {
+  width: 11%;
+}
+
+.transactions-table th:nth-child(6),
+.transactions-table td:nth-child(6) {
+  width: 23%;
+  text-align: right;
+  padding-right: 1.75rem;
 }
 
 .transaction-actions button {
