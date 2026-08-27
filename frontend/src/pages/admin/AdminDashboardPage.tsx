@@ -29,6 +29,17 @@ const FRAUD_STATUS_COLORS: Record<FraudCaseStatus, string> = {
   REJECTED: "#ef4444",
 };
 
+function todayMinus(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return date.toISOString().slice(0, 10);
+}
+
+function withinRange(isoTimestamp: string, dateFrom: string, dateTo: string): boolean {
+  const day = isoTimestamp.slice(0, 10);
+  return day >= dateFrom && day <= dateTo;
+}
+
 function statusBreakdown<T extends string>(items: T[], colors: Record<T, string>) {
   const counts = new Map<T, number>();
   for (const item of items) {
@@ -94,6 +105,8 @@ export function AdminDashboardPage() {
   const [applications, setApplications] = useState<CreditApplication[] | null>(null);
   const [cases, setCases] = useState<FraudCaseSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dateFrom, setDateFrom] = useState(todayMinus(30));
+  const [dateTo, setDateTo] = useState(todayMinus(0));
 
   useEffect(() => {
     if (!accessToken || user?.role !== "ADMIN") return;
@@ -130,13 +143,21 @@ export function AdminDashboardPage() {
     () => cases?.filter((c) => c.status === "PENDING_REVIEW").length ?? null,
     [cases],
   );
+  const applicationsInRange = useMemo(
+    () => applications?.filter((a) => withinRange(a.created_at, dateFrom, dateTo)) ?? [],
+    [applications, dateFrom, dateTo],
+  );
+  const casesInRange = useMemo(
+    () => cases?.filter((c) => withinRange(c.created_at, dateFrom, dateTo)) ?? [],
+    [cases, dateFrom, dateTo],
+  );
   const creditBreakdown = useMemo(
-    () => statusBreakdown(applications?.map((a) => a.status) ?? [], CREDIT_STATUS_COLORS),
-    [applications],
+    () => statusBreakdown(applicationsInRange.map((a) => a.status), CREDIT_STATUS_COLORS),
+    [applicationsInRange],
   );
   const fraudBreakdown = useMemo(
-    () => statusBreakdown(cases?.map((c) => c.status) ?? [], FRAUD_STATUS_COLORS),
-    [cases],
+    () => statusBreakdown(casesInRange.map((c) => c.status), FRAUD_STATUS_COLORS),
+    [casesInRange],
   );
 
   if (user?.role !== "ADMIN") {
@@ -188,9 +209,19 @@ export function AdminDashboardPage() {
           </Link>
         ))}
       </div>
+      <div className="admin-applications-toolbar">
+        <label>
+          <span className="eyebrow">From</span>
+          <input type="date" value={dateFrom} max={dateTo} onChange={(e) => setDateFrom(e.target.value)} />
+        </label>
+        <label>
+          <span className="eyebrow">To</span>
+          <input type="date" value={dateTo} min={dateFrom} onChange={(e) => setDateTo(e.target.value)} />
+        </label>
+      </div>
       <div className="aurora-analytics-grid">
-        <StatusDonut title="Credit applications" data={creditBreakdown} total={applications?.length ?? 0} />
-        <StatusDonut title="Fraud cases" data={fraudBreakdown} total={cases?.length ?? 0} />
+        <StatusDonut title="Credit applications" data={creditBreakdown} total={applicationsInRange.length} />
+        <StatusDonut title="Fraud cases" data={fraudBreakdown} total={casesInRange.length} />
       </div>
     </section>
   );
