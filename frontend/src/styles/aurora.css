@@ -1294,6 +1294,60 @@
   color: var(--aurora-amber);
 }
 
+.aurora-shell .category-badge--travel,
+.aurora-shell .category-pill--travel {
+  background: var(--aurora-accent-soft);
+  color: var(--aurora-accent-dark);
+}
+
+.aurora-shell .category-badge--entertainment,
+.aurora-shell .category-pill--entertainment {
+  background: var(--aurora-violet-soft);
+  color: var(--aurora-violet);
+}
+
+.aurora-shell .category-badge--retail,
+.aurora-shell .category-pill--retail {
+  background: var(--aurora-pink-soft);
+  color: var(--aurora-pink);
+}
+
+.aurora-shell .category-badge--fuel,
+.aurora-shell .category-pill--fuel {
+  background: var(--aurora-amber-soft);
+  color: var(--aurora-amber);
+}
+
+.aurora-shell .category-badge--food,
+.aurora-shell .category-pill--food {
+  background: var(--aurora-green-soft);
+  color: var(--aurora-green);
+}
+
+.aurora-shell .category-badge--lounge,
+.aurora-shell .category-pill--lounge {
+  background: var(--aurora-violet-soft);
+  color: var(--aurora-violet);
+}
+
+.aurora-shell .category-badge--insurance,
+.aurora-shell .category-pill--insurance {
+  background: var(--aurora-amber-soft);
+  color: var(--aurora-amber);
+}
+
+.aurora-shell .category-badge--other,
+.aurora-shell .category-pill--other {
+  background: var(--aurora-surface-alt);
+  color: var(--aurora-text-soft);
+}
+
+.aurora-shell .points-pill {
+  background: var(--aurora-surface-alt);
+  color: var(--aurora-text-soft);
+  border: 1px solid var(--aurora-border);
+}
+
 .aurora-shell .avatar,
 .aurora-shell .beneficiary-avatar {
   background: var(--aurora-gradient);
