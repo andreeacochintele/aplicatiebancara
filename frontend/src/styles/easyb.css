@@ -97,6 +97,14 @@
   flex-shrink: 0;
 }
 
+/* The mark is a flat raster asset (PNG/WebP), not an SVG with paths to
+   recolor — brightness(0) invert(1) turns its dark artwork into a solid
+   white silhouette so it stays visible against the dark surfaces below,
+   for both the static and hover-animated frames. */
+[data-theme="dark"] .easyb-brand-mark {
+  filter: brightness(0) invert(1);
+}
+
 .easyb-brand-name {
   font-family: "Manrope", sans-serif;
   font-weight: 800;
@@ -664,6 +672,29 @@
 
 .easyb-rate-chart {
   margin: 10px -6px -4px;
+}
+
+.easyb-period-picker {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.easyb-period-picker__option {
+  border: 1px solid var(--easyb-border);
+  background: var(--easyb-surface);
+  color: var(--easyb-text-soft);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 9px;
+  border-radius: var(--easyb-radius-sm);
+  cursor: pointer;
+}
+
+.easyb-period-picker__option.is-active {
+  border-color: var(--easyb-accent);
+  background: var(--easyb-accent-soft);
+  color: var(--easyb-accent-dark);
 }
 
 .easyb-exchange-row {
