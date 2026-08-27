@@ -4057,6 +4057,21 @@ th {
   font-weight: 900;
 }
 
+.loan-payment-plan__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.loan-payment-plan__download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.2rem;
+  white-space: nowrap;
+}
+
 .loan-payment-plan__rows {
   display: grid;
   gap: 0.42rem;
@@ -4544,6 +4559,12 @@ th {
 
   .loan-payment-plan__header {
     flex-direction: column;
+  }
+
+  .loan-payment-plan__actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 
   .loan-payment-plan__row {
