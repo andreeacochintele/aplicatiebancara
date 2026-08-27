@@ -417,6 +417,19 @@ class PaymentRequestService:
         )
         return self.repository.add(payment_request)
 
+    def list_created_by_user(self, creator_user_id: uuid.UUID) -> list[PaymentRequest]:
+        return self.repository.list_for_creator(creator_user_id)
+
+    def cancel_payment_request(self, creator_user_id: uuid.UUID, request_id: uuid.UUID) -> PaymentRequest:
+        payment_request = self.repository.get_owned_by_id(creator_user_id, request_id)
+        if payment_request is None:
+            raise NotFoundError("Payment request not found")
+        if payment_request.status != PaymentRequestStatus.ACTIVE:
+            raise ConflictError(f"Payment request is {payment_request.status.value}")
+        payment_request.status = PaymentRequestStatus.CANCELLED
+        self.db.flush()
+        return payment_request
+
     def get_active_payment_request(self, request_id: uuid.UUID) -> PaymentRequest:
         payment_request = self.repository.get_by_id(request_id)
         if payment_request is None:

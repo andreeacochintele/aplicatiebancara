@@ -62,6 +62,89 @@ def test_create_payment_request(client, db_session):
     assert body["status"] == PaymentRequestStatus.ACTIVE
 
 
+def test_list_payment_requests_returns_only_creators_own_requests(client, db_session):
+    creator = _register(client, "qr-list-creator@example.com", "+40740211111")
+    other = _register(client, "qr-list-other@example.com", "+40740222229")
+    creator_wallet = _create_wallet(db_session, creator["user"]["id"], "RON")
+    other_wallet = _create_wallet(db_session, other["user"]["id"], "RON")
+
+    first = client.post(
+        "/api/v1/payments/payment-requests",
+        headers=_auth_header(creator),
+        json={"destination_wallet_id": str(creator_wallet.id), "amount": "10.00", "currency": "RON"},
+    ).json()
+    second = client.post(
+        "/api/v1/payments/payment-requests",
+        headers=_auth_header(creator),
+        json={"destination_wallet_id": str(creator_wallet.id), "amount": "20.00", "currency": "RON"},
+    ).json()
+    client.post(
+        "/api/v1/payments/payment-requests",
+        headers=_auth_header(other),
+        json={"destination_wallet_id": str(other_wallet.id), "amount": "30.00", "currency": "RON"},
+    )
+
+    response = client.get("/api/v1/payments/payment-requests", headers=_auth_header(creator))
+
+    assert response.status_code == 200
+    ids = {item["id"] for item in response.json()}
+    assert ids == {first["id"], second["id"]}
+
+
+def test_owner_can_cancel_active_payment_request(client, db_session):
+    creator = _register(client, "qr-cancel-creator@example.com", "+40740233330")
+    wallet = _create_wallet(db_session, creator["user"]["id"], "RON")
+    created = client.post(
+        "/api/v1/payments/payment-requests",
+        headers=_auth_header(creator),
+        json={"destination_wallet_id": str(wallet.id), "amount": "40.00", "currency": "RON"},
+    ).json()
+
+    response = client.patch(f"/api/v1/payments/payment-requests/{created['id']}/cancel", headers=_auth_header(creator))
+
+    assert response.status_code == 200
+    assert response.json()["status"] == PaymentRequestStatus.CANCELLED
+
+    get_response = client.get(f"/api/v1/payments/payment-requests/{created['id']}", headers=_auth_header(creator))
+    assert get_response.status_code == 409
+
+
+def test_cancel_payment_request_rejects_non_creator(client, db_session):
+    creator = _register(client, "qr-cancel-owner@example.com", "+40740244440")
+    stranger = _register(client, "qr-cancel-stranger@example.com", "+40740255550")
+    wallet = _create_wallet(db_session, creator["user"]["id"], "RON")
+    created = client.post(
+        "/api/v1/payments/payment-requests",
+        headers=_auth_header(creator),
+        json={"destination_wallet_id": str(wallet.id), "amount": "40.00", "currency": "RON"},
+    ).json()
+
+    response = client.patch(f"/api/v1/payments/payment-requests/{created['id']}/cancel", headers=_auth_header(stranger))
+
+    assert response.status_code == 404
+
+
+def test_cannot_cancel_an_already_paid_payment_request(client, db_session):
+    creator = _register(client, "qr-cancel-paid-creator@example.com", "+40740266660")
+    payer = _register(client, "qr-cancel-paid-payer@example.com", "+40740277770")
+    destination_wallet = _create_wallet(db_session, creator["user"]["id"], "RON")
+    source_wallet = _create_wallet(db_session, payer["user"]["id"], "RON", Decimal("200.00"))
+    created = client.post(
+        "/api/v1/payments/payment-requests",
+        headers=_auth_header(creator),
+        json={"destination_wallet_id": str(destination_wallet.id), "amount": "40.00", "currency": "RON"},
+    ).json()
+    client.post(
+        f"/api/v1/payments/payment-requests/{created['id']}/pay",
+        headers=_auth_header(payer),
+        json={"source_wallet_id": str(source_wallet.id)},
+    )
+
+    response = client.patch(f"/api/v1/payments/payment-requests/{created['id']}/cancel", headers=_auth_header(creator))
+
+    assert response.status_code == 409
+
+
 def test_get_payment_request(client, db_session):
     creator = _register(client, "qr-get-creator@example.com", "+40740222222")
     payer = _register(client, "qr-get-payer@example.com", "+40740233333")

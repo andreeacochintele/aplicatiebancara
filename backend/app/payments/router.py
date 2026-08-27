@@ -87,6 +87,14 @@ def create_phone_transfer(
     return transaction
 
 
+@router.get("/payment-requests", response_model=list[PaymentRequestPublic])
+def list_payment_requests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[PaymentRequestPublic]:
+    return PaymentRequestService(db).list_created_by_user(current_user.id)
+
+
 @router.post("/payment-requests", response_model=PaymentRequestPublic, status_code=status.HTTP_201_CREATED)
 def create_payment_request(
     payload: PaymentRequestCreate,
@@ -105,6 +113,17 @@ def get_payment_request(
     db: Session = Depends(get_db),
 ) -> PaymentRequestPublic:
     return PaymentRequestService(db).get_active_payment_request(request_id)
+
+
+@router.patch("/payment-requests/{request_id}/cancel", response_model=PaymentRequestPublic)
+def cancel_payment_request(
+    request_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PaymentRequestPublic:
+    payment_request = PaymentRequestService(db).cancel_payment_request(current_user.id, request_id)
+    db.commit()
+    return payment_request
 
 
 @router.post("/payment-requests/{request_id}/pay", response_model=TransactionPublic, status_code=status.HTTP_201_CREATED)

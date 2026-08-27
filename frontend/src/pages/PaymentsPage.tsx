@@ -17,7 +17,7 @@ import type {
   Wallet,
 } from "../types";
 
-type PaymentTab = "transfer" | "phone" | "qr" | "scheduled" | "split" | "folders";
+type PaymentTab = "transfer" | "phone" | "qr" | "scheduled" | "folders";
 
 interface TransferFormState {
   beneficiary: string;
@@ -67,18 +67,6 @@ interface ScheduledFormState {
   frequency: ScheduledPaymentFrequency;
   next_run_on: string;
   notify_days_before: string;
-  description: string;
-}
-
-interface BillSplitFormState {
-  title: string;
-  total_amount: string;
-  currency: string;
-  participant_user_id: string;
-  participant_name: string;
-  participant_phone: string;
-  participant_amount: string;
-  source_transaction_id: string;
   description: string;
 }
 
@@ -137,24 +125,11 @@ const EMPTY_SCHEDULED_FORM: ScheduledFormState = {
   description: "",
 };
 
-const EMPTY_BILL_SPLIT_FORM: BillSplitFormState = {
-  title: "",
-  total_amount: "",
-  currency: "RON",
-  participant_user_id: "",
-  participant_name: "",
-  participant_phone: "",
-  participant_amount: "",
-  source_transaction_id: "",
-  description: "",
-};
-
 const TABS: Array<{ id: PaymentTab; label: string }> = [
   { id: "transfer", label: "Transfer" },
   { id: "phone", label: "By phone" },
   { id: "qr", label: "QR request" },
   { id: "scheduled", label: "Scheduled" },
-  { id: "split", label: "Split bill" },
   { id: "folders", label: "Folders" },
 ];
 
@@ -228,7 +203,6 @@ export function PaymentsPage() {
   const [qrForm, setQrForm] = useState<QrRequestFormState>(EMPTY_QR_FORM);
   const [qrPayForm, setQrPayForm] = useState<QrPayFormState>(EMPTY_QR_PAY_FORM);
   const [scheduledForm, setScheduledForm] = useState<ScheduledFormState>(EMPTY_SCHEDULED_FORM);
-  const [billSplitForm, setBillSplitForm] = useState<BillSplitFormState>(EMPTY_BILL_SPLIT_FORM);
   const [qrRequest, setQrRequest] = useState<PaymentRequest | null>(null);
   const [qrLookup, setQrLookup] = useState<PaymentRequest | null>(null);
   const [scheduledPayments, setScheduledPayments] = useState<ScheduledPayment[]>([]);
@@ -240,8 +214,6 @@ export function PaymentsPage() {
   const [qrNotice, setQrNotice] = useState<string | null>(null);
   const [scheduledError, setScheduledError] = useState<string | null>(null);
   const [scheduledNotice, setScheduledNotice] = useState<string | null>(null);
-  const [splitError, setSplitError] = useState<string | null>(null);
-  const [splitNotice, setSplitNotice] = useState<string | null>(null);
   const [folderError, setFolderError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -252,8 +224,6 @@ export function PaymentsPage() {
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [scheduledLoading, setScheduledLoading] = useState(false);
   const [scheduledSubmitting, setScheduledSubmitting] = useState(false);
-  const [splitLoading, setSplitLoading] = useState(false);
-  const [splitSubmitting, setSplitSubmitting] = useState(false);
   const [folderLoading, setFolderLoading] = useState(false);
   const [qrCreating, setQrCreating] = useState(false);
   const [qrLookingUp, setQrLookingUp] = useState(false);
@@ -359,14 +329,12 @@ export function PaymentsPage() {
 
   async function loadBillSplits() {
     if (!accessToken) return;
-    setSplitLoading(true);
     try {
       const list = await apiRequest<BillSplit[]>("/payments/bill-splits", { token: accessToken });
       setBillSplits(list);
-    } catch (err) {
-      setSplitError(err instanceof ApiError ? err.message : "Could not load bill splits");
-    } finally {
-      setSplitLoading(false);
+    } catch {
+      // Background refresh (folder split status, cancel) -- no dedicated
+      // display for this; the caller's own error state covers user actions.
     }
   }
 
@@ -720,86 +688,18 @@ export function PaymentsPage() {
     }
   }
 
-  async function handleBillSplitSubmit(event: FormEvent) {
-    event.preventDefault();
-    if (!accessToken) return;
-    setSplitSubmitting(true);
-    setSplitError(null);
-    setSplitNotice(null);
-    try {
-      await apiRequest<BillSplit>("/payments/bill-splits", {
-        method: "POST",
-        token: accessToken,
-        body: {
-          title: billSplitForm.title.trim(),
-          total_amount: billSplitForm.total_amount,
-          currency: billSplitForm.currency,
-          source_transaction_id: compact(billSplitForm.source_transaction_id),
-          description: compact(billSplitForm.description),
-          participants: [
-            {
-              participant_user_id: compact(billSplitForm.participant_user_id),
-              name: billSplitForm.participant_name.trim(),
-              phone: compact(billSplitForm.participant_phone),
-              amount: billSplitForm.participant_amount,
-            },
-          ],
-        },
-      });
-      setSplitNotice("Bill split created.");
-      setBillSplitForm((current) => ({
-        ...EMPTY_BILL_SPLIT_FORM,
-        currency: current.currency,
-      }));
-      await loadBillSplits();
-    } catch (err) {
-      setSplitError(err instanceof ApiError ? err.message : "Could not create bill split");
-    } finally {
-      setSplitSubmitting(false);
-    }
-  }
-
   async function cancelBillSplit(split: BillSplit) {
     if (!accessToken) return;
     setSplitActionId(split.id);
-    setSplitError(null);
-    setSplitNotice(null);
+    setFolderError(null);
     try {
       await apiRequest<BillSplit>(`/payments/bill-splits/${split.id}/cancel`, {
         method: "PATCH",
         token: accessToken,
       });
-      setSplitNotice("Bill split cancelled.");
       await loadBillSplits();
     } catch (err) {
-      setSplitError(err instanceof ApiError ? err.message : "Could not cancel bill split");
-    } finally {
-      setSplitActionId(null);
-    }
-  }
-
-  async function payBillSplit(split: BillSplit, participantId: string) {
-    if (!accessToken) return;
-    const sourceWallet = wallets.find((wallet) => wallet.currency === split.currency);
-    if (!sourceWallet) {
-      setSplitError(`No ${split.currency} wallet available for this payment.`);
-      return;
-    }
-    setSplitActionId(participantId);
-    setSplitError(null);
-    setSplitNotice(null);
-    try {
-      await apiRequest<BillSplit>(`/payments/bill-splits/${split.id}/participants/${participantId}/pay`, {
-        method: "POST",
-        token: accessToken,
-        body: { source_wallet_id: sourceWallet.id },
-      });
-      setSplitNotice("Bill split participant paid.");
-      await loadBillSplits();
-      await loadWallets();
-      await loadTransactions();
-    } catch (err) {
-      setSplitError(err instanceof ApiError ? err.message : "Could not pay bill split");
+      setFolderError(err instanceof ApiError ? err.message : "Could not cancel bill split");
     } finally {
       setSplitActionId(null);
     }
@@ -849,7 +749,6 @@ export function PaymentsPage() {
 
   function openFolderSplit(folder: TransactionFolder) {
     setFolderError(null);
-    setSplitNotice(null);
     setFolderSplitTarget(folder);
     setFolderSplitParticipants([]);
   }
@@ -922,7 +821,6 @@ export function PaymentsPage() {
     folderSplitSubmittingRef.current = true;
     setFolderActionId(folderSplitTarget.id);
     setFolderError(null);
-    setSplitNotice(null);
     try {
       await apiRequest<BillSplit>("/payments/bill-splits", {
         method: "POST",
@@ -941,7 +839,6 @@ export function PaymentsPage() {
       });
       setFolderSplitTarget(null);
       setFolderSplitParticipants([]);
-      setSplitNotice("Folder split created. It will show Splitted after every participant pays.");
       await loadBillSplits();
     } catch (err) {
       setFolderError(err instanceof ApiError ? err.message : "Could not split this folder");
@@ -993,7 +890,6 @@ export function PaymentsPage() {
   const hasTransferCurrencyMismatch = Boolean(transferWallet && transferWallet.currency !== form.currency);
   const scheduledWallet = wallets.find((wallet) => wallet.id === scheduledForm.source_wallet_id);
   const hasScheduledCurrencyMismatch = Boolean(scheduledWallet && scheduledWallet.currency !== scheduledForm.currency);
-  const internalBeneficiaries = beneficiaries.filter((beneficiary) => beneficiary.beneficiary_user_id);
   const folderSplitPercentTotal = folderSplitParticipants.reduce((sum, participant) => {
     const value = Number(participant.percent);
     return Number.isFinite(value) ? sum + value : sum;
@@ -1791,230 +1687,6 @@ export function PaymentsPage() {
           <section className="tile backend-note scheduled-note">
             <span className="eyebrow">What the backend does</span>
             <p>scheduled_payments CRUD - owner scoped - validates source wallet - stores status for the future runner</p>
-          </section>
-        </div>
-      ) : activeTab === "split" ? (
-        <div className="scheduled-grid">
-          <form className="tile scheduled-form-card" onSubmit={handleBillSplitSubmit}>
-            <div>
-              <span className="eyebrow">New bill split</span>
-              <h2>Split a payment</h2>
-            </div>
-
-            <label>
-              Title
-              <input
-                onChange={(event) => setBillSplitForm((current) => ({ ...current, title: event.target.value }))}
-                placeholder="Dinner"
-                required
-                value={billSplitForm.title}
-              />
-            </label>
-
-            <div className="amount-row">
-              <label>
-                Total amount
-                <input
-                  min="0.01"
-                  onChange={(event) =>
-                    setBillSplitForm((current) => ({
-                      ...current,
-                      total_amount: event.target.value,
-                      participant_amount: current.participant_amount || event.target.value,
-                    }))
-                  }
-                  required
-                  step="0.01"
-                  type="number"
-                  value={billSplitForm.total_amount}
-                />
-              </label>
-              <label>
-                Currency
-                <select
-                  onChange={(event) => setBillSplitForm((current) => ({ ...current, currency: event.target.value }))}
-                  value={billSplitForm.currency}
-                >
-                  {(transferCurrencies.length > 0 ? transferCurrencies : ["RON"]).map((currency) => (
-                    <option key={currency} value={currency}>
-                      {currency}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <label>
-              Participant
-              <select
-                onChange={(event) => {
-                  const beneficiary = beneficiaries.find((item) => item.id === event.target.value);
-                  setBillSplitForm((current) => ({
-                    ...current,
-                    participant_user_id: beneficiary?.beneficiary_user_id ?? "",
-                    participant_name: beneficiary?.name ?? "",
-                    participant_phone: beneficiary?.phone ?? "",
-                  }));
-                }}
-                value={beneficiaries.find((item) => item.beneficiary_user_id === billSplitForm.participant_user_id)?.id ?? ""}
-              >
-                <option value="">Manual participant</option>
-                {internalBeneficiaries.map((beneficiary) => (
-                  <option key={beneficiary.id} value={beneficiary.id}>
-                    {beneficiary.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Participant user id
-              <input
-                onChange={(event) =>
-                  setBillSplitForm((current) => ({ ...current, participant_user_id: event.target.value }))
-                }
-                placeholder="Use a saved internal beneficiary or paste a user id"
-                value={billSplitForm.participant_user_id}
-              />
-            </label>
-
-            <label>
-              Recipient name
-              <input
-                onChange={(event) =>
-                  setBillSplitForm((current) => ({ ...current, participant_name: event.target.value }))
-                }
-                placeholder="Maria Dinu"
-                required
-                value={billSplitForm.participant_name}
-              />
-            </label>
-
-            <div className="amount-row">
-              <label>
-                Phone
-                <input
-                  onChange={(event) =>
-                    setBillSplitForm((current) => ({ ...current, participant_phone: event.target.value }))
-                  }
-                  value={billSplitForm.participant_phone}
-                />
-              </label>
-              <label>
-                Share amount
-                <input
-                  min="0.01"
-                  onChange={(event) =>
-                    setBillSplitForm((current) => ({ ...current, participant_amount: event.target.value }))
-                  }
-                  required
-                  step="0.01"
-                  type="number"
-                  value={billSplitForm.participant_amount}
-                />
-              </label>
-            </div>
-
-            <label>
-              Source transaction
-              <select
-                onChange={(event) =>
-                  setBillSplitForm((current) => ({ ...current, source_transaction_id: event.target.value }))
-                }
-                value={billSplitForm.source_transaction_id}
-              >
-                <option value="">No linked transaction</option>
-                {transactions
-                  .filter(
-                    (transaction) =>
-                      transaction.status === "COMPLETED" &&
-                      (transaction.type === "CARD_PAYMENT" || transaction.type === "SCHEDULED_PAYMENT"),
-                  )
-                  .map((transaction) => (
-                    <option key={transaction.id} value={transaction.id}>
-                      {transaction.description || transaction.type} - {transaction.amount} {transaction.currency}
-                    </option>
-                  ))}
-              </select>
-            </label>
-
-            <label>
-              Description
-              <input
-                onChange={(event) =>
-                  setBillSplitForm((current) => ({ ...current, description: event.target.value }))
-                }
-                placeholder="Pizza and drinks"
-                value={billSplitForm.description}
-              />
-            </label>
-
-            {splitError && <p className="status-line status-line--error">{splitError}</p>}
-            {splitNotice && <p className="status-line">{splitNotice}</p>}
-
-            <button disabled={splitSubmitting} type="submit">
-              {splitSubmitting ? "Creating..." : "Create bill split"}
-            </button>
-          </form>
-
-          <section className="tile scheduled-list-card">
-            <div className="tile__header">
-              <span className="eyebrow">Bill splits</span>
-              {splitLoading && <span className="tag tag--neutral">Loading</span>}
-            </div>
-            <div className="bill-split-table">
-              {billSplits.map((split) => (
-                <div className="bill-split-row" key={split.id}>
-                  <div className="bill-split-row__main">
-                    <strong>{split.title}</strong>
-                    <span>{split.total_amount} {split.currency}</span>
-                    <span className={`tag scheduled-status scheduled-status--${split.status.toLowerCase()}`}>
-                      {split.status}
-                    </span>
-                    <span>{split.participants.length} participant(s)</span>
-                  </div>
-                  <div className="bill-split-row__participants">
-                    {split.participants.map((participant) => (
-                      <div className="bill-split-participant" key={participant.id}>
-                        <span className="eyebrow">{participant.status}</span>
-                        <strong>{participant.name}</strong>
-                        <span>{participant.amount} {split.currency}</span>
-                        {participant.status === "PENDING" && participant.participant_user_id === user?.id && (
-                          <button
-                            className="button--wide"
-                            disabled={splitActionId === participant.id}
-                            onClick={() => payBillSplit(split, participant.id)}
-                            type="button"
-                          >
-                            {splitActionId === participant.id ? "Paying..." : "Pay share"}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="beneficiary-actions bill-split-row__actions">
-                    {split.status === "OPEN" && split.owner_user_id === user?.id && (
-                      <button
-                        className="button--danger button--wide"
-                        disabled={splitActionId === split.id}
-                        onClick={() => cancelBillSplit(split)}
-                        type="button"
-                      >
-                        Cancel
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {!splitLoading && billSplits.length === 0 && (
-                <div className="empty-state">No bill splits yet.</div>
-              )}
-            </div>
-          </section>
-
-          <section className="tile backend-note scheduled-note">
-            <span className="eyebrow">What the backend does</span>
-            <p>bill_splits + participants - owner scoped - participants pay through the internal transfer engine</p>
           </section>
         </div>
       ) : activeTab === "folders" ? (

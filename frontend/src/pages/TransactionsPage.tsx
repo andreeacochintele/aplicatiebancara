@@ -153,6 +153,7 @@ export function TransactionsPage() {
       .filter((participant) => participant.status === "PENDING" && participant.participant_user_id === user?.id)
       .map((participant) => ({ split, participant })),
   );
+  const ownedOpenSplits = billSplits.filter((split) => split.owner_user_id === user?.id && split.status === "OPEN");
   const transactionPageCount = Math.max(1, Math.ceil(transactions.length / TRANSACTIONS_PER_PAGE));
   const currentTransactionsPage = Math.min(transactionsPage, transactionPageCount);
   const transactionsPageStart = (currentTransactionsPage - 1) * TRANSACTIONS_PER_PAGE;
@@ -429,6 +430,24 @@ export function TransactionsPage() {
     }
   }
 
+  async function cancelOwnedSplit(split: BillSplit) {
+    if (!accessToken) return;
+    setSplitActionId(split.id);
+    setSplitError(null);
+    try {
+      await apiRequest<BillSplit>(`/payments/bill-splits/${split.id}/cancel`, {
+        method: "PATCH",
+        token: accessToken,
+      });
+      setSplitNotice("Split bill cancelled.");
+      await loadBillSplits();
+    } catch (err) {
+      setSplitError(err instanceof ApiError ? err.message : "Could not cancel split bill");
+    } finally {
+      setSplitActionId(null);
+    }
+  }
+
   return (
     <section>
       <div className="transactions-header">
@@ -470,6 +489,34 @@ export function TransactionsPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+      {ownedOpenSplits.length > 0 && (
+        <div className="transaction-split-requests">
+          {ownedOpenSplits.map((split) => {
+            const paidCount = split.participants.filter((participant) => participant.status === "PAID").length;
+            return (
+              <div className="transaction-split-request" key={split.id}>
+                <div>
+                  <span className="eyebrow">Your split</span>
+                  <strong>{split.title}</strong>
+                  <span>
+                    {paidCount} of {split.participants.length} paid &middot; {split.total_amount} {split.currency}
+                  </span>
+                </div>
+                <div className="transaction-split-request__actions">
+                  <button
+                    className="button--wide button--ghost"
+                    disabled={splitActionId === split.id}
+                    onClick={() => cancelOwnedSplit(split)}
+                    type="button"
+                  >
+                    {splitActionId === split.id ? "Cancelling..." : "Cancel"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
       {splitTransaction ? (
