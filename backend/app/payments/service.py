@@ -65,6 +65,16 @@ _SCHEDULED_STATUS_TRANSITIONS: dict[ScheduledPaymentStatus, set[ScheduledPayment
     ScheduledPaymentStatus.CANCELLED: set(),
 }
 
+# Transfers, FX conversions, loan installments, and bill-split settlements
+# aren't "a payment" in the sense either feature means it -- only an actual
+# purchase (or a recurring payment executing as one) qualifies for splitting
+# the bill with someone else.
+SPLITTABLE_TRANSACTION_TYPES = {TransactionType.CARD_PAYMENT, TransactionType.SCHEDULED_PAYMENT}
+# Folders additionally accept cashback, since grouping "this purchase and
+# the cashback it earned" together is a real use case; transfers, FX, loans,
+# and bill-split settlements still don't belong in a spending folder.
+FOLDER_ELIGIBLE_TRANSACTION_TYPES = SPLITTABLE_TRANSACTION_TYPES | {TransactionType.CASHBACK}
+
 
 class BeneficiaryService:
     def __init__(self, db: Session) -> None:
@@ -470,6 +480,15 @@ class PaymentRequestService:
             raise ConflictError(f"Payment request is {payment_request.status.value}")
         if _as_aware_utc(payment_request.expires_at) < datetime.now(timezone.utc):
             payment_request.status = PaymentRequestStatus.EXPIRED
+            # Must persist despite the ConflictError below aborting the
+            # caller's own commit -- no service in this codebase otherwise
+            # calls db.commit() (routers do, on success), but this status
+            # transition needs to survive independent of the surrounding
+            # request's failure. Safe here specifically because both call
+            # sites (get_active_payment_request's GET route, and the start
+            # of pay_payment_request) invoke this before any wallet
+            # mutation is pending. Same pattern as FXService.get_valid_quote_for_user.
+            self.db.commit()
             raise ConflictError("Payment request has expired")
 
 
@@ -490,11 +509,8 @@ class BillSplitService:
                 raise NotFoundError("Source transaction not found")
             if source_transaction.status != TransactionStatus.COMPLETED:
                 raise ValidationError("Only completed transactions can be split")
-            owner_wallet_ids = {wallet.id for wallet in self.wallets.list_for_user(owner_user_id)}
-            is_incoming = source_transaction.destination_wallet_id in owner_wallet_ids
-            is_outgoing = source_transaction.source_wallet_id in owner_wallet_ids
-            if is_incoming and not is_outgoing:
-                raise ValidationError("Cannot split a transaction that brought money in")
+            if source_transaction.type not in SPLITTABLE_TRANSACTION_TYPES:
+                raise ValidationError("Only payments can be split")
 
         # Resolve every participant BEFORE writing anything: under the
         # Supabase REST backend, self.repository.add() is an immediate
@@ -750,6 +766,8 @@ class TransactionFolderService:
             raise NotFoundError("Transaction not found")
         if transaction.status != TransactionStatus.COMPLETED:
             raise ValidationError("Only completed transactions can be added to a folder")
+        if transaction.type not in FOLDER_ELIGIBLE_TRANSACTION_TYPES:
+            raise ValidationError("Only payments and cashback can be added to a folder")
         if self.repository.get_item(folder.id, transaction_id) is not None:
             raise ConflictError("Transaction is already in this folder")
         self.repository.add_item(TransactionFolderItem(folder_id=folder.id, transaction_id=transaction_id))

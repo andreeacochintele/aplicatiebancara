@@ -2,6 +2,9 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
+import pytest
+
+from app.core.exceptions import ConflictError
 from app.payments.models import PaymentRequestStatus
 from app.payments.schemas import PaymentRequestCreate
 from app.payments.service import PaymentRequestService
@@ -247,5 +250,28 @@ def test_expired_payment_request_cannot_be_paid(client, db_session):
     )
 
     assert response.status_code == 409
+
+
+def test_expired_payment_request_persists_expired_status(client, db_session):
+    creator = _register(client, "qr-expired-persist-creator@example.com", "+40740688888")
+    destination_wallet = _create_wallet(db_session, creator["user"]["id"], "RON")
+    service = PaymentRequestService(db_session)
+    payment_request = service.create_payment_request(
+        UUID(creator["user"]["id"]),
+        PaymentRequestCreate(destination_wallet_id=destination_wallet.id, amount=Decimal("20.00"), currency="RON"),
+    )
+    payment_request.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db_session.flush()
+
+    with pytest.raises(ConflictError):
+        service.get_active_payment_request(payment_request.id)
+
+    assert payment_request.status == PaymentRequestStatus.EXPIRED
+
+    # Force a real reload from the DB (bypasses the identity-map cached
+    # value) to prove the status change was actually committed, not just
+    # held in-memory on the `payment_request` object.
+    db_session.expire(payment_request)
+    assert payment_request.status == PaymentRequestStatus.EXPIRED
     assert payment_request.status == PaymentRequestStatus.EXPIRED
 
