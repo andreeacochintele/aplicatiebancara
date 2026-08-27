@@ -34,6 +34,10 @@ function formatTransactionType(type: string): string {
     .join(" ");
 }
 
+function formatIban(iban: string): string {
+  return iban.replace(/(.{4})/g, "$1 ").trim();
+}
+
 function RateTrendChart({ history }: { history: FXRateHistory }) {
   const data = history.points.map((p) => ({ date: p.date, rate: Number(p.rate) }));
   const short = (date: string) => date.slice(5).replace("-", "/");
@@ -369,7 +373,7 @@ export function WalletsPage() {
                   onClick={() => copyIban(wallet)}
                   title="Copy IBAN"
                 >
-                  <span>{wallet.iban}</span>
+                  <span>{formatIban(wallet.iban)}</span>
                   <Copy size={12} />
                   {copiedWalletId === wallet.id && <span className="aurora-wallet-card__iban-copied">Copied</span>}
                 </button>
@@ -430,7 +434,7 @@ export function WalletsPage() {
                         onClick={() => setDeletingWallet(wallet)}
                       >
                         <Trash2 size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
-                        Delete
+                        Close
                       </button>
                     </div>
                   )}
