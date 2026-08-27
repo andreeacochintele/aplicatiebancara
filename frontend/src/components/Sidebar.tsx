@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Wallet, CreditCard, Send, Receipt, FileText,
-  PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldCheck, type LucideIcon,
+  PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldCheck, Briefcase, type LucideIcon,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
@@ -63,6 +63,9 @@ export function Sidebar() {
       <NavGroup label="Banking" items={BANKING_ITEMS} />
       <NavGroup label="Intelligence" items={INTELLIGENCE_ITEMS} />
       <NavGroup label="Account" items={ACCOUNT_ITEMS} />
+      {user?.user_type === "BUSINESS" && (
+        <NavGroup label="Business" items={[{ to: "/business/export", label: "Transaction Export", icon: Briefcase }]} />
+      )}
       {user?.role === "ADMIN" && (
         <NavGroup label="Operations" items={[{ to: "/admin", label: "Admin Dashboard", icon: ShieldCheck }]} />
       )}

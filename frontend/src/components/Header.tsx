@@ -19,6 +19,7 @@ const PAGE_INFO: Record<string, { title: string; subtitle: string }> = {
   "/credit": { title: "Credit & Loans", subtitle: "Score, instalments and simulation" },
   "/assistant": { title: "Assistant", subtitle: "Orchestrator over specialised agents" },
   "/profile": { title: "Profile", subtitle: "Account details" },
+  "/business/export": { title: "Transaction Export", subtitle: "Business accounts only · CSV/XLSX export" },
   "/admin": { title: "Admin Dashboard", subtitle: "Operations overview" },
 };
 

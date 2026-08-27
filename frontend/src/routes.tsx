@@ -7,6 +7,7 @@ import { MainLayout } from "./layouts/MainLayout";
 import { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { AssistantPage } from "./pages/AssistantPage";
+import { BusinessExportPage } from "./pages/BusinessExportPage";
 import { CardsPage } from "./pages/CardsPage";
 import { CreditPage } from "./pages/CreditPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -53,6 +54,7 @@ export const routes: RouteObject[] = [
       { path: "/assistant", element: <AssistantPage /> },
       { path: "/notifications", element: <NotificationsPage /> },
       { path: "/profile", element: <ProfilePage /> },
+      { path: "/business/export", element: <BusinessExportPage /> },
       {
         path: "/admin",
         element: (
