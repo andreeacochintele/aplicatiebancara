@@ -212,14 +212,14 @@
 .aurora-page {
   display: grid;
   grid-template-columns: 1.7fr 1fr;
-  gap: 20px;
+  gap: 24px;
   align-items: start;
 }
 
 .aurora-col {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   min-width: 0;
 }
 
@@ -248,7 +248,7 @@
 }
 
 .aurora-section-header h2 {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--aurora-text);
 }
@@ -967,7 +967,7 @@
 .aurora-donut-total {
   font-family: "Manrope", sans-serif;
   font-weight: 800;
-  font-size: 18px;
+  font-size: 22px;
   color: var(--aurora-text);
 }
 
@@ -1614,6 +1614,35 @@
   border: 1px solid var(--aurora-border);
   border-radius: var(--aurora-radius-md);
   background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .goal-card {
+  border-color: var(--aurora-border);
+  background: var(--aurora-surface-alt);
+}
+
+.aurora-shell .goal-card__name {
+  color: var(--aurora-text);
+}
+
+.aurora-shell .goal-card__amount {
+  color: var(--aurora-text);
+}
+
+.aurora-shell .goal-card__track {
+  background: var(--aurora-border);
+}
+
+.aurora-shell .goal-card__fill {
+  background: var(--aurora-accent);
+}
+
+.aurora-shell .goal-card__percent {
+  color: var(--aurora-accent-dark);
+}
+
+.aurora-shell .goal-card__meta {
+  color: var(--aurora-text-soft);
 }
 
 .aurora-shell .bank-card {

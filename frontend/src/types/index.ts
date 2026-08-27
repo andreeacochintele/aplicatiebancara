@@ -486,6 +486,16 @@ export interface SpendingByCategoryResponse {
   items: SpendingByCategoryItem[];
 }
 
+export interface AIInsight {
+  id: string;
+  message: string;
+  category: string | null;
+  currency: string | null;
+  insight_type: string;
+  dismissed: boolean;
+  created_at: string;
+}
+
 export interface MonthlyTrendItem {
   year: number;
   month: number;
@@ -593,6 +603,7 @@ export interface SavingsGoal {
   current_amount: string;
   currency: string;
   target_date: string | null;
+  status: "ACTIVE" | "COMPLETED" | "WITHDRAWN";
   percent_complete: number;
   monthly_amount_needed: string | null;
   created_at: string;
