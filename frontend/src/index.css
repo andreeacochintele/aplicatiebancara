@@ -2137,6 +2137,36 @@ th {
   min-width: 0;
 }
 
+.reward-card {
+  gap: 0.85rem;
+  padding: 0.9rem;
+}
+
+.reward-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.category-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.category-pill {
+  flex-shrink: 0;
+}
+
+.points-pill {
+  flex-shrink: 0;
+}
+
 .bank-card {
   position: relative;
   overflow: hidden;

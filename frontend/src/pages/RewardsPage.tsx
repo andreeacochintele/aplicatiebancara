@@ -10,6 +10,7 @@ import {
   combinedRateLabel,
   pointsPerRonLabel,
 } from "../config/rewardPolicy";
+import { CategoryIconBadge, CategoryPill, PointsPill } from "../features/rewards";
 import { useAuth } from "../hooks/useAuth";
 import type {
   Card,
@@ -52,6 +53,7 @@ function cardStatusClass(status: Card["status"]): string {
 function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
+
 
 function ConfirmModal({
   title,
@@ -548,7 +550,11 @@ export function RewardsPage() {
                   const missing =
                     rewards && benefit.points_cost !== null ? benefit.points_cost - rewards.points_balance : null;
                   return (
-                    <article className="card-panel" key={benefit.id}>
+                    <article className="card-panel reward-card" key={benefit.id}>
+                      <div className="reward-card__top">
+                        <CategoryIconBadge category={benefit.category} />
+                        <PointsPill>{benefit.points_cost !== null ? `${benefit.points_cost} pts` : "Free"}</PointsPill>
+                      </div>
                       <div className="card-panel__meta">
                         <div>
                           <div className="eyebrow">{benefit.category.replace("_", " ")}</div>
@@ -560,9 +566,6 @@ export function RewardsPage() {
                             </div>
                           )}
                         </div>
-                        <span className="tag tag--outline">
-                          {benefit.points_cost !== null ? `${benefit.points_cost} pts` : "Free"}
-                        </span>
                       </div>
                       <div className="card-panel__actions">
                         {benefit.can_redeem ? (
@@ -700,48 +703,55 @@ export function RewardsPage() {
 
             {visibleMerchants.length > 0 ? (
               <div className="card-gallery">
-                {visibleMerchants.map((merchant) => (
-                  <article className="card-panel" key={merchant.id}>
-                    <button
-                      type="button"
-                      onClick={() => openPayConfirm(merchant)}
-                      style={{
-                        all: "unset",
-                        cursor: "pointer",
-                        display: "block",
-                        width: "100%",
-                      }}
-                      aria-label={`View details for ${merchant.name}`}
-                    >
-                      <div className="card-panel__meta">
-                        <div>
-                          <div className="eyebrow">{merchant.category}</div>
-                          <div className="card-panel__value">{merchant.name}</div>
-                          {!merchant.verified && (
-                            <div className="eyebrow" style={{ marginTop: "0.15rem" }}>
-                              Not verified — doesn't earn points yet
-                            </div>
+                {visibleMerchants.map((merchant) => {
+                  return (
+                    <article className="card-panel reward-card" key={merchant.id}>
+                      <button
+                        type="button"
+                        onClick={() => openPayConfirm(merchant)}
+                        style={{
+                          all: "unset",
+                          cursor: "pointer",
+                          display: "block",
+                          width: "100%",
+                        }}
+                        aria-label={`View details for ${merchant.name}`}
+                      >
+                        <div className="reward-card__top">
+                          <CategoryIconBadge category={merchant.category} />
+                          {merchant.active_offer ? (
+                            <CategoryPill category={merchant.category}>
+                              {merchant.active_offer.cashback_percent}% cashback
+                            </CategoryPill>
+                          ) : (
+                            <span className="tag tag--outline">No active offer</span>
                           )}
                         </div>
-                        {merchant.active_offer ? (
-                          <span className="tag tag--accent">{merchant.active_offer.cashback_percent}% cashback</span>
-                        ) : (
-                          <span className="tag tag--outline">No active offer</span>
-                        )}
-                      </div>
-                      {selectedCard && (
-                        <div className="eyebrow" style={{ marginTop: "0.4rem" }}>
-                          Earn {combinedRateLabel(selectedCard, Number(merchant.active_offer?.cashback_percent ?? 0))}
+                        <div className="card-panel__meta">
+                          <div>
+                            <div className="eyebrow">{merchant.category}</div>
+                            <div className="card-panel__value">{merchant.name}</div>
+                            {!merchant.verified && (
+                              <div className="eyebrow" style={{ marginTop: "0.15rem" }}>
+                                Not verified — doesn't earn points yet
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      )}
-                    </button>
-                    <div className="card-panel__actions">
-                      <button onClick={() => openPayConfirm(merchant)} disabled={busy || !payCardId}>
-                        Pay {payAmount || 0} {effectiveWallet(selectedCard)?.currency ?? "RON"}
+                        {selectedCard && (
+                          <div className="eyebrow" style={{ marginTop: "0.4rem" }}>
+                            Earn {combinedRateLabel(selectedCard, Number(merchant.active_offer?.cashback_percent ?? 0))}
+                          </div>
+                        )}
                       </button>
-                    </div>
-                  </article>
-                ))}
+                      <div className="card-panel__actions">
+                        <button onClick={() => openPayConfirm(merchant)} disabled={busy || !payCardId}>
+                          Pay {payAmount || 0} {effectiveWallet(selectedCard)?.currency ?? "RON"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             ) : (
               <p className="eyebrow">No merchants in this category.</p>
