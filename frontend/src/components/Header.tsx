@@ -21,6 +21,8 @@ const PAGE_INFO: Record<string, { title: string; subtitle: string }> = {
   "/profile": { title: "Profile", subtitle: "Account details" },
   "/business/export": { title: "Transaction Export", subtitle: "Business accounts only · CSV/XLSX export" },
   "/admin": { title: "Admin Dashboard", subtitle: "Operations overview" },
+  "/admin/credit": { title: "Credit & Loans", subtitle: "Applications, documents and credit score review" },
+  "/admin/fraud": { title: "Fraud Review", subtitle: "Deterministic engine · human decision" },
 };
 
 const HEADER_NOTIFICATIONS_PER_PAGE = 4;

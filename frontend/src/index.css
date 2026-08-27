@@ -843,6 +843,58 @@ th {
   font-weight: 800;
 }
 
+.admin-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.admin-overview-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.5rem 0.9rem;
+  padding: 1.1rem;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.admin-overview-card:hover {
+  border-color: var(--color-accent, var(--aurora-accent-dark));
+}
+
+.admin-overview-card__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--color-surface-muted, rgba(127, 127, 127, 0.12));
+  color: var(--color-accent, var(--aurora-accent-dark));
+}
+
+.admin-overview-card__body {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.admin-overview-card__body strong {
+  font-size: 1.05rem;
+  color: var(--color-text);
+}
+
+.admin-overview-card__body span {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.admin-overview-card .tag {
+  grid-column: 2;
+  justify-self: start;
+}
+
 .admin-applications-scroll {
   overflow-x: auto;
   padding-bottom: 0.2rem;
