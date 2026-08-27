@@ -15,7 +15,6 @@ from app.fx.router import router as fx_router
 from app.merchants.router import router as merchants_router
 from app.notifications.router import router as notifications_router
 from app.payments.router import router as payments_router
-from app.personal_finance.router import router as personal_finance_router
 from app.rewards.router import router as rewards_router
 from app.savings.router import router as savings_router
 from app.statements.router import router as statements_router
@@ -38,7 +37,6 @@ api_router.include_router(payments_router)
 api_router.include_router(cards_router)
 api_router.include_router(rewards_router)
 api_router.include_router(merchants_router)
-api_router.include_router(personal_finance_router)
 api_router.include_router(credit_router)
 api_router.include_router(fraud_router)
 api_router.include_router(notifications_router)

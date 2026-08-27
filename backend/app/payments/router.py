@@ -1,7 +1,7 @@
 """Payments endpoints."""
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -362,11 +362,3 @@ def delete_beneficiary(
     BeneficiaryService(db).delete_beneficiary(current_user.id, beneficiary_id)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get("", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def not_implemented() -> dict:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="'payments' module is not implemented yet (Phase 1 skeleton only)",
-    )
