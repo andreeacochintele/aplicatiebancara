@@ -106,7 +106,7 @@ export interface Wallet {
   id: string;
   user_id: string;
   currency: string;
-  iban: string;
+  iban: string | null;
   available_balance: string;
   reserved_balance: string;
   is_main: boolean;
