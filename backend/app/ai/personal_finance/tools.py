@@ -22,6 +22,8 @@ from app.merchants.schemas import MerchantPublic
 from app.merchants.service import MerchantService
 from app.savings.schemas import SavingsGoalPublic
 from app.savings.service import SavingsService
+from app.statements.schemas import StatementPublic, StatementRequest
+from app.statements.service import StatementService
 from app.transactions.schemas import TransactionPublic
 from app.transactions.service import TransactionService
 from app.wallets.schemas import WalletPublic
@@ -117,6 +119,26 @@ def get_cashback_offers(ctx: ToolContext) -> list[MerchantPublic]:
     that currently have one, rather than adding a new service method."""
     merchants = MerchantService(ctx.db).list_merchants()
     return [merchant for merchant in merchants if merchant.active_offer is not None]
+
+
+@log_tool_call
+def get_account_statement(ctx: ToolContext) -> StatementPublic:
+    """Reuses StatementService.generate() as-is — same opening/closing
+    balance and totals shown on the Statements page, not recomputed here.
+    "Which wallet, which period" isn't parsed out of the user's message
+    (this dispatch layer is keyword-only, see agent.py's module docstring),
+    so this defaults to the main wallet and the current calendar month to
+    date, same default period get_spending_by_category already uses."""
+    wallets = WalletService(ctx.db).list_wallets(ctx.user_id)
+    main_wallet = next((w for w in wallets if w.is_main), None)
+    if main_wallet is None:
+        raise ToolDataUnavailableError("No main wallet to generate a statement for.")
+
+    today = datetime.now(timezone.utc).date()
+    return StatementService(ctx.db).generate(
+        ctx.user_id,
+        StatementRequest(wallet_id=main_wallet.id, date_from=today.replace(day=1), date_to=today),
+    )
 
 
 @log_tool_call
