@@ -218,7 +218,7 @@ export function AnalyticsPage() {
     color: colorForType(item.type),
   }));
 
-  const insights = generateAnalyticsInsights({ monthlyTrend, spendingByType, budgets, forecast });
+  const insights = generateAnalyticsInsights({ monthlyTrend, spendingItems, budgets, forecast });
 
   const netWorthChangePercent = (() => {
     const history = netWorthHistory?.history ?? [];
