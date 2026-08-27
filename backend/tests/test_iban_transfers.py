@@ -144,6 +144,45 @@ def test_cross_currency_iban_transfer_uses_fx_quote(client, db_session):
     assert quote.status == FXQuoteStatus.ACCEPTED
 
 
+def test_iban_transfer_credits_matching_easyb_wallet(client, db_session):
+    sender = _register(client, "iban-onus-sender@example.com", "+40750666666")
+    recipient = _register(client, "iban-onus-recipient@example.com", "+40750777777")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("500.00"))
+    destination_wallet = _create_wallet(db_session, recipient["user"]["id"], "RON", Decimal("0.00"))
+
+    response = client.post(
+        "/api/v1/payments/transfers/iban",
+        headers=_auth_header(sender),
+        json={
+            "beneficiary_name": "Fellow EasyB customer",
+            "iban": destination_wallet.iban,
+            "source_wallet_id": str(source_wallet.id),
+            "amount": "125.00",
+            "currency": "RON",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == TransactionStatus.COMPLETED
+    assert body["source_wallet_id"] == str(source_wallet.id)
+    assert body["destination_wallet_id"] == str(destination_wallet.id)
+    assert body["amount"] == "125.00"
+
+    db_session.refresh(source_wallet)
+    db_session.refresh(destination_wallet)
+    assert source_wallet.available_balance == Decimal("375.00")
+    assert destination_wallet.available_balance == Decimal("125.00")
+
+    credit_entry = (
+        db_session.query(WalletLedgerEntry)
+        .filter_by(transaction_id=UUID(body["id"]), wallet_id=destination_wallet.id)
+        .one()
+    )
+    assert credit_entry.entry_type == LedgerEntryType.CREDIT
+    assert credit_entry.amount == Decimal("125.00")
+
+
 def test_iban_transfer_rejects_currency_mismatch(client, db_session):
     sender = _register(client, "iban-currency@example.com", "+40750444444")
     source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("500.00"))

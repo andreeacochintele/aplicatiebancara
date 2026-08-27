@@ -22,6 +22,11 @@ class WalletRepository:
             return self.db.fetch_one(Wallet, {"user_id": f"eq.{user_id}", "currency": f"eq.{currency}"})
         return self.db.scalar(select(Wallet).where(Wallet.user_id == user_id, Wallet.currency == currency))
 
+    def get_by_iban(self, iban: str) -> Wallet | None:
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(Wallet, {"iban": f"eq.{iban}"})
+        return self.db.scalar(select(Wallet).where(Wallet.iban == iban))
+
     def list_for_user(self, user_id: uuid.UUID) -> list[Wallet]:
         if is_supabase_session(self.db):
             return self.db.fetch_many(Wallet, {"user_id": f"eq.{user_id}", "order": "created_at.asc"})
