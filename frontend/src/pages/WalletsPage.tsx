@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ChevronDown, ChevronUp, Copy, Plus, Star, Trash2, TrendingUp, X } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ChevronUp, Copy, Plus, Star, TrendingUp, X, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -6,6 +6,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { FXMarketRate, FXQuote, FXRateHistory, Transaction, Wallet } from "../types";
+import { formatIban } from "../utils";
 
 const RATE_ACCENT = "#5b5fef"; // same violet as --easyb-accent, kept as one deliberate hue for the trend line
 // matches backend/app/fx/service.py's _RATES_TO_RON — keep both in sync
@@ -103,6 +104,7 @@ export function WalletsPage() {
   const [convertRate, setConvertRate] = useState<FXMarketRate | null>(null);
   const [chartSourceCurrency, setChartSourceCurrency] = useState("");
   const [chartTargetCurrency, setChartTargetCurrency] = useState("");
+  const [chartDays, setChartDays] = useState(14);
   const [rateHistory, setRateHistory] = useState<FXRateHistory | null>(null);
   const [expandedTransactionWalletIds, setExpandedTransactionWalletIds] = useState<Set<string>>(() => new Set());
   const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
@@ -244,12 +246,12 @@ export function WalletsPage() {
       return;
     }
     apiRequest<FXRateHistory>(
-      `/fx/rate/history?source_currency=${chartSourceCurrency}&target_currency=${chartTargetCurrency}&days=14`,
+      `/fx/rate/history?source_currency=${chartSourceCurrency}&target_currency=${chartTargetCurrency}&days=${chartDays}`,
       { token: accessToken },
     )
       .then(setRateHistory)
       .catch(() => setRateHistory(null));
-  }, [accessToken, chartSourceCurrency, chartTargetCurrency]);
+  }, [accessToken, chartSourceCurrency, chartTargetCurrency, chartDays]);
 
   const bankRate = convertRate ? Number(convertRate.rate) * (1 - Number(convertRate.fee_rate)) : null;
   const convertedAmount =
@@ -369,7 +371,7 @@ export function WalletsPage() {
                   onClick={() => copyIban(wallet)}
                   title="Copy IBAN"
                 >
-                  <span>{wallet.iban}</span>
+                  <span>{formatIban(wallet.iban)}</span>
                   <Copy size={12} />
                   {copiedWalletId === wallet.id && <span className="easyb-wallet-card__iban-copied">Copied</span>}
                 </button>
@@ -429,8 +431,8 @@ export function WalletsPage() {
                         className="easyb-wallet-card__delete"
                         onClick={() => setDeletingWallet(wallet)}
                       >
-                        <Trash2 size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
-                        Delete
+                        <XCircle size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
+                        Close
                       </button>
                     </div>
                   )}
@@ -559,8 +561,20 @@ export function WalletsPage() {
           <div className="easyb-card easyb-exchange-card">
             <div className="easyb-section-header">
               <div>
-                <div className="easyb-eyebrow">Live · ECB, 14 days</div>
+                <div className="easyb-eyebrow">Live · ECB, {chartDays} days</div>
                 <h2>Rate trend</h2>
+              </div>
+              <div className="easyb-period-picker">
+                {[7, 14, 30, 90].map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    className={days === chartDays ? "easyb-period-picker__option is-active" : "easyb-period-picker__option"}
+                    onClick={() => setChartDays(days)}
+                  >
+                    {days}D
+                  </button>
+                ))}
               </div>
             </div>
 

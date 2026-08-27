@@ -1,10 +1,10 @@
 -- Adds a sandbox IBAN to every wallet (migration 0037_wallet_iban) —
 -- generates one for each existing wallet and requires one going forward.
 --
--- IBAN layout: RO + 2 check digits (ISO 7064 mod 97-10) + "AURO" bank code +
+-- IBAN layout: RO + 2 check digits (ISO 7064 mod 97-10) + "EASY" bank code +
 -- 16-digit account number, matching backend/app/wallets/iban.py exactly.
--- The check-digit formula below is that algorithm with "AURO" and "RO"
--- pre-converted to digits (A=10, U=30, R=27, O=24), since both are fixed —
+-- The check-digit formula below is that algorithm with "EASY" and "RO"
+-- pre-converted to digits (E=14, A=10, S=28, Y=34), since both are fixed —
 -- no need to loop character by character in SQL.
 --
 -- Idempotent: safe to re-run regardless of whether it already applied.
@@ -34,9 +34,9 @@ BEGIN
     FOR wallet_row IN SELECT id FROM wallets WHERE iban IS NULL LOOP
         LOOP
             account_number := lpad(floor(random() * 1e16)::bigint::text, 16, '0');
-            numeric_str := '10302724' || account_number || '272400';
+            numeric_str := '14102834' || account_number || '272400';
             check_digits := lpad((98 - (numeric_str::numeric % 97))::text, 2, '0');
-            candidate_iban := 'RO' || check_digits || 'AURO' || account_number;
+            candidate_iban := 'RO' || check_digits || 'EASY' || account_number;
             EXIT WHEN NOT EXISTS (SELECT 1 FROM wallets WHERE iban = candidate_iban);
         END LOOP;
         UPDATE wallets SET iban = candidate_iban WHERE id = wallet_row.id;

@@ -16,6 +16,7 @@ import type {
   TransactionFolder,
   Wallet,
 } from "../types";
+import { formatIban } from "../utils";
 
 type PaymentTab = "transfer" | "phone" | "qr" | "scheduled" | "folders";
 
@@ -151,7 +152,7 @@ function initials(name: string): string {
 }
 
 function beneficiarySubtitle(beneficiary: Beneficiary): string {
-  const details = [beneficiary.iban, beneficiary.phone].filter(Boolean);
+  const details = [beneficiary.iban ? formatIban(beneficiary.iban) : null, beneficiary.phone].filter(Boolean);
   return details.length > 0 ? details.join(" - ") : "Internal beneficiary";
 }
 

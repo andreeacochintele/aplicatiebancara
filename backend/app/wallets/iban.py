@@ -3,7 +3,7 @@ app/cards/service.py: not a real bank account, but a checksum-valid IBAN
 (ISO 7064 mod 97-10) so it looks and validates like a real one."""
 import secrets
 
-BANK_CODE = "AURO"
+BANK_CODE = "EASY"
 COUNTRY_CODE = "RO"
 
 
