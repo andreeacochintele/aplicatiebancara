@@ -3977,6 +3977,73 @@ th {
   line-height: 1.4;
 }
 
+.loan-payment-plan {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid var(--panel-border, var(--color-divider));
+  border-radius: var(--radius-sm);
+  background: var(--panel-bg, var(--color-surface));
+}
+
+.loan-payment-plan__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.loan-payment-plan__header strong {
+  display: block;
+  margin-top: 0.16rem;
+  color: var(--panel-text, var(--color-text));
+  font-size: 0.96rem;
+  font-weight: 900;
+}
+
+.loan-payment-plan__rows {
+  display: grid;
+  gap: 0.42rem;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.loan-payment-plan__row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.8fr) minmax(118px, 0.8fr) minmax(220px, 1.25fr) minmax(140px, 0.9fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--panel-border, var(--color-divider));
+  border-radius: var(--radius-sm);
+  background: var(--panel-bg-muted, var(--color-surface-muted));
+}
+
+.loan-payment-plan__row span,
+.loan-payment-plan__row small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--panel-text-muted, var(--color-text-muted));
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loan-payment-plan__row strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--panel-text, var(--color-text));
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .approved-offer-card__loading {
   align-self: center;
 }
@@ -4418,6 +4485,20 @@ th {
   .loan-estimate-card__figures,
   .loan-estimate-card__schedule {
     grid-template-columns: 1fr;
+  }
+
+  .loan-payment-plan__header {
+    flex-direction: column;
+  }
+
+  .loan-payment-plan__row {
+    grid-template-columns: 1fr;
+  }
+
+  .loan-payment-plan__row span,
+  .loan-payment-plan__row small,
+  .loan-payment-plan__row strong {
+    white-space: normal;
   }
 
   .approved-offer-card__loading {
