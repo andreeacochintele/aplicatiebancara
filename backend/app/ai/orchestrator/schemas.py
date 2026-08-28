@@ -39,6 +39,10 @@ class ConversationMessagePublic(BaseModel):
     role: str
     content: str
     agent_used: str | None
+    # Present on an assistant message that drafted an agent action — the UI
+    # fetches GET /ai/actions/{action_id} to re-render its confirm card with
+    # the current status when the conversation is reopened.
+    action_id: uuid.UUID | None = None
     created_at: datetime
 
 

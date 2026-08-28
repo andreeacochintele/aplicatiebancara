@@ -8,6 +8,8 @@ import { PhoneTransferConfirmCard } from "../features/assistant";
 import { useAuth } from "../hooks/useAuth";
 import type {
   ActionCard,
+  AgentActionResult,
+  AgentActionStatus,
   ConversationMessagePublic,
   ConversationPublic,
   ConversationSummary,
@@ -20,11 +22,15 @@ interface ChatMessage {
   text: string;
   intent?: OrchestratorIntent;
   createdAt: string;
-  /** Only ever set on the assistant reply just received this session — not
-   * reconstructed from history, since the backend doesn't persist these
-   * (see OrchestratorChatResponse.suggested_followups / action_card). */
+  /** Only ever set on the assistant reply just received this session — the
+   * backend doesn't persist suggested followups. */
   followups?: string[];
+  /** Persisted (ai_conversation_messages.action_id): the drafted action's
+   * id. On reopen we fetch its current state into actionCard/actionStatus. */
+  actionId?: string;
   actionCard?: ActionCard;
+  actionStatus?: AgentActionStatus;
+  actionDetail?: string | null;
 }
 
 const INTENT_LABEL: Record<OrchestratorIntent, string> = {
@@ -53,6 +59,7 @@ function toChatMessage(entry: ConversationMessagePublic): ChatMessage {
     text: entry.content,
     intent: entry.agent_used ?? undefined,
     createdAt: entry.created_at,
+    actionId: entry.action_id ?? undefined,
   };
 }
 
@@ -238,7 +245,9 @@ export function AssistantPage() {
           intent: response.intent,
           createdAt: new Date().toISOString(),
           followups: response.suggested_followups,
+          actionId: response.action_card?.action_id,
           actionCard: response.action_card ?? undefined,
+          actionStatus: response.action_card ? "DRAFT" : undefined,
         },
       ]);
       setActiveConversationId(response.conversation_id);
@@ -264,6 +273,38 @@ export function AssistantPage() {
   function sendFollowup(text: string) {
     void sendMessage(text);
   }
+
+  // Re-hydrate persisted action cards: any message that carries an actionId
+  // but no card yet (i.e. loaded from history) gets its current server-side
+  // state fetched once, so a Confirmed/Cancelled transfer stays that way
+  // after switching conversations or reopening the page.
+  const hydratedActionIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!accessToken) return;
+    const pending = messages.filter(
+      (m) => m.actionId && !m.actionCard && !hydratedActionIdsRef.current.has(m.actionId),
+    );
+    if (pending.length === 0) return;
+
+    pending.forEach((message) => {
+      const actionId = message.actionId!;
+      hydratedActionIdsRef.current.add(actionId);
+      apiRequest<AgentActionResult>(`/ai/actions/${actionId}`, { token: accessToken })
+        .then((res) => {
+          if (!res.card) return;
+          setMessages((current) =>
+            current.map((m) =>
+              m.actionId === actionId
+                ? { ...m, actionCard: res.card ?? undefined, actionStatus: res.status, actionDetail: res.error_detail }
+                : m,
+            ),
+          );
+        })
+        .catch(() => {
+          hydratedActionIdsRef.current.delete(actionId); // allow a retry on the next render
+        });
+    });
+  }, [messages, accessToken]);
 
   // Auto-scroll to bottom only for genuinely new messages (initial open,
   // send/receive) — never when older messages were just prepended above.
@@ -382,7 +423,13 @@ export function AssistantPage() {
                   </span>
                 )}
                 {message.role === "assistant" && message.actionCard?.kind === "phone_transfer_confirm" && (
-                  <PhoneTransferConfirmCard card={message.actionCard} token={accessToken} />
+                  <PhoneTransferConfirmCard
+                    key={message.actionStatus ?? "DRAFT"}
+                    card={message.actionCard}
+                    token={accessToken}
+                    initialStatus={message.actionStatus}
+                    initialDetail={message.actionDetail}
+                  />
                 )}
                 <div className="assistant-message__meta">
                   <span className="assistant-message__time">{formatMessageTime(message.createdAt)}</span>

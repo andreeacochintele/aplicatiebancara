@@ -311,6 +311,40 @@ def test_cancel_moves_a_draft_to_cancelled(db_session, sender, alex):
     assert result.status == AgentActionStatus.CANCELLED
 
 
+def test_get_returns_the_card_data_in_any_status_for_rehydration(db_session, sender, alex):
+    user, _ = sender
+    _add_beneficiary(db_session, user.id, "Alex Pop", user_id=alex.id)
+    card = _draft(db_session, user.id).action_card
+    ActionService(db_session).cancel(user.id, card.action_id)
+
+    rehydrated = ActionService(db_session).get(user.id, card.action_id)
+
+    assert rehydrated.status == AgentActionStatus.CANCELLED
+    assert rehydrated.card is not None
+    assert rehydrated.card.recipient_name == "Alex Pop"
+    assert rehydrated.card.amount == "150.00"
+
+
+def test_chat_persists_the_action_id_on_the_assistant_message(db_session, sender, alex, monkeypatch):
+    from app.ai.orchestrator import service as orch
+
+    user, _ = sender
+    _add_beneficiary(db_session, user.id, "Alex Pop", user_id=alex.id)
+    monkeypatch.setattr(orch, "classify_intent", lambda message, history=None: IntentCategory.ACTION)
+    monkeypatch.setattr(
+        orch,
+        "AGENT_REGISTRY",
+        {IntentCategory.ACTION: lambda msg, uid, db, hist: ActionService(db).prepare_phone_transfer(uid, None, "20", "RON", "Alex")},
+    )
+
+    response = orch.OrchestratorService(db_session).chat(user.id, "trimite 20 lei lui Alex")
+
+    assert response.action_card is not None
+    messages = orch.OrchestratorService(db_session).get_conversation_messages(user.id, response.conversation_id)
+    assistant_msg = next(m for m in messages if m.role == "assistant")
+    assert assistant_msg.action_id == response.action_card.action_id
+
+
 def _unblocked():
     from app.ai.actions.fraud_screen import ScreenResult
 

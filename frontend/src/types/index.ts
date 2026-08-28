@@ -875,6 +875,7 @@ export interface ConversationMessagePublic {
   role: "user" | "assistant";
   content: string;
   agent_used: OrchestratorIntent | null;
+  action_id: string | null;
   created_at: string;
 }
 

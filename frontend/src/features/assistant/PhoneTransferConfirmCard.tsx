@@ -23,8 +23,33 @@ function useSecondsLeft(expiresAt: string): number {
   return Math.max(0, Math.round((target - now) / 1000));
 }
 
-export function PhoneTransferConfirmCard({ card, token }: { card: CardModel; token: string | null }) {
-  const [result, setResult] = useState<AgentActionResult | null>(null);
+export function PhoneTransferConfirmCard({
+  card,
+  token,
+  initialStatus,
+  initialDetail,
+}: {
+  card: CardModel;
+  token: string | null;
+  /** Set when re-hydrating a reopened conversation — the action's current
+   * server-side status, so a confirmed/cancelled card comes back terminal
+   * instead of showing live buttons again. */
+  initialStatus?: AgentActionStatus;
+  initialDetail?: string | null;
+}) {
+  const [result, setResult] = useState<AgentActionResult | null>(() =>
+    initialStatus && initialStatus !== "DRAFT"
+      ? {
+          action_id: card.action_id,
+          type: "phone_transfer",
+          status: initialStatus,
+          result_transaction_id: null,
+          error_code: null,
+          error_detail: initialDetail ?? null,
+          card,
+        }
+      : null,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const secondsLeft = useSecondsLeft(card.expires_at);
@@ -53,7 +78,7 @@ export function PhoneTransferConfirmCard({ card, token }: { card: CardModel; tok
 
   return (
     <div className="assistant-action-card">
-      <div className="assistant-action-card__title">Confirmă transferul</div>
+      <div className="assistant-action-card__title">{terminal || expired ? "Transfer" : "Confirmă transferul"}</div>
 
       <div className="assistant-action-card__row">
         <span className="assistant-action-card__label">Către</span>

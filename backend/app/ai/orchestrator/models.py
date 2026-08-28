@@ -51,4 +51,9 @@ class ConversationMessage(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # "user" | "assistant"
     content: Mapped[str] = mapped_column(Text, nullable=False)
     agent_used: Mapped[str | None] = mapped_column(String(50), nullable=True)  # IntentCategory value, or None
+    # Set on the assistant message when the actions agent drafted something
+    # (ai/actions/). Lets the UI re-hydrate the confirm card with its
+    # current status after a conversation is reopened — the card's live
+    # state lives in ai_agent_actions, this is just the link back to it.
+    action_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

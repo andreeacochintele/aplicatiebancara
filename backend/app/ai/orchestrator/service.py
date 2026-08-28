@@ -138,7 +138,8 @@ class OrchestratorService:
         # a request that raised above leaves nothing written, so history
         # never contains a dangling user message with no reply.
         agent_used = intent.value if intent in AGENT_REGISTRY else None
-        self._persist_turn(conversation, message, reply, agent_used)
+        action_id = action_card.action_id if action_card is not None else None
+        self._persist_turn(conversation, message, reply, agent_used, action_id)
         self._maybe_generate_title(conversation, message, reply)
         # Only for a routed personal_finance / credit / support reply.
         # Skipped for greeting/out_of_scope (fixed strings, no LLM call of
@@ -220,7 +221,14 @@ class OrchestratorService:
         chronological = reversed(recent)  # repository returns newest-first
         return [{"role": row.role, "content": row.content} for row in chronological]
 
-    def _persist_turn(self, conversation: Conversation, message: str, reply: str, agent_used: str | None) -> None:
+    def _persist_turn(
+        self,
+        conversation: Conversation,
+        message: str,
+        reply: str,
+        agent_used: str | None,
+        action_id: uuid.UUID | None = None,
+    ) -> None:
         self.conversations.add(
             ConversationMessage(
                 user_id=conversation.user_id, conversation_id=conversation.id, role="user", content=message, agent_used=None
@@ -233,6 +241,7 @@ class OrchestratorService:
                 role="assistant",
                 content=reply,
                 agent_used=agent_used,
+                action_id=action_id,
             )
         )
         self.conversations.touch_conversation(conversation, datetime.now(timezone.utc))

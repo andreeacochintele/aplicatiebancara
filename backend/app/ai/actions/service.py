@@ -343,6 +343,10 @@ class ActionService:
         )
 
     def _public(self, action: AgentAction) -> AgentActionResultPublic:
+        # `card` is always the display data (recipient / amount / wallet) —
+        # `status` is what tells the UI whether it's still actionable. The
+        # UI needs both to re-draw the card in any state after a
+        # conversation is reopened.
         return AgentActionResultPublic(
             action_id=action.id,
             type=action.type,
@@ -350,5 +354,5 @@ class ActionService:
             result_transaction_id=action.result_transaction_id,
             error_code=action.error_code,
             error_detail=action.error_detail,
-            card=self._card(action) if action.status == AgentActionStatus.DRAFT else None,
+            card=self._card(action),
         )
