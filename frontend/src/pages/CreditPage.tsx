@@ -507,7 +507,7 @@ export function CreditPage() {
 
     const amount = application.offered_amount ?? application.requested_amount;
     const generatedAt = new Date().toLocaleString();
-    const title = `Loan payment plan - ${formatMoney(amount, application.currency)}`;
+    const title = t("credit.loanPaymentPlanTitle", { amount: formatMoney(amount, application.currency) });
     const tableRows = rows
       .map((installment) => {
         const dueDate = installment.dueDate ? new Date(installment.dueDate).toLocaleDateString() : "";
@@ -534,20 +534,20 @@ export function CreditPage() {
         </head>
         <body>
           <h2>${escapeExcelCell(title)}</h2>
-          <p>Generated: ${escapeExcelCell(generatedAt)}</p>
-          <p>APR: ${escapeExcelCell(String(application.offered_interest_rate ?? breakdown.annual_interest_rate))}%</p>
-          <p>Term: ${breakdown.term_months} months</p>
-          <p>Currency: ${escapeExcelCell(breakdown.currency)}</p>
+          <p>${escapeExcelCell(t("credit.generated", { date: generatedAt }))}</p>
+          <p>${escapeExcelCell(t("credit.apr", { rate: application.offered_interest_rate ?? breakdown.annual_interest_rate }))}</p>
+          <p>${escapeExcelCell(t("credit.term", { months: breakdown.term_months }))}</p>
+          <p>${escapeExcelCell(t("credit.currency", { currency: breakdown.currency }))}</p>
           <table>
             <thead>
               <tr>
-                <th>Payment #</th>
-                <th>Due date</th>
-                <th>Payment amount</th>
-                <th>Principal</th>
-                <th>Interest</th>
-                <th>Remaining principal</th>
-                <th>Status</th>
+                <th>${escapeExcelCell(t("credit.paymentNumber"))}</th>
+                <th>${escapeExcelCell(t("credit.dueDate"))}</th>
+                <th>${escapeExcelCell(t("credit.paymentAmount"))}</th>
+                <th>${escapeExcelCell(t("credit.principal"))}</th>
+                <th>${escapeExcelCell(t("credit.interest"))}</th>
+                <th>${escapeExcelCell(t("credit.remainingPrincipal"))}</th>
+                <th>${escapeExcelCell(t("credit.status"))}</th>
               </tr>
             </thead>
             <tbody>${tableRows}</tbody>
@@ -1386,26 +1386,26 @@ export function CreditPage() {
                   aria-expanded={isLoanInfoExpanded}
                   aria-controls="loan-product-details"
                 >
-                  {isLoanInfoExpanded ? "Retract" : "Show details"}
+                  {isLoanInfoExpanded ? t("credit.retract") : t("credit.showDetails")}
                 </button>
               </div>
               {isLoanInfoExpanded && (
                 <div className="loan-product-panel__badges">
                   <span className="tag tag--neutral">
-                    {selectedLoanProduct.collateral_required ? "Collateral" : "No collateral"}
+                    {selectedLoanProduct.collateral_required ? t("credit.collateral") : t("credit.noCollateral")}
                   </span>
                   <span className="tag tag--neutral">
-                    {selectedLoanProduct.insurance_required ? "Insurance required" : "Insurance optional"}
+                    {selectedLoanProduct.insurance_required ? t("credit.insuranceRequired") : t("credit.insuranceOptional")}
                   </span>
                 </div>
               )}
               <dl className="loan-product-metrics">
                 <div>
-                  <dt>Representative APR</dt>
+                  <dt>{t("credit.representativeApr")}</dt>
                   <dd>{Number(selectedLoanProduct.representative_apr).toFixed(2)}%</dd>
                 </div>
                 <div>
-                  <dt>Typical term</dt>
+                  <dt>{t("credit.typicalTerm")}</dt>
                   <dd>{selectedLoanProduct.typical_term_months}</dd>
                 </div>
               </dl>
@@ -1415,34 +1415,34 @@ export function CreditPage() {
               <div className="loan-product-panel__content" id="loan-product-details-content">
                 <div className="loan-product-callouts">
                   <div>
-                    <span className="eyebrow">Best fit</span>
+                    <span className="eyebrow">{t("credit.bestFit")}</span>
                     <p>{LOAN_PRODUCT_CONTEXT[selectedLoanProduct.product_type].focus}</p>
                   </div>
                   <div>
-                    <span className="eyebrow">Main liability</span>
+                    <span className="eyebrow">{t("credit.mainLiability")}</span>
                     <p>{LOAN_PRODUCT_CONTEXT[selectedLoanProduct.product_type].risk}</p>
                   </div>
                   <div>
-                    <span className="eyebrow">Rate basis</span>
+                    <span className="eyebrow">{t("credit.rateBasis")}</span>
                     <p>{selectedLoanProduct.borrowing_rate_note}</p>
                   </div>
                 </div>
 
                 <div className="loan-disclosure-list">
                   <section>
-                    <span className="eyebrow">Costs</span>
+                    <span className="eyebrow">{t("credit.costs")}</span>
                     <ListPreview items={selectedLoanProduct.fees} />
                   </section>
                   <section>
-                    <span className="eyebrow">Borrower duties</span>
+                    <span className="eyebrow">{t("credit.borrowerDuties")}</span>
                     <ListPreview items={selectedLoanProduct.obligations} />
                   </section>
                   <section>
-                    <span className="eyebrow">Default consequences</span>
+                    <span className="eyebrow">{t("credit.defaultConsequences")}</span>
                     <ListPreview items={selectedLoanProduct.liabilities} />
                   </section>
                   <section>
-                    <span className="eyebrow">Expected documents</span>
+                    <span className="eyebrow">{t("credit.expectedDocuments")}</span>
                     <ListPreview items={selectedLoanProduct.required_documents} />
                   </section>
                 </div>
@@ -1452,17 +1452,15 @@ export function CreditPage() {
         )}
 
         {isCreditDetailsLoading && activeLoanApplications.length === 0 && (
-          <div className="card-empty">Loading current loans...</div>
+          <div className="card-empty">{t("credit.loadingCurrentLoansEllipsis")}</div>
         )}
 
         {activeLoanApplications.length > 0 && (
           <div className="approved-offers">
             <div className="approved-offers__header">
               <div>
-                <span className="eyebrow">Active / pending loans</span>
-                <strong>
-                  {activeLoanApplications.length} loan request{activeLoanApplications.length === 1 ? "" : "s"}
-                </strong>
+                <span className="eyebrow">{t("credit.activePendingLoans")}</span>
+                <strong>{t("credit.loanRequests", { count: activeLoanApplications.length })}</strong>
               </div>
               <button
                 type="button"
@@ -1471,7 +1469,7 @@ export function CreditPage() {
                 aria-expanded={areApprovedOffersExpanded}
                 aria-controls="approved-offers-list"
               >
-                {areApprovedOffersExpanded ? "Retract" : "Show more"}
+                {areApprovedOffersExpanded ? t("credit.retract") : t("credit.showMore")}
               </button>
             </div>
             {areApprovedOffersExpanded && (
@@ -1494,9 +1492,9 @@ export function CreditPage() {
                   const paymentPlanId = `payment-plan-${application.id}`;
                   const loanStatusLabel =
                     existingLoan?.status === "ACTIVE"
-                      ? "Loan active"
+                      ? t("credit.loanActive")
                       : existingLoan?.status === "PAID" || existingLoan?.status === "CLOSED"
-                        ? "Loan closed"
+                        ? t("credit.loanClosed")
                         : existingLoan
                           ? existingLoan.status.toLowerCase()
                           : "";
@@ -1555,19 +1553,23 @@ export function CreditPage() {
                           <h3>{formatMoney(application.offered_amount ?? application.requested_amount, application.currency)}</h3>
                           <p>
                             {isApproved
-                              ? `Approved on ${application.resolved_at ? new Date(application.resolved_at).toLocaleDateString() : "review"}`
-                              : `Submitted on ${new Date(application.created_at).toLocaleDateString()}`}
+                              ? t("credit.approvedOn", {
+                                  date: application.resolved_at
+                                    ? new Date(application.resolved_at).toLocaleDateString()
+                                    : t("credit.review"),
+                                })
+                              : t("credit.submittedOn", { date: new Date(application.created_at).toLocaleDateString() })}
                           </p>
                         </div>
                         <div className="approved-offer-card__actions">
                           <span className={isApproved ? "tag tag--accent" : "tag tag--neutral"}>
                             {isApproved
-                              ? "Approved"
+                              ? t("credit.approved")
                               : needsMoreInfo
-                                ? "More info needed"
+                                ? t("credit.moreInfoNeeded")
                                 : hasUploadedFollowUpDocuments
-                                  ? "Documents submitted"
-                                  : "Pending review"}
+                                  ? t("credit.documentsSubmitted")
+                                  : t("credit.pendingReview")}
                           </span>
                           {existingLoan ? (
                             <span className={activeLoan ? "tag tag--accent" : "tag tag--neutral"}>{loanStatusLabel}</span>
@@ -1578,7 +1580,7 @@ export function CreditPage() {
                               onClick={() => activateLoan(application)}
                               disabled={!canActivate || activatingApplicationId === application.id}
                             >
-                              {activatingApplicationId === application.id ? "Activating..." : "Activate loan"}
+                              {activatingApplicationId === application.id ? t("credit.activating") : t("credit.activateLoan")}
                             </button>
                           ) : null}
                         </div>
@@ -1586,25 +1588,32 @@ export function CreditPage() {
 
                       {!isApproved ? (
                         <div className="approved-offer-card__main-payment">
-                          <span className="eyebrow">Review status</span>
+                          <span className="eyebrow">{t("credit.reviewStatus")}</span>
                           <strong>
-                            {needsMoreInfo ? "More documents needed" : hasUploadedFollowUpDocuments ? "Additional docs submitted" : "Pending"}
+                            {needsMoreInfo
+                              ? t("credit.moreDocumentsNeeded")
+                              : hasUploadedFollowUpDocuments
+                                ? t("credit.additionalDocsSubmitted")
+                                : t("credit.pending")}
                           </strong>
                           <span>
                             {needsMoreInfo
-                              ? "Admin needs extra documentation before deciding this loan application."
+                              ? t("credit.adminNeedsExtraDocs")
                               : hasUploadedFollowUpDocuments
-                                ? "Your additional documents are waiting for admin review."
-                              : "Admin review will decide the final offer, rate and repayment schedule."}
+                                ? t("credit.additionalDocsWaiting")
+                              : t("credit.adminReviewWillDecide")}
                           </span>
                         </div>
                       ) : breakdown ? (
                         <>
                           <div className="approved-offer-card__main-payment">
-                            <span className="eyebrow">Monthly payment</span>
+                            <span className="eyebrow">{t("credit.monthlyPayment")}</span>
                             <strong>{formatMoney(breakdown.monthly_payment, breakdown.currency)}</strong>
                             <span>
-                              {application.offered_interest_rate ?? breakdown.annual_interest_rate}% APR / {breakdown.term_months} months
+                              {t("credit.aprAndTerm", {
+                                rate: application.offered_interest_rate ?? breakdown.annual_interest_rate,
+                                months: breakdown.term_months,
+                              })}
                             </span>
                             <button
                               type="button"
@@ -1613,7 +1622,7 @@ export function CreditPage() {
                               aria-expanded={isOfferExpanded}
                               aria-controls={breakdownId}
                             >
-                              {isOfferExpanded ? "Retract" : "Show details"}
+                              {isOfferExpanded ? t("credit.retract") : t("credit.showDetails")}
                             </button>
                             <button
                               type="button"
@@ -1624,29 +1633,29 @@ export function CreditPage() {
                               disabled={loadingPaymentPlanLoanId === activeLoan?.id}
                             >
                               {loadingPaymentPlanLoanId === activeLoan?.id
-                                ? "Loading plan..."
+                                ? t("credit.loadingPlan")
                                 : isPaymentPlanExpanded
-                                  ? "Retract plan"
-                                  : "Payment plan"}
+                                  ? t("credit.retractPlan")
+                                  : t("credit.paymentPlan")}
                             </button>
                           </div>
                           {isOfferExpanded && (
                             <div className="approved-offer-card__details" id={breakdownId}>
                               <div className="approved-offer-card__figures">
                                 <div>
-                                  <span className="eyebrow">Annual rate</span>
+                                  <span className="eyebrow">{t("credit.annualRate")}</span>
                                   <strong>{application.offered_interest_rate ?? breakdown.annual_interest_rate}%</strong>
                                 </div>
                                 <div>
-                                  <span className="eyebrow">Term</span>
-                                  <strong>{breakdown.term_months} months</strong>
+                                  <span className="eyebrow">{t("credit.termEyebrow")}</span>
+                                  <strong>{t("credit.monthsSuffix", { count: breakdown.term_months })}</strong>
                                 </div>
                                 <div>
-                                  <span className="eyebrow">Total interest</span>
+                                  <span className="eyebrow">{t("credit.totalInterest")}</span>
                                   <strong>{formatMoney(breakdown.total_interest, breakdown.currency)}</strong>
                                 </div>
                                 <div>
-                                  <span className="eyebrow">Total repayment</span>
+                                  <span className="eyebrow">{t("credit.totalRepayment")}</span>
                                   <strong>{formatMoney(breakdown.total_payment, breakdown.currency)}</strong>
                                 </div>
                               </div>
@@ -1656,8 +1665,8 @@ export function CreditPage() {
                             <div className="loan-payment-plan" id={paymentPlanId}>
                               <div className="loan-payment-plan__header">
                                 <div>
-                                  <span className="eyebrow">Payment plan</span>
-                                  <strong>{paymentPlanRows.length || breakdown.term_months} monthly payments</strong>
+                                  <span className="eyebrow">{t("credit.paymentPlan")}</span>
+                                  <strong>{t("credit.monthlyPayments", { count: paymentPlanRows.length || breakdown.term_months })}</strong>
                                 </div>
                                 <div className="loan-payment-plan__actions">
                                   <span className="tag tag--neutral">{breakdown.term_months} months</span>
@@ -1668,14 +1677,14 @@ export function CreditPage() {
                                     disabled={paymentPlanRows.length === 0}
                                   >
                                     <Download size={16} aria-hidden="true" />
-                                    Download Excel
+                                    {t("credit.downloadExcel")}
                                   </button>
                                 </div>
                               </div>
                               {paymentPlanError ? (
                                 <p className="early-repayment-card__error">{paymentPlanError}</p>
                               ) : paymentPlanRows.length === 0 ? (
-                                <p className="approved-offer-card__loading">Preparing payment plan...</p>
+                                <p className="approved-offer-card__loading">{t("credit.preparingPaymentPlan")}</p>
                               ) : (
                                 <div className="loan-payment-plan__rows">
                                   {paymentPlanRows.map((installment) => (
@@ -1686,10 +1695,12 @@ export function CreditPage() {
                                       </span>
                                       <strong>{formatMoney(installment.paymentAmount, breakdown.currency)}</strong>
                                       <small>
-                                        Principal {formatMoney(installment.principalAmount, breakdown.currency)} / Interest{" "}
-                                        {formatMoney(installment.interestAmount, breakdown.currency)}
+                                        {t("credit.principalInterest", {
+                                          principal: formatMoney(installment.principalAmount, breakdown.currency),
+                                          interest: formatMoney(installment.interestAmount, breakdown.currency),
+                                        })}
                                       </small>
-                                      <small>{formatMoney(installment.remainingPrincipal, breakdown.currency)} remaining</small>
+                                      <small>{t("credit.remaining", { amount: formatMoney(installment.remainingPrincipal, breakdown.currency) })}</small>
                                       {installment.status && <span className="tag tag--outline">{installment.status}</span>}
                                     </div>
                                   ))}
@@ -1701,18 +1712,18 @@ export function CreditPage() {
                             <div className="early-repayment-card">
                               <div className="early-repayment-card__top">
                                 <div>
-                                  <span className="eyebrow">Early repayment</span>
-                                  <strong>Simulate or make an extra principal payment</strong>
+                                  <span className="eyebrow">{t("credit.earlyRepayment")}</span>
+                                  <strong>{t("credit.simulateOrMakePayment")}</strong>
                                 </div>
                                 <span className="tag tag--neutral">
-                                  {formatMoney(activeLoan.outstanding_principal, activeLoan.currency)} left
+                                  {t("credit.left", { amount: formatMoney(activeLoan.outstanding_principal, activeLoan.currency) })}
                                 </span>
                               </div>
                               {!isAutopayConfigOpen && (
                                 <>
                                   <div className="early-repayment-card__form">
                                     <label>
-                                      Amount
+                                      {t("credit.amount")}
                                       <input
                                         type="number"
                                         min="0"
@@ -1728,7 +1739,7 @@ export function CreditPage() {
                                       />
                                     </label>
                                     <label>
-                                      Pay from
+                                      {t("credit.payFrom")}
                                       <select
                                         value={selectedRepaymentSource}
                                         onChange={(event) =>
@@ -1740,7 +1751,7 @@ export function CreditPage() {
                                         disabled={repaymentSources.length === 0}
                                       >
                                         {repaymentSources.length === 0 ? (
-                                          <option value="">No source available</option>
+                                          <option value="">{t("credit.noSourceAvailable")}</option>
                                         ) : (
                                           repaymentSources.map((source) => (
                                             <option key={source.value} value={source.value}>
@@ -1756,7 +1767,7 @@ export function CreditPage() {
                                       onClick={() => simulateEarlyRepayment(activeLoan)}
                                       disabled={simulatingLoanId === activeLoan.id}
                                     >
-                                      {simulatingLoanId === activeLoan.id ? "Simulating..." : "Simulate"}
+                                      {simulatingLoanId === activeLoan.id ? t("credit.simulating") : t("credit.simulate")}
                                     </button>
                                 <button
                                   type="button"
@@ -1764,41 +1775,44 @@ export function CreditPage() {
                                       onClick={() => makeEarlyRepayment(activeLoan, repaymentSources)}
                                       disabled={payingLoanId === activeLoan.id || repaymentSources.length === 0}
                                     >
-                                      {payingLoanId === activeLoan.id ? "Paying..." : "Make payment"}
+                                      {payingLoanId === activeLoan.id ? t("credit.paying") : t("credit.makePayment")}
                                     </button>
                                   </div>
                                   {selectedRepaymentSource && (
                                     <p className="early-repayment-card__source-balance">
-                                      Available{" "}
-                                      {selectedRepaymentSourceDetails
-                                        ? `${Number(selectedRepaymentSourceDetails.availableBalance).toLocaleString(undefined, {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2,
-                                          })} ${activeLoan.currency}`
-                                        : `0.00 ${activeLoan.currency}`}
+                                      {t("credit.available", {
+                                        amount: selectedRepaymentSourceDetails
+                                          ? `${Number(selectedRepaymentSourceDetails.availableBalance).toLocaleString(undefined, {
+                                              minimumFractionDigits: 2,
+                                              maximumFractionDigits: 2,
+                                            })} ${activeLoan.currency}`
+                                          : `0.00 ${activeLoan.currency}`,
+                                      })}
                                     </p>
                                   )}
                                 </>
                               )}
                               <div className="loan-payment-progress">
                                 <div className="loan-payment-progress__top">
-                                  <span>Loan paid</span>
+                                  <span>{t("credit.loanPaid")}</span>
                                   <strong>{loanPaidPercent.toFixed(0)}%</strong>
                                 </div>
                                 <div className="loan-payment-progress__track" aria-hidden="true">
                                   <span style={{ width: `${loanPaidPercent}%` }} />
                                 </div>
                                 <div className="loan-payment-progress__figures">
-                                  <span>{formatMoney(loanPaidPrincipal.toFixed(2), activeLoan.currency)} paid</span>
-                                  <span>{formatMoney(activeLoan.outstanding_principal, activeLoan.currency)} remaining</span>
+                                  <span>{t("credit.paid", { amount: formatMoney(loanPaidPrincipal.toFixed(2), activeLoan.currency) })}</span>
+                                  <span>{t("credit.remainingLabel", { amount: formatMoney(activeLoan.outstanding_principal, activeLoan.currency) })}</span>
                                 </div>
                               </div>
                               <div className="early-repayment-card__top">
                                 {activeLoan.autopay_enabled && (
                                   <div>
-                                    <span className="eyebrow">Recurring payment</span>
+                                    <span className="eyebrow">{t("credit.recurringPayment")}</span>
                                     <strong>
-                                      Set for {new Date(activeLoan.autopay_next_run_on || activeLoan.next_payment_date).toLocaleDateString()}
+                                      {t("credit.setFor", {
+                                        date: new Date(activeLoan.autopay_next_run_on || activeLoan.next_payment_date).toLocaleDateString(),
+                                      })}
                                     </strong>
                                   </div>
                                 )}
@@ -1811,15 +1825,15 @@ export function CreditPage() {
                                         onClick={() => updateLoanAutopay(activeLoan, autopaySources, false)}
                                         disabled={updatingAutopayLoanId === activeLoan.id}
                                       >
-                                        {updatingAutopayLoanId === activeLoan.id ? "Saving..." : "Disable recurring"}
+                                        {updatingAutopayLoanId === activeLoan.id ? t("credit.saving") : t("credit.disableRecurring")}
                                       </button>
                                       <button type="button" className="button--ghost" onClick={() => openAutopayConfig(activeLoan)}>
-                                        Change schedule
+                                        {t("credit.changeSchedule")}
                                       </button>
                                     </>
                                   ) : (
                                     <button type="button" className="button--ghost" onClick={() => openAutopayConfig(activeLoan)}>
-                                      Set up recurring
+                                      {t("credit.setUpRecurring")}
                                     </button>
                                   )}
                                 </div>
@@ -1827,7 +1841,7 @@ export function CreditPage() {
                               {isAutopayConfigOpen && (
                                 <div className="early-repayment-card__form">
                                   <label>
-                                    Pay from
+                                    {t("credit.payFrom")}
                                     <select
                                       value={selectedAutopaySource}
                                       onChange={(event) =>
@@ -1839,7 +1853,7 @@ export function CreditPage() {
                                       disabled={autopaySources.length === 0}
                                     >
                                       {autopaySources.length === 0 ? (
-                                        <option value="">No account or debit card available</option>
+                                        <option value="">{t("credit.noAccountOrCard")}</option>
                                       ) : (
                                         autopaySources.map((source) => (
                                           <option key={source.value} value={source.value}>
@@ -1850,7 +1864,7 @@ export function CreditPage() {
                                     </select>
                                   </label>
                                   <label>
-                                    Amount
+                                    {t("credit.amount")}
                                     <input
                                       type="number"
                                       min={activeLoan.monthly_payment}
@@ -1866,7 +1880,7 @@ export function CreditPage() {
                                     />
                                   </label>
                                   <label>
-                                    Payment date
+                                    {t("credit.paymentDate")}
                                     <input
                                       type="date"
                                       min={new Date().toISOString().slice(0, 10)}
@@ -1886,13 +1900,13 @@ export function CreditPage() {
                                     disabled={updatingAutopayLoanId === activeLoan.id || autopaySources.length === 0}
                                   >
                                     {updatingAutopayLoanId === activeLoan.id
-                                      ? "Saving..."
+                                      ? t("credit.saving")
                                       : activeLoan.autopay_enabled
-                                        ? "Update recurring"
-                                        : "Enable recurring"}
+                                        ? t("credit.updateRecurring")
+                                        : t("credit.enableRecurring")}
                                   </button>
                                   <button type="button" className="button--ghost early-repayment-card__simulate" onClick={() => closeAutopayConfig(activeLoan.id)}>
-                                    Cancel
+                                    {t("credit.cancel")}
                                   </button>
                                 </div>
                               )}
@@ -1901,17 +1915,17 @@ export function CreditPage() {
                               {earlyRepaymentResult && (
                                 <div className="early-repayment-card__result">
                                   <div>
-                                    <span>Interest saved</span>
+                                    <span>{t("credit.interestSaved")}</span>
                                     <strong>
                                       {formatMoney(earlyRepaymentResult.total_interest_saved, earlyRepaymentResult.currency)}
                                     </strong>
                                   </div>
                                   <div>
-                                    <span>Shorter by</span>
-                                    <strong>{earlyRepaymentResult.term_months_reduced} months</strong>
+                                    <span>{t("credit.shorterBy")}</span>
+                                    <strong>{t("credit.monthsSuffix", { count: earlyRepaymentResult.term_months_reduced })}</strong>
                                   </div>
                                   <div>
-                                    <span>New balance</span>
+                                    <span>{t("credit.newBalance")}</span>
                                     <strong>
                                       {formatMoney(earlyRepaymentResult.new_outstanding_principal, earlyRepaymentResult.currency)}
                                     </strong>
@@ -1923,13 +1937,13 @@ export function CreditPage() {
                         </>
                       ) : (
                         <div className="approved-offer-card__loading" id={breakdownId}>
-                          Preparing backend payment breakdown...
+                          {t("credit.preparingBreakdown")}
                         </div>
                       )}
                       {needsMoreInfo && (
                         <div className="loan-more-info-upload">
                           <div className="loan-more-info-upload__copy">
-                            <span className="eyebrow">Requested documents</span>
+                            <span className="eyebrow">{t("credit.requestedDocuments")}</span>
                             <strong>
                               {selectedAdditionalDocuments.length > 0
                                 ? selectedAdditionalDocuments.map((document) => document.name).join(", ")
@@ -1941,7 +1955,7 @@ export function CreditPage() {
                           </div>
                           <div className="loan-more-info-upload__actions">
                             <label className="button--ghost loan-more-info-upload__select">
-                              Upload files
+                              {t("credit.uploadFiles")}
                               <input
                                 type="file"
                                 multiple
@@ -1960,7 +1974,7 @@ export function CreditPage() {
                               onClick={() => uploadMoreInfoDocuments(application)}
                               disabled={uploadingMoreInfoApplicationId === application.id || selectedAdditionalDocuments.length === 0}
                             >
-                              {uploadingMoreInfoApplicationId === application.id ? "Uploading..." : "Send documents"}
+                              {uploadingMoreInfoApplicationId === application.id ? t("credit.uploading") : t("credit.sendDocuments")}
                             </button>
                           </div>
                         </div>
@@ -1977,10 +1991,8 @@ export function CreditPage() {
           <div className="approved-offers">
             <div className="approved-offers__header">
               <div>
-                <span className="eyebrow">Past loans</span>
-                <strong>
-                  {closedLoanApplications.length} closed loan{closedLoanApplications.length === 1 ? "" : "s"}
-                </strong>
+                <span className="eyebrow">{t("credit.pastLoans")}</span>
+                <strong>{t("credit.closedLoans", { count: closedLoanApplications.length })}</strong>
               </div>
               <button
                 type="button"
@@ -1989,7 +2001,7 @@ export function CreditPage() {
                 aria-expanded={arePastLoansExpanded}
                 aria-controls="past-loans-list"
               >
-                {arePastLoansExpanded ? "Retract" : "Show more"}
+                {arePastLoansExpanded ? t("credit.retract") : t("credit.showMore")}
               </button>
             </div>
             {arePastLoansExpanded && (
@@ -2004,36 +2016,40 @@ export function CreditPage() {
                           <span className="eyebrow">{formatProductType(application.loan_product_type, t)}</span>
                           <h3>{formatMoney(application.offered_amount ?? application.requested_amount, application.currency)}</h3>
                           <p>
-                            Closed {closedLoan?.closed_at ? new Date(closedLoan.closed_at).toLocaleDateString() : "after repayment"}
+                            {t("credit.closedOn", {
+                              date: closedLoan?.closed_at
+                                ? new Date(closedLoan.closed_at).toLocaleDateString()
+                                : t("credit.afterRepayment"),
+                            })}
                           </p>
                         </div>
                         <div className="approved-offer-card__actions">
-                          <span className="tag tag--neutral">Loan closed</span>
+                          <span className="tag tag--neutral">{t("credit.loanClosed")}</span>
                         </div>
                       </div>
                       <div className="approved-offer-card__details">
                         <div className="approved-offer-card__figures">
                           <div>
-                            <span className="eyebrow">Original principal</span>
+                            <span className="eyebrow">{t("credit.originalPrincipal")}</span>
                             <strong>{formatMoney(closedLoan?.principal_amount ?? application.offered_amount ?? application.requested_amount, application.currency)}</strong>
                           </div>
                           <div>
-                            <span className="eyebrow">Outstanding</span>
+                            <span className="eyebrow">{t("credit.outstanding")}</span>
                             <strong>{formatMoney(closedLoan?.outstanding_principal ?? "0.00", closedLoan?.currency ?? application.currency)}</strong>
                           </div>
                           <div>
-                            <span className="eyebrow">Monthly payment</span>
+                            <span className="eyebrow">{t("credit.monthlyPayment")}</span>
                             <strong>
                               {closedLoan
                                 ? formatMoney(closedLoan.monthly_payment, closedLoan.currency)
                                 : breakdown
                                   ? formatMoney(breakdown.monthly_payment, breakdown.currency)
-                                  : "Closed"}
+                                  : t("credit.closed")}
                             </strong>
                           </div>
                           <div>
-                            <span className="eyebrow">Term</span>
-                            <strong>{closedLoan?.term_months ?? breakdown?.term_months ?? application.requested_term_months ?? 0} months</strong>
+                            <span className="eyebrow">{t("credit.termEyebrow")}</span>
+                            <strong>{t("credit.monthsSuffix", { count: closedLoan?.term_months ?? breakdown?.term_months ?? application.requested_term_months ?? 0 })}</strong>
                           </div>
                         </div>
                       </div>

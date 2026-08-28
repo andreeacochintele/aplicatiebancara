@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 const OTHER_VALUE = "__other__";
 
@@ -11,6 +12,7 @@ interface DropdownWithOtherProps {
 }
 
 export function DropdownWithOther({ label, value, options, onChange, required }: DropdownWithOtherProps) {
+  const { t } = useTranslation();
   const [otherMode, setOtherMode] = useState(() => value !== "" && !options.includes(value));
 
   useEffect(() => {
@@ -37,18 +39,18 @@ export function DropdownWithOther({ label, value, options, onChange, required }:
       <label>
         {label}
         <select value={otherMode ? OTHER_VALUE : value} required={required} onChange={handleSelectChange}>
-          <option value="">Select...</option>
+          <option value="">{t("common.selectEllipsis")}</option>
           {options.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>
           ))}
-          <option value={OTHER_VALUE}>Other</option>
+          <option value={OTHER_VALUE}>{t("common.other")}</option>
         </select>
       </label>
       {otherMode && (
         <label>
-          {`${label} (please specify)`}
+          {t("common.pleaseSpecify", { label })}
           <input value={value} onChange={(e) => onChange(e.target.value)} required={required} />
         </label>
       )}

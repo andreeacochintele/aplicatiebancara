@@ -139,9 +139,10 @@ function ForecastChart({ forecast }: { forecast: ForecastResponse }) {
 }
 
 function BalanceHistoryChart({ history }: { history: BalanceHistoryResponse }) {
+  const { t } = useTranslation();
   const data = history.history.map((point) => ({ date: point.date, balance: Number(point.balance) }));
   if (data.length < 2) {
-    return <p className="easyb-tx-meta">Not enough ledger history in this range to chart a trend.</p>;
+    return <p className="easyb-tx-meta">{t("analytics.notEnoughLedgerHistory")}</p>;
   }
   const values = data.map((d) => d.balance);
   const min = Math.min(...values);
