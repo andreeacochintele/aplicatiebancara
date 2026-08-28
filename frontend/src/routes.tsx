@@ -11,6 +11,7 @@ import { FraudReviewPage } from "./pages/admin/FraudReviewPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { AssistantPage } from "./pages/AssistantPage";
 import { BusinessExportPage } from "./pages/BusinessExportPage";
+import { BusinessProfilePage } from "./pages/BusinessProfilePage";
 import { CardsPage } from "./pages/CardsPage";
 import { CreditPage } from "./pages/CreditPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -58,6 +59,7 @@ export const routes: RouteObject[] = [
       { path: "/notifications", element: <NotificationsPage /> },
       { path: "/profile", element: <ProfilePage /> },
       { path: "/business/export", element: <BusinessExportPage /> },
+      { path: "/business/profile", element: <BusinessProfilePage /> },
       {
         path: "/admin",
         element: (

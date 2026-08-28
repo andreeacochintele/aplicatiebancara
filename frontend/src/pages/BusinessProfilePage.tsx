@@ -1,0 +1,262 @@
+import { useEffect, useState } from "react";
+
+import { apiRequest, ApiError } from "../api/apiClient";
+import { useAuth } from "../hooks/useAuth";
+
+interface BusinessProfile {
+  id: string;
+  user_id: string;
+  company_name: string;
+  representative_name: string | null;
+  tax_id: string | null;
+  registration_number: string | null;
+  business_category: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ProfileFormState {
+  company_name: string;
+  representative_name: string;
+  tax_id: string;
+  registration_number: string;
+  business_category: string;
+}
+
+const EMPTY_FORM: ProfileFormState = {
+  company_name: "",
+  representative_name: "",
+  tax_id: "",
+  registration_number: "",
+  business_category: "",
+};
+
+function toFormState(profile: BusinessProfile): ProfileFormState {
+  return {
+    company_name: profile.company_name,
+    representative_name: profile.representative_name ?? "",
+    tax_id: profile.tax_id ?? "",
+    registration_number: profile.registration_number ?? "",
+    business_category: profile.business_category ?? "",
+  };
+}
+
+export function BusinessProfilePage() {
+  const { user, accessToken } = useAuth();
+  const [profiles, setProfiles] = useState<BusinessProfile[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [form, setForm] = useState<ProfileFormState>(EMPTY_FORM);
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const isBusiness = user?.user_type === "BUSINESS";
+  const isNew = selectedId === null;
+
+  useEffect(() => {
+    if (!isBusiness || !accessToken) return;
+    loadProfiles();
+  }, [isBusiness, accessToken]);
+
+  async function loadProfiles() {
+    if (!accessToken) return;
+    try {
+      const list = await apiRequest<BusinessProfile[]>("/business/profiles", { token: accessToken });
+      setProfiles(list);
+      const active = list.find((p) => p.is_active) ?? list[0] ?? null;
+      if (active) {
+        setSelectedId(active.id);
+        setForm(toFormState(active));
+      }
+    } finally {
+      setLoaded(true);
+    }
+  }
+
+  if (!isBusiness) {
+    return (
+      <section className="tile">
+        <p>The company profile is only available to business accounts.</p>
+      </section>
+    );
+  }
+  if (!loaded) return null;
+
+  function selectProfile(profile: BusinessProfile) {
+    setSelectedId(profile.id);
+    setForm(toFormState(profile));
+    setSaved(false);
+    setError(null);
+  }
+
+  function startNewCompany() {
+    setSelectedId(null);
+    setForm(EMPTY_FORM);
+    setSaved(false);
+    setError(null);
+  }
+
+  async function activate(profile: BusinessProfile) {
+    if (!accessToken || profile.is_active) return;
+    setError(null);
+    try {
+      await apiRequest(`/business/profiles/${profile.id}/activate`, { method: "PUT", token: accessToken });
+      await loadProfiles();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not switch company");
+    }
+  }
+
+  async function save() {
+    if (!accessToken || !form.company_name.trim()) return;
+    setError(null);
+    setSaved(false);
+    setBusy(true);
+    const body = {
+      company_name: form.company_name,
+      representative_name: form.representative_name || null,
+      tax_id: form.tax_id || null,
+      registration_number: form.registration_number || null,
+      business_category: form.business_category || null,
+    };
+    try {
+      if (isNew) {
+        const created = await apiRequest<BusinessProfile>("/business/profiles", {
+          method: "POST",
+          token: accessToken,
+          body,
+        });
+        await loadProfiles();
+        setSelectedId(created.id);
+      } else {
+        await apiRequest<BusinessProfile>(`/business/profiles/${selectedId}`, {
+          method: "PUT",
+          token: accessToken,
+          body,
+        });
+        await loadProfiles();
+      }
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not save the company profile");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+      {profiles.length > 0 && (
+        <div className="tile" style={{ maxWidth: 480 }}>
+          <div className="tile__header">
+            <span className="eyebrow">Your companies</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {profiles.map((profile) => (
+              <div
+                key={profile.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "0.5rem 0.75rem",
+                  borderRadius: 8,
+                  border: "1px solid var(--color-divider)",
+                  background: profile.id === selectedId ? "var(--color-surface-raised)" : "transparent",
+                  cursor: "pointer",
+                }}
+                onClick={() => selectProfile(profile)}
+              >
+                <div>
+                  <strong>{profile.company_name}</strong>
+                  {profile.is_active && <span className="tag tag--accent" style={{ marginLeft: "0.5rem" }}>Active</span>}
+                </div>
+                {!profile.is_active && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      activate(profile);
+                    }}
+                  >
+                    Switch to this company
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: "0.75rem" }}>
+            <button type="button" onClick={startNewCompany}>
+              + Add another company
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="tile" style={{ maxWidth: 480 }}>
+        <div className="tile__header">
+          <span className="eyebrow">{isNew ? "New company" : "Edit company"}</span>
+        </div>
+        <p style={{ color: "var(--color-text-muted)", fontSize: "0.9rem" }}>
+          The active company's name shows up on your statements and transaction exports instead of your personal name.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
+          <label>
+            Company name *
+            <input
+              type="text"
+              value={form.company_name}
+              onChange={(e) => setForm({ ...form, company_name: e.target.value })}
+              placeholder="Acme SRL"
+            />
+          </label>
+          <label>
+            Representative
+            <input
+              type="text"
+              value={form.representative_name}
+              onChange={(e) => setForm({ ...form, representative_name: e.target.value })}
+              placeholder="Who represents the company on this account"
+            />
+          </label>
+          <label>
+            Tax ID
+            <input
+              type="text"
+              value={form.tax_id}
+              onChange={(e) => setForm({ ...form, tax_id: e.target.value })}
+              placeholder="RO12345678"
+            />
+          </label>
+          <label>
+            Registration number
+            <input
+              type="text"
+              value={form.registration_number}
+              onChange={(e) => setForm({ ...form, registration_number: e.target.value })}
+              placeholder="J40/1234/2024"
+            />
+          </label>
+          <label>
+            Business category
+            <input
+              type="text"
+              value={form.business_category}
+              onChange={(e) => setForm({ ...form, business_category: e.target.value })}
+              placeholder="Retail"
+            />
+          </label>
+        </div>
+        <div style={{ marginTop: "1rem" }}>
+          <button onClick={save} disabled={busy || !form.company_name.trim()}>
+            {busy ? "Saving…" : isNew ? "Create company" : "Save"}
+          </button>
+        </div>
+        {saved && <p style={{ color: "var(--color-positive)" }}>Saved.</p>}
+        {error && <p role="alert">{error}</p>}
+      </div>
+    </section>
+  );
+}
