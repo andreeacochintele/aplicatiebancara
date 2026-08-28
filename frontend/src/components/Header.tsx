@@ -20,7 +20,8 @@ const PAGE_INFO: Record<string, { title: string; subtitle: string }> = {
   "/credit": { title: "Credit & Loans", subtitle: "Score, instalments and simulation" },
   "/assistant": { title: "Assistant", subtitle: "Orchestrator over specialised agents" },
   "/profile": { title: "Profile", subtitle: "Account details" },
-  "/business/export": { title: "Transaction Export", subtitle: "Business accounts only · CSV/XLSX export" },
+  "/business/export": { title: "Transaction Export", subtitle: "Business accounts only · CSV/XLSX/PDF/MT940 export" },
+  "/business/profile": { title: "Company Profile", subtitle: "Business accounts only · manage your companies" },
   "/admin": { title: "Admin Dashboard", subtitle: "Operations overview" },
   "/admin/credit": { title: "Credit & Loans", subtitle: "Applications, documents and credit score review" },
   "/admin/fraud": { title: "Fraud Review", subtitle: "Deterministic engine · human decision" },
@@ -45,6 +46,17 @@ export function Header() {
   const [actionId, setActionId] = useState<string | null>(null);
   const [dismissingId, setDismissingId] = useState<string | null>(null);
   const [notificationPage, setNotificationPage] = useState(1);
+  const [activeCompanyName, setActiveCompanyName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!accessToken || user?.user_type !== "BUSINESS") {
+      setActiveCompanyName(null);
+      return;
+    }
+    apiRequest<{ company_name: string } | null>("/business/profile", { token: accessToken })
+      .then((profile) => setActiveCompanyName(profile?.company_name ?? null))
+      .catch(() => setActiveCompanyName(null));
+  }, [accessToken, user?.user_type]);
 
   const pendingSplitRequests = billSplits.flatMap((split) =>
     split.participants
@@ -289,7 +301,9 @@ export function Header() {
         {user && (
           <div className="header__user">
             {user.role === "ADMIN" && <span className="tag tag--accent">ADMIN</span>}
-            {user.user_type === "BUSINESS" && <span className="tag tag--outline">BUSINESS</span>}
+            {user.user_type === "BUSINESS" && (
+              <span className="tag tag--outline">{activeCompanyName ?? "BUSINESS"}</span>
+            )}
             <span className="avatar">{initials(user.first_name, user.last_name)}</span>
             <span>
               {user.first_name} {user.last_name}
