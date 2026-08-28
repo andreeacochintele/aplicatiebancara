@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from app.exports.models import ExportFormat, ExportStatus, ExportType
 from app.transactions.models import TransactionStatus, TransactionType
 
-ExportFileFormat = Literal["csv", "xlsx"]
+ExportFileFormat = Literal["csv", "xlsx", "pdf", "mt940"]
 
 
 class TransactionExportRequest(BaseModel):
@@ -29,6 +29,7 @@ class ExportedTransaction(BaseModel):
     counterparty: str
     description: str | None
     category: str | None
+    direction: Literal["IN", "OUT"]
     amount: Decimal
     currency: str
     status: TransactionStatus
