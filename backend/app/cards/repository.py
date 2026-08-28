@@ -1,11 +1,16 @@
 """Data-access layer for Card."""
+import json
 import uuid
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.cards.models import Card, CardPaymentPreferences, CreditCardAccount
 from app.supabase import is_supabase_session
+
+
+CARD_PIN_FALLBACK_PATH = Path(__file__).resolve().parents[2] / ".card_pin_hashes.json"
 
 
 class CardRepository:
@@ -29,6 +34,54 @@ class CardRepository:
         self.db.add(card)
         self.db.flush()
         return card
+
+    def update_pin_hash(self, card: Card, pin_hash: str) -> None:
+        card.pin_hash = pin_hash
+        if is_supabase_session(self.db):
+            try:
+                rows = self.db.request(
+                    "PATCH",
+                    Card.__tablename__,
+                    params={"id": f"eq.{card.id}"},
+                    body={"pin_hash": pin_hash},
+                    prefer="return=representation",
+                )
+            except RuntimeError as exc:
+                if "cards.pin_hash does not exist" not in str(exc) and "Could not find the 'pin_hash' column" not in str(exc):
+                    raise
+                self._write_fallback_pin_hash(card.id, pin_hash)
+            else:
+                if not isinstance(rows, list) or not rows or rows[0].get("pin_hash") != pin_hash:
+                    raise RuntimeError("Card PIN update did not persist")
+            self.db._track(card)
+            return
+        self.db.flush()
+
+    def get_pin_hash(self, card: Card) -> str | None:
+        if card.pin_hash:
+            return card.pin_hash
+        if is_supabase_session(self.db):
+            return self._read_fallback_pin_hash(card.id)
+        return None
+
+    def _read_fallback_pin_hash(self, card_id: uuid.UUID) -> str | None:
+        return self._read_fallback_pin_hashes().get(str(card_id))
+
+    def _write_fallback_pin_hash(self, card_id: uuid.UUID, pin_hash: str) -> None:
+        data = self._read_fallback_pin_hashes()
+        data[str(card_id)] = pin_hash
+        CARD_PIN_FALLBACK_PATH.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
+    def _read_fallback_pin_hashes(self) -> dict[str, str]:
+        if not CARD_PIN_FALLBACK_PATH.exists():
+            return {}
+        try:
+            payload = json.loads(CARD_PIN_FALLBACK_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        return {str(key): str(value) for key, value in payload.items() if isinstance(value, str)}
 
     def delete(self, card: Card) -> None:
         preferences = self.get_preferences(card.id)

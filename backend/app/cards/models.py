@@ -76,6 +76,17 @@ class Card(Base):
         uselist=False,
     )
 
+    @property
+    def has_pin(self) -> bool:
+        override = getattr(self, "_has_pin_override", None)
+        if override is not None:
+            return bool(override)
+        return bool(self.pin_hash)
+
+    @has_pin.setter
+    def has_pin(self, value: bool) -> None:
+        self._has_pin_override = bool(value)
+
 
 class CardPaymentPreferences(Base):
     __tablename__ = "card_payment_preferences"

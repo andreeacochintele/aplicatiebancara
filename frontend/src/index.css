@@ -2590,6 +2590,11 @@ th {
   font-weight: 800;
 }
 
+.card-pin-input {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+
 .card-detail-pin__submit {
   min-height: 34px;
   padding: 0.42rem 0.65rem;
