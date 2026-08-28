@@ -593,6 +593,20 @@ export interface NetWorthHistoryResponse {
   note: string;
 }
 
+export interface BalanceHistoryPoint {
+  date: string;
+  balance: string;
+}
+
+export interface BalanceHistoryResponse {
+  wallet_id: string;
+  currency: string;
+  date_from: string;
+  date_to: string;
+  history: BalanceHistoryPoint[];
+  note: string;
+}
+
 export interface StatementTransaction {
   id: string;
   created_at: string;
