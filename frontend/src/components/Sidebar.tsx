@@ -61,6 +61,14 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
 export function Sidebar() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
+  const isBusiness = user?.user_type === "BUSINESS";
+  // Cashback still earns correctly on a business account's card spend, but
+  // the points/referral loyalty framing on this page is personal-banking
+  // shaped — hidden for business accounts as a deliberate product choice,
+  // not because anything about it is broken there.
+  const intelligenceItems = isBusiness
+    ? INTELLIGENCE_ITEMS.filter((item) => item.to !== "/rewards")
+    : INTELLIGENCE_ITEMS;
 
   return (
     <nav className="sidebar easyb-sidebar">
@@ -73,9 +81,9 @@ export function Sidebar() {
       ) : (
         <>
           <NavGroup label="Banking" items={BANKING_ITEMS} />
-          <NavGroup label="Intelligence" items={INTELLIGENCE_ITEMS} />
+          <NavGroup label="Intelligence" items={intelligenceItems} />
           <NavGroup label="Account" items={ACCOUNT_ITEMS} />
-          {user?.user_type === "BUSINESS" && (
+          {isBusiness && (
             <NavGroup
               label="Business"
               items={[
