@@ -1,19 +1,20 @@
 import {
-  CheckCircle2, Clock3, PiggyBank, PieChart as PieChartIcon, Plus, RefreshCw, Sparkles, Target, TrendingUp, X, type LucideIcon,
+  CheckCircle2, Clock3, PiggyBank, PieChart as PieChartIcon, RefreshCw, Sparkles, Target, TrendingUp, X, type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
 import {
-  Area, AreaChart, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 
 import { apiRequest, ApiError } from "../api/apiClient";
-import { colorForType, monthLabel } from "../features/analytics/formatters";
+import { colorForType } from "../features/analytics/formatters";
 import { generateAnalyticsInsights, type AnalyticsInsight } from "../features/analytics/insights";
 import { useAuth } from "../hooks/useAuth";
 import type {
   AIInsight,
+  BalanceHistoryResponse,
   Budget,
   ForecastResponse,
   FXQuote,
@@ -44,6 +45,10 @@ const INSIGHT_STYLE: Record<AnalyticsInsight["id"], { bg: string; fg: string; ic
 
 function shortDate(date: string): string {
   return date.slice(5).replace("-", "/");
+}
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function NetWorthTrendChart({ history }: { history: NetWorthHistoryResponse }) {
@@ -96,37 +101,6 @@ function NetWorthTrendChart({ history }: { history: NetWorthHistoryResponse }) {
   );
 }
 
-function MonthlyTrendChart({ trend }: { trend: MonthlyTrendResponse }) {
-  const data = trend.totals_by_month.map((item) => ({
-    label: monthLabel(item.year, item.month),
-    amount: Number(item.total_amount),
-  }));
-  if (data.length === 0) {
-    return <p className="easyb-tx-meta">No spending history yet.</p>;
-  }
-  return (
-    <ResponsiveContainer width="100%" height={180}>
-      <LineChart data={data} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
-        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--easyb-text-faint)" }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: "var(--easyb-text-faint)" }} axisLine={false} tickLine={false} width={44} />
-        <Tooltip
-          formatter={(value: number) => [`${value.toFixed(2)} ${trend.base_currency}`, "Spending"]}
-          contentStyle={{
-            borderRadius: 10,
-            border: "1px solid var(--easyb-border)",
-            fontSize: 12,
-            background: "var(--easyb-surface)",
-            color: "var(--easyb-text)",
-          }}
-          itemStyle={{ color: "var(--easyb-text)" }}
-          labelStyle={{ color: "var(--easyb-text-soft)" }}
-        />
-        <Line type="monotone" dataKey="amount" stroke="var(--easyb-accent)" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-      </LineChart>
-    </ResponsiveContainer>
-  );
-}
-
 function ForecastChart({ forecast }: { forecast: ForecastResponse }) {
   const data = forecast.projected_series.map((point) => ({ date: point.date, balance: Number(point.projected_balance) }));
   if (data.length < 2) {
@@ -161,6 +135,45 @@ function ForecastChart({ forecast }: { forecast: ForecastResponse }) {
           labelStyle={{ color: "var(--easyb-text-soft)" }}
         />
         <Area type="monotone" dataKey="balance" stroke="var(--easyb-accent)" strokeWidth={2} fill="url(#forecastFill)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function BalanceHistoryChart({ history }: { history: BalanceHistoryResponse }) {
+  const data = history.history.map((point) => ({ date: point.date, balance: Number(point.balance) }));
+  if (data.length < 2) {
+    return <p className="easyb-tx-meta">Not enough ledger history in this range to chart a trend.</p>;
+  }
+  const values = data.map((d) => d.balance);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = (max - min) * 0.2 || Math.max(Math.abs(min) * 0.02, 1);
+
+  return (
+    <ResponsiveContainer width="100%" height={140}>
+      <AreaChart data={data} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
+        <defs>
+          <linearGradient id="balanceHistoryFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--easyb-violet)" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="var(--easyb-violet)" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: "var(--easyb-text-faint)" }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
+        <YAxis domain={[min - pad, max + pad]} hide />
+        <Tooltip
+          formatter={(value: number) => [`${value.toFixed(2)} ${history.currency}`, "Balance"]}
+          contentStyle={{
+            borderRadius: 10,
+            border: "1px solid var(--easyb-border)",
+            fontSize: 12,
+            background: "var(--easyb-surface)",
+            color: "var(--easyb-text)",
+          }}
+          itemStyle={{ color: "var(--easyb-text)" }}
+          labelStyle={{ color: "var(--easyb-text-soft)" }}
+        />
+        <Area type="monotone" dataKey="balance" stroke="var(--easyb-violet)" strokeWidth={2} fill="url(#balanceHistoryFill)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -425,6 +438,9 @@ export function AnalyticsPage() {
   const [topCounterparties, setTopCounterparties] = useState<TopCounterpartiesResponse | null>(null);
   const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrendResponse | null>(null);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
+  const [historyDateFrom, setHistoryDateFrom] = useState("");
+  const [historyDateTo, setHistoryDateTo] = useState("");
+  const [balanceHistory, setBalanceHistory] = useState<BalanceHistoryResponse | null>(null);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
   const [aiInsights, setAiInsights] = useState<AIInsight[] | null>(null);
@@ -492,6 +508,25 @@ export function AnalyticsPage() {
       cancelled = true;
     };
   }, [accessToken, netWorthPeriod, reloadTick]);
+
+  const isCustomForecastRange = historyDateFrom !== "" && historyDateTo !== "" && historyDateFrom <= historyDateTo;
+
+  useEffect(() => {
+    if (!accessToken || !isCustomForecastRange) {
+      setBalanceHistory(null);
+      return;
+    }
+    let cancelled = false;
+    apiRequest<BalanceHistoryResponse>(
+      `/analytics/balance-history?date_from=${historyDateFrom}&date_to=${historyDateTo}`,
+      { token: accessToken },
+    )
+      .then((data) => !cancelled && setBalanceHistory(data))
+      .catch(() => !cancelled && setBalanceHistory(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, isCustomForecastRange, historyDateFrom, historyDateTo, reloadTick]);
 
   const spendingCurrency = netWorth?.base_currency ?? spendingByCategory?.items[0]?.currency;
   const spendingItems = spendingByCategory?.items.filter((item) => item.currency === spendingCurrency) ?? [];
@@ -614,71 +649,71 @@ export function AnalyticsPage() {
           {netWorthHistory && <NetWorthTrendChart history={netWorthHistory} />}
         </div>
 
-        <div className="easyb-analytics-grid">
-          <div className="easyb-card">
-            <div className="easyb-section-header">
-              <div>
-                <div className="easyb-eyebrow">This period</div>
-                <h2>Spending overview</h2>
+        <div className="easyb-card">
+          <div className="easyb-section-header">
+            <div>
+              <div className="easyb-eyebrow">This period</div>
+              <h2>Spending overview</h2>
+            </div>
+          </div>
+          {donutData.length > 0 ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 40, flexWrap: "wrap" }}>
+              <div className="easyb-donut-wrap" style={{ flex: "0 0 320px", width: 320 }}>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={90} outerRadius={130} paddingAngle={2} stroke="none">
+                      {donutData.map((item) => (
+                        <Cell key={item.key} fill={item.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]}
+                      contentStyle={{
+                        borderRadius: 10,
+                        border: "1px solid var(--easyb-border)",
+                        fontSize: 12,
+                        background: "var(--easyb-surface)",
+                        color: "var(--easyb-text)",
+                      }}
+                      itemStyle={{ color: "var(--easyb-text)" }}
+                      labelStyle={{ color: "var(--easyb-text-soft)" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="easyb-donut-center">
+                  <div className="easyb-donut-total" style={{ fontSize: 32 }}>{spendingTotal.toFixed(0)}</div>
+                  <div className="easyb-donut-label" style={{ fontSize: 13 }}>{spendingCurrency ?? ""}</div>
+                </div>
+              </div>
+              <div
+                className="easyb-legend"
+                style={{
+                  flex: "1 1 320px",
+                  marginTop: 0,
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(180px, 1fr))",
+                  columnGap: 32,
+                }}
+              >
+                {donutData.map((item) => (
+                  <Link
+                    className="easyb-legend-row"
+                    to="/transactions"
+                    key={item.key}
+                    style={{ textDecoration: "none", color: "inherit", cursor: "pointer", fontSize: 16, padding: "8px 0" }}
+                  >
+                    <span className="easyb-legend-dot" style={{ background: item.color, width: 10, height: 10 }} />
+                    <span className="easyb-legend-name">{item.name}</span>
+                    <span className="easyb-legend-pct">
+                      {spendingTotal > 0 ? Math.round((item.value / spendingTotal) * 100) : 0}%
+                    </span>
+                  </Link>
+                ))}
               </div>
             </div>
-            {donutData.length > 0 ? (
-              <>
-                <div className="easyb-donut-wrap">
-                  <ResponsiveContainer width="100%" height={150}>
-                    <PieChart>
-                      <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={68} paddingAngle={2} stroke="none">
-                        {donutData.map((item) => (
-                          <Cell key={item.key} fill={item.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]}
-                        contentStyle={{
-                          borderRadius: 10,
-                          border: "1px solid var(--easyb-border)",
-                          fontSize: 12,
-                          background: "var(--easyb-surface)",
-                          color: "var(--easyb-text)",
-                        }}
-                        itemStyle={{ color: "var(--easyb-text)" }}
-                        labelStyle={{ color: "var(--easyb-text-soft)" }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="easyb-donut-center">
-                    <div className="easyb-donut-total">{spendingTotal.toFixed(0)}</div>
-                    <div className="easyb-donut-label">{spendingCurrency ?? ""}</div>
-                  </div>
-                </div>
-                <div className="easyb-legend">
-                  {donutData.map((item) => (
-                    <Link
-                      className="easyb-legend-row"
-                      to="/transactions"
-                      key={item.key}
-                      style={{ textDecoration: "none", color: "inherit", cursor: "pointer" }}
-                    >
-                      <span className="easyb-legend-dot" style={{ background: item.color }} />
-                      <span className="easyb-legend-name">{item.name}</span>
-                      <span className="easyb-legend-pct">
-                        {spendingTotal > 0 ? Math.round((item.value / spendingTotal) * 100) : 0}%
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="easyb-tx-meta">No spending activity for this period.</p>
-            )}
-          </div>
-
-          <div className="easyb-card">
-            <div className="easyb-section-header">
-              <h2>Monthly trend · last 6 months</h2>
-            </div>
-            {monthlyTrend ? <MonthlyTrendChart trend={monthlyTrend} /> : <p className="easyb-tx-meta">We need more transaction history to show a trend.</p>}
-          </div>
+          ) : (
+            <p className="easyb-tx-meta">No spending activity for this period.</p>
+          )}
         </div>
 
         {isBusiness && (
@@ -717,7 +752,58 @@ export function AnalyticsPage() {
           <div className="easyb-section-header">
             <h2>Cash-flow forecast</h2>
           </div>
-          {forecast ? (
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
+            <label style={{ flex: 1, minWidth: 120 }}>
+              From
+              <input
+                type="date"
+                value={historyDateFrom}
+                max={historyDateTo || todayISO()}
+                onChange={(e) => setHistoryDateFrom(e.target.value)}
+              />
+            </label>
+            <label style={{ flex: 1, minWidth: 120 }}>
+              To
+              <input
+                type="date"
+                value={historyDateTo}
+                min={historyDateFrom}
+                max={todayISO()}
+                onChange={(e) => setHistoryDateTo(e.target.value)}
+              />
+            </label>
+            {isCustomForecastRange && (
+              <button
+                type="button"
+                className="button--ghost"
+                onClick={() => {
+                  setHistoryDateFrom("");
+                  setHistoryDateTo("");
+                }}
+              >
+                Back to forecast
+              </button>
+            )}
+          </div>
+          {isCustomForecastRange ? (
+            balanceHistory ? (
+              <>
+                <div className="balance-hero__amount" style={{ fontSize: "1.75rem" }}>
+                  {balanceHistory.history.length > 0
+                    ? balanceHistory.history[balanceHistory.history.length - 1].balance
+                    : "—"}{" "}
+                  {balanceHistory.currency}
+                </div>
+                <div className="easyb-tx-meta" style={{ marginBottom: 8 }}>
+                  Balance history for {balanceHistory.date_from} → {balanceHistory.date_to}
+                </div>
+                <BalanceHistoryChart history={balanceHistory} />
+                <p className="easyb-tx-meta" style={{ marginTop: 8 }}>{balanceHistory.note}</p>
+              </>
+            ) : (
+              <p className="easyb-tx-meta">Loading balance history…</p>
+            )
+          ) : forecast ? (
             <>
               <div className="balance-hero__amount" style={{ fontSize: "1.75rem" }}>
                 {forecast.projected_month_end_balance} {forecast.currency}
@@ -735,14 +821,6 @@ export function AnalyticsPage() {
         <div className="easyb-card" id="analytics-savings-goals">
           <div className="easyb-section-header">
             <h2>Savings goals</h2>
-            <button
-              type="button"
-              className="easyb-link-btn"
-              onClick={() => setGoalFormOpen((open) => !open)}
-              style={{ background: "none", marginLeft: "auto" }}
-            >
-              <Plus size={14} /> New goal
-            </button>
           </div>
           {savingsGoals.length > 0 ? (
             savingsGoals.map((goal) => (

@@ -1,5 +1,6 @@
 """Analytics endpoints, scoped to the authenticated user."""
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.ai.personal_finance import insights as ai_insights
 from app.ai.personal_finance.schemas import AIInsightPublic
 from app.analytics.schemas import (
+    BalanceHistoryResponse,
     ForecastResponse,
     MonthlyTrendResponse,
     NetWorthHistoryResponse,
@@ -90,6 +92,17 @@ def get_forecast(
     db: Session = Depends(get_db),
 ) -> ForecastResponse:
     return AnalyticsService(db).forecast_month_end_balance(current_user.id, wallet_id)
+
+
+@router.get("/balance-history", response_model=BalanceHistoryResponse)
+def get_balance_history(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    wallet_id: uuid.UUID | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BalanceHistoryResponse:
+    return AnalyticsService(db).wallet_balance_history(current_user.id, wallet_id, date_from, date_to)
 
 
 @router.get("/insights", response_model=list[AIInsightPublic])
