@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
@@ -126,12 +127,12 @@ const EMPTY_SCHEDULED_FORM: ScheduledFormState = {
   description: "",
 };
 
-const TABS: Array<{ id: PaymentTab; label: string }> = [
-  { id: "transfer", label: "Transfer" },
-  { id: "phone", label: "By phone" },
-  { id: "qr", label: "QR request" },
-  { id: "scheduled", label: "Scheduled" },
-  { id: "folders", label: "Folders" },
+const TABS: Array<{ id: PaymentTab; labelKey: string }> = [
+  { id: "transfer", labelKey: "payments.transfer" },
+  { id: "phone", labelKey: "payments.byPhone" },
+  { id: "qr", labelKey: "payments.qrRequest" },
+  { id: "scheduled", labelKey: "payments.scheduled" },
+  { id: "folders", labelKey: "payments.folders" },
 ];
 
 const SCHEDULED_FREQUENCIES: ScheduledPaymentFrequency[] = ["ONCE", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"];
@@ -151,9 +152,9 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-function beneficiarySubtitle(beneficiary: Beneficiary): string {
+function beneficiarySubtitle(beneficiary: Beneficiary, t: (key: string) => string): string {
   const details = [beneficiary.iban ? formatIban(beneficiary.iban) : null, beneficiary.phone].filter(Boolean);
-  return details.length > 0 ? details.join(" - ") : "Internal beneficiary";
+  return details.length > 0 ? details.join(" - ") : t("payments.internalBeneficiary");
 }
 
 function walletLabel(wallet: Wallet): string {
@@ -191,6 +192,7 @@ function sortBeneficiaries(list: Beneficiary[]): Beneficiary[] {
 }
 
 export function PaymentsPage() {
+  const { t } = useTranslation();
   const { accessToken, user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightedFolderId = searchParams.get("folder") ?? "";
@@ -249,7 +251,7 @@ export function PaymentsPage() {
       const list = await apiRequest<Beneficiary[]>("/payments/beneficiaries", { token: accessToken });
       setBeneficiaries(sortBeneficiaries(list));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not load beneficiaries");
+      setError(err instanceof ApiError ? err.message : t("payments.couldNotLoadBeneficiaries"));
     } finally {
       setLoading(false);
     }
@@ -284,7 +286,7 @@ export function PaymentsPage() {
         );
       }
     } catch (err) {
-      setPhoneError(err instanceof ApiError ? err.message : "Could not load wallets");
+      setPhoneError(err instanceof ApiError ? err.message : t("payments.couldNotLoadWallets"));
     } finally {
       setWalletsLoading(false);
     }
@@ -323,7 +325,7 @@ export function PaymentsPage() {
       const list = await apiRequest<ScheduledPayment[]>("/payments/scheduled-payments", { token: accessToken });
       setScheduledPayments(list);
     } catch (err) {
-      setScheduledError(err instanceof ApiError ? err.message : "Could not load scheduled payments");
+      setScheduledError(err instanceof ApiError ? err.message : t("payments.couldNotLoadScheduled"));
     } finally {
       setScheduledLoading(false);
     }
@@ -348,7 +350,7 @@ export function PaymentsPage() {
       const list = await apiRequest<TransactionFolder[]>("/payments/transaction-folders", { token: accessToken });
       setTransactionFolders(list);
     } catch (err) {
-      setFolderError(err instanceof ApiError ? err.message : "Could not load transaction folders");
+      setFolderError(err instanceof ApiError ? err.message : t("payments.couldNotLoadFolders"));
     } finally {
       setFolderLoading(false);
     }
@@ -395,9 +397,9 @@ export function PaymentsPage() {
         },
       });
       setTransferQuote(quote);
-      setNotice("FX quote ready. Review it, then accept to send.");
+      setNotice(t("payments.fxQuoteReady"));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not create FX quote");
+      setError(err instanceof ApiError ? err.message : t("payments.couldNotCreateFxQuote"));
     } finally {
       setQuoteLoading(false);
     }
@@ -436,12 +438,12 @@ export function PaymentsPage() {
         token: accessToken,
         body: payload,
       });
-      setNotice(`Transfer completed: ${transaction.amount} ${transaction.currency}`);
+      setNotice(t("payments.transferCompleted", { amount: transaction.amount, currency: transaction.currency }));
       resetForm();
       await loadWallets();
       await loadBeneficiaries();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not complete transfer");
+      setError(err instanceof ApiError ? err.message : t("payments.couldNotCompleteTransfer"));
     } finally {
       setSubmitting(false);
     }
@@ -460,7 +462,7 @@ export function PaymentsPage() {
       });
       setBeneficiaries((current) => sortBeneficiaries(current.map((item) => (item.id === updated.id ? updated : item))));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not update favorite");
+      setError(err instanceof ApiError ? err.message : t("payments.couldNotUpdateFavorite"));
     } finally {
       setActionId(null);
     }
@@ -476,10 +478,10 @@ export function PaymentsPage() {
         method: "DELETE",
         token: accessToken,
       });
-      setNotice("Beneficiary deleted.");
+      setNotice(t("payments.beneficiaryDeleted"));
       await loadBeneficiaries();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not delete beneficiary");
+      setError(err instanceof ApiError ? err.message : t("payments.couldNotDeleteBeneficiary"));
     } finally {
       setActionId(null);
     }
@@ -502,9 +504,9 @@ export function PaymentsPage() {
     } catch (err) {
       const saved = beneficiaries.find((beneficiary) => beneficiary.phone && normalizePhone(beneficiary.phone) === phone);
       if (saved) {
-        setPhoneError(`${saved.name} is saved as a beneficiary, but is not linked to an in-app wallet yet.`);
+        setPhoneError(t("payments.savedNotLinked", { name: saved.name }));
       } else {
-        setPhoneError(err instanceof ApiError ? err.message : "Could not find this phone number");
+        setPhoneError(err instanceof ApiError ? err.message : t("payments.couldNotFindPhone"));
       }
     } finally {
       setPhoneLookingUp(false);
@@ -528,11 +530,11 @@ export function PaymentsPage() {
           description: compact(phoneForm.description),
         },
       });
-      setPhoneNotice(`Transfer completed: ${transaction.amount} ${transaction.currency}`);
+      setPhoneNotice(t("payments.transferCompleted", { amount: transaction.amount, currency: transaction.currency }));
       setPhoneForm((current) => ({ ...current, amount: "", description: "" }));
       await loadWallets();
     } catch (err) {
-      setPhoneError(err instanceof ApiError ? err.message : "Could not complete transfer");
+      setPhoneError(err instanceof ApiError ? err.message : t("payments.couldNotCompleteTransfer"));
     } finally {
       setPhoneSending(false);
     }
@@ -557,9 +559,9 @@ export function PaymentsPage() {
       });
       setQrRequest(paymentRequest);
       setQrPayForm((current) => ({ ...current, request_id: paymentRequest.id }));
-      setQrNotice("Payment request created.");
+      setQrNotice(t("payments.paymentRequestCreated"));
     } catch (err) {
-      setQrError(err instanceof ApiError ? err.message : "Could not create payment request");
+      setQrError(err instanceof ApiError ? err.message : t("payments.couldNotCreatePaymentRequest"));
     } finally {
       setQrCreating(false);
     }
@@ -578,7 +580,7 @@ export function PaymentsPage() {
       );
       setQrLookup(paymentRequest);
     } catch (err) {
-      setQrError(err instanceof ApiError ? err.message : "Could not load payment request");
+      setQrError(err instanceof ApiError ? err.message : t("payments.couldNotLoadPaymentRequest"));
     } finally {
       setQrLookingUp(false);
     }
@@ -597,15 +599,15 @@ export function PaymentsPage() {
         body: {
           source_wallet_id: qrPayForm.source_wallet_id,
           amount: compact(qrPayForm.amount),
-          description: "QR payment",
+          description: t("payments.qrPaymentDescription"),
         },
       });
-      setQrNotice(`QR payment completed: ${transaction.amount} ${transaction.currency}`);
+      setQrNotice(t("payments.qrPaymentCompleted", { amount: transaction.amount, currency: transaction.currency }));
       setQrLookup(null);
       setQrPayForm((current) => ({ ...current, amount: "" }));
       await loadWallets();
     } catch (err) {
-      setQrError(err instanceof ApiError ? err.message : "Could not pay payment request");
+      setQrError(err instanceof ApiError ? err.message : t("payments.couldNotPayRequest"));
     } finally {
       setQrPaying(false);
     }
@@ -641,11 +643,11 @@ export function PaymentsPage() {
           description: compact(scheduledForm.description),
         },
       });
-      setScheduledNotice("Scheduled payment created.");
+      setScheduledNotice(t("payments.scheduledPaymentCreated"));
       resetScheduledForm();
       await loadScheduledPayments();
     } catch (err) {
-      setScheduledError(err instanceof ApiError ? err.message : "Could not create scheduled payment");
+      setScheduledError(err instanceof ApiError ? err.message : t("payments.couldNotCreateScheduled"));
     } finally {
       setScheduledSubmitting(false);
     }
@@ -662,10 +664,10 @@ export function PaymentsPage() {
         token: accessToken,
         body: { status },
       });
-      setScheduledNotice(`Scheduled payment ${status.toLowerCase()}.`);
+      setScheduledNotice(t("payments.scheduledPaymentStatus", { status: t(`payments.scheduledStatus.${status.toLowerCase()}`, { defaultValue: status.toLowerCase() }) }));
       await loadScheduledPayments();
     } catch (err) {
-      setScheduledError(err instanceof ApiError ? err.message : "Could not update scheduled payment");
+      setScheduledError(err instanceof ApiError ? err.message : t("payments.couldNotUpdateScheduled"));
     } finally {
       setScheduledActionId(null);
     }
@@ -681,10 +683,10 @@ export function PaymentsPage() {
         method: "DELETE",
         token: accessToken,
       });
-      setScheduledNotice("Scheduled payment deleted.");
+      setScheduledNotice(t("payments.scheduledPaymentDeleted"));
       await loadScheduledPayments();
     } catch (err) {
-      setScheduledError(err instanceof ApiError ? err.message : "Could not delete scheduled payment");
+      setScheduledError(err instanceof ApiError ? err.message : t("payments.couldNotDeleteScheduled"));
     } finally {
       setScheduledActionId(null);
     }
@@ -701,7 +703,7 @@ export function PaymentsPage() {
       });
       await loadBillSplits();
     } catch (err) {
-      setFolderError(err instanceof ApiError ? err.message : "Could not cancel bill split");
+      setFolderError(err instanceof ApiError ? err.message : t("payments.couldNotCancelSplit"));
     } finally {
       setSplitActionId(null);
     }
@@ -800,23 +802,23 @@ export function PaymentsPage() {
       return Number.isFinite(value) ? sum + value : sum;
     }, 0);
     if (data.transactions.length === 0) {
-      setFolderError("Folder has no transactions to split.");
+      setFolderError(t("payments.folderNoTransactions"));
       return;
     }
     if (data.hasMixedCurrencies || !data.currency) {
-      setFolderError("Folder has mixed currencies. Split a single-currency folder.");
+      setFolderError(t("payments.folderMixedCurrencies"));
       return;
     }
     if (participants.length === 0) {
-      setFolderError("Add at least one recipient name and phone number.");
+      setFolderError(t("payments.addAtLeastOneRecipient"));
       return;
     }
     if (percentTotal > 100) {
-      setFolderError("Folder split participants cannot exceed 100% of the folder total.");
+      setFolderError(t("payments.splitExceeds100"));
       return;
     }
     if (Number(data.total) <= 0) {
-      setFolderError("This folder's net total (after money received) isn't positive, so there's nothing to split.");
+      setFolderError(t("payments.netTotalNotPositive"));
       return;
     }
 
@@ -828,10 +830,10 @@ export function PaymentsPage() {
         method: "POST",
         token: accessToken,
         body: {
-          title: `Folder split: ${folderSplitTarget.name}`,
+          title: t("payments.folderSplitTitle", { name: folderSplitTarget.name }),
           total_amount: data.total,
           currency: data.currency,
-          description: `${folderSplitMarker(folderSplitTarget.id)} Split all transactions in ${folderSplitTarget.name}`,
+          description: t("payments.folderSplitDescription", { marker: folderSplitMarker(folderSplitTarget.id), name: folderSplitTarget.name }),
           participants: participants.map(({ name, phone, percent }) => ({
             name,
             phone,
@@ -843,7 +845,7 @@ export function PaymentsPage() {
       setFolderSplitParticipants([]);
       await loadBillSplits();
     } catch (err) {
-      setFolderError(err instanceof ApiError ? err.message : "Could not split this folder");
+      setFolderError(err instanceof ApiError ? err.message : t("payments.couldNotSplitFolder"));
     } finally {
       setFolderActionId(null);
       folderSplitSubmittingRef.current = false;
@@ -864,7 +866,7 @@ export function PaymentsPage() {
       }
       await loadTransactionFolders();
     } catch (err) {
-      setFolderError(err instanceof ApiError ? err.message : "Could not delete transaction folder");
+      setFolderError(err instanceof ApiError ? err.message : t("payments.couldNotDeleteFolder"));
     } finally {
       setFolderActionId(null);
     }
@@ -881,7 +883,7 @@ export function PaymentsPage() {
       });
       await loadTransactionFolders();
     } catch (err) {
-      setFolderError(err instanceof ApiError ? err.message : "Could not remove transaction from folder");
+      setFolderError(err instanceof ApiError ? err.message : t("payments.couldNotRemoveFromFolder"));
     } finally {
       setFolderActionId(null);
     }
@@ -900,7 +902,7 @@ export function PaymentsPage() {
 
   return (
     <section className="payments-page">
-      <div className="payment-tabs" role="tablist" aria-label="Payment flows">
+      <div className="payment-tabs" role="tablist" aria-label={t("payments.paymentFlows")}>
         {TABS.map((tab) => (
           <button
             className={activeTab === tab.id ? "payment-tabs__button active" : "payment-tabs__button"}
@@ -911,7 +913,7 @@ export function PaymentsPage() {
             }}
             type="button"
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </button>
         ))}
       </div>
@@ -920,12 +922,12 @@ export function PaymentsPage() {
         <div className="payments-grid">
           <form className="tile transfer-form-card" onSubmit={handleIbanTransfer}>
             <div>
-              <span className="eyebrow">Details</span>
-              <h2>New transfer</h2>
+              <span className="eyebrow">{t("payments.details")}</span>
+              <h2>{t("payments.newTransfer")}</h2>
             </div>
 
             <label>
-              Beneficiary
+              {t("payments.beneficiary")}
               <input
                 onChange={(event) => {
                   setForm((current) => ({ ...current, beneficiary: event.target.value }));
@@ -937,7 +939,7 @@ export function PaymentsPage() {
             </label>
 
             <label>
-              IBAN
+              {t("payments.iban")}
               <input
                 onChange={(event) => {
                   setForm((current) => ({ ...current, iban: event.target.value }));
@@ -950,7 +952,7 @@ export function PaymentsPage() {
 
             <div className="amount-row">
               <label>
-                Amount
+                {t("payments.amount")}
                 <input
                   min="0.01"
                   onChange={(event) => {
@@ -965,7 +967,7 @@ export function PaymentsPage() {
               </label>
 
               <label>
-                Currency
+                {t("payments.currency")}
                 <select
                   onChange={(event) => {
                     setForm((current) => ({ ...current, currency: event.target.value }));
@@ -984,7 +986,7 @@ export function PaymentsPage() {
             </div>
 
             <label>
-              Pay from
+              {t("payments.payFrom")}
               <select
                 disabled={walletsLoading}
                 onChange={(event) => {
@@ -1006,7 +1008,7 @@ export function PaymentsPage() {
             </label>
 
             <label>
-              Description
+              {t("payments.description")}
               <input
                 onChange={(event) => {
                   setForm((current) => ({ ...current, description: event.target.value }));
@@ -1029,7 +1031,7 @@ export function PaymentsPage() {
                 }
                 type="checkbox"
               />
-              Save beneficiary
+              {t("payments.saveBeneficiary")}
             </label>
 
             {form.save_beneficiary && (
@@ -1039,42 +1041,42 @@ export function PaymentsPage() {
                   onChange={(event) => setForm((current) => ({ ...current, is_favorite: event.target.checked }))}
                   type="checkbox"
                 />
-                Favorite
+                {t("payments.favorite")}
               </label>
             )}
 
             {hasTransferCurrencyMismatch && transferWallet && !transferQuote && (
               <p className="status-line">
-                FX quote required. Your {transferWallet.currency} wallet will be debited after you accept the quote.
+                {t("payments.fxQuoteRequired", { currency: transferWallet.currency })}
               </p>
             )}
 
             {transferQuote && (
               <div className="fx-quote-card">
-                <span className="eyebrow">FX quote</span>
+                <span className="eyebrow">{t("payments.fxQuote")}</span>
                 <div className="quote-row">
-                  <span>Debit</span>
+                  <span>{t("payments.debit")}</span>
                   <strong>
                     {transferQuote.source_amount} {transferQuote.source_currency}
                   </strong>
                 </div>
                 <div className="quote-row">
-                  <span>Recipient receives</span>
+                  <span>{t("payments.recipientReceives")}</span>
                   <strong>
                     {transferQuote.target_amount} {transferQuote.target_currency}
                   </strong>
                 </div>
                 <div className="quote-row">
-                  <span>Rate</span>
+                  <span>{t("payments.rate")}</span>
                   <strong>{transferQuote.exchange_rate}</strong>
                 </div>
                 <div className="quote-row">
-                  <span>Fee</span>
+                  <span>{t("payments.fee")}</span>
                   <strong>
                     {transferQuote.fee} {transferQuote.source_currency}
                   </strong>
                 </div>
-                <span className="quote-expiry">Expires {new Date(transferQuote.expires_at).toLocaleTimeString()}</span>
+                <span className="quote-expiry">{t("payments.expires", { time: new Date(transferQuote.expires_at).toLocaleTimeString() })}</span>
               </div>
             )}
             {error && <p className="status-line status-line--error">{error}</p>}
@@ -1093,19 +1095,19 @@ export function PaymentsPage() {
                 type="submit"
               >
                 {submitting
-                  ? "Sending..."
+                  ? t("payments.sending")
                   : quoteLoading
-                    ? "Getting quote..."
+                    ? t("payments.gettingQuote")
                     : hasTransferCurrencyMismatch && !transferQuote
-                      ? "Get FX quote"
+                      ? t("payments.getFxQuote")
                       : hasTransferCurrencyMismatch
-                        ? "Accept quote and send"
+                        ? t("payments.acceptQuoteAndSend")
                         : form.save_beneficiary
-                          ? "Send and save"
-                          : "Send transfer"}
+                          ? t("payments.sendAndSave")
+                          : t("payments.sendTransfer")}
               </button>
               <button className="button--ghost" onClick={resetForm} type="button">
-                Clear
+                {t("payments.clear")}
               </button>
             </div>
           </form>
@@ -1113,8 +1115,8 @@ export function PaymentsPage() {
           <div className="payments-side">
             <section className="tile saved-beneficiaries">
               <div className="tile__header">
-                <span className="eyebrow">Saved beneficiaries</span>
-                {loading && <span className="tag tag--neutral">Loading</span>}
+                <span className="eyebrow">{t("payments.savedBeneficiaries")}</span>
+                {loading && <span className="tag tag--neutral">{t("payments.loading")}</span>}
               </div>
 
               <div className="beneficiary-list">
@@ -1128,7 +1130,7 @@ export function PaymentsPage() {
                       <div className="beneficiary-title">
                         <strong>{beneficiary.name}</strong>
                       </div>
-                      <span>{beneficiarySubtitle(beneficiary)}</span>
+                      <span>{beneficiarySubtitle(beneficiary, t)}</span>
                     </div>
                     <div className="beneficiary-actions">
                       <button
@@ -1137,7 +1139,7 @@ export function PaymentsPage() {
                         onClick={() => toggleFavorite(beneficiary)}
                         type="button"
                       >
-                        {beneficiary.is_favorite ? "FAV" : "Fav"}
+                        {beneficiary.is_favorite ? t("payments.favShort") : t("payments.fav")}
                       </button>
                       {beneficiary.phone && (
                         <button
@@ -1152,7 +1154,7 @@ export function PaymentsPage() {
                                 save_beneficiary: false,
                                 is_favorite: false,
                               }));
-                              setNotice(`${beneficiary.name} loaded into transfer details.`);
+                              setNotice(t("payments.loadedIntoTransfer", { name: beneficiary.name }));
                               setError(null);
                               setTransferQuote(null);
                             } else {
@@ -1165,7 +1167,7 @@ export function PaymentsPage() {
                           }}
                           type="button"
                         >
-                          Use
+                          {t("payments.use")}
                         </button>
                       )}
                       {!beneficiary.phone && beneficiary.iban && (
@@ -1180,13 +1182,13 @@ export function PaymentsPage() {
                               save_beneficiary: false,
                               is_favorite: false,
                             }));
-                            setNotice(`${beneficiary.name} loaded into transfer details.`);
+                            setNotice(t("payments.loadedIntoTransfer", { name: beneficiary.name }));
                             setError(null);
                             setTransferQuote(null);
                           }}
                           type="button"
                         >
-                          Use
+                          {t("payments.use")}
                         </button>
                       )}
                       <button
@@ -1195,13 +1197,13 @@ export function PaymentsPage() {
                         onClick={() => deleteBeneficiary(beneficiary)}
                         type="button"
                       >
-                        Delete
+                        {t("payments.delete")}
                       </button>
                     </div>
                   </div>
                 ))}
                 {!loading && beneficiaries.length === 0 && (
-                  <div className="empty-state">No beneficiaries yet. Save one while sending a transfer.</div>
+                  <div className="empty-state">{t("payments.noBeneficiariesYet")}</div>
                 )}
               </div>
             </section>
@@ -1210,7 +1212,7 @@ export function PaymentsPage() {
       ) : activeTab === "phone" ? (
         <form className="tile phone-transfer-card" onSubmit={handlePhoneTransfer}>
           <label>
-            Phone number
+            {t("payments.phoneNumber")}
             <div className="phone-lookup-row">
               <input
                 onChange={(event) => {
@@ -1223,7 +1225,7 @@ export function PaymentsPage() {
                 value={phoneForm.phone}
               />
               <button disabled={phoneLookingUp || !phoneForm.phone.trim()} onClick={handlePhoneLookup} type="button">
-                {phoneLookingUp ? "Finding..." : "Find"}
+                {phoneLookingUp ? t("payments.finding") : t("payments.find")}
               </button>
             </div>
           </label>
@@ -1235,14 +1237,14 @@ export function PaymentsPage() {
                 <strong>
                   {phonePreview.first_name} {phonePreview.last_name}
                 </strong>
-                <span>{phonePreview.destination_wallet_currency} wallet</span>
+                <span>{t("payments.walletSuffix", { currency: phonePreview.destination_wallet_currency })}</span>
               </div>
-              <span className="tag tag--accent">MATCH</span>
+              <span className="tag tag--accent">{t("payments.match")}</span>
             </div>
           )}
 
           <label>
-            Pay from
+            {t("payments.payFrom")}
             <select
               disabled={walletsLoading}
               onChange={(event) => setPhoneForm((current) => ({ ...current, source_wallet_id: event.target.value }))}
@@ -1258,7 +1260,7 @@ export function PaymentsPage() {
           </label>
 
           <label>
-            Amount
+            {t("payments.amount")}
             <input
               min="0.01"
               onChange={(event) => setPhoneForm((current) => ({ ...current, amount: event.target.value }))}
@@ -1270,7 +1272,7 @@ export function PaymentsPage() {
           </label>
 
           <label>
-            Description
+            {t("payments.description")}
             <input
               onChange={(event) => setPhoneForm((current) => ({ ...current, description: event.target.value }))}
               placeholder="Phone transfer"
@@ -1285,19 +1287,19 @@ export function PaymentsPage() {
             disabled={phoneSending || !phonePreview || !phoneForm.source_wallet_id || !phoneForm.amount}
             type="submit"
           >
-            {phoneSending ? "Sending..." : "Send by phone"}
+            {phoneSending ? t("payments.sending") : t("payments.sendByPhone")}
           </button>
         </form>
       ) : activeTab === "qr" ? (
         <div className="qr-grid">
           <form className="tile qr-card" onSubmit={handleQrCreate}>
             <div>
-              <span className="eyebrow">Payment request</span>
-              <h2>Create QR request</h2>
+              <span className="eyebrow">{t("payments.paymentRequest")}</span>
+              <h2>{t("payments.createQrRequest")}</h2>
             </div>
 
             <label>
-              Destination wallet
+              {t("payments.destinationWallet")}
               <select
                 disabled={walletsLoading}
                 onChange={(event) =>
@@ -1315,11 +1317,11 @@ export function PaymentsPage() {
             </label>
 
             <label>
-              Amount
+              {t("payments.amount")}
               <input
                 min="0.01"
                 onChange={(event) => setQrForm((current) => ({ ...current, amount: event.target.value }))}
-                placeholder="Optional"
+                placeholder={t("payments.optional")}
                 step="0.01"
                 type="number"
                 value={qrForm.amount}
@@ -1327,7 +1329,7 @@ export function PaymentsPage() {
             </label>
 
             <label>
-              Expires in minutes
+              {t("payments.expiresInMinutes")}
               <input
                 min="1"
                 onChange={(event) =>
@@ -1341,20 +1343,20 @@ export function PaymentsPage() {
             </label>
 
             <button disabled={qrCreating || !qrForm.destination_wallet_id} type="submit">
-              {qrCreating ? "Creating..." : "Generate request"}
+              {qrCreating ? t("payments.creating") : t("payments.generateRequest")}
             </button>
 
             {qrRequest && (
               <div className="qr-result">
-                <div className="qr-code" aria-label="Generated QR payment request preview" />
+                <div className="qr-code" aria-label={t("payments.generatedQrPreview")} />
                 <div className="qr-result__details">
-                  <span className="eyebrow">Request id</span>
+                  <span className="eyebrow">{t("payments.requestId")}</span>
                   <code>{qrRequest.id}</code>
                   <span>
-                    {qrRequest.amount ?? "Open amount"} {qrRequest.currency} - expires{" "}
-                    {new Date(qrRequest.expires_at).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
+                    {t("payments.expiresAt", {
+                      amount: qrRequest.amount ?? t("payments.openAmount"),
+                      currency: qrRequest.currency,
+                      time: new Date(qrRequest.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                     })}
                   </span>
                 </div>
@@ -1364,12 +1366,12 @@ export function PaymentsPage() {
 
           <form className="tile qr-card" onSubmit={handleQrPay}>
             <div>
-              <span className="eyebrow">Scan or paste</span>
-              <h2>Pay QR request</h2>
+              <span className="eyebrow">{t("payments.scanOrPaste")}</span>
+              <h2>{t("payments.payQrRequest")}</h2>
             </div>
 
             <label>
-              Request id
+              {t("payments.requestId")}
               <div className="phone-lookup-row">
                 <input
                   onChange={(event) => {
@@ -1385,23 +1387,23 @@ export function PaymentsPage() {
                   onClick={handleQrLookup}
                   type="button"
                 >
-                  {qrLookingUp ? "Loading..." : "Load"}
+                  {qrLookingUp ? t("payments.loadingButton") : t("payments.load")}
                 </button>
               </div>
             </label>
 
             {qrLookup && (
               <div className="request-summary">
-                <span className="eyebrow">Active request</span>
+                <span className="eyebrow">{t("payments.activeRequest")}</span>
                 <strong>
-                  {qrLookup.amount ?? "Open amount"} {qrLookup.currency}
+                  {qrLookup.amount ?? t("payments.openAmount")} {qrLookup.currency}
                 </strong>
-                <span>Expires {new Date(qrLookup.expires_at).toLocaleString()}</span>
+                <span>{t("payments.expiresOn", { date: new Date(qrLookup.expires_at).toLocaleString() })}</span>
               </div>
             )}
 
             <label>
-              Pay from
+              {t("payments.payFrom")}
               <select
                 disabled={walletsLoading}
                 onChange={(event) => setQrPayForm((current) => ({ ...current, source_wallet_id: event.target.value }))}
@@ -1417,12 +1419,12 @@ export function PaymentsPage() {
             </label>
 
             <label>
-              Amount
+              {t("payments.amount")}
               <input
                 disabled={Boolean(qrLookup?.amount)}
                 min="0.01"
                 onChange={(event) => setQrPayForm((current) => ({ ...current, amount: event.target.value }))}
-                placeholder={qrLookup?.amount ?? "Required for open requests"}
+                placeholder={qrLookup?.amount ?? t("payments.requiredForOpenRequests")}
                 required={!qrLookup?.amount}
                 step="0.01"
                 type="number"
@@ -1442,7 +1444,7 @@ export function PaymentsPage() {
               }
               type="submit"
             >
-              {qrPaying ? "Paying..." : "Pay request"}
+              {qrPaying ? t("payments.paying") : t("payments.payRequest")}
             </button>
           </form>
         </div>
@@ -1450,12 +1452,12 @@ export function PaymentsPage() {
         <div className="scheduled-grid">
           <form className="tile scheduled-form-card" onSubmit={handleScheduledSubmit}>
             <div>
-              <span className="eyebrow">New scheduled payment</span>
-              <h2>Create schedule</h2>
+              <span className="eyebrow">{t("payments.newScheduledPayment")}</span>
+              <h2>{t("payments.createSchedule")}</h2>
             </div>
 
             <label>
-              Payee
+              {t("payments.payee")}
               <input
                 onChange={(event) =>
                   setScheduledForm((current) => ({ ...current, beneficiary_name: event.target.value }))
@@ -1466,7 +1468,7 @@ export function PaymentsPage() {
             </label>
 
             <label>
-              IBAN
+              {t("payments.iban")}
               <input
                 onChange={(event) => setScheduledForm((current) => ({ ...current, iban: event.target.value }))}
                 placeholder="RO49 AAAA 1B31 0075 9384 0000"
@@ -1476,7 +1478,7 @@ export function PaymentsPage() {
             </label>
 
             <label>
-              Pay from
+              {t("payments.payFrom")}
               <select
                 disabled={walletsLoading}
                 onChange={(event) => {
@@ -1500,7 +1502,7 @@ export function PaymentsPage() {
 
             <div className="amount-row">
               <label>
-                Amount
+                {t("payments.amount")}
                 <input
                   min="0.01"
                   onChange={(event) => setScheduledForm((current) => ({ ...current, amount: event.target.value }))}
@@ -1511,7 +1513,7 @@ export function PaymentsPage() {
                 />
               </label>
               <label>
-                Currency
+                {t("payments.currency")}
                 <select
                   onChange={(event) => setScheduledForm((current) => ({ ...current, currency: event.target.value }))}
                   required
@@ -1528,7 +1530,7 @@ export function PaymentsPage() {
 
             <div className="scheduled-controls">
               <label>
-                Frequency
+                {t("payments.frequency")}
                 <select
                   onChange={(event) =>
                     setScheduledForm((current) => ({
@@ -1540,13 +1542,13 @@ export function PaymentsPage() {
                 >
                   {SCHEDULED_FREQUENCIES.map((frequency) => (
                     <option key={frequency} value={frequency}>
-                      {frequency}
+                      {t(`payments.frequencyOption.${frequency}`)}
                     </option>
                   ))}
                 </select>
               </label>
               <label>
-                Next run
+                {t("payments.nextRun")}
                 <input
                   min={new Date().toISOString().slice(0, 10)}
                   onChange={(event) => setScheduledForm((current) => ({ ...current, next_run_on: event.target.value }))}
@@ -1556,7 +1558,7 @@ export function PaymentsPage() {
                 />
               </label>
               <label>
-                Notify
+                {t("payments.notify")}
                 <input
                   min="0"
                   max="30"
@@ -1572,17 +1574,17 @@ export function PaymentsPage() {
             </div>
 
             <label>
-              Description
+              {t("payments.description")}
               <input
                 onChange={(event) => setScheduledForm((current) => ({ ...current, description: event.target.value }))}
-                placeholder="Electricity bill"
+                placeholder={t("payments.electricityBillPlaceholder")}
                 value={scheduledForm.description}
               />
             </label>
 
             {hasScheduledCurrencyMismatch && (
               <p className="status-line status-line--error">
-                Scheduled payments currently require the source wallet currency to match the payment currency.
+                {t("payments.scheduledCurrencyMismatch")}
               </p>
             )}
             {scheduledError && <p className="status-line status-line--error">{scheduledError}</p>}
@@ -1596,37 +1598,37 @@ export function PaymentsPage() {
               }
               type="submit"
             >
-              {scheduledSubmitting ? "Creating..." : "Create scheduled payment"}
+              {scheduledSubmitting ? t("payments.creating") : t("payments.createScheduledPayment")}
             </button>
           </form>
 
           <section className="tile scheduled-list-card">
             <div className="tile__header">
-              <span className="eyebrow">Scheduled payments</span>
-              {scheduledLoading && <span className="tag tag--neutral">Loading</span>}
+              <span className="eyebrow">{t("payments.scheduledPayments")}</span>
+              {scheduledLoading && <span className="tag tag--neutral">{t("payments.loading")}</span>}
             </div>
 
             <div className="scheduled-table">
               <div className="scheduled-row scheduled-row--head">
-                <span>Payee</span>
-                <span>Frequency</span>
-                <span>Next run</span>
-                <span>Notify</span>
-                <span>Amount</span>
-                <span>Status</span>
+                <span>{t("payments.payee")}</span>
+                <span>{t("payments.frequency")}</span>
+                <span>{t("payments.nextRun")}</span>
+                <span>{t("payments.notify")}</span>
+                <span>{t("payments.amount")}</span>
+                <span>{t("common.statusLabel")}</span>
                 <span />
               </div>
               {scheduledPayments.map((payment) => (
                 <div className="scheduled-row" key={payment.id}>
                   <strong>{payment.beneficiary_name}</strong>
-                  <span>{payment.frequency}</span>
+                  <span>{t(`payments.frequencyOption.${payment.frequency}`)}</span>
                   <span>{new Date(`${payment.next_run_on}T00:00:00`).toLocaleDateString()}</span>
-                  <span>{payment.notify_days_before} days before</span>
+                  <span>{t("payments.daysBefore", { days: payment.notify_days_before })}</span>
                   <strong>
                     {payment.amount} {payment.currency}
                   </strong>
                   <span className={`tag scheduled-status scheduled-status--${payment.status.toLowerCase()}`}>
-                    {payment.status}
+                    {t(`payments.scheduledStatusBadge.${payment.status.toLowerCase()}`, { defaultValue: payment.status })}
                   </span>
                   <div className="beneficiary-actions scheduled-actions">
                     {payment.status === "ACTIVE" && (
@@ -1636,7 +1638,7 @@ export function PaymentsPage() {
                         onClick={() => updateScheduledStatus(payment, "PAUSED")}
                         type="button"
                       >
-                        Pause
+                        {t("payments.pause")}
                       </button>
                     )}
                     {payment.status === "PAUSED" && (
@@ -1646,7 +1648,7 @@ export function PaymentsPage() {
                         onClick={() => updateScheduledStatus(payment, "ACTIVE")}
                         type="button"
                       >
-                        Resume
+                        {t("payments.resume")}
                       </button>
                     )}
                     {payment.status !== "CANCELLED" && (
@@ -1656,7 +1658,7 @@ export function PaymentsPage() {
                         onClick={() => updateScheduledStatus(payment, "CANCELLED")}
                         type="button"
                       >
-                        Cancel
+                        {t("payments.cancel")}
                       </button>
                     )}
                     <button
@@ -1665,13 +1667,13 @@ export function PaymentsPage() {
                       onClick={() => deleteScheduledPayment(payment)}
                       type="button"
                     >
-                      Delete
+                      {t("payments.delete")}
                     </button>
                   </div>
                 </div>
               ))}
               {!scheduledLoading && scheduledPayments.length === 0 && (
-                <div className="empty-state">No scheduled payments yet.</div>
+                <div className="empty-state">{t("payments.noScheduledPaymentsYet")}</div>
               )}
             </div>
           </section>
@@ -1680,8 +1682,8 @@ export function PaymentsPage() {
         <div className="folder-view-grid">
           <section className="tile scheduled-list-card">
             <div className="tile__header">
-              <span className="eyebrow">Transaction folders</span>
-              {folderLoading && <span className="tag tag--neutral">Loading</span>}
+              <span className="eyebrow">{t("payments.transactionFolders")}</span>
+              {folderLoading && <span className="tag tag--neutral">{t("payments.loading")}</span>}
             </div>
 
             {folderError && <div className="form-error">{folderError}</div>}
@@ -1691,12 +1693,12 @@ export function PaymentsPage() {
                 const data = folderSplitData(folder);
                 const splitButtonLabel =
                   data.split?.status === "SETTLED"
-                    ? "Splitted"
+                    ? t("payments.splitted")
                     : data.hasDeclinedSplit
-                      ? "Split again"
+                      ? t("payments.splitAgain")
                     : data.split?.status === "OPEN"
-                      ? "Waiting payments"
-                      : "Split folder";
+                      ? t("payments.waitingPayments")
+                      : t("payments.splitFolder");
                 const hasActiveFolderSplit =
                   data.split?.status === "SETTLED" || (data.split?.status === "OPEN" && !data.hasDeclinedSplit);
                 const splitDisabled =
@@ -1719,7 +1721,7 @@ export function PaymentsPage() {
                           <strong>{folder.name}</strong>
                           {data.currency && <span className="tag tag--outline">{data.total} {data.currency}</span>}
                         </div>
-                        <span>{folder.description || "No description"}</span>
+                        <span>{folder.description || t("payments.noDescription")}</span>
                       </div>
                       <div className="folder-readonly-card__actions">
                         <button
@@ -1728,7 +1730,7 @@ export function PaymentsPage() {
                           onClick={() => openFolderSplit(folder)}
                           type="button"
                         >
-                          {folderActionId === folder.id && !data.split ? "Working..." : splitButtonLabel}
+                          {folderActionId === folder.id && !data.split ? t("payments.working") : splitButtonLabel}
                         </button>
                         {data.split?.status === "OPEN" && (
                           <button
@@ -1737,7 +1739,7 @@ export function PaymentsPage() {
                             onClick={() => data.split && cancelBillSplit(data.split)}
                             type="button"
                           >
-                            {splitActionId === data.split.id ? "Cancelling..." : "Cancel split"}
+                            {splitActionId === data.split.id ? t("payments.cancelling") : t("payments.cancelSplit")}
                           </button>
                         )}
                         <button
@@ -1746,20 +1748,19 @@ export function PaymentsPage() {
                           onClick={() => deleteTransactionFolder(folder)}
                           type="button"
                         >
-                          Delete
+                          {t("payments.delete")}
                         </button>
                       </div>
                     </div>
                     {data.hasMixedCurrencies && (
-                      <p className="status-line status-line--error">Mixed-currency folders cannot be split together.</p>
+                      <p className="status-line status-line--error">{t("payments.mixedCurrencyCannotSplit")}</p>
                     )}
                     {data.hasDeclinedSplit && (
-                      <p className="status-line status-line--error">A participant refused this split. You can split it again.</p>
+                      <p className="status-line status-line--error">{t("payments.participantRefused")}</p>
                     )}
                     {data.split?.status === "SETTLED" && (
                       <p className="status-line">
-                        This folder was already split and every participant paid. It can't be split again or cancelled
-                        -- delete the folder if you want to start over with a new one.
+                        {t("payments.alreadySettled")}
                       </p>
                     )}
                     <div className="folder-readonly-card__items">
@@ -1769,7 +1770,7 @@ export function PaymentsPage() {
                           <div className="folder-transaction-row" key={item.id}>
                             <div>
                               <span>{transaction?.description || transaction?.type || item.transaction_id}</span>
-                              <strong>{transaction ? `${transaction.amount} ${transaction.currency}` : "Transaction"}</strong>
+                              <strong>{transaction ? `${transaction.amount} ${transaction.currency}` : t("payments.transactionFallback")}</strong>
                             </div>
                             <button
                               className="button--danger"
@@ -1777,26 +1778,26 @@ export function PaymentsPage() {
                               onClick={() => removeTransactionFromFolder(folder, item.transaction_id)}
                               type="button"
                             >
-                              Remove
+                              {t("payments.remove")}
                             </button>
                           </div>
                         );
                       })}
-                      {folder.items.length === 0 && <div className="empty-state">No transactions in this folder.</div>}
+                      {folder.items.length === 0 && <div className="empty-state">{t("payments.noTransactionsInFolder")}</div>}
                     </div>
                   </div>
                 );
               })}
               {!folderLoading && transactionFolders.length === 0 && (
-                <div className="empty-state">No transaction folders yet.</div>
+                <div className="empty-state">{t("payments.noFoldersYet")}</div>
               )}
             </div>
           </section>
         </div>
       ) : (
         <section className="tile tab-panel-placeholder">
-          <span className="eyebrow">{TABS.find((tab) => tab.id === activeTab)?.label}</span>
-          <p>This payment flow is next for Dev 2. Beneficiaries are available now.</p>
+          <span className="eyebrow">{TABS.find((tab) => tab.id === activeTab)?.labelKey ? t(TABS.find((tab) => tab.id === activeTab)!.labelKey) : ""}</span>
+          <p>{t("payments.nextDeveloperNote")}</p>
         </section>
       )}
 
@@ -1805,28 +1806,28 @@ export function PaymentsPage() {
           <form className="tile folder-modal" onSubmit={createFolderBillSplit} role="dialog" aria-modal="true">
             <div className="tile__header">
               <div>
-                <span className="eyebrow">Split folder</span>
+                <span className="eyebrow">{t("payments.splitFolderTitle")}</span>
                 <h2>{folderSplitTarget.name}</h2>
               </div>
               <button className="button--ghost" onClick={() => setFolderSplitTarget(null)} type="button">
-                Close
+                {t("payments.close")}
               </button>
             </div>
 
             <div className="split-builder__summary">
               <strong>
-                {folderSplitData(folderSplitTarget).total} {folderSplitData(folderSplitTarget).currency || "mixed"}
+                {folderSplitData(folderSplitTarget).total} {folderSplitData(folderSplitTarget).currency || t("payments.mixed")}
               </strong>
-              <span>{folderSplitTarget.items.length} transaction(s)</span>
+              <span>{t("payments.transactionCount", { count: folderSplitTarget.items.length })}</span>
               <button className="button--ghost button--wide" onClick={splitFolderEqually} type="button">
-                Split equally
+                {t("payments.splitEqually")}
               </button>
             </div>
 
             <div className="folder-modal__list">
               {folderSplitExceedsTotal && (
                 <p className="status-line status-line--error">
-                  Requested split is {folderSplitPercentTotal.toFixed(2)}%. It cannot exceed 100%.
+                  {t("payments.splitExceedsPercent", { percent: folderSplitPercentTotal.toFixed(2) })}
                 </p>
               )}
               {folderSplitParticipants.map((participant) => {
@@ -1835,7 +1836,7 @@ export function PaymentsPage() {
                 return (
                   <div className="folder-split-participant" key={participant.key}>
                     <label>
-                      Recipient name
+                      {t("payments.recipientName")}
                       <input
                         onChange={(event) =>
                           updateFolderSplitParticipant(participant.key, { name: event.target.value })
@@ -1846,7 +1847,7 @@ export function PaymentsPage() {
                       />
                     </label>
                     <label>
-                      Phone number
+                      {t("payments.phoneNumber")}
                       <input
                         onChange={(event) =>
                           updateFolderSplitParticipant(participant.key, { phone: event.target.value })
@@ -1857,7 +1858,7 @@ export function PaymentsPage() {
                       />
                     </label>
                     <label>
-                      Percent
+                      {t("payments.percent")}
                       <input
                         max="100"
                         min="0.01"
@@ -1874,20 +1875,20 @@ export function PaymentsPage() {
                       <strong>
                         {share} {folderSplitData(folderSplitTarget).currency || ""}
                       </strong>
-                      <span>{normalizePhone(participant.phone) || "Phone required"}</span>
+                      <span>{normalizePhone(participant.phone) || t("payments.phoneRequired")}</span>
                     </div>
                     <button
                       className="button--danger"
                       onClick={() => removeFolderSplitParticipant(participant.key)}
                       type="button"
                     >
-                      Remove
+                      {t("payments.remove")}
                     </button>
                   </div>
                 );
               })}
               {folderSplitParticipants.length === 0 && (
-                <div className="empty-state">Add the people who should pay this folder split.</div>
+                <div className="empty-state">{t("payments.addPeopleToSplit")}</div>
               )}
             </div>
 
@@ -1895,14 +1896,14 @@ export function PaymentsPage() {
 
             <div className="beneficiary-actions">
               <button className="button--ghost button--wide" onClick={addFolderSplitParticipant} type="button">
-                Add person
+                {t("payments.addPerson")}
               </button>
               <button
                 className="button--wide"
                 disabled={folderActionId === folderSplitTarget.id || folderSplitExceedsTotal}
                 type="submit"
               >
-                {folderActionId === folderSplitTarget.id ? "Creating..." : "Send folder split"}
+                {folderActionId === folderSplitTarget.id ? t("payments.creating") : t("payments.sendFolderSplit")}
               </button>
             </div>
           </form>
