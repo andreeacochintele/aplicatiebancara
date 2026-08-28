@@ -18,6 +18,7 @@ from app.merchants.models import Merchant, MerchantStatus
 from app.fraud.models import FraudCase
 from app.fraud.repository import FraudRepository
 from app.supabase import SupabaseRestSession
+from app.wallets.models import Wallet
 
 
 @pytest.fixture()
@@ -134,6 +135,28 @@ def test_fetching_an_added_row_reuses_the_tracked_instance(session, record_bodie
     method, table, body = record_bodies[-1]
     assert (method, table) == ("PATCH", "merchants")
     assert body["verified"] is True
+
+
+def test_fetch_many_does_not_track_a_row_fetched_with_a_narrow_select(session, record_bodies):
+    """Regression test: TransactionRepository.list_for_user (and
+    get_for_user) fetch wallets with select=id only, to build an id filter
+    set — they never intend to write those wallets back. A prior bug
+    tracked that partial object into flush()'s identity map anyway, so the
+    next unrelated flush() in the same request PATCHed the wallet with
+    every other column nulled out, tripping wallets.user_id's NOT NULL
+    constraint (reproduced via a card payment: fraud scoring's
+    list_for_user call touched every one of the payer's other wallets this
+    way)."""
+    wallet_id = uuid.uuid4()
+    # Simulate the id-only row PostgREST returns for `select=id`.
+    hydrated = session._hydrate(Wallet, {"id": str(wallet_id)})
+
+    assert hydrated.id == wallet_id
+    assert hydrated.user_id is None
+
+    session.flush()
+
+    assert record_bodies == []
 
 
 def test_fetch_many_skips_a_row_with_a_value_unknown_to_the_current_schema(monkeypatch, session):
