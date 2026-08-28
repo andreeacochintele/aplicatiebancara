@@ -269,7 +269,7 @@ def test_export_csv_contains_expected_columns_and_totals(db_session, wallets_wit
     csv_text = service.to_csv(preview)
 
     header = csv_text.splitlines()[0]
-    assert header == "date,transaction_id,type,counterparty,description,category,amount,currency,status"
+    assert header == "date,transaction_id,type,counterparty,description,category,direction,amount,currency,status"
     assert "Rent" in csv_text
     assert "120.00" in csv_text
     assert "TOTALS" in csv_text
@@ -284,6 +284,75 @@ def test_export_xlsx_is_a_real_workbook(db_session, wallets_with_transfer):
     xlsx_bytes = service.to_xlsx(preview)
 
     assert xlsx_bytes[:2] == b"PK"  # xlsx is a zip container
+
+
+def test_export_pdf_is_a_real_pdf(db_session, wallets_with_transfer):
+    business, _business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
+    date_from, date_to = _today_range()
+    service = ExportService(db_session)
+
+    preview = service.build_preview(business.id, TransactionExportRequest(date_from=date_from, date_to=date_to))
+    pdf_bytes = service.to_pdf(preview)
+
+    assert pdf_bytes[:5] == b"%PDF-"
+    assert pdf_bytes.rstrip().endswith(b"%%EOF")
+
+
+def test_export_mt940_requires_a_wallet_id(db_session, wallets_with_transfer):
+    business, _business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
+    date_from, date_to = _today_range()
+    service = ExportService(db_session)
+
+    with pytest.raises(ValidationError):
+        service.to_mt940(business.id, TransactionExportRequest(date_from=date_from, date_to=date_to))
+
+
+def test_export_mt940_has_the_expected_swift_tags(db_session, wallets_with_transfer):
+    business, business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
+    date_from, date_to = _today_range()
+    service = ExportService(db_session)
+
+    text = service.to_mt940(
+        business.id, TransactionExportRequest(date_from=date_from, date_to=date_to, wallet_id=business_wallet.id)
+    )
+    lines = text.splitlines()
+
+    assert lines[0].startswith(":20:")
+    assert lines[1] == f":25:{business_wallet.iban}"
+    assert lines[2].startswith(":28C:")
+    assert lines[3].startswith(":60F:")
+    assert any(line.startswith(":61:") for line in lines)
+    assert any(line.startswith(":86:") and "Rent" in line for line in lines)
+    assert lines[-2].startswith(":62F:")
+    assert lines[-1] == "-"
+    # Outgoing 120.00 debit -> a "D" marker on the :61: line, comma decimal.
+    assert any(line.startswith(":61:") and "D120,00" in line for line in lines)
+
+
+def test_generate_and_log_supports_pdf_and_mt940(db_session, wallets_with_transfer):
+    business, business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
+    date_from, date_to = _today_range()
+    service = ExportService(db_session)
+
+    pdf_job, pdf_content, pdf_meta = service.generate_and_log(
+        business.id, TransactionExportRequest(date_from=date_from, date_to=date_to), ExportFormat.PDF
+    )
+    assert pdf_meta.startswith("application/pdf|")
+    assert pdf_content[:5] == b"%PDF-"
+    assert pdf_job.format == ExportFormat.PDF
+
+    mt940_job, mt940_content, mt940_meta = service.generate_and_log(
+        business.id,
+        TransactionExportRequest(date_from=date_from, date_to=date_to, wallet_id=business_wallet.id),
+        ExportFormat.MT940,
+    )
+    assert mt940_meta.startswith("application/octet-stream|")
+    assert b":25:" in mt940_content
+    assert mt940_job.format == ExportFormat.MT940
+    assert mt940_job.row_count == 1
+
+    _redownload_job, redownload_content, _redownload_meta = service.download_job(business.id, mt940_job.id)
+    assert redownload_content == mt940_content
 
 
 def test_generate_and_log_records_history_and_supports_redownload(db_session, wallets_with_transfer):
@@ -373,7 +442,7 @@ def test_export_endpoint_returns_csv_for_business_user(client, db_session):
     assert response.headers["content-type"].startswith("text/csv")
     assert (
         response.text.splitlines()[0]
-        == "date,transaction_id,type,counterparty,description,category,amount,currency,status"
+        == "date,transaction_id,type,counterparty,description,category,direction,amount,currency,status"
     )
 
     history = client.get("/api/v1/exports", headers={"Authorization": f"Bearer {token}"})

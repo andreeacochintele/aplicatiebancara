@@ -32,6 +32,7 @@ class ExportFormat(str, enum.Enum):
     CSV = "CSV"
     XLSX = "XLSX"
     PDF = "PDF"
+    MT940 = "MT940"
 
 
 class ExportStatus(str, enum.Enum):

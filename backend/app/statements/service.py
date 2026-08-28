@@ -165,67 +165,13 @@ class StatementService:
 
     @staticmethod
     def to_pdf(statement: StatementPublic) -> bytes:
-        import os
-        from datetime import datetime, timezone
+        from app.core.pdf_branding import BORDER, GREEN, RED, ROW_ALT, TEXT_DARK, TEXT_SOFT, gradient_color, new_branded_pdf
 
-        from fpdf import FPDF
+        _TEXT_DARK, _TEXT_SOFT, _BORDER, _ROW_ALT, _GREEN, _RED = TEXT_DARK, TEXT_SOFT, BORDER, ROW_ALT, GREEN, RED
+        _gradient_color = gradient_color
 
-        # Brand palette (see frontend/src/styles/easyb.css --easyb-gradient):
-        # violet -> purple -> pink. FPDF has no gradient fill primitive, so
-        # the header band below approximates it with a strip of interpolated
-        # solid-color rects.
-        _GRADIENT_STOPS = [(91, 95, 239), (155, 93, 229), (255, 111, 165)]
-        _TEXT_DARK = (21, 21, 31)
-        _TEXT_SOFT = (108, 108, 130)
-        _BORDER = (235, 235, 243)
-        _ROW_ALT = (251, 251, 254)
-        _GREEN = (28, 160, 99)
-        _RED = (216, 81, 79)
-        _LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "easyb_logo.png")
-
-        def _gradient_color(t: float) -> tuple[int, int, int]:
-            segment = min(int(t * (len(_GRADIENT_STOPS) - 1)), len(_GRADIENT_STOPS) - 2)
-            local_t = t * (len(_GRADIENT_STOPS) - 1) - segment
-            a, b = _GRADIENT_STOPS[segment], _GRADIENT_STOPS[segment + 1]
-            return tuple(round(a[i] + (b[i] - a[i]) * local_t) for i in range(3))
-
-        class StatementPDF(FPDF):
-            def header(self) -> None:
-                band_height = 16
-                steps = 60
-                step_width = self.w / steps
-                for i in range(steps):
-                    self.set_fill_color(*_gradient_color(i / (steps - 1)))
-                    self.rect(i * step_width, 0, step_width + 0.5, band_height, style="F")
-                if os.path.exists(_LOGO_PATH):
-                    self.image(_LOGO_PATH, x=10, y=3, h=10)
-                self.set_text_color(255, 255, 255)
-                self.set_font("Helvetica", "B", 15)
-                self.set_xy(22, 3)
-                self.cell(0, 10, "EasyB", align="L")
-                self.set_text_color(*_TEXT_DARK)
-                self.set_font("Helvetica", "", 10)
-                self.set_xy(0, band_height + 3)
-                self.cell(self.w - 10, 6, "Account Statement", align="R")
-                self.set_y(band_height + 12)
-                self.set_text_color(*_TEXT_DARK)
-
-            def footer(self) -> None:
-                self.set_y(-15)
-                self.set_draw_color(*_BORDER)
-                self.line(10, self.get_y(), self.w - 10, self.get_y())
-                self.set_font("Helvetica", "", 8)
-                self.set_text_color(*_TEXT_SOFT)
-                generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-                self.set_xy(10, -12)
-                self.cell(self.w / 2 - 10, 8, f"Generated {generated} - sandbox statement, not a legal document")
-                self.set_xy(self.w / 2, -12)
-                self.cell(self.w / 2 - 10, 8, f"Page {self.page_no()}/{{nb}}", align="R")
-
-        pdf = StatementPDF()
-        pdf.alias_nb_pages()
-        pdf.set_auto_page_break(auto=True, margin=20)
-        pdf.add_page()
+        pdf = new_branded_pdf(subtitle="Account Statement")
+        pdf.footer_note = "sandbox statement, not a legal document"
 
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(*_TEXT_DARK)
