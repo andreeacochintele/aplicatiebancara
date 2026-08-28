@@ -881,7 +881,7 @@ export function CardsPage() {
         <div className={`card-control-layout${selectedReusableCardType ? "" : " card-control-layout--single"}`}>
           <div className="card-control-form">
             <label>
-              {t("cards.cardType")}
+              {t("cards.cardTypeLabel")}
               <select
                 value={selectedType}
                 onChange={(event) => {

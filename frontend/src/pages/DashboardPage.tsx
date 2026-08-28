@@ -28,6 +28,19 @@ const STATUS_CHIP: Record<string, string> = {
   CANCELLED: "easyb-chip-red",
 };
 
+const CREDIT_BAND_LABEL_KEY: Record<string, string> = {
+  EXCELLENT: "credit.excellent",
+  VERY_GOOD: "credit.veryGood",
+  GOOD: "credit.good",
+  FAIR: "credit.fair",
+  RISKY: "credit.risky",
+};
+
+function formatCreditBand(band: string, t: (key: string) => string): string {
+  const key = CREDIT_BAND_LABEL_KEY[band];
+  return key ? t(key) : band;
+}
+
 function hueFromString(value: string): number {
   return Math.abs([...value].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % 360;
 }
@@ -311,7 +324,7 @@ export function DashboardPage() {
               <div className="easyb-ring" style={{ background: `conic-gradient(var(--easyb-accent) ${scorePercent * 3.6}deg, var(--easyb-border) 0deg)` }}>
                 <div className="easyb-ring-hole">
                   <div className="easyb-score-num">{creditScore.score}</div>
-                  <div className="easyb-score-tag">{creditScore.band.replaceAll("_", " ")}</div>
+                  <div className="easyb-score-tag">{formatCreditBand(creditScore.band, t)}</div>
                 </div>
               </div>
               <div className="easyb-score-side">

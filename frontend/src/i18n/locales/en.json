@@ -952,7 +952,7 @@
     "couldNotPayCreditCard": "Could not pay credit card.",
     "paidVia": "{{amount}} paid via {{source}}.",
     "cardControls": "Card controls",
-    "cardType": "Card type",
+    "cardTypeLabel": "Card type",
     "selectCardType": "Select card type",
     "currentAccount": "Current account",
     "existingAccount": "Existing account",
@@ -1418,7 +1418,12 @@
     "scoreLoadedNoApplications": "Credit score loaded, but loan applications could not be loaded.",
     "scoreLoadedNoLoans": "Credit score loaded, but active loans could not be loaded.",
     "couldNotLoadScore": "Could not load credit score.",
-    "currencyLabel": "Currency"
+    "currencyLabel": "Currency",
+    "excellent": "Excellent",
+    "veryGood": "Very good",
+    "good": "Good",
+    "fair": "Fair",
+    "risky": "Risky"
   },
   "header": {
     "notifications": "Notifications",

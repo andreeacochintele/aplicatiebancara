@@ -71,6 +71,19 @@ function bandClass(band: string): string {
   return "tag tag--warning";
 }
 
+const BAND_LABEL_KEY: Record<string, string> = {
+  EXCELLENT: "credit.excellent",
+  VERY_GOOD: "credit.veryGood",
+  GOOD: "credit.good",
+  FAIR: "credit.fair",
+  RISKY: "credit.risky",
+};
+
+function formatBand(band: string, t: (key: string) => string): string {
+  const key = BAND_LABEL_KEY[band];
+  return key ? t(key) : band;
+}
+
 function formatFactorLabel(key: string): string {
   return key
     .split("_")
@@ -1105,7 +1118,7 @@ export function CreditPage() {
       <div className="tile">
         <div className="tile__header">
           <span className="eyebrow">{t("credit.creditScore")}</span>
-          {visibleScore && <span className={bandClass(visibleScore.band)}>{visibleScore.band}</span>}
+          {visibleScore && <span className={bandClass(visibleScore.band)}>{formatBand(visibleScore.band, t)}</span>}
           {!visibleScore && hasPendingScoreReview && <span className="tag tag--neutral">{t("credit.pendingAdminReview")}</span>}
         </div>
 

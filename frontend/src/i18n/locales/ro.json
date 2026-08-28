@@ -955,7 +955,7 @@
     "couldNotPayCreditCard": "Cardul de credit nu a putut fi plătit.",
     "paidVia": "{{amount}} plătit prin {{source}}.",
     "cardControls": "Control carduri",
-    "cardType": "Tip card",
+    "cardTypeLabel": "Tip card",
     "selectCardType": "Selectează tipul cardului",
     "currentAccount": "Cont curent",
     "existingAccount": "Cont existent",
@@ -1426,7 +1426,12 @@
     "scoreLoadedNoApplications": "Scorul de credit a fost încărcat, dar cererile de împrumut nu au putut fi încărcate.",
     "scoreLoadedNoLoans": "Scorul de credit a fost încărcat, dar împrumuturile active nu au putut fi încărcate.",
     "couldNotLoadScore": "Scorul de credit nu a putut fi încărcat.",
-    "currencyLabel": "Monedă"
+    "currencyLabel": "Monedă",
+    "excellent": "Excelent",
+    "veryGood": "Foarte bun",
+    "good": "Bun",
+    "fair": "Acceptabil",
+    "risky": "Riscant"
   },
   "header": {
     "notifications": "Notificări",
