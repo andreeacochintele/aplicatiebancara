@@ -11,6 +11,8 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.business.repository import BusinessProfileRepository
+from app.core.enums import UserType
 from app.core.exceptions import NotFoundError, ValidationError
 from app.exports.models import ExportFormat, ExportJob, ExportType
 from app.exports.repository import ExportJobRepository
@@ -27,6 +29,7 @@ class StatementService:
         self.repository = StatementRepository(db)
         self.wallets = WalletRepository(db)
         self.users = UserRepository(db)
+        self.business_profiles = BusinessProfileRepository(db)
         self.jobs = ExportJobRepository(db)
 
     def generate(self, user_id: uuid.UUID, data: StatementRequest) -> StatementPublic:
@@ -76,11 +79,18 @@ class StatementService:
 
         holder = self.users.get_by_id(user_id)
         holder_name = f"{holder.first_name} {holder.last_name}".strip() if holder is not None else ""
+        representative_name = None
+        if holder is not None and holder.user_type == UserType.BUSINESS:
+            active_profile = next((p for p in self.business_profiles.list_for_user(user_id) if p.is_active), None)
+            if active_profile is not None:
+                holder_name = active_profile.company_name
+                representative_name = active_profile.representative_name
 
         return StatementPublic(
             wallet_id=wallet.id,
             iban=wallet.iban,
             account_holder_name=holder_name,
+            representative_name=representative_name,
             currency=wallet.currency,
             date_from=data.date_from,
             date_to=data.date_to,
@@ -181,11 +191,13 @@ class StatementService:
         pdf.set_font("Helvetica", "", 9.5)
         pdf.set_text_color(*_TEXT_SOFT)
         label_w = 32
-        for label, value in (
+        detail_lines = [
             ("Account holder", statement.account_holder_name or "-"),
+            *([("Representative", statement.representative_name)] if statement.representative_name else []),
             ("IBAN", statement.iban),
             ("Period", f"{statement.date_from} to {statement.date_to}"),
-        ):
+        ]
+        for label, value in detail_lines:
             pdf.set_text_color(*_TEXT_SOFT)
             pdf.cell(label_w, 6, label)
             pdf.set_text_color(*_TEXT_DARK)

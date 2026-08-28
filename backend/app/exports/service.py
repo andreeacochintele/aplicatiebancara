@@ -22,6 +22,7 @@ from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session
 
+from app.business.repository import BusinessProfileRepository
 from app.core.exceptions import NotFoundError, ValidationError
 from app.exports.models import ExportFormat, ExportJob, ExportType
 from app.exports.repository import ExportJobRepository, ExportRepository
@@ -59,6 +60,7 @@ class ExportService:
         self.jobs = ExportJobRepository(db)
         self.wallets = WalletRepository(db)
         self.users = UserRepository(db)
+        self.business_profiles = BusinessProfileRepository(db)
         self.merchants = MerchantRepository(db)
 
     def build_preview(self, user_id: uuid.UUID, data: TransactionExportRequest) -> TransactionExportPreview:
@@ -151,7 +153,12 @@ class ExportService:
                 extension = "xlsx"
                 stored_content = base64.b64encode(content).decode("ascii")
             elif file_format == ExportFormat.PDF:
-                content = self.to_pdf(preview)
+                active_profile = next((p for p in self.business_profiles.list_for_user(user_id) if p.is_active), None)
+                content = self.to_pdf(
+                    preview,
+                    company_name=active_profile.company_name if active_profile else None,
+                    representative_name=active_profile.representative_name if active_profile else None,
+                )
                 media_type = "application/pdf"
                 extension = "pdf"
                 stored_content = base64.b64encode(content).decode("ascii")
@@ -293,7 +300,9 @@ class ExportService:
         return buffer.getvalue()
 
     @staticmethod
-    def to_pdf(preview: TransactionExportPreview) -> bytes:
+    def to_pdf(
+        preview: TransactionExportPreview, company_name: str | None = None, representative_name: str | None = None
+    ) -> bytes:
         from app.core.pdf_branding import BORDER, GREEN, RED, ROW_ALT, TEXT_DARK, TEXT_SOFT, gradient_color, new_branded_pdf
 
         pdf = new_branded_pdf(subtitle="Business Transaction Export", orientation="L")
@@ -301,9 +310,11 @@ class ExportService:
 
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(*TEXT_DARK)
-        pdf.cell(0, 8, "Transaction export", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 8, company_name or "Transaction export", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", "", 9.5)
         pdf.set_text_color(*TEXT_SOFT)
+        if representative_name:
+            pdf.cell(0, 6, f"Representative: {representative_name}", new_x="LMARGIN", new_y="NEXT")
         pdf.cell(0, 6, f"Period: {preview.date_from} to {preview.date_to}", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(3)
 
