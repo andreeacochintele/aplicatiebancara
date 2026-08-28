@@ -70,7 +70,11 @@ def export_transactions(
     db: Session = Depends(get_db),
 ) -> Response:
     request = _build_request(date_from, date_to, wallet_id, currency, direction, status, category_id)
-    file_format = ExportFormat.XLSX if format == "xlsx" else ExportFormat.CSV
+    file_format = {
+        "xlsx": ExportFormat.XLSX,
+        "pdf": ExportFormat.PDF,
+        "mt940": ExportFormat.MT940,
+    }.get(format, ExportFormat.CSV)
     _job, content, meta = ExportService(db).generate_and_log(current_user.id, request, file_format)
     media_type, filename = meta.split("|", 1)
     return Response(
