@@ -54,6 +54,25 @@ def test_select_tool_falls_back_to_wallet_balances_by_default():
     assert agent._select_tool("hello there, banking assistant") == "wallet_balances"
 
 
+@pytest.mark.parametrize(
+    "message, expected_tool",
+    [
+        ("Vreau un extras de cont", "statement"),
+        ("Care e bugetul meu?", "budgets"),
+        ("Cat am economisit pentru obiectivul meu?", "savings_goals"),
+        ("Am vreo reducere de cashback acum?", "cashback_offers"),
+        ("Poti sa faci o prognoza pentru finalul lunii?", "forecast"),
+        ("Care e venitul meu lunar?", "income"),
+        ("Am vreun abonament recurent?", "recurring"),
+        ("Cat am cheltuit luna asta?", "spending_by_type"),
+        ("Arata-mi istoricul tranzactiilor", "transactions"),
+        ("Ce sold am?", "wallet_balances"),
+    ],
+)
+def test_select_tool_matches_expected_keyword_in_romanian(message, expected_tool):
+    assert agent._select_tool(message) == expected_tool
+
+
 # ---- tools.py: proves each tool reuses the real service layer, not a reimplementation ----
 
 

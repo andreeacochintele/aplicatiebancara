@@ -51,15 +51,15 @@ _SYSTEM_PROMPT = (
 # (e.g. a "budget" question naming a "category" still routes to budgets).
 _DISPATCH: list[tuple[str, tuple[str, ...]]] = [
     ("statement", ("statement", "extras de cont", "extras cont", "extras")),
-    ("budgets", ("budget",)),
-    ("savings_goals", ("saving", "goal")),
-    ("cashback_offers", ("cashback", "offer", "discount")),
-    ("forecast", ("forecast", "end of month", "end-of-month", "project")),
-    ("income", ("income", "salary", "earn")),
-    ("recurring", ("recurring", "subscription")),
-    ("spending_by_type", ("spend", "spent", "spending", "expense", "category")),
-    ("transactions", ("transaction", "history")),
-    ("wallet_balances", ("balance", "wallet", "money", "how much")),
+    ("budgets", ("budget", "buget")),
+    ("savings_goals", ("saving", "goal", "econom", "obiectiv")),
+    ("cashback_offers", ("cashback", "offer", "discount", "reducere")),
+    ("forecast", ("forecast", "end of month", "end-of-month", "project", "prognoz", "proiec")),
+    ("income", ("income", "salary", "earn", "venit", "salariu")),
+    ("recurring", ("recurring", "subscription", "recurent", "abonament")),
+    ("spending_by_type", ("spend", "spent", "spending", "expense", "category", "cheltui", "categorie")),
+    ("transactions", ("transaction", "history", "tranzac", "istoric")),
+    ("wallet_balances", ("balance", "wallet", "money", "how much", "sold", "cont", "bani", "cat am", "cât am")),
 ]
 _DEFAULT_TOOL = "wallet_balances"
 
