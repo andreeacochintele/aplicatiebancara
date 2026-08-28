@@ -1040,6 +1040,8 @@
     "cardFallback": "Card"
   },
   "payments": {
+    "descriptionPlaceholderRent": "Chirie august",
+    "descriptionPlaceholderPhone": "Transfer telefonic",
     "internalBeneficiary": "Beneficiar intern",
     "couldNotLoadBeneficiaries": "Beneficiarii nu au putut fi încărcați",
     "couldNotLoadWallets": "Portofelele nu au putut fi încărcate",

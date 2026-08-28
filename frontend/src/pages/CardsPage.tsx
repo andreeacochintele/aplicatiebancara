@@ -972,7 +972,7 @@ export function CardsPage() {
               </>
             )}
             {selectedReusableCardType && (
-              <div className="compact-tier-picker" aria-label="Card tier">
+              <div className="compact-tier-picker" aria-label={t("cards.tier")}>
                 <span className="eyebrow">{t("cards.tier")}</span>
                 <div className="compact-tier-picker__options">
                   {CARD_TIER_PRODUCT_LIST.map((tier) => {

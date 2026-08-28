@@ -1037,6 +1037,8 @@
     "cardFallback": "Card"
   },
   "payments": {
+    "descriptionPlaceholderRent": "Rent August",
+    "descriptionPlaceholderPhone": "Phone transfer",
     "internalBeneficiary": "Internal beneficiary",
     "couldNotLoadBeneficiaries": "Could not load beneficiaries",
     "couldNotLoadWallets": "Could not load wallets",

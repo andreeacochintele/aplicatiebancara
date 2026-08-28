@@ -1014,7 +1014,7 @@ export function PaymentsPage() {
                   setForm((current) => ({ ...current, description: event.target.value }));
                   clearTransferQuote();
                 }}
-                placeholder="Rent August"
+                placeholder={t("payments.descriptionPlaceholderRent")}
                 value={form.description}
               />
             </label>
@@ -1275,7 +1275,7 @@ export function PaymentsPage() {
             {t("payments.description")}
             <input
               onChange={(event) => setPhoneForm((current) => ({ ...current, description: event.target.value }))}
-              placeholder="Phone transfer"
+              placeholder={t("payments.descriptionPlaceholderPhone")}
               value={phoneForm.description}
             />
           </label>
