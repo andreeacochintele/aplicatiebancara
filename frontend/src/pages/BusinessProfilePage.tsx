@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
@@ -43,6 +44,7 @@ function toFormState(profile: BusinessProfile): ProfileFormState {
 }
 
 export function BusinessProfilePage() {
+  const { t } = useTranslation();
   const { user, accessToken } = useAuth();
   const [profiles, setProfiles] = useState<BusinessProfile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -78,7 +80,7 @@ export function BusinessProfilePage() {
   if (!isBusiness) {
     return (
       <section className="tile">
-        <p>The company profile is only available to business accounts.</p>
+        <p>{t("businessProfile.onlyForBusiness")}</p>
       </section>
     );
   }
@@ -105,7 +107,7 @@ export function BusinessProfilePage() {
       await apiRequest(`/business/profiles/${profile.id}/activate`, { method: "PUT", token: accessToken });
       await loadProfiles();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not switch company");
+      setError(err instanceof ApiError ? err.message : t("businessProfile.couldNotSwitchCompany"));
     }
   }
 
@@ -140,7 +142,7 @@ export function BusinessProfilePage() {
       }
       setSaved(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not save the company profile");
+      setError(err instanceof ApiError ? err.message : t("businessProfile.couldNotSaveProfile"));
     } finally {
       setBusy(false);
     }
@@ -151,7 +153,7 @@ export function BusinessProfilePage() {
       {profiles.length > 0 && (
         <div className="tile" style={{ maxWidth: 480 }}>
           <div className="tile__header">
-            <span className="eyebrow">Your companies</span>
+            <span className="eyebrow">{t("businessProfile.yourCompanies")}</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             {profiles.map((profile) => (
@@ -171,7 +173,7 @@ export function BusinessProfilePage() {
               >
                 <div>
                   <strong>{profile.company_name}</strong>
-                  {profile.is_active && <span className="tag tag--accent" style={{ marginLeft: "0.5rem" }}>Active</span>}
+                  {profile.is_active && <span className="tag tag--accent" style={{ marginLeft: "0.5rem" }}>{t("businessProfile.active")}</span>}
                 </div>
                 {!profile.is_active && (
                   <button
@@ -181,7 +183,7 @@ export function BusinessProfilePage() {
                       activate(profile);
                     }}
                   >
-                    Switch to this company
+                    {t("businessProfile.switchToCompany")}
                   </button>
                 )}
               </div>
@@ -189,7 +191,7 @@ export function BusinessProfilePage() {
           </div>
           <div style={{ marginTop: "0.75rem" }}>
             <button type="button" onClick={startNewCompany}>
-              + Add another company
+              {t("businessProfile.addAnotherCompany")}
             </button>
           </div>
         </div>
@@ -197,14 +199,14 @@ export function BusinessProfilePage() {
 
       <div className="tile" style={{ maxWidth: 480 }}>
         <div className="tile__header">
-          <span className="eyebrow">{isNew ? "New company" : "Edit company"}</span>
+          <span className="eyebrow">{isNew ? t("businessProfile.newCompany") : t("businessProfile.editCompany")}</span>
         </div>
         <p style={{ color: "var(--color-text-muted)", fontSize: "0.9rem" }}>
-          The active company's name shows up on your statements and transaction exports instead of your personal name.
+          {t("businessProfile.activeCompanyNote")}
         </p>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
           <label>
-            Company name *
+            {t("businessProfile.companyName")}
             <input
               type="text"
               value={form.company_name}
@@ -213,16 +215,16 @@ export function BusinessProfilePage() {
             />
           </label>
           <label>
-            Representative
+            {t("businessProfile.representative")}
             <input
               type="text"
               value={form.representative_name}
               onChange={(e) => setForm({ ...form, representative_name: e.target.value })}
-              placeholder="Who represents the company on this account"
+              placeholder={t("businessProfile.representativePlaceholder")}
             />
           </label>
           <label>
-            Tax ID
+            {t("businessProfile.taxId")}
             <input
               type="text"
               value={form.tax_id}
@@ -231,7 +233,7 @@ export function BusinessProfilePage() {
             />
           </label>
           <label>
-            Registration number
+            {t("businessProfile.registrationNumber")}
             <input
               type="text"
               value={form.registration_number}
@@ -240,7 +242,7 @@ export function BusinessProfilePage() {
             />
           </label>
           <label>
-            Business category
+            {t("businessProfile.businessCategory")}
             <input
               type="text"
               value={form.business_category}
@@ -251,10 +253,10 @@ export function BusinessProfilePage() {
         </div>
         <div style={{ marginTop: "1rem" }}>
           <button onClick={save} disabled={busy || !form.company_name.trim()}>
-            {busy ? "Saving…" : isNew ? "Create company" : "Save"}
+            {busy ? t("businessProfile.saving") : isNew ? t("businessProfile.createCompany") : t("businessProfile.save")}
           </button>
         </div>
-        {saved && <p style={{ color: "var(--color-positive)" }}>Saved.</p>}
+        {saved && <p style={{ color: "var(--color-positive)" }}>{t("businessProfile.saved")}</p>}
         {error && <p role="alert">{error}</p>}
       </div>
     </section>
