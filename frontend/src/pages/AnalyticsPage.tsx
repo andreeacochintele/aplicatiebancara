@@ -726,7 +726,6 @@ export function AnalyticsPage() {
                 Current balance: {forecast.current_balance} {forecast.currency} · {forecast.days_remaining} days left this month
               </div>
               <ForecastChart forecast={forecast} />
-              <p className="easyb-tx-meta" style={{ marginTop: 8 }}>{forecast.note}</p>
             </>
           ) : (
             <p className="easyb-tx-meta">No forecast available yet.</p>
