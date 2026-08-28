@@ -64,7 +64,21 @@ class TransactionService:
         self.merchants = MerchantRepository(db)
         self.notifications = NotificationsService(db)
 
-    def create_internal_transfer(self, initiator_user_id: uuid.UUID, data: InternalTransferCreate) -> Transaction:
+    def create_internal_transfer(
+        self,
+        initiator_user_id: uuid.UUID,
+        data: InternalTransferCreate,
+        *,
+        screen_for_fraud: bool = True,
+    ) -> Transaction:
+        """`screen_for_fraud` defaults to True so any new caller is covered by
+        default. It's turned off only for settlement flows that immediately
+        record their own outcome against the returned transaction — paying a
+        bill-split share or a payment request marks the participant/request
+        PAID and notifies the payee right away (app/payments/service.py),
+        which would be wrong if the money were sitting on a fraud HOLD. Those
+        flows are user-to-user settlements of an amount both sides already
+        agreed on, so screening them is also the weaker case."""
         if data.amount <= 0:
             raise ValidationError("Transfer amount must be positive")
 
@@ -75,8 +89,10 @@ class TransactionService:
             raise ValidationError("Source wallet does not belong to the initiating user")
 
         if source.currency == destination.currency:
-            return self._execute_same_currency_transfer(initiator_user_id, source, destination, data)
-        return self._execute_fx_transfer(initiator_user_id, source, destination, data)
+            return self._execute_same_currency_transfer(
+                initiator_user_id, source, destination, data, screen_for_fraud
+            )
+        return self._execute_fx_transfer(initiator_user_id, source, destination, data, screen_for_fraud)
 
     def _lock_wallet_pair(
         self, id_a: uuid.UUID, id_b: uuid.UUID
@@ -94,7 +110,12 @@ class TransactionService:
         return by_id.get(id_a), by_id.get(id_b)
 
     def _execute_same_currency_transfer(
-        self, initiator_user_id: uuid.UUID, source: Wallet, destination: Wallet, data: InternalTransferCreate
+        self,
+        initiator_user_id: uuid.UUID,
+        source: Wallet,
+        destination: Wallet,
+        data: InternalTransferCreate,
+        screen_for_fraud: bool = True,
     ) -> Transaction:
         if source.available_balance < data.amount:
             raise ConflictError("Insufficient available balance")
@@ -112,11 +133,24 @@ class TransactionService:
                 processed_at=datetime.now(timezone.utc),
             )
         )
+
+        # Same seam as create_card_payment's: scoring runs before any money
+        # moves, and a blocked transfer is HOLD'd + set to PENDING_REVIEW by
+        # FraudService, so neither leg of _settle() ever runs. The
+        # destination is credited later, by FraudService.approve().
+        if screen_for_fraud and FraudService(self.db).evaluate_transaction(transaction, source).blocked:
+            return transaction
+
         self._settle(transaction, source, data.amount, destination, data.amount)
         return transaction
 
     def _execute_fx_transfer(
-        self, initiator_user_id: uuid.UUID, source: Wallet, destination: Wallet, data: InternalTransferCreate
+        self,
+        initiator_user_id: uuid.UUID,
+        source: Wallet,
+        destination: Wallet,
+        data: InternalTransferCreate,
+        screen_for_fraud: bool = True,
     ) -> Transaction:
         if data.fx_quote_id is None:
             raise ValidationError("Cross-currency transfers require an fx_quote_id — request one via POST /fx/quote")
@@ -146,6 +180,15 @@ class TransactionService:
                 processed_at=datetime.now(timezone.utc),
             )
         )
+        # The quote is consumed by the attempt itself, held or not: the
+        # transaction already carries the priced source_amount/target amount
+        # and exchange_rate that FraudService.approve() will settle with, and
+        # leaving the quote OPEN would let the same pricing fund a second
+        # transfer while this one sits under review.
+        if screen_for_fraud and FraudService(self.db).evaluate_transaction(transaction, source).blocked:
+            self.fx.mark_accepted(quote)
+            return transaction
+
         self._settle(transaction, source, quote.source_amount, destination, quote.target_amount)
         self.fx.mark_accepted(quote)
         return transaction

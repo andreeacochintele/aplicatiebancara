@@ -42,6 +42,8 @@ function reviewFocus(flags: FraudFlag[]): string[] {
     REWARD_ABUSE_PATTERN: "Review same-amount payments to this merchant and separate duplicate checkout attempts from coordinated abuse.",
     HIGH_VELOCITY: "Inspect transactions immediately before and after this payment to understand the burst pattern.",
     UNUSUAL_TIME: "Check whether this UTC transaction time is unusual for this customer, not just unusual in general.",
+    REPEATED_TRANSFER_PATTERN:
+      "Review the repeated transfers to this account and confirm the customer knows the recipient and intended to send each one.",
   };
   return flags.map((flag) => messages[flag.code]);
 }
