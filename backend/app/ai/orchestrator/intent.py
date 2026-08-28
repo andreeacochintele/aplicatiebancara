@@ -45,6 +45,14 @@ _SYSTEM_PROMPT = (
     "'What is a fraud score and how is it calculated?' -> support (asking how "
     "fraud scoring works conceptually, not a credit score/loan question)\n"
     "\n"
+    "Users may write in Romanian as well as English — classify by meaning, "
+    "not by language. The same personal_finance-vs-support distinction "
+    "applies regardless of which language the message is in:\n"
+    "'Ce sold am?' -> personal_finance\n"
+    "'Cat am in cont?' -> personal_finance\n"
+    "'Cum functioneaza bugetele?' -> support\n"
+    "'Arata-mi cheltuielile din ultima luna' -> personal_finance\n"
+    "\n"
     "Conversation history, if shown below, is ONLY there to help you resolve "
     "ambiguous references in the current message (e.g. 'that', 'it', 'the same "
     "period'). It is NOT a hint to reuse whichever category was used last — if "
@@ -107,4 +115,9 @@ def _parse_category(raw: str) -> IntentCategory:
     for category in IntentCategory:
         if category.value in raw:
             return category
-    return IntentCategory.OUT_OF_SCOPE
+    # An unrecognized reply is far more likely to be a model hiccup on a
+    # legitimate banking question than an actual out-of-scope request —
+    # out_of_scope has real user-facing consequences (a flat refusal),
+    # while support just answers generically. Fail toward the cheaper
+    # mistake.
+    return IntentCategory.SUPPORT

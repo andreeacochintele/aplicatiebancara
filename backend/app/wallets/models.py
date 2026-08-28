@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,7 +26,11 @@ class WalletStatus(str, enum.Enum):
 
 class Wallet(Base):
     __tablename__ = "wallets"
-    __table_args__ = (UniqueConstraint("user_id", "currency", name="uq_wallet_user_currency"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "currency", name="uq_wallet_user_currency"),
+        CheckConstraint("available_balance >= 0", name="ck_wallets_available_balance_nonnegative"),
+        CheckConstraint("reserved_balance >= 0", name="ck_wallets_reserved_balance_nonnegative"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)

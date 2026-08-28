@@ -167,12 +167,40 @@ def test_currency_can_be_reopened_after_closing(db_session, seeded_user):
     service = WalletService(db_session)
     service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
     eur = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    original_iban = eur.iban
     service.close_wallet(seeded_user.id, eur.id)
 
     reopened = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
 
     assert reopened.status == WalletStatus.ACTIVE
     assert reopened.available_balance == Decimal("0")
+    # A closed account's IBAN is retired, same as a real bank — reopening
+    # issues a fresh one rather than resurrecting the old account number.
+    assert reopened.iban != original_iban
+
+
+def test_concurrent_create_wallet_race_raises_conflict_not_a_bare_500(db_session, seeded_user, monkeypatch):
+    """Simulates two requests racing past the pre-check: the DB-level unique
+    constraint is what actually stops the second insert, surfacing as an
+    IntegrityError at flush() — must become a clean ConflictError, not a
+    bare 500."""
+    from sqlalchemy.exc import IntegrityError
+
+    service = WalletService(db_session)
+    service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+
+    original_get = service.repository.get_by_user_and_currency
+    monkeypatch.setattr(service.repository, "get_by_user_and_currency", lambda *a, **k: None)
+
+    def _boom(*args, **kwargs):
+        raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed: wallets.user_id, wallets.currency"))
+
+    monkeypatch.setattr(service.repository, "add", _boom)
+
+    with pytest.raises(ConflictError):
+        service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+
+    monkeypatch.setattr(service.repository, "get_by_user_and_currency", original_get)
 
 
 def test_oversized_currency_returns_422_not_a_bare_500(client):
@@ -196,3 +224,81 @@ def test_oversized_currency_returns_422_not_a_bare_500(client):
     )
 
     assert response.status_code == 422
+
+
+def _register_http(client, email: str, phone: str) -> str:
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": email,
+            "phone": phone,
+            "password": "Sup3rSecret!",
+            "first_name": "Wallet",
+            "last_name": "Http",
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["tokens"]["access_token"]
+
+
+def test_set_main_wallet_endpoint_switches_the_flag(client):
+    token = _register_http(client, "wallet-http-setmain@example.com", "+40744444446")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/v1/wallets", headers=headers, json={"currency": "RON"})
+    eur = client.post("/api/v1/wallets", headers=headers, json={"currency": "EUR"}).json()
+
+    response = client.patch(f"/api/v1/wallets/{eur['id']}/set-main", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["is_main"] is True
+
+
+def test_set_main_wallet_endpoint_requires_auth(client):
+    token = _register_http(client, "wallet-http-setmain-auth@example.com", "+40744444447")
+    headers = {"Authorization": f"Bearer {token}"}
+    ron = client.post("/api/v1/wallets", headers=headers, json={"currency": "RON"}).json()
+
+    response = client.patch(f"/api/v1/wallets/{ron['id']}/set-main")
+
+    assert response.status_code == 401
+
+
+def test_set_main_wallet_endpoint_rejects_another_users_wallet(client):
+    owner_token = _register_http(client, "wallet-http-owner@example.com", "+40744444448")
+    owner_wallet = client.post(
+        "/api/v1/wallets", headers={"Authorization": f"Bearer {owner_token}"}, json={"currency": "RON"}
+    ).json()
+    other_token = _register_http(client, "wallet-http-other@example.com", "+40744444449")
+
+    response = client.patch(
+        f"/api/v1/wallets/{owner_wallet['id']}/set-main",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_close_wallet_endpoint_closes_a_non_main_wallet(client):
+    token = _register_http(client, "wallet-http-close@example.com", "+40744444450")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/v1/wallets", headers=headers, json={"currency": "RON"})
+    eur = client.post("/api/v1/wallets", headers=headers, json={"currency": "EUR"}).json()
+
+    response = client.delete(f"/api/v1/wallets/{eur['id']}", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "CLOSED"
+
+
+def test_close_wallet_endpoint_rejects_another_users_wallet(client):
+    owner_token = _register_http(client, "wallet-http-close-owner@example.com", "+40744444451")
+    headers = {"Authorization": f"Bearer {owner_token}"}
+    client.post("/api/v1/wallets", headers=headers, json={"currency": "RON"})
+    eur = client.post("/api/v1/wallets", headers=headers, json={"currency": "EUR"}).json()
+    other_token = _register_http(client, "wallet-http-close-other@example.com", "+40744444452")
+
+    response = client.delete(
+        f"/api/v1/wallets/{eur['id']}", headers={"Authorization": f"Bearer {other_token}"}
+    )
+
+    assert response.status_code == 404

@@ -24,8 +24,12 @@ def test_parse_category_matches_each_known_value():
         assert _parse_category(f"  {category.value}  ") == category
 
 
-def test_parse_category_falls_back_to_out_of_scope_on_unrecognized_text():
-    assert _parse_category("i have no idea what you mean") == IntentCategory.OUT_OF_SCOPE
+def test_parse_category_falls_back_to_support_on_unrecognized_text():
+    # An unrecognized model reply defaults to support, not out_of_scope —
+    # a wrong support answer is a generic-but-harmless reply, while a wrong
+    # out_of_scope is a flat refusal on what might be a legitimate banking
+    # question. See intent._parse_category's own comment.
+    assert _parse_category("i have no idea what you mean") == IntentCategory.SUPPORT
 
 
 # ---- followups._parse_followups: pure function, no LLM call ----

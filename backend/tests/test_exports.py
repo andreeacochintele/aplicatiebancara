@@ -158,6 +158,16 @@ def test_export_rejects_inverted_date_range(db_session, wallets_with_transfer):
         )
 
 
+def test_export_rejects_a_date_range_over_the_cap(db_session, wallets_with_transfer):
+    business, _business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
+
+    with pytest.raises(ValidationError):
+        ExportService(db_session).build_preview(
+            business.id,
+            TransactionExportRequest(date_from=date.today() - timedelta(days=400), date_to=date.today()),
+        )
+
+
 def test_export_resolves_merchant_counterparty(db_session, wallets_with_transfer):
     business, business_wallet, _receiver, _receiver_wallet = wallets_with_transfer
     merchant = MerchantService(db_session).create_merchant(MerchantCreate(name="CoffeeCo", category="Food"))

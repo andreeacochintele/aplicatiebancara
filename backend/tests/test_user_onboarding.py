@@ -1,7 +1,7 @@
 import pytest
 
 from app.core.security import hash_password
-from app.users.models import User, UserOnboardingState
+from app.users.models import User, UserOnboardingState, UserProfile
 
 
 def _create_legacy_user(db_session, email: str = "legacy@example.com", phone: str = "+40710009999") -> User:
@@ -273,6 +273,31 @@ def test_duplicate_cnp_is_rejected(client):
     assert second.status_code == 409
 
 
+def test_concurrent_step_2_cnp_race_raises_conflict_not_a_bare_500(client, monkeypatch):
+    """Simulates two requests racing past the pre-check with the same CNP:
+    the DB-level unique index is what actually stops the second write,
+    surfacing as an IntegrityError at flush() — must become a clean 409,
+    not a bare 500."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.users.repository import UserRepository
+
+    token = _register(client, "cnp-race@example.com", "+40710000029")
+
+    def _boom(self):
+        raise IntegrityError("UPDATE", {}, Exception("UNIQUE constraint failed: user_profiles.cnp"))
+
+    monkeypatch.setattr(UserRepository, "flush", _boom)
+
+    response = client.patch(
+        "/api/v1/users/me/onboarding/step-2",
+        headers=_headers(token),
+        json=_step_2_payload(),
+    )
+
+    assert response.status_code == 409
+
+
 def test_step_2_rejects_cnp_with_invalid_checksum(client):
     token = _register(client, "bad-cnp-checksum@example.com", "+40710000011")
     payload = _step_2_payload()
@@ -334,7 +359,8 @@ def test_step_2_rejects_street_without_letters(client):
 
 
 def test_authenticated_profile_can_be_read_and_updated(client):
-    token = _register(client, "profile-update@example.com", "+40710000006")
+    token = _advance_to_step_4(client, "profile-update@example.com", "+40710000006")
+    client.post("/api/v1/users/me/onboarding/step-4/skip", headers=_headers(token))
 
     update = client.patch(
         "/api/v1/users/me/profile",
@@ -422,6 +448,36 @@ def test_editing_address_after_completion_does_not_reopen_onboarding(client):
     assert body["address"]["city"] == "Cluj-Napoca"
     assert body["onboarding"]["completed"] is True
     assert body["onboarding"]["pending_step"] is None
+
+
+def test_profile_update_cannot_bypass_incomplete_onboarding(client, db_session):
+    token = _register(client, "bypass-attempt@example.com", "+40710000027")
+
+    response = client.patch(
+        "/api/v1/users/me/profile",
+        headers=_headers(token),
+        json={"step_2": _step_2_payload(), "employment": _step_4_payload()},
+    )
+
+    assert response.status_code == 422
+    profile = db_session.query(UserProfile).one()
+    assert profile.cnp is None
+    state = db_session.query(UserOnboardingState).one()
+    assert state.pending_step == 2
+    assert state.completed is False
+
+
+def test_profile_update_without_step_or_employment_still_works_mid_onboarding(client):
+    token = _register(client, "plain-edit-mid-onboarding@example.com", "+40710000028")
+
+    response = client.patch(
+        "/api/v1/users/me/profile",
+        headers=_headers(token),
+        json={"first_name": "Updated"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user"]["first_name"] == "Updated"
 
 
 # ---- onboarding steps can no longer be skipped/reordered ----

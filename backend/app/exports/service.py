@@ -39,6 +39,15 @@ from app.wallets.repository import WalletRepository
 
 _CSV_COLUMNS = ["date", "transaction_id", "type", "counterparty", "description", "category", "amount", "currency", "status"]
 
+# Both the rendered file and the row-level preview are built fully in memory
+# and (via generate_and_log) stored inline as a single DB column — unbounded
+# like this, a business account with a long history could pull its entire
+# transaction lifetime into one request/row. Capping the date range (like
+# fx/service.py's rate-history endpoint caps `days`) is a first line of
+# defense; row-count pagination would be the next step if this module ever
+# grows past on-demand CSV/XLSX generation.
+_MAX_EXPORT_RANGE_DAYS = 366
+
 
 class ExportService:
     def __init__(self, db: Session) -> None:
@@ -52,6 +61,8 @@ class ExportService:
     def build_preview(self, user_id: uuid.UUID, data: TransactionExportRequest) -> TransactionExportPreview:
         if data.date_from > data.date_to:
             raise ValidationError("date_from must not be after date_to")
+        if (data.date_to - data.date_from).days > _MAX_EXPORT_RANGE_DAYS:
+            raise ValidationError(f"Date range too large — export at most {_MAX_EXPORT_RANGE_DAYS} days at a time")
         if data.wallet_id is not None:
             wallet = self.wallets.get_by_id(data.wallet_id)
             if wallet is None or wallet.user_id != user_id:

@@ -14,7 +14,7 @@ from app.merchants.schemas import CashbackOfferCreate, MerchantCreate
 from app.merchants.service import MerchantService
 from app.savings.schemas import SavingsGoalCreate
 from app.savings.service import SavingsService
-from app.transactions.models import Transaction, TransactionStatus, TransactionType
+from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.users.schemas import UserCreate
 from app.users.service import UserService
 from app.wallets.schemas import WalletCreate
@@ -34,6 +34,7 @@ def seeded_user(db_session):
 @pytest.mark.parametrize(
     "message, expected_tool",
     [
+        ("Can I get an account statement?", "statement"),
         ("What's my budget status?", "budgets"),
         ("How close am I to my savings goal?", "savings_goals"),
         ("Any cashback offers right now?", "cashback_offers"),
@@ -51,6 +52,25 @@ def test_select_tool_matches_expected_keyword(message, expected_tool):
 
 def test_select_tool_falls_back_to_wallet_balances_by_default():
     assert agent._select_tool("hello there, banking assistant") == "wallet_balances"
+
+
+@pytest.mark.parametrize(
+    "message, expected_tool",
+    [
+        ("Vreau un extras de cont", "statement"),
+        ("Care e bugetul meu?", "budgets"),
+        ("Cat am economisit pentru obiectivul meu?", "savings_goals"),
+        ("Am vreo reducere de cashback acum?", "cashback_offers"),
+        ("Poti sa faci o prognoza pentru finalul lunii?", "forecast"),
+        ("Care e venitul meu lunar?", "income"),
+        ("Am vreun abonament recurent?", "recurring"),
+        ("Cat am cheltuit luna asta?", "spending_by_type"),
+        ("Arata-mi istoricul tranzactiilor", "transactions"),
+        ("Ce sold am?", "wallet_balances"),
+    ],
+)
+def test_select_tool_matches_expected_keyword_in_romanian(message, expected_tool):
+    assert agent._select_tool(message) == expected_tool
 
 
 # ---- tools.py: proves each tool reuses the real service layer, not a reimplementation ----
@@ -146,6 +166,64 @@ def test_forecast_month_end_balance_reuses_analytics_service_as_is(db_session, s
     assert isinstance(result, ForecastResponse)
     assert result.currency == "RON"
     assert result.note  # analytics/service.py's own "simplified" disclaimer, not rewritten here
+
+
+def _card_payment_with_ledger_entry(db_session, user_id, wallet, amount, description):
+    transaction = Transaction(
+        initiator_user_id=user_id,
+        source_wallet_id=wallet.id,
+        type=TransactionType.CARD_PAYMENT,
+        status=TransactionStatus.COMPLETED,
+        amount=amount,
+        currency=wallet.currency,
+        description=description,
+        created_at=datetime.now(timezone.utc),
+    )
+    db_session.add(transaction)
+    db_session.flush()
+    db_session.add(
+        WalletLedgerEntry(
+            wallet_id=wallet.id,
+            transaction_id=transaction.id,
+            entry_type=LedgerEntryType.DEBIT,
+            amount=amount,
+            currency=wallet.currency,
+            balance_after=wallet.available_balance - amount,
+        )
+    )
+    db_session.flush()
+    return transaction
+
+
+def test_get_account_statement_reuses_statement_service(db_session, seeded_user):
+    wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))
+    wallet.available_balance = Decimal("500.00")
+    db_session.flush()
+    _card_payment_with_ledger_entry(db_session, seeded_user.id, wallet, Decimal("42.50"), "Coffee")
+
+    result = tools.get_account_statement(ToolContext(user_id=seeded_user.id, db=db_session))
+
+    assert result.wallet_id == wallet.id
+    assert result.currency == "RON"
+
+
+def test_get_account_statement_raises_tool_data_unavailable_without_a_main_wallet(db_session, seeded_user):
+    with pytest.raises(ToolDataUnavailableError):
+        tools.get_account_statement(ToolContext(user_id=seeded_user.id, db=db_session))
+
+
+def test_statement_summary_includes_balances_and_a_transaction(db_session, seeded_user):
+    wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))
+    wallet.available_balance = Decimal("500.00")
+    db_session.flush()
+    _card_payment_with_ledger_entry(db_session, seeded_user.id, wallet, Decimal("42.50"), "Coffee")
+
+    summary = agent._statement(ToolContext(user_id=seeded_user.id, db=db_session))
+
+    assert "Account statement" in summary
+    assert "Opening balance" in summary
+    assert "Closing balance" in summary
+    assert "Coffee" in summary
 
 
 def test_get_monthly_income_raises_tool_data_unavailable_instead_of_a_guess(db_session):

@@ -18,6 +18,7 @@ for fraud review is skipped here (its status isn't COMPLETED yet) — it's
 not synced until something else calls sync-rewards again after the case is
 approved (app/fraud/service.py's approve() does not itself trigger a sync).
 """
+import logging
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -38,6 +39,8 @@ from app.transactions.repository import TransactionRepository
 from app.transactions.schemas import CardPaymentCreate, CreditCardRepaymentCreate, InternalTransferCreate
 from app.wallets.models import Wallet
 from app.wallets.repository import WalletRepository
+
+logger = logging.getLogger(__name__)
 
 
 class TransactionService:
@@ -65,8 +68,7 @@ class TransactionService:
         if data.amount <= 0:
             raise ValidationError("Transfer amount must be positive")
 
-        source = self.wallets.get_by_id(data.source_wallet_id)
-        destination = self.wallets.get_by_id(data.destination_wallet_id)
+        source, destination = self._lock_wallet_pair(data.source_wallet_id, data.destination_wallet_id)
         if source is None or destination is None:
             raise NotFoundError("Source or destination wallet not found")
         if source.user_id != initiator_user_id:
@@ -75,6 +77,21 @@ class TransactionService:
         if source.currency == destination.currency:
             return self._execute_same_currency_transfer(initiator_user_id, source, destination, data)
         return self._execute_fx_transfer(initiator_user_id, source, destination, data)
+
+    def _lock_wallet_pair(
+        self, id_a: uuid.UUID, id_b: uuid.UUID
+    ) -> tuple[Wallet | None, Wallet | None]:
+        """Locks both wallet rows for the rest of this transaction, always in
+        the same (sorted-by-id) order regardless of which one is source vs
+        destination — otherwise two concurrent transfers moving money in
+        opposite directions between the same pair of wallets could each lock
+        their own "source" first and then deadlock waiting for the other's
+        "destination"."""
+        first_id, second_id = sorted([id_a, id_b], key=str)
+        first = self.wallets.get_by_id_for_update(first_id)
+        second = self.wallets.get_by_id_for_update(second_id) if second_id != first_id else first
+        by_id = {w.id: w for w in (first, second) if w is not None}
+        return by_id.get(id_a), by_id.get(id_b)
 
     def _execute_same_currency_transfer(
         self, initiator_user_id: uuid.UUID, source: Wallet, destination: Wallet, data: InternalTransferCreate
@@ -183,7 +200,7 @@ class TransactionService:
                 related_transaction_id=transaction.id,
             )
         except Exception:
-            pass
+            logger.exception("Failed to create 'money received' notification for transaction %s", transaction.id)
 
     def create_card_payment(self, initiator_user_id: uuid.UUID, data: CardPaymentCreate) -> Transaction:
         """A card payment to a merchant — unlike a transfer, money leaves the
@@ -244,7 +261,7 @@ class TransactionService:
         if wallet_id is None:
             raise ValidationError("Card has no wallet to pay from — set a default or preferred wallet first")
 
-        wallet = self.wallets.get_by_id(wallet_id)
+        wallet = self.wallets.get_by_id_for_update(wallet_id)
         if wallet is None or wallet.user_id != initiator_user_id:
             raise NotFoundError("Card's wallet not found")
         if wallet.available_balance < data.amount:
@@ -327,7 +344,7 @@ class TransactionService:
         if data.amount > account.used_amount:
             raise ValidationError("Payment is higher than the current card balance")
 
-        wallet = self.wallets.get_by_id(data.source_wallet_id)
+        wallet = self.wallets.get_by_id_for_update(data.source_wallet_id)
         if wallet is None or wallet.user_id != initiator_user_id:
             raise NotFoundError("Source wallet not found")
         if wallet.currency != account.currency:

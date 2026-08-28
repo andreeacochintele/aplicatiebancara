@@ -462,9 +462,12 @@ export function WalletsPage() {
               <div className="easyb-rate-banner">
                 <div className="easyb-rate-banner__headline">
                   <TrendingUp size={16} />
-                  1 {convertRate.source_currency} = {bankRate.toFixed(4)} {convertRate.target_currency}
+                  1 {convertRate.source_currency} = {Number(convertRate.rate).toFixed(4)} {convertRate.target_currency}
                 </div>
-                <div className="easyb-rate-banner__sub">Bank rate, fee included</div>
+                {/* Same rate a "Get quote" call below will price with, shown the same way the
+                    resulting quote card shows its own "Rate" line — fee is a separate line item
+                    there (not baked into the rate), so it's kept separate here too. */}
+                <div className="easyb-rate-banner__sub">Live bank rate, 0.5% fee applies at quote time</div>
                 {convertedAmount !== null && (
                   <div className="easyb-rate-banner__amount">
                     {amount} {convertRate.source_currency} = <strong>{convertedAmount.toFixed(2)} {convertRate.target_currency}</strong>

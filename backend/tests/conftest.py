@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.ai.orchestrator import models as ai_orchestrator_models  # noqa: F401
 from app.auth import models as auth_models  # noqa: F401
+from app.auth.router import _login_rate_limit, _register_rate_limit
 from app.budgets import models as budgets_models  # noqa: F401
 from app.cards import models as cards_models  # noqa: F401
 from app.credit import models as credit_models  # noqa: F401
@@ -74,6 +75,12 @@ def client(db_session):
             pass
 
     app.dependency_overrides[get_db] = override_get_db
+    # The suite registers/logs in far more than the real per-IP rate limits
+    # allow (every TestClient request shares one simulated client IP) — off
+    # by default here so that doesn't trip; tests/test_rate_limit.py exercises
+    # the real limiting behavior with its own TestClient, override cleared.
+    app.dependency_overrides[_login_rate_limit] = lambda: None
+    app.dependency_overrides[_register_rate_limit] = lambda: None
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

@@ -111,6 +111,32 @@ class AuthService:
 
         return create_access_token(str(user_id), str(session_id))
 
+    def revoke_other_sessions(self, user_id: uuid.UUID, keep_session_id: uuid.UUID) -> int:
+        """"Log out everywhere else": revokes every other ACTIVE session for
+        this user, leaving the one making this request untouched. Sessions
+        are otherwise unbounded — one per login, with no cap and no other
+        way for a user to see or close the others."""
+        if is_supabase_session(self.db):
+            sessions = self.db.fetch_many(
+                UserSession, {"user_id": f"eq.{user_id}", "status": f"eq.{SessionStatus.ACTIVE.value}"}
+            )
+        else:
+            sessions = list(
+                self.db.scalars(
+                    select(UserSession).where(
+                        UserSession.user_id == user_id, UserSession.status == SessionStatus.ACTIVE
+                    )
+                )
+            )
+        revoked = 0
+        for session in sessions:
+            if session.id == keep_session_id:
+                continue
+            session.status = SessionStatus.REVOKED
+            revoked += 1
+        self.db.flush()
+        return revoked
+
     def _get_or_create_default_device(self, user: User) -> UserDevice:
         # A device is only genuinely "new" the first time it's ever seen —
         # every login after that reuses this same placeholder row (there's
