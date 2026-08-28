@@ -2,11 +2,14 @@
 (architecture.md §27/§34).
 
 Cross-cutting infrastructure: not owned by any single developer's area in
-architecture.md §40. Callers in other modules (fraud decisions, card
-freeze/unfreeze, transaction review, ...) import AuditService and call
-log_action() from within their own existing DB transaction, so the audit row
-commits or rolls back atomically with the action it records — it is
-intentionally not a best-effort/swallow-exceptions call like notifications.
+architecture.md §40. Callers in other admin-gated modules (fraud decisions,
+credit document review/application decisions, merchant/cashback creation,
+...) import AuditService and call log_action() from within their own existing
+DB transaction, so the audit row commits or rolls back atomically with the
+action it records — it is intentionally not a best-effort/swallow-exceptions
+call like notifications. Card freeze/unfreeze is user self-service
+(get_current_user, not require_admin) and is deliberately NOT logged here —
+it's the account owner acting on their own card, not an admin action.
 """
 import uuid
 from datetime import datetime

@@ -59,7 +59,6 @@ const CARD_TIER_PRODUCT_LIST = [
 const MOCK_CARD_MERCHANTS = ["Carrefour", "Netflix", "OMV", "Starbucks", "eMAG", "Uber"];
 type CreditPaymentSourceType = "ACCOUNT" | "DEBIT_CARD";
 type CreditPaymentAmountMode = "FULL_BALANCE" | "CUSTOM";
-const CARD_PIN_STORAGE_PREFIX = "easyb-card-pin:";
 
 interface CardTransactionDisplay {
   id: string;
@@ -115,7 +114,8 @@ function creditAvailableBalance(card: Card, balanceDue: number): number {
 }
 
 function walletDisplayName(wallet: Wallet): string {
-  return `${wallet.currency}${wallet.is_main ? " - Main" : ""}`;
+  const base = wallet.nickname ? `${wallet.currency} — ${wallet.nickname}` : wallet.currency;
+  return `${base}${wallet.is_main ? " - Main" : ""}`;
 }
 
 function walletOptionLabel(wallet: Wallet, debitAlreadyExists: boolean): string {
@@ -178,20 +178,6 @@ function cardTransactionDirection(transaction: Transaction, card: Card): "in" | 
   return "out";
 }
 
-function cardPinStorageKey(cardId: string): string {
-  return `${CARD_PIN_STORAGE_PREFIX}${cardId}`;
-}
-
-async function hashCardPin(pin: string): Promise<string> {
-  const input = new TextEncoder().encode(pin);
-  const digest = await crypto.subtle.digest("SHA-256", input);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function hasStoredCardPin(cardId: string): boolean {
-  return Boolean(window.localStorage.getItem(cardPinStorageKey(cardId)));
-}
-
 export function CardsPage() {
   const { accessToken, logout, user } = useAuth();
   const [cards, setCards] = useState<Card[]>([]);
@@ -216,7 +202,6 @@ export function CardsPage() {
   const [pinInputs, setPinInputs] = useState<Record<string, string>>({});
   const [pinSettingsInputs, setPinSettingsInputs] = useState<Record<string, string>>({});
   const [pinActionCardId, setPinActionCardId] = useState<string | null>(null);
-  const [pinSettingsVersion, setPinSettingsVersion] = useState(0);
   const [cardSecurityErrors, setCardSecurityErrors] = useState<Record<string, string>>({});
   const [cardSecurityMessages, setCardSecurityMessages] = useState<Record<string, string>>({});
   const [copiedCardId, setCopiedCardId] = useState<string | null>(null);
@@ -542,7 +527,7 @@ export function CardsPage() {
       return next;
     });
     if (!cardDetailsById[card.id]) {
-      if (hasStoredCardPin(card.id)) {
+      if (card.has_pin) {
         setPinPromptCardId(card.id);
       } else {
         setPinSettingsCardIds((current) => {
@@ -569,6 +554,17 @@ export function CardsPage() {
     clearCardSecurityFeedback(card.id);
   }
 
+  async function saveCardPin(card: Card, pin: string): Promise<Card> {
+    const updated = await apiRequest<Card>(`/cards/${card.id}/pin`, {
+      method: "PATCH",
+      token: accessToken,
+      body: { pin },
+    });
+    const updatedWithPin = { ...updated, has_pin: true };
+    setCards((current) => current.map((item) => (item.id === updated.id ? updatedWithPin : item)));
+    return updatedWithPin;
+  }
+
   async function updateCardPin(card: Card) {
     if (!accessToken || pinActionCardId) return;
     const pin = pinSettingsInputs[card.id] ?? "";
@@ -580,9 +576,7 @@ export function CardsPage() {
 
     setPinActionCardId(card.id);
     try {
-      const pinHash = await hashCardPin(pin);
-      window.localStorage.setItem(cardPinStorageKey(card.id), pinHash);
-      setPinSettingsVersion((current) => current + 1);
+      await saveCardPin(card, pin);
       setPinSettingsInputs((current) => ({ ...current, [card.id]: "" }));
       setPinSettingsCardIds((current) => {
         const next = new Set(current);
@@ -604,6 +598,17 @@ export function CardsPage() {
     }
   }
 
+  function showRevealedCardDetails(cardId: string, details: CardSensitiveDetails) {
+    setCardDetailsById((current) => ({ ...current, [cardId]: details }));
+    setRevealedCardIds((current) => {
+      const next = new Set(current);
+      next.add(cardId);
+      return next;
+    });
+    setPinInputs((current) => ({ ...current, [cardId]: "" }));
+    setPinPromptCardId(null);
+  }
+
   async function revealCardDetails(card: Card) {
     if (!accessToken || pinActionCardId) return;
     const pin = pinInputs[card.id] ?? "";
@@ -615,38 +620,46 @@ export function CardsPage() {
 
     setPinActionCardId(card.id);
     try {
-      const storedPinHash = window.localStorage.getItem(cardPinStorageKey(card.id));
-      if (!storedPinHash) {
-        setPinSettingsCardIds((current) => {
-          const next = new Set(current);
-          next.add(card.id);
-          return next;
-        });
-        throw new Error("Set a PIN before viewing card details.");
-      }
-      if ((await hashCardPin(pin)) !== storedPinHash) {
-        throw new Error("Incorrect card PIN.");
-      }
-      if (!card.mock_pan || !card.mock_cvv) {
-        throw new Error("Card details are not available.");
-      }
-      const details: CardSensitiveDetails = {
-        card_id: card.id,
-        mock_pan: card.mock_pan,
-        mock_cvv: card.mock_cvv,
-      };
-      setCardDetailsById((current) => ({ ...current, [card.id]: details }));
-      setRevealedCardIds((current) => {
-        const next = new Set(current);
-        next.add(card.id);
-        return next;
+      const details = await apiRequest<CardSensitiveDetails>(`/cards/${card.id}/reveal`, {
+        method: "POST",
+        token: accessToken,
+        body: { pin },
       });
-      setPinInputs((current) => ({ ...current, [card.id]: "" }));
-      setPinPromptCardId(null);
+      showRevealedCardDetails(card.id, details);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
         return;
+      }
+      if (err instanceof ApiError && err.message.includes("Set a card PIN")) {
+        try {
+          await saveCardPin(card, pin);
+          const details = await apiRequest<CardSensitiveDetails>(`/cards/${card.id}/reveal`, {
+            method: "POST",
+            token: accessToken,
+            body: { pin },
+          });
+          showRevealedCardDetails(card.id, details);
+          setCardSecurityMessages((current) => ({ ...current, [card.id]: "PIN saved." }));
+          return;
+        } catch (retryErr) {
+          if (retryErr instanceof ApiError && retryErr.status === 401) {
+            logout();
+            return;
+          }
+          setPinSettingsCardIds((current) => {
+            const next = new Set(current);
+            next.add(card.id);
+            return next;
+          });
+          setPinPromptCardId(null);
+          setCards((current) => current.map((item) => (item.id === card.id ? { ...item, has_pin: false } : item)));
+          setCardSecurityErrors((current) => ({
+            ...current,
+            [card.id]: retryErr instanceof ApiError || retryErr instanceof Error ? retryErr.message : "Could not save PIN.",
+          }));
+          return;
+        }
       }
       setCardSecurityErrors((current) => ({
         ...current,
@@ -678,7 +691,7 @@ export function CardsPage() {
   async function copyCardNumber(card: Card) {
     const details = cardDetailsById[card.id];
     if (!details) {
-      if (hasStoredCardPin(card.id)) {
+      if (card.has_pin) {
         setPinPromptCardId(card.id);
         setCardSecurityErrors((current) => ({ ...current, [card.id]: "Enter PIN to copy card number." }));
       } else {
@@ -1098,7 +1111,6 @@ export function CardsPage() {
               const sensitiveDetails = cardDetailsById[card.id];
               const isPinPromptOpen = pinPromptCardId === card.id;
               const isPinSettingsOpen = pinSettingsCardIds.has(card.id);
-              const hasLocalPin = pinSettingsVersion >= 0 && hasStoredCardPin(card.id);
               const cardSecurityError = cardSecurityErrors[card.id];
               const cardSecurityMessage = cardSecurityMessages[card.id];
               const isTransactionsExpanded = expandedTransactionCardIds.has(card.id);
@@ -1235,8 +1247,13 @@ export function CardsPage() {
                       <label>
                         PIN
                         <input
-                          type="password"
+                          type="text"
+                          className="card-pin-input"
                           inputMode="numeric"
+                          autoComplete="off"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          name={`card-pin-unlock-${card.id}`}
                           maxLength={4}
                           value={pinInputs[card.id] ?? ""}
                           onChange={(event) => {
@@ -1335,8 +1352,13 @@ export function CardsPage() {
                           <label>
                             Card PIN
                             <input
-                              type="password"
+                              type="text"
+                              className="card-pin-input"
                               inputMode="numeric"
+                              autoComplete="off"
+                              autoCorrect="off"
+                              spellCheck={false}
+                              name={`card-pin-reset-${card.id}`}
                               maxLength={4}
                               value={pinSettingsInputs[card.id] ?? ""}
                               onChange={(event) => {
@@ -1353,7 +1375,7 @@ export function CardsPage() {
                             onClick={() => updateCardPin(card)}
                             disabled={pinActionCardId === card.id}
                           >
-                            {pinActionCardId === card.id ? "Saving..." : hasLocalPin ? "Update PIN" : "Set PIN"}
+                            {pinActionCardId === card.id ? "Saving..." : card.has_pin ? "Reset PIN" : "Set PIN"}
                           </button>
                         </div>
                       )}

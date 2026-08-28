@@ -1,4 +1,5 @@
 """Beneficiary business rules for the payments module."""
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_UP, Decimal
@@ -57,6 +58,7 @@ from app.users.repository import UserRepository
 from app.wallets.models import Wallet
 from app.wallets.repository import WalletRepository
 
+logger = logging.getLogger(__name__)
 
 _CENTS = Decimal("0.01")
 _SCHEDULED_STATUS_TRANSITIONS: dict[ScheduledPaymentStatus, set[ScheduledPaymentStatus]] = {
@@ -149,7 +151,11 @@ class IbanTransferService:
         if source.currency == target_currency:
             raise ValidationError("FX quote is not required for same-currency transfers")
 
-        rate = self.fx.get_rate(source.currency, target_currency)
+        # Must match the rate get_quote() itself will price with below (now
+        # the live rate, not the static table) — otherwise this estimate
+        # under-shoots by the live margin and the quote it produces can land
+        # short of the requested target amount.
+        rate = self.fx.get_market_rate(source.currency, target_currency)
         source_amount = self._source_amount_for_target(data.amount, rate)
         quote = self.fx.get_quote(
             initiator_user_id,
@@ -597,7 +603,7 @@ class BillSplitService:
                     message=f"You were asked to pay {participant_data.amount or Decimal('0')} {bill_split.currency} for '{bill_split.title}'.",
                 )
             except Exception:
-                pass
+                logger.exception("Failed to notify split-bill participant %s", participant_user_id)
 
         self.db.flush()
         return self._to_public(bill_split)
@@ -674,7 +680,7 @@ class BillSplitService:
                 related_transaction_id=transaction.id,
             )
         except Exception:
-            pass
+            logger.exception("Failed to notify bill-split owner %s of a received payment", bill_split.owner_user_id)
         return self._to_public(bill_split)
 
     def decline_participant(

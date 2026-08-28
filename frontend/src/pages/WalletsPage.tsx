@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ChevronDown, ChevronUp, Copy, Plus, Star, Trash2, TrendingUp, X } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ChevronUp, Copy, Plus, Star, TrendingUp, X, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -6,6 +6,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { FXMarketRate, FXQuote, FXRateHistory, Transaction, Wallet } from "../types";
+import { formatIban, walletLabel } from "../utils";
 
 const RATE_ACCENT = "#5b5fef"; // same violet as --easyb-accent, kept as one deliberate hue for the trend line
 // matches backend/app/fx/service.py's _RATES_TO_RON — keep both in sync
@@ -97,12 +98,16 @@ export function WalletsPage() {
   const [busy, setBusy] = useState(false);
   const [settingMainId, setSettingMainId] = useState<string | null>(null);
   const [newCurrency, setNewCurrency] = useState("");
+  const [newNickname, setNewNickname] = useState("");
   const [addingAccount, setAddingAccount] = useState(false);
   const [deletingWallet, setDeletingWallet] = useState<Wallet | null>(null);
+  const [closeDestinationId, setCloseDestinationId] = useState("");
+  const [closePreviewRate, setClosePreviewRate] = useState<FXMarketRate | null>(null);
   const [closingAccount, setClosingAccount] = useState(false);
   const [convertRate, setConvertRate] = useState<FXMarketRate | null>(null);
   const [chartSourceCurrency, setChartSourceCurrency] = useState("");
   const [chartTargetCurrency, setChartTargetCurrency] = useState("");
+  const [chartDays, setChartDays] = useState(14);
   const [rateHistory, setRateHistory] = useState<FXRateHistory | null>(null);
   const [expandedTransactionWalletIds, setExpandedTransactionWalletIds] = useState<Set<string>>(() => new Set());
   const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
@@ -151,15 +156,41 @@ export function WalletsPage() {
       }, {}),
     [transactions],
   );
-  const mainWallet = activeWallets.find((w) => w.is_main);
-  const missingCurrencies = SUPPORTED_CURRENCIES.filter((c) => !activeWallets.some((w) => w.currency === c));
+  const closeDestinationOptions = activeWallets.filter((w) => w.id !== deletingWallet?.id && w.status === "ACTIVE");
+  const closeDestination = closeDestinationOptions.find((w) => w.id === closeDestinationId);
+
+  useEffect(() => {
+    if (!deletingWallet) {
+      setCloseDestinationId("");
+      return;
+    }
+    const fallback = closeDestinationOptions.find((w) => w.is_main) ?? closeDestinationOptions[0];
+    setCloseDestinationId(fallback?.id ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deletingWallet]);
+
+  useEffect(() => {
+    if (!accessToken || !deletingWallet || !closeDestination || deletingWallet.currency === closeDestination.currency) {
+      setClosePreviewRate(null);
+      return;
+    }
+    apiRequest<FXMarketRate>(
+      `/fx/rate?source_currency=${deletingWallet.currency}&target_currency=${closeDestination.currency}`,
+      { token: accessToken },
+    )
+      .then(setClosePreviewRate)
+      .catch(() => setClosePreviewRate(null));
+  }, [accessToken, deletingWallet, closeDestination]);
 
   async function confirmDeleteAccount() {
-    if (!accessToken || !deletingWallet || closingAccount) return;
+    if (!accessToken || !deletingWallet || !closeDestinationId || closingAccount) return;
     setClosingAccount(true);
     setError(null);
     try {
-      await apiRequest(`/wallets/${deletingWallet.id}`, { method: "DELETE", token: accessToken });
+      await apiRequest(
+        `/wallets/${deletingWallet.id}?destination_wallet_id=${closeDestinationId}`,
+        { method: "DELETE", token: accessToken },
+      );
       setDeletingWallet(null);
       loadWallets();
     } catch (err) {
@@ -171,13 +202,17 @@ export function WalletsPage() {
 
   async function addAccount() {
     if (!accessToken || addingAccount) return;
-    const currency = newCurrency || missingCurrencies[0];
-    if (!currency) return;
+    const currency = newCurrency || SUPPORTED_CURRENCIES[0];
     setAddingAccount(true);
     setError(null);
     try {
-      await apiRequest("/wallets", { method: "POST", token: accessToken, body: { currency } });
+      await apiRequest("/wallets", {
+        method: "POST",
+        token: accessToken,
+        body: { currency, nickname: newNickname.trim() || null },
+      });
       setNewCurrency("");
+      setNewNickname("");
       loadWallets();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not add account");
@@ -244,12 +279,12 @@ export function WalletsPage() {
       return;
     }
     apiRequest<FXRateHistory>(
-      `/fx/rate/history?source_currency=${chartSourceCurrency}&target_currency=${chartTargetCurrency}&days=14`,
+      `/fx/rate/history?source_currency=${chartSourceCurrency}&target_currency=${chartTargetCurrency}&days=${chartDays}`,
       { token: accessToken },
     )
       .then(setRateHistory)
       .catch(() => setRateHistory(null));
-  }, [accessToken, chartSourceCurrency, chartTargetCurrency]);
+  }, [accessToken, chartSourceCurrency, chartTargetCurrency, chartDays]);
 
   const bankRate = convertRate ? Number(convertRate.rate) * (1 - Number(convertRate.fee_rate)) : null;
   const convertedAmount =
@@ -322,21 +357,26 @@ export function WalletsPage() {
             <div className="easyb-eyebrow">Your accounts</div>
             <h2>Wallets</h2>
           </div>
-          {missingCurrencies.length > 0 && (
-            <div className="easyb-add-account">
-              <select value={newCurrency || missingCurrencies[0]} onChange={(e) => setNewCurrency(e.target.value)}>
-                {missingCurrencies.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-              <button type="button" onClick={addAccount} disabled={addingAccount}>
-                <Plus size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
-                Add account
-              </button>
-            </div>
-          )}
+          <div className="easyb-add-account">
+            <select value={newCurrency || SUPPORTED_CURRENCIES[0]} onChange={(e) => setNewCurrency(e.target.value)}>
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={newNickname}
+              onChange={(e) => setNewNickname(e.target.value)}
+              placeholder="Nickname (optional)"
+              style={{ width: 160 }}
+            />
+            <button type="button" onClick={addAccount} disabled={addingAccount}>
+              <Plus size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
+              Add account
+            </button>
+          </div>
         </div>
 
         <div className="easyb-wallet-grid">
@@ -352,7 +392,12 @@ export function WalletsPage() {
                 style={{ "--wallet-accent": colorForCurrency(wallet.currency) } as CSSProperties}
               >
                 <div className="easyb-wallet-card__top">
-                  <span className="easyb-wallet-card__code">{wallet.currency}</span>
+                  <span className="easyb-wallet-card__code">
+                    {wallet.currency}
+                    {wallet.nickname && (
+                      <span style={{ fontWeight: 500, color: "var(--easyb-text-soft)" }}> · {wallet.nickname}</span>
+                    )}
+                  </span>
                   {wallet.is_main && <span className="easyb-chip easyb-chip-violet">Main</span>}
                 </div>
                 <div className="easyb-wallet-card__amount" style={{ color: "var(--wallet-accent)" }}>
@@ -369,7 +414,7 @@ export function WalletsPage() {
                   onClick={() => copyIban(wallet)}
                   title="Copy IBAN"
                 >
-                  <span>{wallet.iban}</span>
+                  <span>{formatIban(wallet.iban)}</span>
                   <Copy size={12} />
                   {copiedWalletId === wallet.id && <span className="easyb-wallet-card__iban-copied">Copied</span>}
                 </button>
@@ -429,8 +474,8 @@ export function WalletsPage() {
                         className="easyb-wallet-card__delete"
                         onClick={() => setDeletingWallet(wallet)}
                       >
-                        <Trash2 size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
-                        Delete
+                        <XCircle size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
+                        Close
                       </button>
                     </div>
                   )}
@@ -460,9 +505,12 @@ export function WalletsPage() {
               <div className="easyb-rate-banner">
                 <div className="easyb-rate-banner__headline">
                   <TrendingUp size={16} />
-                  1 {convertRate.source_currency} = {bankRate.toFixed(4)} {convertRate.target_currency}
+                  1 {convertRate.source_currency} = {Number(convertRate.rate).toFixed(4)} {convertRate.target_currency}
                 </div>
-                <div className="easyb-rate-banner__sub">Bank rate, fee included</div>
+                {/* Same rate a "Get quote" call below will price with, shown the same way the
+                    resulting quote card shows its own "Rate" line — fee is a separate line item
+                    there (not baked into the rate), so it's kept separate here too. */}
+                <div className="easyb-rate-banner__sub">Live bank rate, 0.5% fee applies at quote time</div>
                 {convertedAmount !== null && (
                   <div className="easyb-rate-banner__amount">
                     {amount} {convertRate.source_currency} = <strong>{convertedAmount.toFixed(2)} {convertRate.target_currency}</strong>
@@ -477,7 +525,7 @@ export function WalletsPage() {
                 <select value={sourceId} onChange={(e) => { setSourceId(e.target.value); setQuote(null); }}>
                   {activeWallets.map((w) => (
                     <option key={w.id} value={w.id}>
-                      {w.currency} · {w.available_balance}
+                      {walletLabel(w)} · {w.available_balance}
                     </option>
                   ))}
                 </select>
@@ -489,7 +537,7 @@ export function WalletsPage() {
                     .filter((w) => w.id !== sourceId)
                     .map((w) => (
                       <option key={w.id} value={w.id}>
-                        {w.currency}
+                        {walletLabel(w)}
                       </option>
                     ))}
                   {SUPPORTED_CURRENCIES.filter(
@@ -559,8 +607,20 @@ export function WalletsPage() {
           <div className="easyb-card easyb-exchange-card">
             <div className="easyb-section-header">
               <div>
-                <div className="easyb-eyebrow">Live · ECB, 14 days</div>
+                <div className="easyb-eyebrow">Live · ECB, {chartDays} days</div>
                 <h2>Rate trend</h2>
+              </div>
+              <div className="easyb-period-picker">
+                {[7, 14, 30, 90].map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    className={days === chartDays ? "easyb-period-picker__option is-active" : "easyb-period-picker__option"}
+                    onClick={() => setChartDays(days)}
+                  >
+                    {days}D
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -602,25 +662,71 @@ export function WalletsPage() {
         <div className="folder-modal-backdrop" onClick={() => !closingAccount && setDeletingWallet(null)}>
           <div className="easyb-card" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
             <div className="easyb-eyebrow">Close account</div>
-            <h2 style={{ marginBottom: 10 }}>{deletingWallet.currency} wallet</h2>
+            <h2 style={{ marginBottom: 10 }}>{walletLabel(deletingWallet)} wallet</h2>
             <p style={{ fontSize: 13.5, color: "var(--easyb-text-soft)", lineHeight: 1.6 }}>
               This account currently holds{" "}
               <strong style={{ color: "var(--easyb-text)" }}>
                 {deletingWallet.available_balance} {deletingWallet.currency}
               </strong>
-              .{" "}
-              {Number(deletingWallet.available_balance) > 0 && mainWallet
-                ? `It will be converted and transferred into your main ${mainWallet.currency} wallet.`
-                : "The account has no balance to move."}{" "}
-              This can't be undone, but you can reopen a {deletingWallet.currency} account later.
+              . This can't be undone.
             </p>
+
+            {Number(deletingWallet.available_balance) > 0 && closeDestinationOptions.length > 0 && (
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+                Move the balance to
+                <select value={closeDestinationId} onChange={(e) => setCloseDestinationId(e.target.value)}>
+                  {closeDestinationOptions.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {walletLabel(w)}
+                      {w.is_main ? " (main)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {Number(deletingWallet.available_balance) > 0 && closeDestination && (
+              <p style={{ fontSize: 13.5, lineHeight: 1.6 }}>
+                {deletingWallet.currency === closeDestination.currency ? (
+                  <>
+                    <strong style={{ color: "var(--easyb-text)" }}>
+                      {deletingWallet.available_balance} {deletingWallet.currency}
+                    </strong>{" "}
+                    will be moved to {walletLabel(closeDestination)}.
+                  </>
+                ) : closePreviewRate ? (
+                  <>
+                    Estimated: you'll receive about{" "}
+                    <strong style={{ color: "var(--easyb-text)" }}>
+                      {(
+                        Number(deletingWallet.available_balance) *
+                        Number(closePreviewRate.rate) *
+                        (1 - Number(closePreviewRate.fee_rate))
+                      ).toFixed(2)}{" "}
+                      {closeDestination.currency}
+                    </strong>{" "}
+                    in {walletLabel(closeDestination)} (live rate, exact amount priced when you confirm).
+                  </>
+                ) : (
+                  "Fetching the conversion estimate…"
+                )}
+              </p>
+            )}
+
+            {closeDestinationOptions.length === 0 && (
+              <p role="alert">No other active account available — add one first before closing this one.</p>
+            )}
+
             {error && <p role="alert">{error}</p>}
             <div className="easyb-quote-card__actions" style={{ marginTop: 6 }}>
               <button className="easyb-btn-ghost" onClick={() => setDeletingWallet(null)} disabled={closingAccount}>
                 Cancel
               </button>
-              <button onClick={confirmDeleteAccount} disabled={closingAccount}>
-                {closingAccount ? "Closing…" : "Close account"}
+              <button
+                onClick={confirmDeleteAccount}
+                disabled={closingAccount || !closeDestinationId}
+              >
+                {closingAccount ? "Closing…" : "Yes, close this account"}
               </button>
             </div>
           </div>

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { Statement, Wallet } from "../types";
+import { walletLabel } from "../utils";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -115,7 +116,7 @@ export function StatementsPage() {
             <select value={walletId} onChange={(e) => setWalletId(e.target.value)}>
               {wallets.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.currency} {w.is_main ? "(main)" : ""}
+                  {walletLabel(w)} {w.is_main ? "(main)" : ""}
                 </option>
               ))}
             </select>

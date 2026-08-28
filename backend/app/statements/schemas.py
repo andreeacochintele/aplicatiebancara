@@ -27,6 +27,9 @@ class StatementTransaction(BaseModel):
 
 class StatementPublic(BaseModel):
     wallet_id: uuid.UUID
+    iban: str
+    account_holder_name: str
+    representative_name: str | None = None
     currency: str
     date_from: date
     date_to: date

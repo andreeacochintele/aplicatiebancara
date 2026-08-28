@@ -16,6 +16,7 @@ from app.merchants.router import router as merchants_router
 from app.notifications.router import router as notifications_router
 from app.payments.router import router as payments_router
 from app.personal_finance.router import router as personal_finance_router
+from app.reconciliation.router import router as reconciliation_router
 from app.rewards.router import router as rewards_router
 from app.savings.router import router as savings_router
 from app.statements.router import router as statements_router
@@ -48,6 +49,7 @@ api_router.include_router(budgets_router)
 api_router.include_router(savings_router)
 api_router.include_router(audit_router)
 api_router.include_router(business_router)
+api_router.include_router(reconciliation_router)
 
 # Phase 5 AI (in progress) — orchestrator only; specialized agents are stubs
 api_router.include_router(ai_orchestrator_router)

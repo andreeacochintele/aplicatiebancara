@@ -1,6 +1,7 @@
 """Credit profile and score business rules."""
 import base64
 import binascii
+import logging
 import uuid
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
@@ -63,6 +64,7 @@ from app.wallets.repository import WalletRepository
 from app.wallets.schemas import WalletCreate
 from app.wallets.service import WalletService
 
+logger = logging.getLogger(__name__)
 
 LOAN_AUTOPAY_DESCRIPTION_PREFIX = "LOAN_AUTOPAY:"
 
@@ -1054,7 +1056,7 @@ class CreditService:
                     message=f"Your application for {application.requested_amount} {application.currency} was rejected.",
                 )
         except Exception:
-            pass
+            logger.exception("Failed to notify user %s of a credit application decision", application.user_id)
         return application
 
     def _create_credit_card_from_approved_application(self, application: CreditApplication) -> None:
@@ -1127,7 +1129,7 @@ class CreditService:
                 f"{application.requested_amount} {application.currency}. Open Credit to upload the requested information.",
             )
         except Exception:
-            pass
+            logger.exception("Failed to notify user %s that more documents are needed", application.user_id)
         self.db.flush()
         return application
 

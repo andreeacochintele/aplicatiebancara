@@ -87,6 +87,45 @@ def test_classify_intent_returns_the_correct_category_when_the_model_answers_cor
     assert classify_intent(message) == expected
 
 
+# ---- Romanian support: live-found while investigating a report — messages in
+# Romanian ("Ce sold am?") were falling through to support/out_of_scope
+# instead of personal_finance, since the prompt had no Romanian examples at
+# all and _parse_category defaulted an unrecognized reply to out_of_scope. ----
+
+
+def test_system_prompt_says_to_classify_romanian_by_meaning():
+    lowered = intent._SYSTEM_PROMPT.lower()
+    assert "romanian" in lowered
+    assert "classify by meaning" in lowered
+
+
+def test_system_prompt_contains_the_romanian_examples():
+    assert "'Ce sold am?' -> personal_finance" in intent._SYSTEM_PROMPT
+    assert "'Cat am in cont?' -> personal_finance" in intent._SYSTEM_PROMPT
+    assert "'Cum functioneaza bugetele?' -> support" in intent._SYSTEM_PROMPT
+    assert "'Arata-mi cheltuielile din ultima luna' -> personal_finance" in intent._SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize(
+    "message, model_reply, expected",
+    [
+        ("Ce sold am?", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+        ("Cat am in cont?", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+        ("Cum functioneaza bugetele?", "support", IntentCategory.SUPPORT),
+        ("Arata-mi cheltuielile din ultima luna", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+    ],
+)
+def test_classify_intent_returns_the_correct_category_for_romanian_messages(
+    monkeypatch, message, model_reply, expected
+):
+    monkeypatch.setattr(intent, "get_azure_foundry_client", lambda: _FakeClient(model_reply))
+    assert classify_intent(message) == expected
+
+
+def test_parse_category_defaults_to_support_on_unrecognized_reply():
+    assert intent._parse_category("hmm, not sure") == IntentCategory.SUPPORT
+
+
 # ---- latency fix: reasoning_effort="minimal" on classify_intent's own call only ----
 #
 # Live-verified separately (task report, not asserted here — no live Azure

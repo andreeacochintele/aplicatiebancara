@@ -50,15 +50,16 @@ _SYSTEM_PROMPT = (
 # First keyword match wins; order encodes priority for overlapping words
 # (e.g. a "budget" question naming a "category" still routes to budgets).
 _DISPATCH: list[tuple[str, tuple[str, ...]]] = [
-    ("budgets", ("budget",)),
-    ("savings_goals", ("saving", "goal")),
-    ("cashback_offers", ("cashback", "offer", "discount")),
-    ("forecast", ("forecast", "end of month", "end-of-month", "project")),
-    ("income", ("income", "salary", "earn")),
-    ("recurring", ("recurring", "subscription")),
-    ("spending_by_type", ("spend", "spent", "spending", "expense", "category")),
-    ("transactions", ("transaction", "history")),
-    ("wallet_balances", ("balance", "wallet", "money", "how much")),
+    ("statement", ("statement", "extras de cont", "extras cont", "extras")),
+    ("budgets", ("budget", "buget")),
+    ("savings_goals", ("saving", "goal", "econom", "obiectiv")),
+    ("cashback_offers", ("cashback", "offer", "discount", "reducere")),
+    ("forecast", ("forecast", "end of month", "end-of-month", "project", "prognoz", "proiec")),
+    ("income", ("income", "salary", "earn", "venit", "salariu")),
+    ("recurring", ("recurring", "subscription", "recurent", "abonament")),
+    ("spending_by_type", ("spend", "spent", "spending", "expense", "category", "cheltui", "categorie")),
+    ("transactions", ("transaction", "history", "tranzac", "istoric")),
+    ("wallet_balances", ("balance", "wallet", "money", "how much", "sold", "cont", "bani", "cat am", "cât am")),
 ]
 _DEFAULT_TOOL = "wallet_balances"
 
@@ -188,6 +189,26 @@ def _cashback_offers(ctx: ToolContext) -> str:
     return "Active cashback offers:\n" + "\n".join(lines)
 
 
+def _statement(ctx: ToolContext) -> str:
+    s = tools.get_account_statement(ctx)
+    header = (
+        f"Account statement, {s.date_from} to {s.date_to} ({s.currency}):\n"
+        f"- Opening balance: {s.opening_balance} {s.currency}\n"
+        f"- Closing balance: {s.closing_balance} {s.currency}\n"
+        f"- Total incoming: {s.total_incoming} {s.currency}\n"
+        f"- Total outgoing: {s.total_outgoing} {s.currency}\n"
+    )
+    if not s.transactions:
+        return header + "No transactions in this period."
+    shown = s.transactions[:10]
+    lines = [
+        f"- {t.created_at.date()} {t.type.value} ({t.direction}): {t.amount} {s.currency} ({t.status.value})"
+        + (f" — {t.description}" if t.description else "")
+        for t in shown
+    ]
+    return header + f"{len(shown)} most recent of {len(s.transactions)} transactions:\n" + "\n".join(lines)
+
+
 def _forecast(ctx: ToolContext) -> str:
     f = tools.forecast_month_end_balance(ctx)
     return (
@@ -209,6 +230,7 @@ def _recurring(ctx: ToolContext) -> str:
 
 
 _SUMMARIZERS = {
+    "statement": _statement,
     "wallet_balances": _wallet_balances,
     "transactions": _transactions,
     "spending_by_type": _spending_by_type,

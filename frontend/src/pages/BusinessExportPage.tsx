@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
+import { walletLabel } from "../utils";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -12,9 +13,17 @@ interface BusinessExportRow {
   counterparty: string;
   description: string | null;
   category: string | null;
+  direction: "IN" | "OUT";
   amount: string;
   currency: string;
   status: string;
+}
+
+interface WalletOption {
+  id: string;
+  currency: string;
+  nickname: string | null;
+  iban: string;
 }
 
 interface CurrencyTotal {
@@ -33,7 +42,7 @@ interface BusinessExportPreview {
 
 interface ExportJob {
   id: string;
-  format: "CSV" | "XLSX" | "PDF";
+  format: "CSV" | "XLSX" | "PDF" | "MT940";
   date_from: string;
   date_to: string;
   status: string;
@@ -64,7 +73,9 @@ export function BusinessExportPage() {
   const [dateFrom, setDateFrom] = useState(todayMinus(30));
   const [dateTo, setDateTo] = useState(todayMinus(0));
   const [direction, setDirection] = useState<"" | "incoming" | "outgoing">("");
-  const [format, setFormat] = useState<"csv" | "xlsx">("csv");
+  const [format, setFormat] = useState<"csv" | "xlsx" | "pdf" | "mt940">("csv");
+  const [walletId, setWalletId] = useState("");
+  const [wallets, setWallets] = useState<WalletOption[]>([]);
   const [preview, setPreview] = useState<BusinessExportPreview | null>(null);
   const [history, setHistory] = useState<ExportJob[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +86,9 @@ export function BusinessExportPage() {
   useEffect(() => {
     if (!isBusiness || !accessToken) return;
     loadHistory();
+    apiRequest<WalletOption[]>("/wallets", { token: accessToken })
+      .then(setWallets)
+      .catch(() => setWallets([]));
   }, [isBusiness, accessToken]);
 
   if (!isBusiness) {
@@ -88,6 +102,7 @@ export function BusinessExportPage() {
   function buildParams(extra?: Record<string, string>) {
     const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo, ...extra });
     if (direction) params.set("direction", direction);
+    if (walletId) params.set("wallet_id", walletId);
     return params;
   }
 
@@ -120,6 +135,10 @@ export function BusinessExportPage() {
 
   async function download() {
     if (!accessToken) return;
+    if (format === "mt940" && !walletId) {
+      setError("MT940 is a per-account statement — pick a wallet first.");
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -172,9 +191,22 @@ export function BusinessExportPage() {
           </label>
           <label style={{ flex: 1 }}>
             Format
-            <select value={format} onChange={(e) => setFormat(e.target.value as "csv" | "xlsx")}>
+            <select value={format} onChange={(e) => setFormat(e.target.value as "csv" | "xlsx" | "pdf" | "mt940")}>
               <option value="csv">CSV</option>
               <option value="xlsx">XLSX</option>
+              <option value="pdf">PDF</option>
+              <option value="mt940">MT940</option>
+            </select>
+          </label>
+          <label style={{ flex: 1 }}>
+            Wallet {format === "mt940" && "(required for MT940)"}
+            <select value={walletId} onChange={(e) => setWalletId(e.target.value)}>
+              <option value="">All wallets</option>
+              {wallets.map((wallet) => (
+                <option key={wallet.id} value={wallet.id}>
+                  {walletLabel(wallet)}
+                </option>
+              ))}
             </select>
           </label>
         </div>
@@ -218,6 +250,7 @@ export function BusinessExportPage() {
                 <th>Type</th>
                 <th>Counterparty</th>
                 <th>Category</th>
+                <th>Direction</th>
                 <th style={{ textAlign: "right" }}>Amount</th>
                 <th>Status</th>
               </tr>
@@ -229,7 +262,13 @@ export function BusinessExportPage() {
                   <td>{row.type}</td>
                   <td>{row.counterparty || row.description || "—"}</td>
                   <td>{row.category ?? "—"}</td>
+                  <td>
+                    <span className={`tag ${row.direction === "IN" ? "tag--accent" : "tag--neutral"}`}>
+                      {row.direction}
+                    </span>
+                  </td>
                   <td style={{ textAlign: "right" }}>
+                    {row.direction === "IN" ? "+" : "-"}
                     {row.amount} {row.currency}
                   </td>
                   <td>
@@ -239,7 +278,7 @@ export function BusinessExportPage() {
               ))}
               {preview.transactions.length === 0 && (
                 <tr>
-                  <td colSpan={6}>No transactions in this period.</td>
+                  <td colSpan={7}>No transactions in this period.</td>
                 </tr>
               )}
             </tbody>

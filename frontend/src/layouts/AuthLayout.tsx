@@ -11,7 +11,7 @@ export function AuthLayout() {
           <ThemeToggle />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-          <BrandMark size={72} />
+          <BrandMark className="easyb-brand-mark" size={72} />
           <h1 style={{ margin: 0 }}>EasyB</h1>
         </div>
         <Outlet />

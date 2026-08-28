@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.exceptions import NotFoundError, ValidationError
 from app.users.schemas import UserCreate
 from app.users.service import UserService
 from app.wallets.iban import generate_iban
@@ -55,6 +55,7 @@ def test_generate_iban_produces_a_checksum_valid_iban():
 
     assert len(iban) == 24
     assert iban[:2] == "RO"
+    assert iban[4:8] == "EASY"  # bank code — must match the EasyB brand, not a leftover "AURO"
     rearranged = iban[4:] + iban[:4]
     numeric = "".join(str(ord(char) - 55) if char.isalpha() else char for char in rearranged)
     assert int(numeric) % 97 == 1
@@ -74,12 +75,17 @@ def test_unsupported_currency_code_is_rejected(db_session, seeded_user):
         service.create_wallet(seeded_user.id, WalletCreate(currency="ZZZ"))
 
 
-def test_duplicate_currency_wallet_rejected(db_session, seeded_user):
+def test_multiple_wallets_in_the_same_currency_are_allowed(db_session, seeded_user):
     service = WalletService(db_session)
-    service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    first = service.create_wallet(seeded_user.id, WalletCreate(currency="RON", nickname="Spending"))
+    second = service.create_wallet(seeded_user.id, WalletCreate(currency="RON", nickname="Savings"))
 
-    with pytest.raises(ConflictError):
-        service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    assert first.id != second.id
+    assert first.iban != second.iban
+    assert first.nickname == "Spending"
+    assert second.nickname == "Savings"
+    ron_wallets = [w for w in service.list_wallets(seeded_user.id) if w.currency == "RON"]
+    assert len(ron_wallets) == 2
 
 
 def test_only_one_main_wallet(db_session, seeded_user):
@@ -126,8 +132,10 @@ def test_close_wallet_sweeps_cross_currency_balance_into_main(db_session, seeded
     assert closed.status == WalletStatus.CLOSED
     assert closed.available_balance == Decimal("0.00")
     refreshed_main = service.repository.get_by_id(main.id)
-    # 100 EUR * 4.97 RON/EUR, minus the standard 0.5% fee, same as any other quote.
-    assert refreshed_main.available_balance == Decimal("494.52")
+    # 100 EUR at the live-rate-with-1%-margin quote rate (falls back to the
+    # static 4.97 EUR/RON here — network fetch is mocked off by default, see
+    # conftest.py — then 4.97 * 0.99 = 4.9203), minus the standard 0.5% fee.
+    assert refreshed_main.available_balance == Decimal("489.57")
 
 
 def test_close_wallet_rejects_the_main_wallet(db_session, seeded_user):
@@ -164,12 +172,61 @@ def test_currency_can_be_reopened_after_closing(db_session, seeded_user):
     service = WalletService(db_session)
     service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
     eur = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    original_iban = eur.iban
     service.close_wallet(seeded_user.id, eur.id)
 
     reopened = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
 
     assert reopened.status == WalletStatus.ACTIVE
     assert reopened.available_balance == Decimal("0")
+    # A closed account's IBAN is retired, same as a real bank — reopening
+    # issues a fresh one rather than resurrecting the old account number.
+    assert reopened.iban != original_iban
+
+
+def test_get_by_user_and_currency_prefers_main_then_oldest_active(db_session, seeded_user):
+    service = WalletService(db_session)
+    service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))  # becomes main, not EUR
+    older = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+
+    # Neither EUR wallet is the (RON) main wallet, so the oldest active one wins.
+    resolved = service.repository.get_by_user_and_currency(seeded_user.id, "EUR")
+    assert resolved.id == older.id
+
+    service.close_wallet(seeded_user.id, older.id)
+    still_resolved = service.repository.get_by_user_and_currency(seeded_user.id, "EUR")
+    assert still_resolved.id != older.id  # a closed wallet is never picked
+
+
+def test_close_wallet_sweeps_into_chosen_destination_not_just_main(db_session, seeded_user):
+    service = WalletService(db_session)
+    main = service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    usd = service.create_wallet(seeded_user.id, WalletCreate(currency="USD"))
+    eur = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    eur.available_balance = Decimal("50.00")
+    db_session.flush()
+
+    closed = service.close_wallet(seeded_user.id, eur.id, destination_wallet_id=usd.id)
+
+    assert closed.status == WalletStatus.CLOSED
+    refreshed_main = service.repository.get_by_id(main.id)
+    refreshed_usd = service.repository.get_by_id(usd.id)
+    assert refreshed_main.available_balance == Decimal("0.00")  # untouched — not the chosen destination
+    assert refreshed_usd.available_balance > Decimal("0.00")
+
+
+def test_close_wallet_rejects_closed_or_self_destination(db_session, seeded_user):
+    service = WalletService(db_session)
+    service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    eur = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    usd = service.create_wallet(seeded_user.id, WalletCreate(currency="USD"))
+    service.close_wallet(seeded_user.id, usd.id)
+
+    with pytest.raises(NotFoundError):
+        service.close_wallet(seeded_user.id, eur.id, destination_wallet_id=usd.id)
+    with pytest.raises(ValidationError):
+        service.close_wallet(seeded_user.id, eur.id, destination_wallet_id=eur.id)
 
 
 def test_oversized_currency_returns_422_not_a_bare_500(client):
@@ -193,3 +250,81 @@ def test_oversized_currency_returns_422_not_a_bare_500(client):
     )
 
     assert response.status_code == 422
+
+
+def _register_http(client, email: str, phone: str) -> str:
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": email,
+            "phone": phone,
+            "password": "Sup3rSecret!",
+            "first_name": "Wallet",
+            "last_name": "Http",
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["tokens"]["access_token"]
+
+
+def test_set_main_wallet_endpoint_switches_the_flag(client):
+    token = _register_http(client, "wallet-http-setmain@example.com", "+40744444446")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/v1/wallets", headers=headers, json={"currency": "RON"})
+    eur = client.post("/api/v1/wallets", headers=headers, json={"currency": "EUR"}).json()
+
+    response = client.patch(f"/api/v1/wallets/{eur['id']}/set-main", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["is_main"] is True
+
+
+def test_set_main_wallet_endpoint_requires_auth(client):
+    token = _register_http(client, "wallet-http-setmain-auth@example.com", "+40744444447")
+    headers = {"Authorization": f"Bearer {token}"}
+    ron = client.post("/api/v1/wallets", headers=headers, json={"currency": "RON"}).json()
+
+    response = client.patch(f"/api/v1/wallets/{ron['id']}/set-main")
+
+    assert response.status_code == 401
+
+
+def test_set_main_wallet_endpoint_rejects_another_users_wallet(client):
+    owner_token = _register_http(client, "wallet-http-owner@example.com", "+40744444448")
+    owner_wallet = client.post(
+        "/api/v1/wallets", headers={"Authorization": f"Bearer {owner_token}"}, json={"currency": "RON"}
+    ).json()
+    other_token = _register_http(client, "wallet-http-other@example.com", "+40744444449")
+
+    response = client.patch(
+        f"/api/v1/wallets/{owner_wallet['id']}/set-main",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_close_wallet_endpoint_closes_a_non_main_wallet(client):
+    token = _register_http(client, "wallet-http-close@example.com", "+40744444450")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/v1/wallets", headers=headers, json={"currency": "RON"})
+    eur = client.post("/api/v1/wallets", headers=headers, json={"currency": "EUR"}).json()
+
+    response = client.delete(f"/api/v1/wallets/{eur['id']}", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "CLOSED"
+
+
+def test_close_wallet_endpoint_rejects_another_users_wallet(client):
+    owner_token = _register_http(client, "wallet-http-close-owner@example.com", "+40744444451")
+    headers = {"Authorization": f"Bearer {owner_token}"}
+    client.post("/api/v1/wallets", headers=headers, json={"currency": "RON"})
+    eur = client.post("/api/v1/wallets", headers=headers, json={"currency": "EUR"}).json()
+    other_token = _register_http(client, "wallet-http-close-other@example.com", "+40744444452")
+
+    response = client.delete(
+        f"/api/v1/wallets/{eur['id']}", headers={"Authorization": f"Bearer {other_token}"}
+    )
+
+    assert response.status_code == 404

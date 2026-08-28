@@ -36,6 +36,7 @@ of each hardcoding their own numbers, which is what caused Cards and
 Rewards to disagree before). There's no automated check tying the two
 together, so change both together by hand.
 """
+import logging
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -63,6 +64,8 @@ from app.supabase import is_supabase_session
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
 from app.wallets.repository import WalletRepository
+
+logger = logging.getLogger(__name__)
 
 CARD_TIER_POINT_MULTIPLIER: dict[CardTier, Decimal] = {
     CardTier.REGULAR: Decimal("1"),
@@ -355,7 +358,7 @@ class MerchantService:
                 related_transaction_id=cashback_transaction.id,
             )
         except Exception:
-            pass
+            logger.exception("Failed to create cashback notification for user %s", wallet.user_id)
 
     @staticmethod
     def _generate_proof_code() -> str:

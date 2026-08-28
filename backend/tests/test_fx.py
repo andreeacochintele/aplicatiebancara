@@ -39,8 +39,12 @@ def test_quote_calculates_target_amount_and_fee(db_session, seeded_user):
 
     assert quote.status == FXQuoteStatus.CREATED
     assert quote.fee == Decimal("0.50")  # 0.5% of 100
-    assert quote.exchange_rate == Decimal("4.97")
-    assert quote.target_amount == Decimal("494.52")  # (100 - 0.50) * 4.97, rounded
+    # get_quote() now prices off get_market_rate() (live, falls back to the
+    # static table here since the network fetch is mocked off by default —
+    # see conftest.py), which bakes in the same 1% margin the Wallets display
+    # banner shows, on top of the static 4.97 EUR/RON: 4.97 * 0.99 = 4.9203.
+    assert quote.exchange_rate == Decimal("4.9203")
+    assert quote.target_amount == Decimal("489.57")  # (100 - 0.50) * 4.9203, rounded
 
 
 def test_quote_rejects_same_currency(db_session, seeded_user):

@@ -11,12 +11,15 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.business.repository import BusinessProfileRepository
+from app.core.enums import UserType
 from app.core.exceptions import NotFoundError, ValidationError
 from app.exports.models import ExportFormat, ExportJob, ExportType
 from app.exports.repository import ExportJobRepository
 from app.statements.repository import StatementRepository
 from app.statements.schemas import StatementPublic, StatementRequest, StatementTransaction
 from app.transactions.models import LedgerEntryType
+from app.users.repository import UserRepository
 from app.wallets.repository import WalletRepository
 
 
@@ -25,6 +28,8 @@ class StatementService:
         self.db = db
         self.repository = StatementRepository(db)
         self.wallets = WalletRepository(db)
+        self.users = UserRepository(db)
+        self.business_profiles = BusinessProfileRepository(db)
         self.jobs = ExportJobRepository(db)
 
     def generate(self, user_id: uuid.UUID, data: StatementRequest) -> StatementPublic:
@@ -72,8 +77,20 @@ class StatementService:
             if entry.entry_type in (LedgerEntryType.DEBIT, LedgerEntryType.CREDIT)
         ]
 
+        holder = self.users.get_by_id(user_id)
+        holder_name = f"{holder.first_name} {holder.last_name}".strip() if holder is not None else ""
+        representative_name = None
+        if holder is not None and holder.user_type == UserType.BUSINESS:
+            active_profile = next((p for p in self.business_profiles.list_for_user(user_id) if p.is_active), None)
+            if active_profile is not None:
+                holder_name = active_profile.company_name
+                representative_name = active_profile.representative_name
+
         return StatementPublic(
             wallet_id=wallet.id,
+            iban=wallet.iban,
+            account_holder_name=holder_name,
+            representative_name=representative_name,
             currency=wallet.currency,
             date_from=data.date_from,
             date_to=data.date_to,
@@ -158,38 +175,91 @@ class StatementService:
 
     @staticmethod
     def to_pdf(statement: StatementPublic) -> bytes:
-        from fpdf import FPDF
+        from app.core.pdf_branding import BORDER, GREEN, RED, ROW_ALT, TEXT_DARK, TEXT_SOFT, gradient_color, new_branded_pdf
 
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Helvetica", "B", 14)
-        pdf.cell(0, 10, f"Statement - {statement.currency} wallet", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font("Helvetica", "", 10)
-        pdf.cell(0, 8, f"Period: {statement.date_from} to {statement.date_to}", new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(0, 8, f"Opening balance: {statement.opening_balance} {statement.currency}", new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(0, 8, f"Closing balance: {statement.closing_balance} {statement.currency}", new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(0, 8, f"Total incoming: {statement.total_incoming} {statement.currency}", new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(0, 8, f"Total outgoing: {statement.total_outgoing} {statement.currency}", new_x="LMARGIN", new_y="NEXT")
+        _TEXT_DARK, _TEXT_SOFT, _BORDER, _ROW_ALT, _GREEN, _RED = TEXT_DARK, TEXT_SOFT, BORDER, ROW_ALT, GREEN, RED
+        _gradient_color = gradient_color
+
+        pdf = new_branded_pdf(subtitle="Account Statement")
+        pdf.footer_note = "sandbox statement, not a legal document"
+
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(*_TEXT_DARK)
+        pdf.cell(0, 8, f"{statement.currency} wallet statement", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
+
+        pdf.set_font("Helvetica", "", 9.5)
+        pdf.set_text_color(*_TEXT_SOFT)
+        label_w = 32
+        detail_lines = [
+            ("Account holder", statement.account_holder_name or "-"),
+            *([("Representative", statement.representative_name)] if statement.representative_name else []),
+            ("IBAN", statement.iban),
+            ("Period", f"{statement.date_from} to {statement.date_to}"),
+        ]
+        for label, value in detail_lines:
+            pdf.set_text_color(*_TEXT_SOFT)
+            pdf.cell(label_w, 6, label)
+            pdf.set_text_color(*_TEXT_DARK)
+            pdf.cell(0, 6, value, new_x="LMARGIN", new_y="NEXT")
         pdf.ln(4)
 
-        col_widths = (28, 30, 22, 25, 65)
+        stats = (
+            ("Opening balance", statement.opening_balance, _TEXT_DARK),
+            ("Closing balance", statement.closing_balance, _TEXT_DARK),
+            ("Total incoming", statement.total_incoming, _GREEN),
+            ("Total outgoing", statement.total_outgoing, _RED),
+        )
+        box_w = (pdf.w - 20) / 4
+        box_h = 18
+        x0, y0 = pdf.get_x(), pdf.get_y()
+        for i, (label, value, color) in enumerate(stats):
+            x = x0 + i * box_w
+            pdf.set_draw_color(*_BORDER)
+            pdf.set_fill_color(*_ROW_ALT)
+            pdf.rect(x, y0, box_w - 3, box_h, style="FD")
+            pdf.set_xy(x + 2, y0 + 2.5)
+            pdf.set_font("Helvetica", "", 7.5)
+            pdf.set_text_color(*_TEXT_SOFT)
+            pdf.cell(box_w - 6, 4, label.upper())
+            pdf.set_xy(x + 2, y0 + 8.5)
+            pdf.set_font("Helvetica", "B", 10.5)
+            pdf.set_text_color(*color)
+            pdf.cell(box_w - 6, 6, f"{value} {statement.currency}")
+        pdf.set_xy(x0, y0 + box_h + 6)
+        pdf.set_text_color(*_TEXT_DARK)
+
+        col_widths = (24, 32, 20, 28, 66)
         headers = ("Date", "Type", "Direction", "Amount", "Description")
-        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_font("Helvetica", "B", 8.5)
+        pdf.set_fill_color(*_gradient_color(0.15))
+        pdf.set_text_color(255, 255, 255)
         for header, width in zip(headers, col_widths):
-            pdf.cell(width, 7, header, border=1)
+            pdf.cell(width, 8, header, border=0, fill=True)
         pdf.ln()
 
-        pdf.set_font("Helvetica", "", 9)
-        for tx in statement.transactions:
+        pdf.set_font("Helvetica", "", 8.5)
+        if not statement.transactions:
+            pdf.set_text_color(*_TEXT_SOFT)
+            pdf.cell(sum(col_widths), 10, "No transactions in this period.", border="LRB")
+            pdf.ln()
+        for i, tx in enumerate(statement.transactions):
+            pdf.set_fill_color(*(_ROW_ALT if i % 2 else (255, 255, 255)))
+            pdf.set_draw_color(*_BORDER)
             row = (
                 tx.created_at.strftime("%Y-%m-%d"),
-                tx.type.value,
+                tx.type.value.replace("_", " ").title(),
                 tx.direction,
-                f"{tx.amount}",
-                (tx.description or "")[:40],
+                f"{'+' if tx.direction == 'IN' else '-'}{tx.amount}",
+                (tx.description or "")[:42],
             )
-            for value, width in zip(row, col_widths):
-                pdf.cell(width, 7, value, border=1)
+            pdf.set_text_color(*_TEXT_DARK)
+            for col, (value, width) in enumerate(zip(row, col_widths)):
+                if col == 3:
+                    pdf.set_text_color(*(_GREEN if tx.direction == "IN" else _RED))
+                pdf.cell(width, 7, value, border="B", fill=True)
+                if col == 3:
+                    pdf.set_text_color(*_TEXT_DARK)
             pdf.ln()
 
         return bytes(pdf.output())

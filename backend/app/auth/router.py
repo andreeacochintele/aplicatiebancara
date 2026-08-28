@@ -10,16 +10,24 @@ from app.auth.schemas import (
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
+    RevokedSessionsResponse,
     TokenResponse,
 )
 from app.auth.service import AuthService
+from app.core.rate_limit import rate_limiter
 from app.database import get_db
 from app.users.schemas import UserCreate, UserPublic
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Per-IP fixed-window limits — nothing else stands between these endpoints
+# and a brute-force attempt today. Deliberately generous rather than tight:
+# this is a first pass, not a tuned security control (see rate_limit.py).
+_login_rate_limit = rate_limiter("login", max_attempts=10, window_seconds=300)
+_register_rate_limit = rate_limiter("register", max_attempts=5, window_seconds=3600)
 
-@router.post("/register", response_model=AuthResponse, status_code=201)
+
+@router.post("/register", response_model=AuthResponse, status_code=201, dependencies=[Depends(_register_rate_limit)])
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> AuthResponse:
     service = AuthService(db)
     user = service.register(UserCreate(**payload.model_dump()))
@@ -49,7 +57,17 @@ def logout(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.post("/login", response_model=AuthResponse)
+@router.post("/logout-others", response_model=RevokedSessionsResponse)
+def logout_other_sessions(
+    session: UserSession = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> RevokedSessionsResponse:
+    revoked = AuthService(db).revoke_other_sessions(session.user_id, session.id)
+    db.commit()
+    return RevokedSessionsResponse(revoked_sessions=revoked)
+
+
+@router.post("/login", response_model=AuthResponse, dependencies=[Depends(_login_rate_limit)])
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
     service = AuthService(db)
     user = service.authenticate(payload.email, payload.password)

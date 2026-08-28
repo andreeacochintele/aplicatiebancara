@@ -120,6 +120,31 @@ def test_request_after_logout_is_rejected(client):
     assert response.status_code == 401
 
 
+def test_logout_others_revokes_other_sessions_but_keeps_the_current_one(client, db_session):
+    first_token = _register(client, "auth-logout-others@example.com", "+40711111119")
+    second_login = client.post(
+        "/api/v1/auth/login", json={"email": "auth-logout-others@example.com", "password": "Sup3rSecret!"}
+    )
+    second_token = second_login.json()["tokens"]["access_token"]
+
+    response = client.post("/api/v1/auth/logout-others", headers=_headers(second_token))
+
+    assert response.status_code == 200
+    assert response.json()["revoked_sessions"] == 1
+
+    # The session behind first_token is now revoked...
+    stale = client.get("/api/v1/users/me", headers=_headers(first_token))
+    assert stale.status_code == 401
+    # ...but the one that made the logout-others call still works.
+    current = client.get("/api/v1/users/me", headers=_headers(second_token))
+    assert current.status_code == 200
+
+    sessions = db_session.scalars(select(UserSession)).all()
+    statuses = {s.status for s in sessions}
+    assert SessionStatus.REVOKED in statuses
+    assert SessionStatus.ACTIVE in statuses
+
+
 def test_token_without_a_sid_claim_is_rejected(client):
     now = datetime.now(timezone.utc)
     legacy_payload = {
