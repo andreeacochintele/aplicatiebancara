@@ -136,7 +136,8 @@ function parseAmount(value: string): number {
 }
 
 function walletDisplayName(wallet: Wallet): string {
-  return `${wallet.currency}${wallet.is_main ? " - Main" : ""}`;
+  const base = wallet.nickname ? `${wallet.currency} — ${wallet.nickname}` : wallet.currency;
+  return `${base}${wallet.is_main ? " - Main" : ""}`;
 }
 
 function ListPreview({ items }: { items: string[] }) {
