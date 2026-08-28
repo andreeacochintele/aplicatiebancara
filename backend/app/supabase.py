@@ -6,13 +6,14 @@ we migrate modules gradually from SQLAlchemy sessions to Supabase REST calls.
 import json
 import logging
 import re
+import time
 import uuid
 from collections.abc import Iterable, Mapping
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, TypeVar
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -23,6 +24,19 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 ModelT = TypeVar("ModelT")
+
+# The network path to Supabase from this environment is intermittently slow
+# or drops connections outright (confirmed live: back-to-back requests in
+# the same minute ranging from <1s to a full unresponsive 35s) — a real,
+# environment-level issue, not something fixable here. A single 30s-per-call
+# budget with no retry meant one bad hop made the whole request (e.g. login)
+# hang for 30s and then fail outright. Shortening the per-attempt timeout
+# and retrying a couple of times on a transient network failure (never on a
+# real HTTPError — that's a genuine server answer, not a network blip) turns
+# most of those into a ~1-2s blip instead.
+_REQUEST_TIMEOUT_SECONDS = 12
+_MAX_ATTEMPTS = 3
+_RETRY_BACKOFF_SECONDS = 1
 
 
 def utcnow_iso() -> str:
@@ -93,16 +107,38 @@ class SupabaseRestSession:
         headers = dict(self.headers)
         if prefer:
             headers["Prefer"] = prefer
-        request = Request(f"{self.base_url}/{table}{query}", data=data, headers=headers, method=method)
-        try:
-            with urlopen(request, timeout=30) as response:
-                raw = response.read()
-        except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Supabase REST request failed with HTTP {exc.code}: {detail}") from exc
+        http_request = Request(f"{self.base_url}/{table}{query}", data=data, headers=headers, method=method)
+        raw = self._send_with_retries(http_request, method, table)
         if not raw:
             return None
         return json.loads(raw.decode("utf-8"))
+
+    def _send_with_retries(self, http_request: Request, method: str, table: str) -> bytes:
+        last_error: Exception | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                with urlopen(http_request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:
+                    return response.read()
+            except HTTPError as exc:
+                # A real answer from the server (4xx/5xx) — not a network
+                # blip, so not retried.
+                detail = exc.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"Supabase REST request failed with HTTP {exc.code}: {detail}") from exc
+            except (TimeoutError, URLError, ConnectionError) as exc:
+                last_error = exc
+                if attempt < _MAX_ATTEMPTS - 1:
+                    logger.warning(
+                        "Supabase REST %s %s attempt %d/%d failed (%s) - retrying",
+                        method,
+                        table,
+                        attempt + 1,
+                        _MAX_ATTEMPTS,
+                        exc,
+                    )
+                    time.sleep(_RETRY_BACKOFF_SECONDS * (attempt + 1))
+        raise RuntimeError(
+            f"Supabase REST {method} {table} failed after {_MAX_ATTEMPTS} attempts: {last_error}"
+        ) from last_error
 
     def add(self, model: object) -> object:
         self._ensure_defaults(model)
