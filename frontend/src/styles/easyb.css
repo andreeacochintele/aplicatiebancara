@@ -197,6 +197,18 @@
   color: var(--easyb-accent-dark);
 }
 
+.easyb-shell .easyb-header .language-toggle {
+  background: var(--easyb-surface-alt);
+  border: 1px solid var(--easyb-border);
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .easyb-header .language-toggle:hover {
+  background: var(--easyb-accent-soft);
+  border-color: var(--easyb-accent);
+  color: var(--easyb-accent-dark);
+}
+
 .easyb-shell .notification-panel {
   right: 136px;
   background: var(--easyb-surface);

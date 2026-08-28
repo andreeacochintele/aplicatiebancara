@@ -2,6 +2,7 @@ import {
   LayoutDashboard, Wallet, CreditCard, Send, Receipt, FileText,
   PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldAlert, Briefcase, Building2, LayoutGrid, type LucideIcon,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
 
 import { BrandMark } from "./BrandMark";
@@ -9,38 +10,39 @@ import { useAuth } from "../hooks/useAuth";
 
 interface NavItem {
   to: string;
-  label: string;
+  labelKey: string;
   icon: LucideIcon;
 }
 
 const BANKING_ITEMS: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/wallets", label: "Wallets", icon: Wallet },
-  { to: "/cards", label: "Cards", icon: CreditCard },
-  { to: "/payments", label: "Payments", icon: Send },
-  { to: "/transactions", label: "Transactions", icon: Receipt },
-  { to: "/statements", label: "Statements", icon: FileText },
+  { to: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
+  { to: "/wallets", labelKey: "nav.wallets", icon: Wallet },
+  { to: "/cards", labelKey: "nav.cards", icon: CreditCard },
+  { to: "/payments", labelKey: "nav.payments", icon: Send },
+  { to: "/transactions", labelKey: "nav.transactions", icon: Receipt },
+  { to: "/statements", labelKey: "nav.statements", icon: FileText },
 ];
 
 const INTELLIGENCE_ITEMS: NavItem[] = [
-  { to: "/analytics", label: "Analytics", icon: PieChart },
-  { to: "/rewards", label: "Rewards", icon: Gift },
-  { to: "/credit", label: "Credit", icon: Landmark },
-  { to: "/assistant", label: "Assistant", icon: Sparkles },
+  { to: "/analytics", labelKey: "nav.analytics", icon: PieChart },
+  { to: "/rewards", labelKey: "nav.rewards", icon: Gift },
+  { to: "/credit", labelKey: "nav.credit", icon: Landmark },
+  { to: "/assistant", labelKey: "nav.assistant", icon: Sparkles },
 ];
 
 const ACCOUNT_ITEMS: NavItem[] = [
-  { to: "/notifications", label: "Notifications", icon: Bell },
-  { to: "/profile", label: "Profile", icon: UserRound },
+  { to: "/notifications", labelKey: "nav.notifications", icon: Bell },
+  { to: "/profile", labelKey: "nav.profile", icon: UserRound },
 ];
 
 const OPERATIONS_ITEMS: NavItem[] = [
-  { to: "/admin", label: "Dashboard", icon: LayoutGrid },
-  { to: "/admin/credit", label: "Credit & Loans", icon: Landmark },
-  { to: "/admin/fraud", label: "Fraud Review", icon: ShieldAlert },
+  { to: "/admin", labelKey: "nav.dashboard", icon: LayoutGrid },
+  { to: "/admin/credit", labelKey: "nav.creditAndLoans", icon: Landmark },
+  { to: "/admin/fraud", labelKey: "nav.fraudReview", icon: ShieldAlert },
 ];
 
 function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
+  const { t } = useTranslation();
   return (
     <div className="sidebar__group">
       <div className="sidebar__group-label">{label}</div>
@@ -49,7 +51,7 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
           <li key={item.to}>
             <NavLink to={item.to} end className={({ isActive }) => (isActive ? "active" : "")}>
               <item.icon size={17} />
-              {item.label}
+              {t(item.labelKey)}
             </NavLink>
           </li>
         ))}
@@ -59,6 +61,7 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
 }
 
 export function Sidebar() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   const isBusiness = user?.user_type === "BUSINESS";
@@ -79,21 +82,21 @@ export function Sidebar() {
     <nav className="sidebar easyb-sidebar">
       <div className="easyb-brand">
         <BrandMark className="easyb-brand-mark" size={56} />
-        <span className="easyb-brand-name">EasyB</span>
+        <span className="easyb-brand-name">{t("common.appName")}</span>
       </div>
       {isAdmin ? (
-        <NavGroup label="Operations" items={OPERATIONS_ITEMS} />
+        <NavGroup label={t("nav.operations")} items={OPERATIONS_ITEMS} />
       ) : (
         <>
-          <NavGroup label="Banking" items={BANKING_ITEMS} />
-          <NavGroup label="Intelligence" items={intelligenceItems} />
-          <NavGroup label="Account" items={ACCOUNT_ITEMS} />
+          <NavGroup label={t("nav.banking")} items={BANKING_ITEMS} />
+          <NavGroup label={t("nav.intelligence")} items={intelligenceItems} />
+          <NavGroup label={t("nav.account")} items={ACCOUNT_ITEMS} />
           {isBusiness && (
             <NavGroup
-              label="Business"
+              label={t("nav.business")}
               items={[
-                { to: "/business/export", label: "Transaction Export", icon: Briefcase },
-                { to: "/business/profile", label: "Company Profile", icon: Building2 },
+                { to: "/business/export", labelKey: "nav.businessExport", icon: Briefcase },
+                { to: "/business/profile", labelKey: "nav.businessProfile", icon: Building2 },
               ]}
             />
           )}

@@ -1,30 +1,32 @@
 import { Bell, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
 import type { BillSplit, Notification, Wallet } from "../types";
+import { LanguageToggle } from "./LanguageToggle";
 import { ThemeToggle } from "./ThemeToggle";
 
-const PAGE_INFO: Record<string, { title: string; subtitle: string }> = {
-  "/dashboard": { title: "Dashboard", subtitle: "Personal banking overview" },
-  "/wallets": { title: "Wallets", subtitle: "One wallet per currency" },
-  "/cards": { title: "Cards", subtitle: "Debit, credit and one-time cards" },
-  "/payments": { title: "Payments", subtitle: "Transfer, phone, QR and scheduled" },
-  "/transactions": { title: "Transactions", subtitle: "Search, filter and group into folders" },
-  "/statements": { title: "Statements", subtitle: "Opening/closing balance and CSV/PDF export" },
-  "/analytics": { title: "Analytics", subtitle: "Spending, budgets and goals" },
-  "/rewards": { title: "Rewards", subtitle: "Cashback and merchant offers" },
-  "/credit": { title: "Credit & Loans", subtitle: "Score, instalments and simulation" },
-  "/assistant": { title: "Assistant", subtitle: "Orchestrator over specialised agents" },
-  "/profile": { title: "Profile", subtitle: "Account details" },
-  "/business/export": { title: "Transaction Export", subtitle: "Business accounts only · CSV/XLSX/PDF/MT940 export" },
-  "/business/profile": { title: "Company Profile", subtitle: "Business accounts only · manage your companies" },
-  "/admin": { title: "Admin Dashboard", subtitle: "Operations overview" },
-  "/admin/credit": { title: "Credit & Loans", subtitle: "Applications, documents and credit score review" },
-  "/admin/fraud": { title: "Fraud Review", subtitle: "Deterministic engine · human decision" },
+const PAGE_INFO: Record<string, { titleKey: string; subtitleKey: string }> = {
+  "/dashboard": { titleKey: "pageInfo.dashboard.title", subtitleKey: "pageInfo.dashboard.subtitle" },
+  "/wallets": { titleKey: "pageInfo.wallets.title", subtitleKey: "pageInfo.wallets.subtitle" },
+  "/cards": { titleKey: "pageInfo.cards.title", subtitleKey: "pageInfo.cards.subtitle" },
+  "/payments": { titleKey: "pageInfo.payments.title", subtitleKey: "pageInfo.payments.subtitle" },
+  "/transactions": { titleKey: "pageInfo.transactions.title", subtitleKey: "pageInfo.transactions.subtitle" },
+  "/statements": { titleKey: "pageInfo.statements.title", subtitleKey: "pageInfo.statements.subtitle" },
+  "/analytics": { titleKey: "pageInfo.analytics.title", subtitleKey: "pageInfo.analytics.subtitle" },
+  "/rewards": { titleKey: "pageInfo.rewards.title", subtitleKey: "pageInfo.rewards.subtitle" },
+  "/credit": { titleKey: "pageInfo.credit.title", subtitleKey: "pageInfo.credit.subtitle" },
+  "/assistant": { titleKey: "pageInfo.assistant.title", subtitleKey: "pageInfo.assistant.subtitle" },
+  "/profile": { titleKey: "pageInfo.profile.title", subtitleKey: "pageInfo.profile.subtitle" },
+  "/business/export": { titleKey: "pageInfo.businessExport.title", subtitleKey: "pageInfo.businessExport.subtitle" },
+  "/business/profile": { titleKey: "pageInfo.businessProfile.title", subtitleKey: "pageInfo.businessProfile.subtitle" },
+  "/admin": { titleKey: "pageInfo.admin.title", subtitleKey: "pageInfo.admin.subtitle" },
+  "/admin/credit": { titleKey: "pageInfo.adminCredit.title", subtitleKey: "pageInfo.adminCredit.subtitle" },
+  "/admin/fraud": { titleKey: "pageInfo.adminFraud.title", subtitleKey: "pageInfo.adminFraud.subtitle" },
 };
 
 const HEADER_NOTIFICATIONS_PER_PAGE = 4;
@@ -34,6 +36,7 @@ function initials(firstName?: string, lastName?: string): string {
 }
 
 export function Header() {
+  const { t } = useTranslation();
   const { user, accessToken, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -110,7 +113,7 @@ export function Header() {
       });
       setNotifications((current) => current.filter((n) => n.id !== notificationId));
     } catch (err) {
-      setNotificationError(err instanceof ApiError ? err.message : "Could not dismiss notification");
+      setNotificationError(err instanceof ApiError ? err.message : t("header.couldNotDismissNotification"));
     } finally {
       setDismissingId(null);
     }
@@ -125,7 +128,7 @@ export function Header() {
     if (!accessToken) return;
     const sourceWallet = wallets.find((wallet) => wallet.currency === split.currency);
     if (!sourceWallet) {
-      setNotificationError(`No ${split.currency} wallet available.`);
+      setNotificationError(t("header.noWalletAvailable", { currency: split.currency }));
       return;
     }
     setActionId(participantId);
@@ -138,7 +141,7 @@ export function Header() {
       await loadNotifications();
       window.dispatchEvent(new Event(BILL_SPLIT_CHANGED_EVENT));
     } catch (err) {
-      setNotificationError(err instanceof ApiError ? err.message : "Could not pay request");
+      setNotificationError(err instanceof ApiError ? err.message : t("header.couldNotPayRequest"));
     } finally {
       setActionId(null);
     }
@@ -155,7 +158,7 @@ export function Header() {
       await loadNotifications();
       window.dispatchEvent(new Event(BILL_SPLIT_CHANGED_EVENT));
     } catch (err) {
-      setNotificationError(err instanceof ApiError ? err.message : "Could not refuse request");
+      setNotificationError(err instanceof ApiError ? err.message : t("header.couldNotRefuseRequest"));
     } finally {
       setActionId(null);
     }
@@ -188,12 +191,13 @@ export function Header() {
 
   return (
     <header className="header easyb-header">
-      <span className="header__title">{page?.title ?? "EasyB"}</span>
-      {page && <span className="header__subtitle">{page.subtitle}</span>}
+      <span className="header__title">{page ? t(page.titleKey) : t("common.appName")}</span>
+      {page && <span className="header__subtitle">{t(page.subtitleKey)}</span>}
       <div className="header__meta">
+        <LanguageToggle />
         <ThemeToggle />
         <button
-          aria-label="Notifications"
+          aria-label={t("header.notifications")}
           className="easyb-bell"
           onClick={() => setNotificationsOpen((open) => !open)}
           type="button"
@@ -206,14 +210,14 @@ export function Header() {
         {notificationsOpen && (
           <div className="notification-panel">
             <div className="notification-panel__header">
-              <strong>Notifications</strong>
+              <strong>{t("header.notifications")}</strong>
               <button className="button--ghost" onClick={() => void loadNotifications()} type="button">
-                Refresh
+                {t("header.refresh")}
               </button>
             </div>
             {notificationError && <p className="status-line status-line--error">{notificationError}</p>}
             {notificationItemCount === 0 ? (
-              <p className="empty-state">No pending requests.</p>
+              <p className="empty-state">{t("header.noPendingRequests")}</p>
             ) : (
               <>
                 {visiblePanelNotifications.map((notification) => (
@@ -225,7 +229,7 @@ export function Header() {
                       </div>
                       <button
                         className="button--ghost"
-                        aria-label="Dismiss notification"
+                        aria-label={t("header.dismissNotification")}
                         disabled={dismissingId === notification.id}
                         onClick={() => dismissNotification(notification.id)}
                         type="button"
@@ -238,7 +242,7 @@ export function Header() {
                 ))}
                 {visiblePanelSplitRequests.map(({ split, participant }) => (
                   <div className="notification-item" key={participant.id}>
-                    <span className="eyebrow">Split bill</span>
+                    <span className="eyebrow">{t("header.splitBill")}</span>
                     <strong>{split.title}</strong>
                     <span>
                       {participant.amount} {split.currency}
@@ -249,7 +253,7 @@ export function Header() {
                         onClick={() => payRequest(split, participant.id)}
                         type="button"
                       >
-                        Pay
+                        {t("header.pay")}
                       </button>
                       <button
                         className="button--ghost"
@@ -257,7 +261,7 @@ export function Header() {
                         onClick={() => refuseRequest(split, participant.id)}
                         type="button"
                       >
-                        Refuse
+                        {t("header.refuse")}
                       </button>
                     </div>
                   </div>
@@ -268,13 +272,13 @@ export function Header() {
                     style={{ borderTop: "1px solid var(--color-divider)", paddingTop: "0.7rem" }}
                   >
                     <span className="eyebrow">
-                      {firstPanelItem}-{lastPanelItem} of {notificationPanelItems.length}
+                      {t("header.pageRange", { first: firstPanelItem, last: lastPanelItem, total: notificationPanelItems.length })}
                     </span>
                     <div style={{ display: "flex", gap: "0.35rem" }}>
                       <button
                         type="button"
                         className="button--ghost"
-                        aria-label="Previous notification page"
+                        aria-label={t("header.previousPage")}
                         disabled={currentNotificationPage === 1}
                         onClick={() => setNotificationPage((value) => Math.max(1, value - 1))}
                         style={{ minWidth: 36, padding: "0.45rem 0.55rem" }}
@@ -284,7 +288,7 @@ export function Header() {
                       <button
                         type="button"
                         className="button--ghost"
-                        aria-label="Next notification page"
+                        aria-label={t("header.nextPage")}
                         disabled={currentNotificationPage === notificationPageCount}
                         onClick={() => setNotificationPage((value) => Math.min(notificationPageCount, value + 1))}
                         style={{ minWidth: 36, padding: "0.45rem 0.55rem" }}
@@ -300,9 +304,9 @@ export function Header() {
         )}
         {user && (
           <div className="header__user">
-            {user.role === "ADMIN" && <span className="tag tag--accent">ADMIN</span>}
+            {user.role === "ADMIN" && <span className="tag tag--accent">{t("header.admin")}</span>}
             {user.user_type === "BUSINESS" && (
-              <span className="tag tag--outline">{activeCompanyName ?? "BUSINESS"}</span>
+              <span className="tag tag--outline">{activeCompanyName ?? t("header.business")}</span>
             )}
             <span className="avatar">{initials(user.first_name, user.last_name)}</span>
             <span>
@@ -310,7 +314,7 @@ export function Header() {
             </span>
           </div>
         )}
-        <button onClick={handleLogout}>Logout</button>
+        <button onClick={handleLogout}>{t("header.logout")}</button>
       </div>
     </header>
   );
