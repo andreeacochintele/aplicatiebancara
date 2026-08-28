@@ -17,6 +17,7 @@ from app.exports.repository import ExportJobRepository
 from app.statements.repository import StatementRepository
 from app.statements.schemas import StatementPublic, StatementRequest, StatementTransaction
 from app.transactions.models import LedgerEntryType
+from app.users.repository import UserRepository
 from app.wallets.repository import WalletRepository
 
 
@@ -25,6 +26,7 @@ class StatementService:
         self.db = db
         self.repository = StatementRepository(db)
         self.wallets = WalletRepository(db)
+        self.users = UserRepository(db)
         self.jobs = ExportJobRepository(db)
 
     def generate(self, user_id: uuid.UUID, data: StatementRequest) -> StatementPublic:
@@ -72,8 +74,13 @@ class StatementService:
             if entry.entry_type in (LedgerEntryType.DEBIT, LedgerEntryType.CREDIT)
         ]
 
+        holder = self.users.get_by_id(user_id)
+        holder_name = f"{holder.first_name} {holder.last_name}".strip() if holder is not None else ""
+
         return StatementPublic(
             wallet_id=wallet.id,
+            iban=wallet.iban,
+            account_holder_name=holder_name,
             currency=wallet.currency,
             date_from=data.date_from,
             date_to=data.date_to,
@@ -158,38 +165,142 @@ class StatementService:
 
     @staticmethod
     def to_pdf(statement: StatementPublic) -> bytes:
+        import os
+        from datetime import datetime, timezone
+
         from fpdf import FPDF
 
-        pdf = FPDF()
+        # Brand palette (see frontend/src/styles/easyb.css --easyb-gradient):
+        # violet -> purple -> pink. FPDF has no gradient fill primitive, so
+        # the header band below approximates it with a strip of interpolated
+        # solid-color rects.
+        _GRADIENT_STOPS = [(91, 95, 239), (155, 93, 229), (255, 111, 165)]
+        _TEXT_DARK = (21, 21, 31)
+        _TEXT_SOFT = (108, 108, 130)
+        _BORDER = (235, 235, 243)
+        _ROW_ALT = (251, 251, 254)
+        _GREEN = (28, 160, 99)
+        _RED = (216, 81, 79)
+        _LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "easyb_logo.png")
+
+        def _gradient_color(t: float) -> tuple[int, int, int]:
+            segment = min(int(t * (len(_GRADIENT_STOPS) - 1)), len(_GRADIENT_STOPS) - 2)
+            local_t = t * (len(_GRADIENT_STOPS) - 1) - segment
+            a, b = _GRADIENT_STOPS[segment], _GRADIENT_STOPS[segment + 1]
+            return tuple(round(a[i] + (b[i] - a[i]) * local_t) for i in range(3))
+
+        class StatementPDF(FPDF):
+            def header(self) -> None:
+                band_height = 16
+                steps = 60
+                step_width = self.w / steps
+                for i in range(steps):
+                    self.set_fill_color(*_gradient_color(i / (steps - 1)))
+                    self.rect(i * step_width, 0, step_width + 0.5, band_height, style="F")
+                if os.path.exists(_LOGO_PATH):
+                    self.image(_LOGO_PATH, x=10, y=3, h=10)
+                self.set_text_color(255, 255, 255)
+                self.set_font("Helvetica", "B", 15)
+                self.set_xy(22, 3)
+                self.cell(0, 10, "EasyB", align="L")
+                self.set_font("Helvetica", "", 10)
+                self.set_xy(0, 5)
+                self.cell(self.w - 10, 8, "Account Statement", align="R")
+                self.set_y(band_height + 6)
+                self.set_text_color(*_TEXT_DARK)
+
+            def footer(self) -> None:
+                self.set_y(-15)
+                self.set_draw_color(*_BORDER)
+                self.line(10, self.get_y(), self.w - 10, self.get_y())
+                self.set_font("Helvetica", "", 8)
+                self.set_text_color(*_TEXT_SOFT)
+                generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                self.set_xy(10, -12)
+                self.cell(self.w / 2 - 10, 8, f"Generated {generated} - sandbox statement, not a legal document")
+                self.set_xy(self.w / 2, -12)
+                self.cell(self.w / 2 - 10, 8, f"Page {self.page_no()}/{{nb}}", align="R")
+
+        pdf = StatementPDF()
+        pdf.alias_nb_pages()
+        pdf.set_auto_page_break(auto=True, margin=20)
         pdf.add_page()
-        pdf.set_font("Helvetica", "B", 14)
-        pdf.cell(0, 10, f"Statement - {statement.currency} wallet", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font("Helvetica", "", 10)
-        pdf.cell(0, 8, f"Period: {statement.date_from} to {statement.date_to}", new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(0, 8, f"Opening balance: {statement.opening_balance} {statement.currency}", new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(0, 8, f"Closing balance: {statement.closing_balance} {statement.currency}", new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(0, 8, f"Total incoming: {statement.total_incoming} {statement.currency}", new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(0, 8, f"Total outgoing: {statement.total_outgoing} {statement.currency}", new_x="LMARGIN", new_y="NEXT")
+
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(*_TEXT_DARK)
+        pdf.cell(0, 8, f"{statement.currency} wallet statement", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(1)
+
+        pdf.set_font("Helvetica", "", 9.5)
+        pdf.set_text_color(*_TEXT_SOFT)
+        label_w = 32
+        for label, value in (
+            ("Account holder", statement.account_holder_name or "-"),
+            ("IBAN", statement.iban),
+            ("Period", f"{statement.date_from} to {statement.date_to}"),
+        ):
+            pdf.set_text_color(*_TEXT_SOFT)
+            pdf.cell(label_w, 6, label)
+            pdf.set_text_color(*_TEXT_DARK)
+            pdf.cell(0, 6, value, new_x="LMARGIN", new_y="NEXT")
         pdf.ln(4)
 
-        col_widths = (28, 30, 22, 25, 65)
+        stats = (
+            ("Opening balance", statement.opening_balance, _TEXT_DARK),
+            ("Closing balance", statement.closing_balance, _TEXT_DARK),
+            ("Total incoming", statement.total_incoming, _GREEN),
+            ("Total outgoing", statement.total_outgoing, _RED),
+        )
+        box_w = (pdf.w - 20) / 4
+        box_h = 18
+        x0, y0 = pdf.get_x(), pdf.get_y()
+        for i, (label, value, color) in enumerate(stats):
+            x = x0 + i * box_w
+            pdf.set_draw_color(*_BORDER)
+            pdf.set_fill_color(*_ROW_ALT)
+            pdf.rect(x, y0, box_w - 3, box_h, style="FD")
+            pdf.set_xy(x + 2, y0 + 2.5)
+            pdf.set_font("Helvetica", "", 7.5)
+            pdf.set_text_color(*_TEXT_SOFT)
+            pdf.cell(box_w - 6, 4, label.upper())
+            pdf.set_xy(x + 2, y0 + 8.5)
+            pdf.set_font("Helvetica", "B", 10.5)
+            pdf.set_text_color(*color)
+            pdf.cell(box_w - 6, 6, f"{value} {statement.currency}")
+        pdf.set_xy(x0, y0 + box_h + 6)
+        pdf.set_text_color(*_TEXT_DARK)
+
+        col_widths = (24, 32, 20, 28, 66)
         headers = ("Date", "Type", "Direction", "Amount", "Description")
-        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_font("Helvetica", "B", 8.5)
+        pdf.set_fill_color(*_gradient_color(0.15))
+        pdf.set_text_color(255, 255, 255)
         for header, width in zip(headers, col_widths):
-            pdf.cell(width, 7, header, border=1)
+            pdf.cell(width, 8, header, border=0, fill=True)
         pdf.ln()
 
-        pdf.set_font("Helvetica", "", 9)
-        for tx in statement.transactions:
+        pdf.set_font("Helvetica", "", 8.5)
+        if not statement.transactions:
+            pdf.set_text_color(*_TEXT_SOFT)
+            pdf.cell(sum(col_widths), 10, "No transactions in this period.", border="LRB")
+            pdf.ln()
+        for i, tx in enumerate(statement.transactions):
+            pdf.set_fill_color(*(_ROW_ALT if i % 2 else (255, 255, 255)))
+            pdf.set_draw_color(*_BORDER)
             row = (
                 tx.created_at.strftime("%Y-%m-%d"),
-                tx.type.value,
+                tx.type.value.replace("_", " ").title(),
                 tx.direction,
-                f"{tx.amount}",
-                (tx.description or "")[:40],
+                f"{'+' if tx.direction == 'IN' else '-'}{tx.amount}",
+                (tx.description or "")[:42],
             )
-            for value, width in zip(row, col_widths):
-                pdf.cell(width, 7, value, border=1)
+            pdf.set_text_color(*_TEXT_DARK)
+            for col, (value, width) in enumerate(zip(row, col_widths)):
+                if col == 3:
+                    pdf.set_text_color(*(_GREEN if tx.direction == "IN" else _RED))
+                pdf.cell(width, 7, value, border="B", fill=True)
+                if col == 3:
+                    pdf.set_text_color(*_TEXT_DARK)
             pdf.ln()
 
         return bytes(pdf.output())
