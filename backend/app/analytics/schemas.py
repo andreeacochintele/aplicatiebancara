@@ -40,6 +40,26 @@ class SpendingByCategoryResponse(BaseModel):
     items: list[SpendingByCategory]
 
 
+class CounterpartySpending(BaseModel):
+    name: str
+    total_amount: Decimal
+    currency: str
+    transaction_count: int
+
+
+class TopCounterpartiesResponse(BaseModel):
+    """Who the money actually went to — card-payment merchants and IBAN/
+    phone-transfer recipients alike, ranked by total spend (each currency
+    ranked separately, same convention every other analytics view here
+    uses). Primarily useful for a business account sizing up vendor
+    concentration; nothing here is business-only, personal accounts can
+    call it too."""
+
+    period_start: date
+    period_end: date
+    items: list[CounterpartySpending]
+
+
 class SpendingComparisonPoint(BaseModel):
     """One before/after pair — current_amount vs comparison_amount.
     change_percent is None when comparison_amount is 0 (nothing to divide

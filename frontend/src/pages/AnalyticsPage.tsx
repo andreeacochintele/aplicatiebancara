@@ -22,6 +22,7 @@ import type {
   NetWorthResponse,
   SavingsGoal,
   SpendingByCategoryResponse,
+  TopCounterpartiesResponse,
   WalletBalanceItem,
 } from "../types";
 
@@ -415,11 +416,13 @@ function SavingsMoneyModal({
 }
 
 export function AnalyticsPage() {
-  const { accessToken } = useAuth();
+  const { accessToken, user } = useAuth();
+  const isBusiness = user?.user_type === "BUSINESS";
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
   const [netWorthHistory, setNetWorthHistory] = useState<NetWorthHistoryResponse | null>(null);
   const [netWorthPeriod, setNetWorthPeriod] = useState<NetWorthPeriod>("1m");
   const [spendingByCategory, setSpendingByCategory] = useState<SpendingByCategoryResponse | null>(null);
+  const [topCounterparties, setTopCounterparties] = useState<TopCounterpartiesResponse | null>(null);
   const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrendResponse | null>(null);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [budgets, setBudgets] = useState<Budget[]>([]);
@@ -450,6 +453,11 @@ export function AnalyticsPage() {
     apiRequest<SpendingByCategoryResponse>("/analytics/spending-by-category", { token: accessToken })
       .then((data) => !cancelled && setSpendingByCategory(data))
       .catch(() => !cancelled && setSpendingByCategory(null));
+    if (isBusiness) {
+      apiRequest<TopCounterpartiesResponse>("/analytics/top-counterparties", { token: accessToken })
+        .then((data) => !cancelled && setTopCounterparties(data))
+        .catch(() => !cancelled && setTopCounterparties(null));
+    }
     apiRequest<MonthlyTrendResponse>("/analytics/monthly-trend?months=6", { token: accessToken })
       .then((data) => !cancelled && setMonthlyTrend(data))
       .catch(() => !cancelled && setMonthlyTrend(null));
@@ -472,7 +480,7 @@ export function AnalyticsPage() {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, reloadTick]);
+  }, [accessToken, reloadTick, isBusiness]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -672,6 +680,38 @@ export function AnalyticsPage() {
             {monthlyTrend ? <MonthlyTrendChart trend={monthlyTrend} /> : <p className="easyb-tx-meta">We need more transaction history to show a trend.</p>}
           </div>
         </div>
+
+        {isBusiness && (
+          <div className="easyb-card">
+            <div className="easyb-section-header">
+              <div>
+                <div className="easyb-eyebrow">This period · business</div>
+                <h2>Top vendors</h2>
+              </div>
+            </div>
+            {topCounterparties && topCounterparties.items.length > 0 ? (
+              <div className="easyb-legend">
+                {topCounterparties.items.map((item, index) => (
+                  <div className="easyb-legend-row" key={`${item.name}-${item.currency}`}>
+                    <span className="easyb-legend-dot" style={{ background: colorForType(String(index)) }} />
+                    <span className="easyb-legend-name">
+                      {item.name}
+                      <span style={{ color: "var(--easyb-text-faint)", fontWeight: 400 }}>
+                        {" "}
+                        · {item.transaction_count} {item.transaction_count === 1 ? "payment" : "payments"}
+                      </span>
+                    </span>
+                    <span className="easyb-legend-pct">
+                      {Number(item.total_amount).toFixed(2)} {item.currency}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="easyb-tx-meta">No vendor spend for this period yet.</p>
+            )}
+          </div>
+        )}
 
         <div className="easyb-card">
           <div className="easyb-section-header">

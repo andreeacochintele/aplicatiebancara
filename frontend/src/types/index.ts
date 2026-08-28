@@ -538,6 +538,19 @@ export interface SpendingByCategoryResponse {
   items: SpendingByCategoryItem[];
 }
 
+export interface CounterpartySpendingItem {
+  name: string;
+  total_amount: string;
+  currency: string;
+  transaction_count: number;
+}
+
+export interface TopCounterpartiesResponse {
+  period_start: string;
+  period_end: string;
+  items: CounterpartySpendingItem[];
+}
+
 export interface AIInsight {
   id: string;
   message: string;

@@ -50,7 +50,10 @@ def seeded_user_with_wallet(db_session):
     return user, wallet
 
 
-def _add_transaction(db_session, user, wallet, tx_type, amount, status, created_at, merchant_id=None, currency="RON"):
+def _add_transaction(
+    db_session, user, wallet, tx_type, amount, status, created_at,
+    merchant_id=None, currency="RON", counterparty_user_id=None, description=None,
+):
     tx = Transaction(
         initiator_user_id=user.id,
         source_wallet_id=wallet.id,
@@ -59,6 +62,8 @@ def _add_transaction(db_session, user, wallet, tx_type, amount, status, created_
         amount=Decimal(amount),
         currency=currency,
         merchant_id=merchant_id,
+        counterparty_user_id=counterparty_user_id,
+        description=description,
         created_at=created_at,
     )
     db_session.add(tx)
@@ -153,6 +158,69 @@ def test_spending_by_category_groups_unmatched_merchant_as_other(db_session, see
     assert len(result.items) == 1
     assert result.items[0].category == "Other"
     assert result.items[0].total_amount == Decimal("30.00")
+
+
+def test_top_counterparties_ranks_merchants_and_transfer_recipients_together(db_session, seeded_user_with_wallet):
+    from app.merchants.models import Merchant
+
+    user, wallet = seeded_user_with_wallet
+    other = UserService(db_session).create_user(
+        UserCreate(email="counterparty@example.com", password="Sup3rSecret!", first_name="Ana", last_name="Pop")
+    )
+    now = datetime.now(timezone.utc)
+    COMPLETED = TransactionStatus.COMPLETED
+    nike = Merchant(name="Nike", category="Retail", verified=True)
+    db_session.add(nike)
+    db_session.flush()
+
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "120.50", COMPLETED, now, merchant_id=nike.id)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "45.00", COMPLETED, now, merchant_id=nike.id)
+    _add_transaction(
+        db_session, user, wallet, TransactionType.TRANSFER, "200.00", COMPLETED, now, counterparty_user_id=other.id
+    )
+    # A card payment to no merchant at all falls back to the description.
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "9.00", COMPLETED, now, description="Parking meter")
+
+    result = AnalyticsService(db_session).top_counterparties(user.id, year=None, month=None)
+
+    by_name = {item.name: item for item in result.items}
+    assert by_name["Nike"].total_amount == Decimal("165.50")
+    assert by_name["Nike"].transaction_count == 2
+    assert by_name["Ana Pop"].total_amount == Decimal("200.00")
+    assert by_name["Parking meter"].total_amount == Decimal("9.00")
+    # Highest spend first.
+    assert result.items[0].name == "Ana Pop"
+
+
+def test_top_counterparties_excludes_internal_transfer_and_respects_limit(db_session, user_only):
+    users = UserService(db_session)
+    wallets = WalletService(db_session)
+    user = user_only
+    ron = wallets.create_wallet(user.id, WalletCreate(currency="RON"))
+    eur = wallets.create_wallet(user.id, WalletCreate(currency="EUR"))
+    now = datetime.now(timezone.utc)
+
+    # Wallet-to-wallet move between the user's own accounts - not spend at all.
+    _add_transaction(db_session, user, ron, TransactionType.TRANSFER, "50.00", TransactionStatus.COMPLETED, now)
+    db_session.query(Transaction).filter(Transaction.source_wallet_id == ron.id).update(
+        {"destination_wallet_id": eur.id}
+    )
+    db_session.flush()
+
+    names = ["Ana", "Bianca", "Cosmin"]
+    for i, first_name in enumerate(names):
+        other = users.create_user(
+            UserCreate(email=f"vendor{i}@example.com", password="Sup3rSecret!", first_name=first_name, last_name="Vendor")
+        )
+        _add_transaction(
+            db_session, user, ron, TransactionType.TRANSFER, f"{10 + i}.00", TransactionStatus.COMPLETED, now,
+            counterparty_user_id=other.id,
+        )
+
+    result = AnalyticsService(db_session).top_counterparties(user.id, year=None, month=None, limit=2)
+
+    assert len(result.items) == 2
+    assert "Ana Vendor" not in {i.name for i in result.items}  # smallest amount (10.00), pushed out by the limit
 
 
 def test_spending_recommendations_flags_week_over_week_increase(db_session, seeded_user_with_wallet):
