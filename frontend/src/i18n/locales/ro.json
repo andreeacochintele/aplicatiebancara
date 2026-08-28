@@ -574,6 +574,24 @@
     "verifying": "Se verifică...",
     "uploadAndVerify": "Încarcă și verifică"
   },
+  "admin": {
+    "statusBreakdown": "Distribuție status",
+    "total": "total",
+    "noDataYet": "Nu există date momentan.",
+    "couldNotLoadOverview": "Prezentarea generală a operațiunilor nu a putut fi încărcată.",
+    "adminDashboard": "Panou admin",
+    "adminPrivilegesRequired": "Sunt necesare drepturi de administrator.",
+    "creditAndLoans": "Credit și împrumuturi",
+    "creditAndLoansDescription": "Verifică cererile de împrumut și card de credit, documentele și scorurile de credit.",
+    "pendingApplications": "cereri în așteptare",
+    "fraudReview": "Verificare fraudă",
+    "fraudReviewDescription": "Investighează tranzacțiile reținute semnalate de motorul de fraudă și decide rezultatul.",
+    "pendingCases": "cazuri în așteptare",
+    "from": "De la",
+    "to": "Până la",
+    "creditApplications": "Cereri de credit",
+    "fraudCases": "Cazuri de fraudă"
+  },
   "header": {
     "notifications": "Notificări",
     "refresh": "Reîmprospătează",

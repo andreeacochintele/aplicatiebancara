@@ -574,6 +574,24 @@
     "verifying": "Verifying...",
     "uploadAndVerify": "Upload and verify"
   },
+  "admin": {
+    "statusBreakdown": "Status breakdown",
+    "total": "total",
+    "noDataYet": "No data yet.",
+    "couldNotLoadOverview": "Could not load operations overview.",
+    "adminDashboard": "Admin dashboard",
+    "adminPrivilegesRequired": "Admin privileges required.",
+    "creditAndLoans": "Credit & Loans",
+    "creditAndLoansDescription": "Review loan and credit card applications, documents and credit scores.",
+    "pendingApplications": "pending applications",
+    "fraudReview": "Fraud Review",
+    "fraudReviewDescription": "Investigate held transactions flagged by the fraud engine and decide their outcome.",
+    "pendingCases": "pending cases",
+    "from": "From",
+    "to": "To",
+    "creditApplications": "Credit applications",
+    "fraudCases": "Fraud cases"
+  },
   "header": {
     "notifications": "Notifications",
     "refresh": "Refresh",
