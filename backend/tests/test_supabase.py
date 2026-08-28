@@ -5,12 +5,15 @@ dirty-tracking: a row that was only ever fetched (or just added/PATCHed with
 no further change) must not get re-PATCHed on the next flush(), which is
 what made a handful of real writes in a request balloon into dozens of
 redundant HTTP round-trips."""
+import io
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.error import HTTPError
 
 import pytest
 
+import app.supabase as supabase_module
 from app.credit.models import CreditDocument, CreditDocumentPurpose, CreditDocumentStatus, LoanInstallment, LoanPayment, LoanPaymentType
 import app.credit.repository as credit_repository_module
 from app.credit.repository import CreditRepository
@@ -373,6 +376,80 @@ def test_credit_repository_skips_installment_persistence_when_supabase_table_is_
     ]
 
     assert CreditRepository(session).add_installments(installments) == installments
+
+
+# ---- transient-network-failure resilience fix: a flaky hop to Supabase
+# (confirmed live — the same request ranging from <1s to a full 35s hang in
+# the same minute) used to burn the full 30s timeout on the first bad
+# attempt with no retry. request() -> _send_with_retries() now uses a
+# shorter per-attempt timeout and retries a couple of times on a transient
+# failure, but never on a real HTTPError (a genuine server answer).
+
+
+class _FakeUrlopenResponse:
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+
+    def __enter__(self) -> "_FakeUrlopenResponse":
+        return self
+
+    def __exit__(self, *exc_info: object) -> bool:
+        return False
+
+    def read(self) -> bytes:
+        return self._payload
+
+
+@pytest.fixture()
+def no_sleep(monkeypatch):
+    monkeypatch.setattr(supabase_module.time, "sleep", lambda seconds: None)
+
+
+def test_request_retries_a_transient_timeout_then_succeeds(session, monkeypatch, no_sleep):
+    calls = {"count": 0}
+
+    def fake_urlopen(request, timeout):
+        calls["count"] += 1
+        if calls["count"] < 2:
+            raise TimeoutError("simulated transient timeout")
+        return _FakeUrlopenResponse(b'[{"id": "abc"}]')
+
+    monkeypatch.setattr(supabase_module, "urlopen", fake_urlopen)
+
+    result = session.request("GET", "merchants")
+
+    assert calls["count"] == 2
+    assert result == [{"id": "abc"}]
+
+
+def test_request_gives_up_after_max_attempts_on_a_persistent_timeout(session, monkeypatch, no_sleep):
+    calls = {"count": 0}
+
+    def fake_urlopen(request, timeout):
+        calls["count"] += 1
+        raise TimeoutError("simulated persistent timeout")
+
+    monkeypatch.setattr(supabase_module, "urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError, match="failed after"):
+        session.request("GET", "merchants")
+
+    assert calls["count"] == supabase_module._MAX_ATTEMPTS
+
+
+def test_request_does_not_retry_a_real_http_error(session, monkeypatch, no_sleep):
+    calls = {"count": 0}
+
+    def fake_urlopen(request, timeout):
+        calls["count"] += 1
+        raise HTTPError(request.full_url, 400, "Bad Request", {}, io.BytesIO(b'{"message": "bad request"}'))
+
+    monkeypatch.setattr(supabase_module, "urlopen", fake_urlopen)
+
+    with pytest.raises(RuntimeError, match="HTTP 400"):
+        session.request("GET", "merchants")
+
+    assert calls["count"] == 1  # not retried — a real server answer, not a network blip
 
 
 def test_credit_repository_skips_loan_payment_persistence_when_supabase_table_is_missing(session, monkeypatch):
