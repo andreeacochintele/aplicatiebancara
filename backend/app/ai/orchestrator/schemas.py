@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.ai.actions.schemas import ActionCard
+from app.ai.actions.schemas import ActionCard, AgentActionResultPublic
 from app.ai.orchestrator.intent import IntentCategory
 
 
@@ -39,10 +39,12 @@ class ConversationMessagePublic(BaseModel):
     role: str
     content: str
     agent_used: str | None
-    # Present on an assistant message that drafted an agent action — the UI
-    # fetches GET /ai/actions/{action_id} to re-render its confirm card with
-    # the current status when the conversation is reopened.
+    # Set on an assistant message that drafted an agent action. `action` is
+    # its current server-side state (card display data + live status),
+    # embedded so a reopened conversation renders the card instantly with no
+    # extra round-trip or flicker; `action_id` is the bare link.
     action_id: uuid.UUID | None = None
+    action: AgentActionResultPublic | None = None
     created_at: datetime
 
 

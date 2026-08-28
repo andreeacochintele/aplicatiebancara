@@ -30,6 +30,19 @@ class AgentActionRepository:
         if not is_supabase_session(self.db):
             self.db.flush()
 
+    def list_by_ids(self, action_ids: list[uuid.UUID]) -> list[AgentAction]:
+        """Used to embed each action's live state into a page of conversation
+        messages — keyed off the messages' own action_id, not the
+        conversation, so it still works if an action row's conversation_id is
+        somehow unset."""
+        if not action_ids:
+            return []
+        if is_supabase_session(self.db):
+            ids = ",".join(str(a) for a in action_ids)
+            return self.db.fetch_many(AgentAction, {"id": f"in.({ids})", "limit": str(len(action_ids))})
+        stmt = select(AgentAction).where(AgentAction.id.in_(action_ids))
+        return list(self.db.scalars(stmt))
+
     def list_open_drafts_for_conversation(self, conversation_id: uuid.UUID) -> list[AgentAction]:
         if is_supabase_session(self.db):
             return self.db.fetch_many(

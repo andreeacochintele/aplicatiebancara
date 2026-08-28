@@ -37,7 +37,7 @@ from app.ai.orchestrator.intent import IntentCategory, classify_intent
 from app.ai.orchestrator.models import Conversation, ConversationMessage
 from app.ai.orchestrator.registry import AGENT_REGISTRY
 from app.ai.orchestrator.repository import ConversationRepository
-from app.ai.orchestrator.schemas import ConversationSummary, OrchestratorChatResponse
+from app.ai.orchestrator.schemas import ConversationMessagePublic, ConversationSummary, OrchestratorChatResponse
 from app.ai.orchestrator.title import generate_conversation_title
 from app.core.exceptions import NotFoundError
 
@@ -195,15 +195,40 @@ class OrchestratorService:
         conversation_id: uuid.UUID,
         limit: int = MESSAGES_PAGE_LIMIT,
         before: datetime | None = None,
-    ) -> list[ConversationMessage]:
+    ) -> list[ConversationMessagePublic]:
         """One page of `conversation_id`'s messages, chronological (oldest
         first, ready to render) — the most recent page by default, or the
-        page immediately before `before` for loading older messages.
-        Raises NotFoundError if the conversation doesn't exist or doesn't
-        belong to `user_id` (never leaks another user's conversation)."""
+        page immediately before `before` for loading older messages. Any
+        message that drafted an agent action carries that action's current
+        state inline (`.action`) so the UI redraws its confirm card with no
+        extra round-trip. Raises NotFoundError if the conversation doesn't
+        exist or doesn't belong to `user_id`."""
         self._get_owned_conversation(user_id, conversation_id)
-        page = self.conversations.list_messages_for_conversation(conversation_id, limit=limit, before=before)
-        return list(reversed(page))
+        page = list(reversed(self.conversations.list_messages_for_conversation(conversation_id, limit=limit, before=before)))
+        actions_by_id = self._actions_for_page(page)
+        result: list[ConversationMessagePublic] = []
+        for message in page:
+            dto = ConversationMessagePublic.model_validate(message)
+            if message.action_id is not None:
+                dto.action = actions_by_id.get(message.action_id)
+            result.append(dto)
+        return result
+
+    def _actions_for_page(self, page: list[ConversationMessage]) -> dict:
+        action_ids = list({m.action_id for m in page if m.action_id is not None})
+        if not action_ids:
+            return {}
+        # Lazy import: keeps ai/actions/ off this module's import graph at
+        # load time (it pulls in the transaction engine), same pattern the
+        # rest of the codebase uses to avoid cycles.
+        from app.ai.actions.repository import AgentActionRepository
+        from app.ai.actions.service import ActionService
+
+        service = ActionService(self.db)
+        return {
+            action.id: service.public_view(action)
+            for action in AgentActionRepository(self.db).list_by_ids(action_ids)
+        }
 
     def _resolve_conversation(self, user_id: uuid.UUID, conversation_id: uuid.UUID | None) -> Conversation:
         if conversation_id is None:

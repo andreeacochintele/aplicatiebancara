@@ -876,6 +876,10 @@ export interface ConversationMessagePublic {
   content: string;
   agent_used: OrchestratorIntent | null;
   action_id: string | null;
+  /** Current server-side state of the action this message drafted (card
+   * data + live status), embedded so the UI redraws the confirm card
+   * instantly on reopen. */
+  action: AgentActionResult | null;
   created_at: string;
 }
 

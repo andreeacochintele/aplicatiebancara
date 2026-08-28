@@ -342,6 +342,11 @@ class ActionService:
             expires_at=action.expires_at,
         )
 
+    def public_view(self, action: AgentAction) -> AgentActionResultPublic:
+        """Public projection of a raw AgentAction row — for callers outside
+        this module (the orchestrator embeds it into the message list)."""
+        return self._public(action)
+
     def _public(self, action: AgentAction) -> AgentActionResultPublic:
         # `card` is always the display data (recipient / amount / wallet) —
         # `status` is what tells the UI whether it's still actionable. The

@@ -8,7 +8,6 @@ import { PhoneTransferConfirmCard } from "../features/assistant";
 import { useAuth } from "../hooks/useAuth";
 import type {
   ActionCard,
-  AgentActionResult,
   AgentActionStatus,
   ConversationMessagePublic,
   ConversationPublic,
@@ -60,6 +59,9 @@ function toChatMessage(entry: ConversationMessagePublic): ChatMessage {
     intent: entry.agent_used ?? undefined,
     createdAt: entry.created_at,
     actionId: entry.action_id ?? undefined,
+    actionCard: entry.action?.card ?? undefined,
+    actionStatus: entry.action?.status,
+    actionDetail: entry.action?.error_detail,
   };
 }
 
@@ -273,38 +275,6 @@ export function AssistantPage() {
   function sendFollowup(text: string) {
     void sendMessage(text);
   }
-
-  // Re-hydrate persisted action cards: any message that carries an actionId
-  // but no card yet (i.e. loaded from history) gets its current server-side
-  // state fetched once, so a Confirmed/Cancelled transfer stays that way
-  // after switching conversations or reopening the page.
-  const hydratedActionIdsRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!accessToken) return;
-    const pending = messages.filter(
-      (m) => m.actionId && !m.actionCard && !hydratedActionIdsRef.current.has(m.actionId),
-    );
-    if (pending.length === 0) return;
-
-    pending.forEach((message) => {
-      const actionId = message.actionId!;
-      hydratedActionIdsRef.current.add(actionId);
-      apiRequest<AgentActionResult>(`/ai/actions/${actionId}`, { token: accessToken })
-        .then((res) => {
-          if (!res.card) return;
-          setMessages((current) =>
-            current.map((m) =>
-              m.actionId === actionId
-                ? { ...m, actionCard: res.card ?? undefined, actionStatus: res.status, actionDetail: res.error_detail }
-                : m,
-            ),
-          );
-        })
-        .catch(() => {
-          hydratedActionIdsRef.current.delete(actionId); // allow a retry on the next render
-        });
-    });
-  }, [messages, accessToken]);
 
   // Auto-scroll to bottom only for genuinely new messages (initial open,
   // send/receive) — never when older messages were just prepended above.
