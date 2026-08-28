@@ -71,14 +71,23 @@ def cnp_birth_date(value: str) -> date | None:
         return None
 
 
-def _validate_cnp(value: str) -> str:
-    value = value.strip()
+def cnp_checksum_is_valid(value: str) -> bool:
+    """True if `value` is a 13-digit string whose control digit (position 13,
+    MOD-11 over positions 1-12 with weights 2-7-9-1-4-6-3-5-8-2-7-9) matches.
+    Structural-only check — doesn't verify the embedded date is a real one;
+    see `cnp_birth_date` for that. Public because `mrz.py` also needs it to
+    validate a CNP it reconstructs from an old-format ID card's MRZ."""
     if not value.isdigit() or len(value) != 13 or value[0] == "0":
-        raise ValueError("must be a valid 13-digit Romanian CNP")
+        return False
     checksum = sum(int(digit) * weight for digit, weight in zip(value[:12], _CNP_WEIGHTS)) % 11
     control_digit = 1 if checksum == 10 else checksum
-    if control_digit != int(value[12]):
-        raise ValueError("CNP checksum is invalid")
+    return control_digit == int(value[12])
+
+
+def _validate_cnp(value: str) -> str:
+    value = value.strip()
+    if not cnp_checksum_is_valid(value):
+        raise ValueError("must be a valid 13-digit Romanian CNP")
     if value[0] != "9" and cnp_birth_date(value) is None:
         raise ValueError("CNP does not encode a valid birth date")
     return value

@@ -9,10 +9,11 @@ import {
 } from "react";
 
 import { ApiError } from "../api/apiClient";
-import { getMyFullProfile, updateMyProfile } from "../features/auth";
+import { getMyFullProfile, submitIdentityDocument, updateMyProfile } from "../features/auth";
 import { CountrySearchSelect } from "../features/auth/CountrySearchSelect";
 import { DropdownWithOther } from "../features/auth/DropdownWithOther";
 import { EMPLOYMENT_STATUSES_WITHOUT_EMPLOYER, INCOME_SOURCE_OPTIONS, INDUSTRY_OPTIONS } from "../features/auth/employmentOptions";
+import { FileField } from "../features/auth/FileField";
 import { NationalitySearchSelect } from "../features/auth/NationalitySearchSelect";
 import {
   validateAddressToken,
@@ -130,6 +131,11 @@ export function ProfilePage() {
   const [employmentError, setEmploymentError] = useState<string | null>(null);
   const [employmentSaved, setEmploymentSaved] = useState(false);
   const [employmentSaving, setEmploymentSaving] = useState(false);
+
+  const [identityFiles, setIdentityFiles] = useState<{ front: string; back: string }>({ front: "", back: "" });
+  const [identityError, setIdentityError] = useState<string | null>(null);
+  const [identitySaved, setIdentitySaved] = useState(false);
+  const [identitySaving, setIdentitySaving] = useState(false);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -291,6 +297,32 @@ export function ProfilePage() {
       setEmploymentError(err instanceof ApiError ? err.message : "Could not save financial profile");
     } finally {
       setEmploymentSaving(false);
+    }
+  }
+
+  async function submitIdentityUpdate(event: FormEvent) {
+    event.preventDefault();
+    if (!accessToken) return;
+    if (!identityFiles.front || !identityFiles.back) {
+      setIdentityError("Please select photos of both sides of your ID card");
+      return;
+    }
+
+    setIdentitySaving(true);
+    setIdentityError(null);
+    setIdentitySaved(false);
+    try {
+      const response = await submitIdentityDocument(accessToken, {
+        front_image_base64: identityFiles.front,
+        back_image_base64: identityFiles.back,
+      });
+      setProfile(response);
+      setIdentitySaved(true);
+      setIdentityFiles({ front: "", back: "" });
+    } catch (err) {
+      setIdentityError(err instanceof ApiError ? err.message : "Could not verify the new identity document");
+    } finally {
+      setIdentitySaving(false);
     }
   }
 
@@ -547,7 +579,40 @@ export function ProfilePage() {
         <SectionToggle label="Identity document" open={identityOpen} onClick={() => setIdentityOpen((o) => !o)} />
         {identityOpen && (
           <div className="profile-section__body">
-            <p className="status-line">Re-uploading your identity document isn't available yet — coming in a future update.</p>
+            {profile?.identity_document.status === "NEEDS_REVIEW" ? (
+              <p className="status-line">Your identity document is with an admin for manual review.</p>
+            ) : profile?.identity_document.status === "REJECTED" ? (
+              <p className="status-line">Your identity document was rejected on review. Please contact support.</p>
+            ) : (
+              <form onSubmit={submitIdentityUpdate} className="onboarding-form">
+                <p className="field-hint">
+                  {profile?.identity_document.status === "VERIFIED"
+                    ? "Your identity document is verified. Upload new photos here if it was renewed or replaced."
+                    : "Upload clear photos of both sides of your Romanian ID card to verify your identity."}
+                </p>
+                <div className="onboarding-form__grid">
+                  <FileField
+                    label="Front of ID card"
+                    disabled={identitySaving}
+                    onFileSelected={(dataUrl) => setIdentityFiles((current) => ({ ...current, front: dataUrl }))}
+                  />
+                  <FileField
+                    label="Back of ID card"
+                    disabled={identitySaving}
+                    onFileSelected={(dataUrl) => setIdentityFiles((current) => ({ ...current, back: dataUrl }))}
+                  />
+                </div>
+                {identityError && (
+                  <p role="alert" className="status-line status-line--error">
+                    {identityError}
+                  </p>
+                )}
+                {identitySaved && <p className="status-line">Verified.</p>}
+                <button type="submit" disabled={identitySaving || !identityFiles.front || !identityFiles.back}>
+                  {identitySaving ? "Verifying..." : "Upload and verify"}
+                </button>
+              </form>
+            )}
           </div>
         )}
       </div>

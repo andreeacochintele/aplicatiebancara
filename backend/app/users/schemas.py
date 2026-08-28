@@ -21,7 +21,7 @@ from app.core.validation import (
     StrongPassword,
     cnp_birth_date,
 )
-from app.users.models import EmploymentStatus, KycDocumentStatus
+from app.users.models import EmploymentStatus, KycDocumentStatus, MrzFormatCode
 
 
 class UserCreate(BaseModel):
@@ -91,12 +91,30 @@ class UserEmploymentProfilePublic(BaseModel):
     account_purpose: str | None
 
 
+class IdentityDocumentPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: KycDocumentStatus
+    detected_format: MrzFormatCode | None
+    attempt_count: int
+    mrz_checks_passed: bool
+    cross_check_passed: bool
+    failure_reason: str | None
+    reviewed_at: datetime | None
+
+
+class IdentityDocumentUpload(BaseModel):
+    front_image_base64: str = Field(min_length=1)
+    back_image_base64: str = Field(min_length=1)
+
+
 class UserFullProfilePublic(BaseModel):
     user: UserPublic
     onboarding: OnboardingStatePublic
     profile: UserProfilePublic
     address: UserAddressPublic
     employment: UserEmploymentProfilePublic
+    identity_document: IdentityDocumentPublic
 
 
 class OnboardingStep2Update(BaseModel):

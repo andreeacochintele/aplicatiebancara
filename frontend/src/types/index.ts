@@ -13,7 +13,8 @@ export interface User {
   created_at: string;
 }
 
-export type KycDocumentStatus = "NOT_STARTED" | "PLACEHOLDER";
+export type KycDocumentStatus = "NOT_STARTED" | "PLACEHOLDER" | "VERIFIED" | "NEEDS_REVIEW" | "APPROVED" | "REJECTED";
+export type MrzFormatCode = "TD1" | "TD2";
 export type EmploymentStatus = "EMPLOYED" | "SELF_EMPLOYED" | "STUDENT" | "UNEMPLOYED" | "RETIRED" | "OTHER";
 
 export interface OnboardingState {
@@ -51,12 +52,28 @@ export interface UserEmploymentProfile {
   account_purpose: string | null;
 }
 
+export interface IdentityDocument {
+  status: KycDocumentStatus;
+  detected_format: MrzFormatCode | null;
+  attempt_count: number;
+  mrz_checks_passed: boolean;
+  cross_check_passed: boolean;
+  failure_reason: string | null;
+  reviewed_at: string | null;
+}
+
+export interface IdentityDocumentUploadPayload {
+  front_image_base64: string;
+  back_image_base64: string;
+}
+
 export interface UserFullProfile {
   user: User;
   onboarding: OnboardingState;
   profile: UserProfileDetails;
   address: UserAddress;
   employment: UserEmploymentProfile;
+  identity_document: IdentityDocument;
 }
 
 export interface RegisterPayload {
