@@ -1,29 +1,23 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { Notification } from "../types";
 
-// type is free-text on the backend (any module can add its own) — labels for
-// the ones we know about, humanized fallback for anything else.
-const TYPE_LABEL: Record<string, string> = {
-  TRANSACTION: "Transaction",
-  FRAUD: "Fraud",
-  PAYMENT_REMINDER: "Payment reminder",
-  CASHBACK: "Cashback",
-  CREDIT: "Credit",
-  SPLIT_BILL: "Split bill",
-  SYSTEM: "System",
-};
-
 const NOTIFICATIONS_PER_PAGE = 5;
 
-function typeLabel(type: string): string {
-  return TYPE_LABEL[type] ?? type.charAt(0) + type.slice(1).toLowerCase().replace(/_/g, " ");
+// type is free-text on the backend (any module can add its own) — labels for
+// the ones we know about, humanized fallback for anything else.
+function typeLabel(type: string, t: (key: string, options?: Record<string, unknown>) => string): string {
+  return t(`notifications.type.${type}`, {
+    defaultValue: type.charAt(0) + type.slice(1).toLowerCase().replace(/_/g, " "),
+  });
 }
 
 export function NotificationsPage() {
+  const { t } = useTranslation();
   const { accessToken } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +52,7 @@ export function NotificationsPage() {
       });
       setNotifications((current) => current.map((item) => (item.id === updated.id ? updated : item)));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not mark notification as read");
+      setError(err instanceof ApiError ? err.message : t("notifications.couldNotMarkRead"));
     } finally {
       setBusyId(null);
     }
@@ -77,7 +71,7 @@ export function NotificationsPage() {
       );
       setNotifications((current) => current.map((item) => ({ ...item, is_read: true })));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not mark notifications as read");
+      setError(err instanceof ApiError ? err.message : t("notifications.couldNotMarkAllRead"));
       loadNotifications();
     } finally {
       setMarkingAll(false);
@@ -97,13 +91,13 @@ export function NotificationsPage() {
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       <div className="tile">
         <div className="tile__header">
-          <span className="eyebrow">{unreadCount > 0 ? `${unreadCount} unread` : "All caught up"}</span>
+          <span className="eyebrow">{unreadCount > 0 ? t("notifications.unreadCount", { count: unreadCount }) : t("notifications.allCaughtUp")}</span>
           <button
             onClick={markAllRead}
             disabled={markingAll || unreadCount === 0}
             style={{ marginLeft: "auto" }}
           >
-            Mark all as read
+            {t("notifications.markAllAsRead")}
           </button>
         </div>
         {error && <p role="alert">{error}</p>}
@@ -123,7 +117,7 @@ export function NotificationsPage() {
             >
               <div>
                 <span className={`tag ${notification.is_read ? "tag--neutral" : "tag--accent"}`}>
-                  {typeLabel(notification.type)}
+                  {typeLabel(notification.type, t)}
                 </span>
                 <div style={{ fontWeight: 600, marginTop: "0.4rem" }}>{notification.title}</div>
                 <div style={{ color: "var(--color-text-muted)" }}>{notification.message}</div>
@@ -133,12 +127,12 @@ export function NotificationsPage() {
               </div>
               {!notification.is_read && (
                 <button onClick={() => markRead(notification)} disabled={busyId === notification.id}>
-                  Mark as read
+                  {t("notifications.markAsRead")}
                 </button>
               )}
             </div>
           ))}
-          {notifications.length === 0 && <p>No notifications yet.</p>}
+          {notifications.length === 0 && <p>{t("notifications.noNotificationsYet")}</p>}
         </div>
 
         {notifications.length > NOTIFICATIONS_PER_PAGE && (
@@ -153,13 +147,13 @@ export function NotificationsPage() {
             }}
           >
             <span className="eyebrow">
-              Showing {firstVisible}-{lastVisible} of {notifications.length}
+              {t("notifications.showingRange", { first: firstVisible, last: lastVisible, total: notifications.length })}
             </span>
             <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
               <button
                 type="button"
                 className="button--ghost"
-                aria-label="Previous notifications page"
+                aria-label={t("notifications.previousPage")}
                 disabled={currentPage === 1}
                 onClick={() => setPage((value) => Math.max(1, value - 1))}
                 style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
@@ -171,7 +165,7 @@ export function NotificationsPage() {
                   key={pageNumber}
                   type="button"
                   className={pageNumber === currentPage ? undefined : "button--ghost"}
-                  aria-label={`Go to notifications page ${pageNumber}`}
+                  aria-label={t("notifications.goToPage", { page: pageNumber })}
                   aria-current={pageNumber === currentPage ? "page" : undefined}
                   onClick={() => setPage(pageNumber)}
                   style={{ minWidth: 40, padding: "0.65rem 0.75rem" }}
@@ -182,7 +176,7 @@ export function NotificationsPage() {
               <button
                 type="button"
                 className="button--ghost"
-                aria-label="Next notifications page"
+                aria-label={t("notifications.nextPage")}
                 disabled={currentPage === totalPages}
                 onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
                 style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
