@@ -201,10 +201,9 @@ class SupabaseRestSession:
         self._snapshots.clear()
 
     def _hydrate(self, model: type[ModelT], row: Mapping[str, Any]) -> ModelT:
+        columns = sa_inspect(model).columns
         values = {
-            column.name: self._python_value(row[column.name], column.type)
-            for column in sa_inspect(model).columns
-            if column.name in row
+            column.name: self._python_value(row[column.name], column.type) for column in columns if column.name in row
         }
         primary_key = self._primary_key_name(model)
         row_id = values.get(primary_key)
@@ -213,7 +212,15 @@ class SupabaseRestSession:
             if tracked is not None:
                 return tracked
         item = model(**values)
-        self._track(item)
+        # A caller that asked for a narrower column set (e.g. `select: "id"`
+        # to build an id filter, see TransactionRepository.list_for_user)
+        # gets back a row missing every other column. Tracking that partial
+        # object here would poison flush()'s identity map: it later gets
+        # PATCHed with every untouched column set back to NULL (see the
+        # `wallets` NOT NULL crash this caused). Only a full-column fetch is
+        # safe to track.
+        if set(columns.keys()) <= values.keys():
+            self._track(item)
         return item
 
     def _track(self, model: object) -> None:
