@@ -220,3 +220,58 @@ def test_handle_propagates_azure_not_configured_from_explain(db_session, seeded_
 
     with pytest.raises(AzureFoundryNotConfiguredError):
         agent.handle("what's my credit score?", seeded_user.id, db_session)
+
+
+# ---- internal scoring leak fix: the raw reason_data (income_factor,
+# debt_burden_penalty, etc.) must never reach the user or the LLM prompt in
+# a reconstructible form — only a small set of fixed, qualitative phrases,
+# computed deterministically in Python (never by the model).
+
+
+def test_credit_score_directions_never_contain_internal_factor_names_or_digits():
+    reason_data = {
+        "base_score": 600,
+        "income_factor": 240,
+        "wallet_balance_factor": 0,
+        "absolute_debt_penalty": 0,
+        "debt_burden_penalty": 0,
+        "existing_debt_penalty": 0,
+    }
+    directions = agent._credit_score_directions(reason_data)
+    text = " ".join(directions)
+
+    for key in reason_data:
+        assert key not in text
+    assert not any(char.isdigit() for char in text)
+
+
+def test_credit_score_summary_never_contains_raw_reason_data_keys(db_session, seeded_user):
+    summary = agent._credit_score(ToolContext(user_id=seeded_user.id, db=db_session))
+
+    for key in ("income_factor", "wallet_balance_factor", "absolute_debt_penalty", "debt_burden_penalty", "existing_debt_penalty"):
+        assert key not in summary
+
+
+def test_system_prompt_forbids_reconstructing_internal_scoring_logic():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "never reveal, reconstruct, or paraphrase" in lowered
+    assert "factor names, point values, weightings, or thresholds" in lowered
+
+
+def test_append_summary_skips_the_append_when_the_llm_already_quoted_it_verbatim():
+    summary = "Credit score: 664 (FAIR), calculated 2026-08-28.\nGeneral directions: income is contributing positively."
+    explanation = f"Your score is in the FAIR category.\n\n---\n\n{summary}"
+
+    assert agent._append_summary(explanation, summary) == explanation
+
+
+def test_append_summary_appends_once_when_the_llm_did_not_quote_it():
+    summary = "Credit score: 664 (FAIR), calculated 2026-08-28.\nGeneral directions: income is contributing positively."
+    explanation = "Your score is in the FAIR category."
+
+    assert agent._append_summary(explanation, summary) == f"{explanation}\n\n{summary}"
+
+
+def test_system_prompt_includes_qualitative_credit_knowledge_verbatim():
+    assert agent._CREDIT_KNOWLEDGE in agent._SYSTEM_PROMPT
+    assert not any(char.isdigit() for char in agent._CREDIT_KNOWLEDGE)
