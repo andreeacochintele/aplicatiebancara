@@ -13,3 +13,7 @@ python-multipart==0.0.32
 openai==1.109.1
 fpdf2==2.8.4
 openpyxl==3.1.5
+# identity-document MRZ reading (backend/app/users/mrz_reader.py): template
+# matching against the OCR-B font, no OCR/ML engine
+Pillow==12.3.0
+numpy==2.5.2

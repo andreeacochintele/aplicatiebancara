@@ -11,15 +11,16 @@ import { useNavigate } from "react-router-dom";
 
 import { ApiError } from "../api/apiClient";
 import {
-  createIdentityDocumentPlaceholder,
   getMyFullProfile,
   skipOnboardingStep4,
+  submitIdentityDocument,
   updateOnboardingStep2,
   updateOnboardingStep4,
 } from "../features/auth";
 import { CountrySearchSelect } from "../features/auth/CountrySearchSelect";
 import { NationalitySearchSelect } from "../features/auth/NationalitySearchSelect";
 import { DropdownWithOther } from "../features/auth/DropdownWithOther";
+import { FileField } from "../features/auth/FileField";
 import { EMPLOYMENT_STATUSES_WITHOUT_EMPLOYER, INCOME_SOURCE_OPTIONS, INDUSTRY_OPTIONS } from "../features/auth/employmentOptions";
 import {
   cnpMatchesDateOfBirth,
@@ -81,6 +82,7 @@ function SelectField({
 }
 
 const todayIso = new Date().toISOString().slice(0, 10);
+const MAX_IDENTITY_DOCUMENT_ATTEMPTS = 3;
 
 export function OnboardingPage() {
   const { accessToken, logout, markOnboardingCompleted } = useAuth();
@@ -112,6 +114,8 @@ export function OnboardingPage() {
     approximate_monthly_income: "",
     account_purpose: "",
   });
+
+  const [step3, setStep3] = useState<{ front: string; back: string }>({ front: "", back: "" });
 
   const [viewStep, setViewStep] = useState<number | null>(null);
 
@@ -248,16 +252,28 @@ export function OnboardingPage() {
     }
   }
 
-  async function submitStep3() {
+  async function submitStep3(event: FormEvent) {
+    event.preventDefault();
     if (!accessToken) return;
+    if (!step3.front || !step3.back) {
+      setError("Please select photos of both sides of your ID card");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      const response = await createIdentityDocumentPlaceholder(accessToken);
+      const response = await submitIdentityDocument(accessToken, {
+        front_image_base64: step3.front,
+        back_image_base64: step3.back,
+      });
       setProfile(response);
       setViewStep(stepFromProfile(response));
+      setStep3({ front: "", back: "" });
+      if (response.identity_document.status !== "VERIFIED" && response.identity_document.failure_reason) {
+        setError(response.identity_document.failure_reason);
+      }
     } catch (err) {
-      handleApiError(err, "Could not continue identity step");
+      handleApiError(err, "Could not verify identity document");
     } finally {
       setSubmitting(false);
     }
@@ -460,10 +476,41 @@ export function OnboardingPage() {
               <span className="eyebrow">Step 3</span>
               <h2>Identity document</h2>
             </div>
-            <p>De făcut când introducem buletine</p>
-            <button type="button" disabled={submitting} onClick={submitStep3}>
-              {submitting ? "Saving..." : "Continue"}
-            </button>
+            {profile?.identity_document.status === "NEEDS_REVIEW" ? (
+              <p>
+                We couldn't automatically verify your identity document after {MAX_IDENTITY_DOCUMENT_ATTEMPTS} attempts.
+                It's now with an admin for manual review — we'll let you know once that's done.
+              </p>
+            ) : profile?.identity_document.status === "REJECTED" ? (
+              <p>Your identity document was rejected on review. Please contact support to continue.</p>
+            ) : (
+              <form onSubmit={submitStep3} className="onboarding-form">
+                <p className="field-hint">
+                  Upload clear photos of both sides of your Romanian ID card. We only read the machine-readable strip
+                  on the back to verify your details from Step 2.
+                </p>
+                <div className="onboarding-form__grid">
+                  <FileField
+                    label="Front of ID card"
+                    disabled={submitting}
+                    onFileSelected={(dataUrl) => setStep3((current) => ({ ...current, front: dataUrl }))}
+                  />
+                  <FileField
+                    label="Back of ID card"
+                    disabled={submitting}
+                    onFileSelected={(dataUrl) => setStep3((current) => ({ ...current, back: dataUrl }))}
+                  />
+                </div>
+                {profile && profile.identity_document.attempt_count > 0 && (
+                  <p className="field-hint">
+                    Attempt {profile.identity_document.attempt_count} of {MAX_IDENTITY_DOCUMENT_ATTEMPTS}
+                  </p>
+                )}
+                <button type="submit" disabled={submitting || !step3.front || !step3.back}>
+                  {submitting ? "Verifying..." : "Upload and verify"}
+                </button>
+              </form>
+            )}
           </div>
         )}
 

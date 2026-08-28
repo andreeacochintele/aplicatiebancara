@@ -1,5 +1,6 @@
 import { apiRequest } from "../../api/apiClient";
 import type {
+  IdentityDocumentUploadPayload,
   OnboardingStep2Payload,
   OnboardingStep4Payload,
   ProfileUpdatePayload,
@@ -63,6 +64,14 @@ export function createIdentityDocumentPlaceholder(token: string) {
   return apiRequest<UserFullProfile>("/users/me/onboarding/step-3/identity-document-placeholder", {
     method: "POST",
     token,
+  });
+}
+
+export function submitIdentityDocument(token: string, payload: IdentityDocumentUploadPayload) {
+  return apiRequest<UserFullProfile>("/users/me/onboarding/step-3/identity-document", {
+    method: "POST",
+    token,
+    body: payload,
   });
 }
 

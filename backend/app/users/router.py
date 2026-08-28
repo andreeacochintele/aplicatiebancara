@@ -6,6 +6,7 @@ from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.users.models import User
 from app.users.schemas import (
+    IdentityDocumentUpload,
     OnboardingStep2Update,
     OnboardingStep4Update,
     ProfileUpdate,
@@ -60,6 +61,17 @@ def create_identity_document_placeholder(
     db: Session = Depends(get_db),
 ) -> UserFullProfilePublic:
     profile = UserService(db).create_identity_document_placeholder(current_user)
+    db.commit()
+    return profile
+
+
+@router.post("/me/onboarding/step-3/identity-document", response_model=UserFullProfilePublic)
+def submit_identity_document(
+    payload: IdentityDocumentUpload,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserFullProfilePublic:
+    profile = UserService(db).submit_identity_document(current_user, payload)
     db.commit()
     return profile
 
