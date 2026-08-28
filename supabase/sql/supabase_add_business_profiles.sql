@@ -4,7 +4,12 @@
 -- represent more than one company) — is_active marks the currently
 -- selected one, same invariant as wallets.is_main.
 --
--- Idempotent: safe to re-run.
+-- Idempotent AND safe to re-run against a table that already exists in an
+-- older partial form: an earlier draft of this script (CREATE TABLE only,
+-- no representative_name/is_active) already ran against this database, so
+-- CREATE TABLE IF NOT EXISTS alone would silently no-op and leave those two
+-- columns missing. The ALTER TABLE ADD COLUMN IF NOT EXISTS lines below
+-- backfill them onto that already-existing table.
 --
 -- Run this in the Supabase SQL Editor.
 
@@ -21,6 +26,25 @@ CREATE TABLE IF NOT EXISTS business_profiles (
     is_active BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ
+);
+
+ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS representative_name VARCHAR(200);
+ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Backfill: any row inserted before is_active existed defaulted to FALSE
+-- above. For a user with no active company at all, mark their oldest one
+-- active — matches the app's own "first company is active by default"
+-- rule (BusinessProfileService.create_profile).
+UPDATE business_profiles bp
+SET is_active = TRUE
+WHERE bp.id = (
+    SELECT id FROM business_profiles
+    WHERE user_id = bp.user_id
+    ORDER BY created_at ASC
+    LIMIT 1
+)
+AND NOT EXISTS (
+    SELECT 1 FROM business_profiles WHERE user_id = bp.user_id AND is_active = TRUE
 );
 
 CREATE INDEX IF NOT EXISTS ix_business_profiles_user_id ON business_profiles (user_id);

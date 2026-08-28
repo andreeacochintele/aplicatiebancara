@@ -39,6 +39,12 @@ def upgrade() -> None:
 
     mrz_format_code = postgresql.ENUM("TD1", "TD2", name="mrz_format_code")
     mrz_format_code.create(bind, checkfirst=True)
+    # create_type=False: the column below must reference the type without
+    # re-issuing its own CREATE TYPE — op.create_table()'s DDL visitor
+    # creates enum types for any column type that still has create_type
+    # (the default), which duplicates the .create() call just above and
+    # fails with "type already exists" even under checkfirst=True.
+    mrz_format_code_col = postgresql.ENUM("TD1", "TD2", name="mrz_format_code", create_type=False)
 
     kyc_document_status = postgresql.ENUM(
         "NOT_STARTED",
@@ -54,7 +60,7 @@ def upgrade() -> None:
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("front_image_base64", sa.Text(), nullable=True),
         sa.Column("back_image_base64", sa.Text(), nullable=True),
-        sa.Column("detected_format", mrz_format_code, nullable=True),
+        sa.Column("detected_format", mrz_format_code_col, nullable=True),
         sa.Column("extracted_surname", sa.String(length=100), nullable=True),
         sa.Column("extracted_given_names", sa.String(length=100), nullable=True),
         sa.Column("extracted_cnp", sa.String(length=13), nullable=True),
