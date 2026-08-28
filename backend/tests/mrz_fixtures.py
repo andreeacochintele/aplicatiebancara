@@ -8,10 +8,13 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 
 from app.users.mrz import compute_check_digit
-from app.users.mrz_extraction import _MRZ_BAND_FRACTION
 from app.users.mrz_reader import _FONT_PATH
 
 CARD_SIZE = (1010, 638)  # roughly ID-1 proportions at ~300dpi
+# Where this fixture places its MRZ text - arbitrary (adaptive band
+# detection doesn't care where the text sits), just needs blank margin
+# above and below so the detector sees clear gaps.
+_TEXT_BAND_START_FRACTION = 0.28
 
 
 def _checked(data: str) -> str:
@@ -34,8 +37,6 @@ def _render_line_onto(canvas: Image.Image, text: str, *, top: int, height: int) 
     char_width = canvas.width / len(text)
     font = ImageFont.truetype(str(_FONT_PATH), _fitting_font_size(char_width, height))
     for index, ch in enumerate(text):
-        if ch == "<":
-            continue
         draw.text((round(index * char_width), top), ch, font=font, fill=0)
 
 
@@ -51,7 +52,7 @@ def build_td1_card_base64(
     cnp: str | None = "1900101123457",
 ) -> str:
     card = Image.new("L", CARD_SIZE, color=255)
-    band_top = round(card.height * (1 - _MRZ_BAND_FRACTION))
+    band_top = round(card.height * (1 - _TEXT_BAND_START_FRACTION))
     line_height = (card.height - band_top) / 3
 
     optional_data_1 = (cnp or "").ljust(15, "<")[:15]

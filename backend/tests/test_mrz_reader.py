@@ -23,8 +23,6 @@ def _render_line(text: str, *, point_size: int = 40, margin: int = 6) -> Image.I
     image = Image.new("L", (width, height), color=255)
     draw = ImageDraw.Draw(image)
     for index, ch in enumerate(text):
-        if ch == "<":
-            continue
         draw.text((index * char_width + margin // 2, margin), ch, font=font, fill=0)
     return image
 

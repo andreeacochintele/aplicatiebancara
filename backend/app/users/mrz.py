@@ -36,6 +36,21 @@ from app.core.validation import cnp_checksum_is_valid
 _CHECK_WEIGHTS = (7, 3, 1)
 _MRZ_CHAR_PATTERN = re.compile(r"^[A-Z0-9<]+$")
 
+# OCR-B renders a few digit/letter pairs - 0/O especially - close enough
+# that template matching alone can't always tell them apart (confirmed
+# against both a real card photo and a synthetic render in mrz_reader.py's
+# tests). Fields the ICAO 9303 spec defines as strictly numeric (dates,
+# individual check digits) never legitimately contain a letter, so any
+# letter read there is necessarily a misread of its digit look-alike -
+# canonicalize it back before parsing/checksumming. Deliberately NOT
+# applied to document_number or optional_data, which the spec allows to be
+# genuinely alphanumeric.
+_DIGIT_LOOKALIKES = str.maketrans({"O": "0", "Q": "0", "D": "0", "I": "1", "S": "5", "Z": "2", "B": "8"})
+
+
+def _canonicalize_numeric_field(raw: str) -> str:
+    return raw.translate(_DIGIT_LOOKALIKES)
+
 
 class MrzFormatError(ValueError):
     """Raised when input isn't a well-formed MRZ line (wrong length or an
@@ -141,21 +156,33 @@ def parse_td1(line1: str, line2: str, line3: str) -> Td1MrzResult:
     _require_mrz_line(line3, 30, 3)
 
     document_number = line1[5:14]
-    document_number_check_valid = _check_digit_valid(document_number, line1[14])
-    optional_data_1 = line1[15:30]
+    document_number_check_char = _canonicalize_numeric_field(line1[14])
+    document_number_check_valid = _check_digit_valid(document_number, document_number_check_char)
+    # Optional-data is issuer-defined free text per the generic ICAO spec,
+    # but the Romanian CNP this project's caller expects here (see
+    # mrz_extraction.py's _try_td1) is purely numeric, so the same
+    # digit/letter look-alike correction applies - canonicalized here so
+    # both the returned field and composite_input below agree.
+    optional_data_1 = _canonicalize_numeric_field(line1[15:30])
 
-    date_of_birth_raw = line2[0:6]
+    # Both segments below are always-numeric by spec (date + its check
+    # digit) - canonicalized once and reused as-is in composite_input so
+    # the individual and composite checks never disagree about what was
+    # actually read.
+    date_of_birth_segment = _canonicalize_numeric_field(line2[0:7])
+    date_of_birth_raw, date_of_birth_check_char = date_of_birth_segment[:6], date_of_birth_segment[6]
     date_of_birth = _parse_yymmdd(date_of_birth_raw, is_birth_date=True)
-    date_of_birth_check_valid = _check_digit_valid(date_of_birth_raw, line2[6])
+    date_of_birth_check_valid = _check_digit_valid(date_of_birth_raw, date_of_birth_check_char)
     sex = line2[7]
-    date_of_expiry_raw = line2[8:14]
+    date_of_expiry_segment = _canonicalize_numeric_field(line2[8:15])
+    date_of_expiry_raw, date_of_expiry_check_char = date_of_expiry_segment[:6], date_of_expiry_segment[6]
     date_of_expiry = _parse_yymmdd(date_of_expiry_raw, is_birth_date=False)
-    date_of_expiry_check_valid = _check_digit_valid(date_of_expiry_raw, line2[14])
+    date_of_expiry_check_valid = _check_digit_valid(date_of_expiry_raw, date_of_expiry_check_char)
     nationality = line2[15:18]
     optional_data_2 = line2[18:29]
 
-    composite_input = line1[5:30] + line2[0:7] + line2[8:15] + line2[18:29]
-    composite_check_valid = _check_digit_valid(composite_input, line2[29])
+    composite_input = document_number + document_number_check_char + optional_data_1 + date_of_birth_segment + date_of_expiry_segment + optional_data_2
+    composite_check_valid = _check_digit_valid(composite_input, _canonicalize_numeric_field(line2[29]))
 
     surname, given_names = _split_name_field(line3)
 
@@ -218,19 +245,28 @@ def parse_td2(line1: str, line2: str) -> Td2MrzResult:
     surname, given_names = _split_name_field(line1[5:36])
 
     document_number = line2[0:9]
-    document_number_check_valid = _check_digit_valid(document_number, line2[9])
+    document_number_check_char = _canonicalize_numeric_field(line2[9])
+    document_number_check_valid = _check_digit_valid(document_number, document_number_check_char)
     nationality = line2[10:13]
-    date_of_birth_raw = line2[13:19]
-    date_of_birth = _parse_yymmdd(date_of_birth_raw, is_birth_date=True)
-    date_of_birth_check_valid = _check_digit_valid(date_of_birth_raw, line2[19])
-    sex = line2[20]
-    date_of_expiry_raw = line2[21:27]
-    date_of_expiry = _parse_yymmdd(date_of_expiry_raw, is_birth_date=False)
-    date_of_expiry_check_valid = _check_digit_valid(date_of_expiry_raw, line2[27])
-    optional_data = line2[28:35]
 
-    composite_input = line2[0:10] + line2[13:20] + line2[21:35]
-    composite_check_valid = _check_digit_valid(composite_input, line2[35])
+    # Always-numeric segments (date + its check digit) canonicalized once
+    # and reused as-is in composite_input - see parse_td1 for why.
+    date_of_birth_segment = _canonicalize_numeric_field(line2[13:20])
+    date_of_birth_raw, date_of_birth_check_char = date_of_birth_segment[:6], date_of_birth_segment[6]
+    date_of_birth = _parse_yymmdd(date_of_birth_raw, is_birth_date=True)
+    date_of_birth_check_valid = _check_digit_valid(date_of_birth_raw, date_of_birth_check_char)
+    sex = line2[20]
+    date_of_expiry_segment = _canonicalize_numeric_field(line2[21:28])
+    date_of_expiry_raw, date_of_expiry_check_char = date_of_expiry_segment[:6], date_of_expiry_segment[6]
+    date_of_expiry = _parse_yymmdd(date_of_expiry_raw, is_birth_date=False)
+    date_of_expiry_check_valid = _check_digit_valid(date_of_expiry_raw, date_of_expiry_check_char)
+    # Same reasoning as TD1's optional_data_1: free text per the generic
+    # spec, but the Romanian CNP fragment this project reconstructs from it
+    # (reconstruct_romanian_cnp_from_td2 below) is purely numeric.
+    optional_data = _canonicalize_numeric_field(line2[28:35])
+
+    composite_input = document_number + document_number_check_char + date_of_birth_segment + date_of_expiry_segment + optional_data
+    composite_check_valid = _check_digit_valid(composite_input, _canonicalize_numeric_field(line2[35]))
 
     return Td2MrzResult(
         document_type=line1[0:2].replace("<", ""),
