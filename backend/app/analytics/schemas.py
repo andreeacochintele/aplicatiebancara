@@ -130,3 +130,17 @@ class NetWorthHistoryResponse(BaseModel):
     base_currency: str
     history: list[NetWorthHistoryPoint]
     note: str
+
+
+class BalanceHistoryPoint(BaseModel):
+    date: date
+    balance: Decimal
+
+
+class BalanceHistoryResponse(BaseModel):
+    wallet_id: uuid.UUID
+    currency: str
+    date_from: date
+    date_to: date
+    history: list[BalanceHistoryPoint]
+    note: str

@@ -3,13 +3,15 @@ other modules own. Currency conversion is delegated to FXService (fx/service.py)
 than re-deriving rates here — analytics only aggregates, it never prices FX itself."""
 import calendar
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.orm import Session
 
 from app.analytics.repository import AnalyticsRepository
 from app.analytics.schemas import (
+    BalanceHistoryPoint,
+    BalanceHistoryResponse,
     CategorySpendingFlag,
     ForecastPoint,
     ForecastResponse,
@@ -39,6 +41,19 @@ _FORECAST_NOTE = (
 _NET_WORTH_HISTORY_NOTE = (
     "Historical balances are reconstructed from the wallet ledger; conversions to "
     "the base currency use today's FX rate throughout, not the rate on each date."
+)
+
+def _as_aware_utc(value: datetime) -> datetime:
+    """SQLite (used in tests) silently drops tzinfo on DateTime(timezone=True)
+    columns on read-back, while Postgres (production) preserves it — normalize
+    here so window comparisons below never mix naive and aware datetimes."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
+_BALANCE_HISTORY_NOTE = (
+    "Actual balance reconstructed from the wallet ledger for the selected range — not a projection."
 )
 
 _HISTORY_PERIOD_DAYS = {"3m": 90, "6m": 182, "1y": 365}
@@ -318,7 +333,7 @@ class AnalyticsService:
         base = self._resolve_base_currency(wallets, base_currency)
 
         per_wallet_daily = [
-            (wallet.currency, self._wallet_daily_balances(wallet, period_start, now)) for wallet in wallets
+            (wallet.currency, self._wallet_daily_balances(wallet, period_start, period_end=now)) for wallet in wallets
         ]
         all_dates = sorted({day for _, daily in per_wallet_daily for day in daily})
 
@@ -334,22 +349,34 @@ class AnalyticsService:
 
         return NetWorthHistoryResponse(base_currency=base, history=history, note=_NET_WORTH_HISTORY_NOTE)
 
-    def _wallet_daily_balances(self, wallet: Wallet, period_start: datetime, now: datetime) -> dict:
+    def _wallet_daily_balances(self, wallet: Wallet, period_start: datetime, period_end: datetime) -> dict:
         """End-of-day available balance for `wallet` on each day from
-        max(period_start, wallet.created_at) to now, reconstructed from ledger
-        entries rather than a stored history table."""
+        max(period_start, wallet.created_at) to min(period_end, now), reconstructed
+        from ledger entries rather than a stored history table.
+
+        The opening-balance anchor always uses the real current moment (not
+        period_end): wallet.available_balance is always "as of right now", so
+        solving for the balance at period_start has to net out ledger changes
+        up to now, regardless of how far in the past period_end asks to stop
+        displaying. This is what lets the same reconstruction serve both the
+        net-worth-history usage (period_end == now) and a bounded historical
+        range that ends before today.
+        """
+        now = datetime.now(timezone.utc)
         wallet_start = max(period_start, wallet.created_at)
+        display_end = min(period_end, now)
         opening_balance = wallet.available_balance - self.repository.net_ledger_change(wallet.id, wallet_start, now)
         entries = self.repository.ledger_entries_since(wallet.id, wallet_start)
 
         balance_by_day: dict = {}
         for _entry_type, _amount, balance_after, created_at in entries:
-            balance_by_day[created_at.date()] = balance_after
+            if _as_aware_utc(created_at) <= display_end:
+                balance_by_day[created_at.date()] = balance_after
 
         daily: dict = {}
         running = opening_balance
         day = wallet_start.date()
-        end_day = now.date()
+        end_day = display_end.date()
         while day <= end_day:
             if day in balance_by_day:
                 running = balance_by_day[day]
@@ -357,7 +384,7 @@ class AnalyticsService:
             day += timedelta(days=1)
         return daily
 
-    def forecast_month_end_balance(self, user_id: uuid.UUID, wallet_id: uuid.UUID | None) -> ForecastResponse:
+    def _resolve_wallet(self, user_id: uuid.UUID, wallet_id: uuid.UUID | None) -> Wallet:
         wallets = self.wallet_repository.list_for_user(user_id)
         if not wallets:
             raise NotFoundError("User has no wallets")
@@ -366,9 +393,11 @@ class AnalyticsService:
             wallet = next((w for w in wallets if w.id == wallet_id), None)
             if wallet is None:
                 raise NotFoundError("Wallet not found")
-        else:
-            wallet = next((w for w in wallets if w.is_main), wallets[0])
+            return wallet
+        return next((w for w in wallets if w.is_main), wallets[0])
 
+    def forecast_month_end_balance(self, user_id: uuid.UUID, wallet_id: uuid.UUID | None) -> ForecastResponse:
+        wallet = self._resolve_wallet(user_id, wallet_id)
         now = datetime.now(timezone.utc)
         month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
         days_in_month = calendar.monthrange(now.year, now.month)[1]
@@ -401,4 +430,26 @@ class AnalyticsService:
             projected_month_end_balance=projected_balance,
             projected_series=projected_series,
             note=_FORECAST_NOTE,
+        )
+
+    def wallet_balance_history(
+        self, user_id: uuid.UUID, wallet_id: uuid.UUID | None, date_from: date, date_to: date
+    ) -> BalanceHistoryResponse:
+        if date_from > date_to:
+            raise ValidationError("date_from must not be after date_to")
+
+        wallet = self._resolve_wallet(user_id, wallet_id)
+
+        range_start = datetime(date_from.year, date_from.month, date_from.day, tzinfo=timezone.utc)
+        range_end = datetime(date_to.year, date_to.month, date_to.day, 23, 59, 59, tzinfo=timezone.utc)
+        daily = self._wallet_daily_balances(wallet, range_start, range_end)
+        history = [BalanceHistoryPoint(date=day, balance=balance) for day, balance in sorted(daily.items())]
+
+        return BalanceHistoryResponse(
+            wallet_id=wallet.id,
+            currency=wallet.currency,
+            date_from=date_from,
+            date_to=date_to,
+            history=history,
+            note=_BALANCE_HISTORY_NOTE,
         )
