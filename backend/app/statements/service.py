@@ -203,10 +203,11 @@ class StatementService:
                 self.set_font("Helvetica", "B", 15)
                 self.set_xy(22, 3)
                 self.cell(0, 10, "EasyB", align="L")
+                self.set_text_color(*_TEXT_DARK)
                 self.set_font("Helvetica", "", 10)
-                self.set_xy(0, 5)
-                self.cell(self.w - 10, 8, "Account Statement", align="R")
-                self.set_y(band_height + 6)
+                self.set_xy(0, band_height + 3)
+                self.cell(self.w - 10, 6, "Account Statement", align="R")
+                self.set_y(band_height + 12)
                 self.set_text_color(*_TEXT_DARK)
 
             def footer(self) -> None:
