@@ -89,6 +89,32 @@ def test_system_prompt_forbids_numeric_fraud_details_and_specific_case_confirmat
     assert "contact support" in lowered or "admin" in lowered
 
 
+def test_system_prompt_forbids_reconstructing_internal_logic_from_conversation():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "never reconstruct or paraphrase" in lowered
+    assert "pasted by the user" in lowered
+
+
+# ---- routing gap fix: intent.py routes conceptual "how is X calculated"
+# questions to Support (same pattern as fraud), so a general credit-score
+# question never reaches the Credit Agent's own knowledge base — Support
+# needs its own grounding for this or it falls back to (wrong, for this
+# app) general knowledge about credit bureaus.
+
+
+def test_system_prompt_includes_credit_score_factors_knowledge_verbatim():
+    assert agent._CREDIT_SCORE_FACTORS in agent._SYSTEM_PROMPT
+
+
+def test_credit_score_factors_knowledge_contains_no_digits():
+    assert not any(char.isdigit() for char in agent._CREDIT_SCORE_FACTORS)
+
+
+def test_system_prompt_forbids_outside_general_knowledge_about_credit_scoring():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "never invent or use outside/general knowledge about" in lowered
+
+
 # ---- redirect case: the prompt tells the model to defer real financial-data questions ----
 
 

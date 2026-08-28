@@ -43,6 +43,8 @@ def seeded_user(db_session):
         ("Do I have any recurring subscriptions?", "recurring"),
         ("How much did I spend this month?", "spending_by_type"),
         ("Show me my transaction history", "transactions"),
+        ("What's my net worth?", "net_worth"),
+        ("What's my total balance across all my accounts?", "net_worth"),
         ("What's my wallet balance?", "wallet_balances"),
     ],
 )
@@ -66,6 +68,7 @@ def test_select_tool_falls_back_to_wallet_balances_by_default():
         ("Am vreun abonament recurent?", "recurring"),
         ("Cat am cheltuit luna asta?", "spending_by_type"),
         ("Arata-mi istoricul tranzactiilor", "transactions"),
+        ("Cat am in toate conturile?", "net_worth"),
         ("Ce sold am?", "wallet_balances"),
     ],
 )
@@ -87,6 +90,63 @@ def test_get_wallet_balances_reuses_wallets_service(db_session, seeded_user):
     assert result[0].currency == "RON"
     assert result[0].available_balance == Decimal("1234.56")
     assert result[0].is_main is True
+
+
+def test_get_wallet_balances_excludes_closed_wallets(db_session, seeded_user):
+    WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))
+    pln = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="PLN"))
+    WalletService(db_session).close_wallet(seeded_user.id, pln.id)
+
+    result = tools.get_wallet_balances(ToolContext(user_id=seeded_user.id, db=db_session))
+
+    assert [w.currency for w in result] == ["RON"]
+
+
+def test_get_net_worth_reuses_analytics_service_real_fx_conversion(db_session, seeded_user):
+    ron = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))
+    ron.available_balance = Decimal("100.00")
+    eur = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    eur.available_balance = Decimal("10.00")
+    eur.reserved_balance = Decimal("5.00")
+    db_session.flush()
+
+    result = tools.get_net_worth(ToolContext(user_id=seeded_user.id, db=db_session))
+
+    assert result.base_currency == "RON"
+    # Real FXService conversion, not hand-computed here — just prove the
+    # reserved EUR amount was never added into the total.
+    from app.fx.service import FXService
+
+    expected_eur_converted = (eur.available_balance * FXService(db_session).get_rate("EUR", "RON")).quantize(Decimal("0.01"))
+    assert result.total_available_balance == Decimal("100.00") + expected_eur_converted
+
+
+# ---- correctness/hallucination fix: the agent must never claim it computed
+# a converted total unless it actually called get_net_worth() and got one —
+# see _net_worth()'s formatting and the system prompt's "never claim you
+# calculated" rule.
+
+
+def test_net_worth_summary_states_a_real_converted_total_and_excludes_reserved(db_session, seeded_user):
+    ron = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))
+    ron.available_balance = Decimal("100.00")
+    eur = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    eur.available_balance = Decimal("10.00")
+    eur.reserved_balance = Decimal("5.00")
+    db_session.flush()
+
+    summary = agent._net_worth(ToolContext(user_id=seeded_user.id, db=db_session))
+
+    assert "Total balance across all wallets" in summary
+    assert "reserved amounts excluded" in summary
+    assert "RON" in summary and "EUR" in summary
+    assert "5.00" in summary  # the reserved EUR amount is shown, but noted as excluded
+    assert "not included in the total" in summary
+
+
+def test_system_prompt_forbids_claiming_a_calculation_that_wasnt_actually_run():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "never claim you calculated, converted, totaled" in lowered
 
 
 def test_get_budgets_reuses_budgets_service(db_session, seeded_user):
@@ -294,7 +354,7 @@ def test_select_tool_dispatches_a_clearly_scoped_spending_question_to_spending_b
 def test_system_prompt_instructs_answering_directly_without_asking_for_confirmation():
     lowered = agent._SYSTEM_PROMPT.lower()
     assert "do not ask for confirmation first" in lowered
-    assert "present it confidently" in lowered
+    assert "treat it as answered" in lowered
 
 
 def test_system_prompt_still_allows_clarifying_questions_when_genuinely_ambiguous():
@@ -306,3 +366,35 @@ def test_system_prompt_instructs_matching_the_users_language_defaulting_to_roman
     lowered = agent._SYSTEM_PROMPT.lower()
     assert "same language the user's message is written in" in lowered
     assert "default to romanian" in lowered
+
+
+# ---- no-duplicate-dump fix: the deterministic data block is still shown to
+# the user verbatim after the reply (so a figure can never be silently
+# recalculated), but the LLM must not restate it as a second list itself.
+
+
+def test_system_prompt_instructs_not_repeating_the_data_as_a_second_list():
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "must never contain any number" in lowered
+    assert "never quote, copy, or closely" in lowered
+
+
+def test_append_summary_skips_the_append_when_the_llm_already_quoted_it_verbatim():
+    summary = "Wallet balances:\n- RON 0.0 available — main wallet"
+    explanation = f"You don't have any funds right now.\n\n{summary}"
+
+    assert agent._append_summary(explanation, summary) == explanation
+
+
+def test_append_summary_appends_once_when_the_llm_did_not_quote_it():
+    summary = "Wallet balances:\n- RON 0.0 available — main wallet"
+    explanation = "You don't have any funds right now."
+
+    assert agent._append_summary(explanation, summary) == f"{explanation}\n\n{summary}"
+
+
+def test_empty_state_messages_read_as_full_sentences_not_debug_labels(db_session, seeded_user):
+    ctx = ToolContext(user_id=seeded_user.id, db=db_session)
+    assert agent._wallet_balances(ctx) == "You don't have any wallets yet."
+    assert agent._budgets(ctx) == "You don't have any budgets set up yet."
+    assert agent._savings_goals(ctx) == "You don't have any savings goals set up yet."
