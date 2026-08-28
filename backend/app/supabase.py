@@ -62,11 +62,21 @@ class SupabaseRestSession:
         return rows[0] if rows else None
 
     def fetch_many(self, model: type[ModelT], params: Mapping[str, str]) -> list[ModelT]:
+        # A caller-specified `select` (e.g. TransactionRepository.list_for_user
+        # fetching just wallet ids to build an id filter) asks for fewer
+        # columns on purpose — that row must never be tracked into flush()'s
+        # identity map, or a later unrelated flush() PATCHes every untouched
+        # column back to NULL (see the `wallets` NOT NULL crash this caused).
+        # This is deliberately keyed off the request, not off which columns
+        # the row happens to carry: a live Supabase table lagging a new
+        # model column (schema migration not yet applied) is a normal,
+        # already-tolerated case and must still be trackable.
+        partial = "select" in params
         rows = self.request("GET", self._table_name(model), params=params) or []
         hydrated: list[ModelT] = []
         for row in rows:
             try:
-                hydrated.append(self._hydrate(model, row))
+                hydrated.append(self._hydrate(model, row, partial=partial))
             except ValueError:
                 # A row with a value the current code's enums don't recognize
                 # (legacy/orphaned data, or a column shared with an
@@ -200,10 +210,11 @@ class SupabaseRestSession:
         self._tracked.clear()
         self._snapshots.clear()
 
-    def _hydrate(self, model: type[ModelT], row: Mapping[str, Any]) -> ModelT:
-        columns = sa_inspect(model).columns
+    def _hydrate(self, model: type[ModelT], row: Mapping[str, Any], *, partial: bool = False) -> ModelT:
         values = {
-            column.name: self._python_value(row[column.name], column.type) for column in columns if column.name in row
+            column.name: self._python_value(row[column.name], column.type)
+            for column in sa_inspect(model).columns
+            if column.name in row
         }
         primary_key = self._primary_key_name(model)
         row_id = values.get(primary_key)
@@ -212,14 +223,16 @@ class SupabaseRestSession:
             if tracked is not None:
                 return tracked
         item = model(**values)
-        # A caller that asked for a narrower column set (e.g. `select: "id"`
-        # to build an id filter, see TransactionRepository.list_for_user)
-        # gets back a row missing every other column. Tracking that partial
-        # object here would poison flush()'s identity map: it later gets
-        # PATCHed with every untouched column set back to NULL (see the
-        # `wallets` NOT NULL crash this caused). Only a full-column fetch is
-        # safe to track.
-        if set(columns.keys()) <= values.keys():
+        # `partial` (a caller-specified `select`, e.g. `select: "id"` to
+        # build an id filter — see fetch_many) means this row is missing
+        # columns on purpose. Tracking it here would poison flush()'s
+        # identity map: it later gets PATCHed with every untouched column
+        # set back to NULL (see the `wallets` NOT NULL crash this caused).
+        # A row that's merely missing a column the live Supabase schema
+        # hasn't caught up to yet (a migration not yet applied there) is
+        # not partial in this sense and must still be trackable, same as
+        # before.
+        if not partial:
             self._track(item)
         return item
 
