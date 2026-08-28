@@ -17,6 +17,7 @@ from app.payments.models import Beneficiary
 from app.payments.repository import BeneficiaryRepository
 from app.users.schemas import UserCreate
 from app.users.service import UserService
+from app.wallets.repository import WalletRepository
 from app.wallets.schemas import WalletCreate
 from app.wallets.service import WalletService
 
@@ -44,9 +45,9 @@ def alex(db_session):
     return user
 
 
-def _add_beneficiary(db_session, owner_id, name, *, user_id=None, phone=None):
+def _add_beneficiary(db_session, owner_id, name, *, user_id=None, phone=None, iban=None):
     return BeneficiaryRepository(db_session).add(
-        Beneficiary(owner_user_id=owner_id, name=name, beneficiary_user_id=user_id, phone=phone)
+        Beneficiary(owner_user_id=owner_id, name=name, beneficiary_user_id=user_id, phone=phone, iban=iban)
     )
 
 
@@ -147,6 +148,47 @@ def test_prepare_rejects_non_ron(db_session, sender, alex):
     result = ActionService(db_session).prepare_phone_transfer(user.id, None, "100", "EUR", "Alex")
     assert result.action_card is None
     assert "RON" in result.reply
+
+
+def test_prepare_resolves_an_on_us_iban_beneficiary(db_session, sender, alex):
+    """A beneficiary saved with only an in-app IBAN (no linked user, no
+    phone) — the screenshot's "Bogdan" case — still works."""
+    user, _ = sender
+    alex_wallet = WalletRepository(db_session).get_by_user_and_currency(alex.id, "RON")
+    _add_beneficiary(db_session, user.id, "Bogdan", iban=alex_wallet.iban)
+
+    result = ActionService(db_session).prepare_phone_transfer(user.id, None, "100", "RON", "Bogdan")
+
+    assert result.action_card is not None
+    row = db_session.get(AgentAction, result.action_card.action_id)
+    assert row.payload["destination_wallet_id"] == str(alex_wallet.id)
+    assert row.payload["recipient_user_id"] == str(alex.id)
+
+
+def test_prepare_rejects_an_external_iban_beneficiary(db_session, sender):
+    user, _ = sender
+    _add_beneficiary(db_session, user.id, "Extern SRL", iban="RO49BANK1111222233334444")
+
+    result = ActionService(db_session).prepare_phone_transfer(user.id, None, "100", "RON", "Extern")
+
+    assert result.action_card is None
+    assert "Payments" in result.reply
+
+
+def test_confirm_executes_a_transfer_to_an_on_us_iban_beneficiary(db_session, sender, alex, monkeypatch):
+    user, wallet = sender
+    alex_wallet = WalletRepository(db_session).get_by_user_and_currency(alex.id, "RON")
+    _add_beneficiary(db_session, user.id, "Bogdan", iban=alex_wallet.iban)
+    monkeypatch.setattr(action_service_module, "screen_transfer", lambda *a, **k: _unblocked())
+    card = ActionService(db_session).prepare_phone_transfer(user.id, None, "120", "RON", "Bogdan").action_card
+
+    result = ActionService(db_session).confirm(user.id, card.action_id)
+
+    assert result.status == AgentActionStatus.EXECUTED
+    db_session.refresh(wallet)
+    db_session.refresh(alex_wallet)
+    assert wallet.available_balance == Decimal("880.00")
+    assert alex_wallet.available_balance == Decimal("120.00")
 
 
 def test_prepare_supersedes_a_previous_open_draft_in_the_same_conversation(db_session, sender, alex):
@@ -361,6 +403,24 @@ def test_intent_has_an_action_category_and_examples():
     assert IntentCategory.ACTION.value == "action"
     assert "'Trimite 100 lei lui Alex' -> action" in _SYSTEM_PROMPT
     assert "'Cum trimit bani cuiva?' -> support" in _SYSTEM_PROMPT
+
+
+def test_action_intent_never_generates_suggested_followups(db_session, monkeypatch):
+    """The generic follow-up model invents capabilities the actions agent
+    doesn't have — it must not run for ACTION replies."""
+    from app.ai.orchestrator import service as orch
+
+    monkeypatch.setattr(orch, "classify_intent", lambda message, history=None: IntentCategory.ACTION)
+    monkeypatch.setattr(orch, "AGENT_REGISTRY", {IntentCategory.ACTION: lambda *a, **k: "«X» nu are un cont."})
+    calls: list[int] = []
+    monkeypatch.setattr(
+        orch.OrchestratorService, "_generate_followups", lambda self, m, r: calls.append(1) or ["nope"]
+    )
+
+    response = orch.OrchestratorService(db_session).chat(uuid.uuid4(), "trimite 10 lei lui X")
+
+    assert response.suggested_followups == []
+    assert calls == []
 
 
 def test_classify_intent_maps_a_transfer_request_to_action(monkeypatch):

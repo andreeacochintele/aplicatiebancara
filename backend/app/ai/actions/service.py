@@ -47,6 +47,13 @@ def _mask_phone(phone: str | None) -> str | None:
     return f"••• {digits[-3:]}" if len(digits) >= 3 else "•••"
 
 
+def _mask_iban(iban: str | None) -> str | None:
+    if not iban:
+        return None
+    tail = iban.strip()[-4:]
+    return f"IBAN ···{tail}" if tail else "IBAN ···"
+
+
 class ActionService:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -99,13 +106,6 @@ class ActionService:
             return AgentResult(reply=f"Am găsit mai mulți beneficiari: {names}. Spune-mi numele complet.")
 
         beneficiary = matches[0]
-        recipient = self._resolve_recipient_user(beneficiary)
-        if recipient is None:
-            return AgentResult(
-                reply=f"«{beneficiary.name}» nu are un cont în aplicație pentru transfer instant."
-            )
-        if recipient.id == user_id:
-            return AgentResult(reply="Nu îți poți trimite bani ție însuți.")
 
         source = self.wallets.get_by_user_and_currency(user_id, SUPPORTED_CURRENCY)
         if source is None:
@@ -113,9 +113,10 @@ class ActionService:
         if source.status != WalletStatus.ACTIVE:
             return AgentResult(reply=f"Portofelul tău RON este {source.status.value.lower()}.")
 
-        destination = self.wallets.get_by_user_and_currency(recipient.id, SUPPORTED_CURRENCY)
-        if destination is None:
-            return AgentResult(reply=f"«{beneficiary.name}» nu are un portofel RON.")
+        resolved = self._resolve_destination(user_id, beneficiary, source)
+        if isinstance(resolved, str):
+            return AgentResult(reply=resolved)
+        recipient_user_id, destination, contact_masked = resolved
 
         if source.available_balance < amount:
             return AgentResult(
@@ -127,7 +128,6 @@ class ActionService:
 
         self._supersede_open_drafts(conversation_id)
 
-        phone_masked = _mask_phone(recipient.phone or beneficiary.phone)
         source_label = f"RON — sold {source.available_balance}"
         action = self.repository.add(
             AgentAction(
@@ -138,10 +138,10 @@ class ActionService:
                 payload={
                     "amount": f"{amount:.2f}",
                     "currency": SUPPORTED_CURRENCY,
-                    "recipient_user_id": str(recipient.id),
+                    "recipient_user_id": str(recipient_user_id),
                     "recipient_beneficiary_id": str(beneficiary.id),
                     "recipient_display_name": beneficiary.name,
-                    "recipient_phone_masked": phone_masked,
+                    "recipient_phone_masked": contact_masked,
                     "source_wallet_id": str(source.id),
                     "destination_wallet_id": str(destination.id),
                     "source_wallet_label": source_label,
@@ -269,6 +269,40 @@ class ActionService:
         if beneficiary.phone:
             return self.users.get_by_phone(beneficiary.phone)
         return None
+
+    def _resolve_destination(self, sender_id, beneficiary, source):
+        """Turn a matched beneficiary into (recipient_user_id, destination
+        Wallet, masked-contact) — or a plain string with the reason it
+        can't be done. Tries a linked app user / saved phone first, then an
+        on-us (in-app) IBAN. An external IBAN is not supported through chat
+        yet — the user is told to use the Payments page for a standard bank
+        transfer."""
+        recipient = self._resolve_recipient_user(beneficiary)
+        if recipient is not None:
+            if recipient.id == sender_id:
+                return "Nu îți poți trimite bani ție însuți."
+            destination = self.wallets.get_by_user_and_currency(recipient.id, SUPPORTED_CURRENCY)
+            if destination is None:
+                return f"«{beneficiary.name}» nu are un portofel RON."
+            return recipient.id, destination, _mask_phone(recipient.phone or beneficiary.phone)
+
+        if beneficiary.iban:
+            destination = self.wallets.get_by_iban(beneficiary.iban.strip())
+            if destination is None:
+                return (
+                    f"«{beneficiary.name}» are un IBAN extern. Prin chat pot trimite doar "
+                    "către conturi din aplicație — folosește pagina Payments pentru un "
+                    "transfer bancar standard."
+                )
+            if destination.id == source.id or destination.user_id == sender_id:
+                return "Nu îți poți trimite bani ție însuți."
+            if destination.currency != SUPPORTED_CURRENCY:
+                return f"«{beneficiary.name}» are un cont în {destination.currency}, nu în RON."
+            if destination.status != WalletStatus.ACTIVE:
+                return f"Contul lui «{beneficiary.name}» este {destination.status.value.lower()}."
+            return destination.user_id, destination, _mask_iban(beneficiary.iban)
+
+        return f"«{beneficiary.name}» nu are un telefon sau un cont din aplicație pe care să trimit."
 
     def _supersede_open_drafts(self, conversation_id: uuid.UUID | None) -> None:
         if conversation_id is None:

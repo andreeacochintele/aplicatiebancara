@@ -140,13 +140,18 @@ class OrchestratorService:
         agent_used = intent.value if intent in AGENT_REGISTRY else None
         self._persist_turn(conversation, message, reply, agent_used)
         self._maybe_generate_title(conversation, message, reply)
-        # Only for a routed agent reply — greeting/out_of_scope are fixed
-        # strings with no LLM call of their own, not worth the extra one here.
-        # Also skipped for an action-card reply: the card already carries the
-        # user's next step (Accept / Cancel), a "what next" chip row would
-        # just compete with it.
+        # Only for a routed personal_finance / credit / support reply.
+        # Skipped for greeting/out_of_scope (fixed strings, no LLM call of
+        # their own) and for the whole ACTION intent: the generic follow-up
+        # model doesn't know what the actions agent can actually do, so it
+        # invents options (pay by IBAN, add a beneficiary from chat, cancel
+        # a payment) the agent can't honour — worse than no chips. An action
+        # reply's real next step is the card's Accept/Cancel or a plain
+        # rephrase.
         suggested_followups = (
-            self._generate_followups(message, reply) if agent_used is not None and action_card is None else []
+            self._generate_followups(message, reply)
+            if agent_used is not None and intent != IntentCategory.ACTION
+            else []
         )
 
         log_event("final_response", intent=intent.value, duration_ms=_elapsed_ms(start))
