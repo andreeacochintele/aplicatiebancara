@@ -137,7 +137,7 @@ def test_fetching_an_added_row_reuses_the_tracked_instance(session, record_bodie
     assert body["verified"] is True
 
 
-def test_fetch_many_does_not_track_a_row_fetched_with_a_narrow_select(session, record_bodies):
+def test_fetch_many_does_not_track_a_row_fetched_with_a_narrow_select(session, monkeypatch, record_bodies):
     """Regression test: TransactionRepository.list_for_user (and
     get_for_user) fetch wallets with select=id only, to build an id filter
     set — they never intend to write those wallets back. A prior bug
@@ -149,7 +149,8 @@ def test_fetch_many_does_not_track_a_row_fetched_with_a_narrow_select(session, r
     way)."""
     wallet_id = uuid.uuid4()
     # Simulate the id-only row PostgREST returns for `select=id`.
-    hydrated = session._hydrate(Wallet, {"id": str(wallet_id)})
+    monkeypatch.setattr(session, "request", lambda method, table, **kwargs: [{"id": str(wallet_id)}])
+    [hydrated] = session.fetch_many(Wallet, {"user_id": "eq.whatever", "select": "id"})
 
     assert hydrated.id == wallet_id
     assert hydrated.user_id is None
@@ -157,6 +158,26 @@ def test_fetch_many_does_not_track_a_row_fetched_with_a_narrow_select(session, r
     session.flush()
 
     assert record_bodies == []
+
+
+def test_fetch_many_still_tracks_a_full_row_missing_a_column_the_live_schema_lacks(session, record_bodies):
+    """A model column with no matching live Supabase column yet (a
+    migration written but not applied there — a recurring situation in
+    this repo) must not be mistaken for a `select`-narrowed fetch: it's
+    still a real, writable row, just missing one column's data, exactly
+    like the rest of this codebase already tolerates (see _hydrate's
+    graceful column-skip)."""
+    row = _merchant_row(uuid.uuid4())
+    del row["logo_url"]  # e.g. a column the live table doesn't have yet
+    merchant = session._hydrate(Merchant, row)
+
+    merchant.verified = False
+    session.flush()
+
+    method, table, body = record_bodies[0]
+    assert (method, table) == ("PATCH", "merchants")
+    assert body["verified"] is False
+    assert body["logo_url"] is None
 
 
 def test_fetch_many_skips_a_row_with_a_value_unknown_to_the_current_schema(monkeypatch, session):
