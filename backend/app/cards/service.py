@@ -188,16 +188,18 @@ class CardService:
     def update_pin(self, user_id: uuid.UUID, card_id: uuid.UUID, pin: str) -> Card:
         card = self.get_for_user(user_id, card_id)
         self._validate_pin(pin)
-        card.pin_hash = hash_password(pin)
+        self.repository.update_pin_hash(card, hash_password(pin))
+        if not self.repository.get_pin_hash(card):
+            raise ValidationError("Card PIN could not be saved")
         self._attach_pin_status(card)
-        self.db.flush()
         return card
 
     def reveal_details(self, user_id: uuid.UUID, card_id: uuid.UUID, pin: str) -> CardSensitiveDetails:
         card = self.get_for_user(user_id, card_id)
-        if not card.pin_hash:
+        pin_hash = self.repository.get_pin_hash(card)
+        if not pin_hash:
             raise ValidationError("Set a card PIN before viewing card details")
-        if not verify_password(pin, card.pin_hash):
+        if not verify_password(pin, pin_hash):
             raise ValidationError("Incorrect card PIN")
         return CardSensitiveDetails(card_id=card.id, mock_pan=card.mock_pan, mock_cvv=card.mock_cvv)
 
@@ -298,7 +300,7 @@ class CardService:
         return Decimal(value).quantize(Decimal("0.01"))
 
     def _attach_pin_status(self, card: Card) -> None:
-        card.has_pin = bool(card.pin_hash)
+        card.has_pin = bool(self.repository.get_pin_hash(card))
 
     def _validate_pin(self, pin: str) -> None:
         if len(pin) != 4 or not pin.isdigit():

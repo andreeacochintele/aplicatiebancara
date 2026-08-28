@@ -82,6 +82,90 @@ def test_card_pin_controls_sensitive_details(db_session, user_with_wallet):
     assert details.mock_cvv == card.mock_cvv
 
 
+def test_card_pin_save_then_reveal_over_api(client):
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "card-pin-http@example.com",
+            "phone": "+40755555001",
+            "password": "Sup3rSecret!",
+            "first_name": "Card",
+            "last_name": "Pin",
+        },
+    )
+    assert register.status_code == 201
+    headers = {"Authorization": f"Bearer {register.json()['tokens']['access_token']}"}
+    wallet = client.post("/api/v1/wallets", headers=headers, json={"currency": "RON"})
+    assert wallet.status_code == 201
+    card = client.post("/api/v1/cards", headers=headers, json={"default_wallet_id": wallet.json()["id"]})
+    assert card.status_code == 201
+    assert card.json()["has_pin"] is False
+
+    pin_response = client.patch(f"/api/v1/cards/{card.json()['id']}/pin", headers=headers, json={"pin": "1234"})
+    assert pin_response.status_code == 200
+    assert pin_response.json()["has_pin"] is True
+
+    listed = client.get("/api/v1/cards", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json()[0]["has_pin"] is True
+
+    reveal = client.post(f"/api/v1/cards/{card.json()['id']}/reveal", headers=headers, json={"pin": "1234"})
+    assert reveal.status_code == 200
+    assert reveal.json()["mock_pan"] == card.json()["mock_pan"]
+    assert reveal.json()["mock_cvv"] == card.json()["mock_cvv"]
+
+
+def test_card_pins_are_persisted_per_card_over_api(client):
+    register = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "card-pin-http-two@example.com",
+            "phone": "+40755555002",
+            "password": "Sup3rSecret!",
+            "first_name": "Card",
+            "last_name": "Pins",
+        },
+    )
+    assert register.status_code == 201
+    headers = {"Authorization": f"Bearer {register.json()['tokens']['access_token']}"}
+    ron_wallet_response = client.post("/api/v1/wallets", headers=headers, json={"currency": "RON"})
+    eur_wallet_response = client.post("/api/v1/wallets", headers=headers, json={"currency": "EUR"})
+    assert ron_wallet_response.status_code == 201
+    assert eur_wallet_response.status_code == 201
+    ron_wallet = ron_wallet_response.json()
+    eur_wallet = eur_wallet_response.json()
+    first_card_response = client.post("/api/v1/cards", headers=headers, json={"default_wallet_id": ron_wallet["id"]})
+    second_card_response = client.post("/api/v1/cards", headers=headers, json={"default_wallet_id": eur_wallet["id"]})
+    assert first_card_response.status_code == 201
+    assert second_card_response.status_code == 201
+    first_card = first_card_response.json()
+    second_card = second_card_response.json()
+
+    first_pin = client.patch(f"/api/v1/cards/{first_card['id']}/pin", headers=headers, json={"pin": "1234"})
+    assert first_pin.status_code == 200
+    listed = client.get("/api/v1/cards", headers=headers)
+    assert listed.status_code == 200
+    pin_status_by_id = {card["id"]: card["has_pin"] for card in listed.json()}
+    assert pin_status_by_id[first_card["id"]] is True
+    assert pin_status_by_id[second_card["id"]] is False
+
+    wrong_card_reveal = client.post(f"/api/v1/cards/{second_card['id']}/reveal", headers=headers, json={"pin": "1234"})
+    assert wrong_card_reveal.status_code == 422
+    assert wrong_card_reveal.json()["detail"] == "Set a card PIN before viewing card details"
+
+    second_pin = client.patch(f"/api/v1/cards/{second_card['id']}/pin", headers=headers, json={"pin": "9876"})
+    assert second_pin.status_code == 200
+    first_with_second_pin = client.post(f"/api/v1/cards/{first_card['id']}/reveal", headers=headers, json={"pin": "9876"})
+    assert first_with_second_pin.status_code == 422
+    assert first_with_second_pin.json()["detail"] == "Incorrect card PIN"
+    first_reveal = client.post(f"/api/v1/cards/{first_card['id']}/reveal", headers=headers, json={"pin": "1234"})
+    second_reveal = client.post(f"/api/v1/cards/{second_card['id']}/reveal", headers=headers, json={"pin": "9876"})
+    assert first_reveal.status_code == 200
+    assert second_reveal.status_code == 200
+    assert first_reveal.json()["mock_pan"] == first_card["mock_pan"]
+    assert second_reveal.json()["mock_pan"] == second_card["mock_pan"]
+
+
 def test_create_debit_card_can_create_new_current_account(db_session, user_with_wallet):
     user, _wallet = user_with_wallet
     card = CardService(db_session).create_card(
