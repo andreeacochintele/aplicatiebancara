@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, Copy, Eye, EyeOff, Lock, Settings, Trash2, Unlock } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { cardTierRewardBullets } from "../config/rewardPolicy";
@@ -23,39 +24,46 @@ const CARD_TIER_REWARDS: Record<CardTier, string[]> = {
   GOLD: cardTierRewardBullets("GOLD"),
   PLATINUM: cardTierRewardBullets("PLATINUM"),
 };
-const CARD_TIER_LABELS: Record<CardTier, string> = {
-  REGULAR: "Regular",
-  GOLD: "Gold",
-  PLATINUM: "Platinum",
-};
 const CREDIT_CARD_LIMITS: Record<CardTier, number> = {
   REGULAR: 5000,
   GOLD: 15000,
   PLATINUM: 30000,
 };
-const CARD_TIER_PRODUCT_LIST = [
-  {
-    name: "Regular",
-    description: "Everyday debit or credit card with standard limits and core banking controls.",
-    debit: "Standard debit",
-    credit: "Standard credit",
-    rewards: CARD_TIER_REWARDS.REGULAR,
-  },
-  {
-    name: "Gold",
-    description: "A stronger everyday tier with cashback boosts and faster support.",
-    debit: "Gold debit",
-    credit: "Gold credit",
-    rewards: CARD_TIER_REWARDS.GOLD,
-  },
-  {
-    name: "Platinum",
-    description: "A premium tier focused on travel, protection and higher-touch service.",
-    debit: "Platinum debit",
-    credit: "Platinum credit",
-    rewards: CARD_TIER_REWARDS.PLATINUM,
-  },
-];
+
+function tierLabel(tier: CardTier, t: (key: string) => string): string {
+  if (tier === "REGULAR") return t("cards.regular");
+  if (tier === "GOLD") return t("cards.gold");
+  return t("cards.platinum");
+}
+
+function cardTierProductList(t: (key: string) => string) {
+  return [
+    {
+      name: "REGULAR" as CardTier,
+      label: t("cards.regular"),
+      description: t("cards.regularDescription"),
+      debit: t("cards.standardDebit"),
+      credit: t("cards.standardCredit"),
+      rewards: CARD_TIER_REWARDS.REGULAR,
+    },
+    {
+      name: "GOLD" as CardTier,
+      label: t("cards.gold"),
+      description: t("cards.goldDescription"),
+      debit: t("cards.goldDebit"),
+      credit: t("cards.goldCredit"),
+      rewards: CARD_TIER_REWARDS.GOLD,
+    },
+    {
+      name: "PLATINUM" as CardTier,
+      label: t("cards.platinum"),
+      description: t("cards.platinumDescription"),
+      debit: t("cards.platinumDebit"),
+      credit: t("cards.platinumCredit"),
+      rewards: CARD_TIER_REWARDS.PLATINUM,
+    },
+  ];
+}
 const MOCK_CARD_MERCHANTS = ["Carrefour", "Netflix", "OMV", "Starbucks", "eMAG", "Uber"];
 type CreditPaymentSourceType = "ACCOUNT" | "DEBIT_CARD";
 type CreditPaymentAmountMode = "FULL_BALANCE" | "CUSTOM";
@@ -70,11 +78,12 @@ interface CardTransactionDisplay {
   direction: "in" | "out";
 }
 
-function formatCardType(type: CardType): string {
-  return type
+function formatCardType(type: CardType, t: (key: string, options?: Record<string, unknown>) => string): string {
+  const fallback = type
     .split("_")
     .map((part) => part[0] + part.slice(1).toLowerCase())
     .join(" ");
+  return t(`cards.cardType.${type}`, { defaultValue: fallback });
 }
 
 function statusClass(status: Card["status"]): string {
@@ -83,8 +92,8 @@ function statusClass(status: Card["status"]): string {
   return "tag tag--neutral";
 }
 
-function formatCardTier(tier: CardTier | null): string {
-  return tier ? CARD_TIER_LABELS[tier] : "No tier";
+function formatCardTier(tier: CardTier | null, t: (key: string) => string): string {
+  return tier ? tierLabel(tier, t) : t("cards.noTier");
 }
 
 function cardToneClass(card: Card): string {
@@ -118,34 +127,35 @@ function walletDisplayName(wallet: Wallet): string {
   return `${base}${wallet.is_main ? " - Main" : ""}`;
 }
 
-function walletOptionLabel(wallet: Wallet, debitAlreadyExists: boolean): string {
+function walletOptionLabel(wallet: Wallet, debitAlreadyExists: boolean, t: (key: string, options?: Record<string, unknown>) => string): string {
   const balance = Number(wallet.available_balance).toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
   return debitAlreadyExists
-    ? `${walletDisplayName(wallet)} - debit exists`
+    ? t("cards.debitAlreadyExists", { label: walletDisplayName(wallet) })
     : `${walletDisplayName(wallet)} - ${balance}`;
 }
 
-function selectedTierDetails(type: CardType | "", tier: CardTier): string {
-  if (type === "DEBIT") return CARD_TIER_PRODUCT_LIST.find((item) => item.name.toUpperCase() === tier)?.description ?? "";
-  if (type === "CREDIT") return "Credit card tier controls available credit, rewards and service level.";
+function selectedTierDetails(type: CardType | "", tier: CardTier, t: (key: string, options?: Record<string, unknown>) => string): string {
+  if (type === "DEBIT") return cardTierProductList(t).find((item) => item.name === tier)?.description ?? "";
+  if (type === "CREDIT") return t("cards.creditCardTierHint");
   return "";
 }
 
-function formatTransactionType(type: string): string {
-  return type
+function formatTransactionType(type: string, t: (key: string, options?: Record<string, unknown>) => string): string {
+  const fallback = type
     .split("_")
     .map((part) => part[0] + part.slice(1).toLowerCase())
     .join(" ");
+  return t(`common.txType.${type}`, { defaultValue: fallback });
 }
 
 function formatTransactionDate(value: string): string {
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function mockCardTransactions(card: Card, wallet?: Wallet): CardTransactionDisplay[] {
+function mockCardTransactions(card: Card, t: (key: string, options?: Record<string, unknown>) => string, wallet?: Wallet): CardTransactionDisplay[] {
   const seed = Number(card.last_four) || card.id.length;
   const currency = wallet?.currency ?? "RON";
   const multiplier = card.tier === "PLATINUM" ? 1.35 : card.tier === "GOLD" ? 1.15 : 1;
@@ -159,7 +169,7 @@ function mockCardTransactions(card: Card, wallet?: Wallet): CardTransactionDispl
 
     return {
       id: `mock-${card.id}-${index}`,
-      description: `${merchant} card payment`,
+      description: t("cards.mockCardPayment", { merchant }),
       created_at: date.toISOString(),
       amount,
       currency,
@@ -179,7 +189,9 @@ function cardTransactionDirection(transaction: Transaction, card: Card): "in" | 
 }
 
 export function CardsPage() {
+  const { t } = useTranslation();
   const { accessToken, logout, user } = useAuth();
+  const CARD_TIER_PRODUCT_LIST = useMemo(() => cardTierProductList(t), [t]);
   const [cards, setCards] = useState<Card[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -234,7 +246,7 @@ export function CardsPage() {
     () => CURRENT_ACCOUNT_CURRENCIES.filter((currency) => !activeWallets.some((wallet) => wallet.currency === currency)),
     [activeWallets],
   );
-  const cardholderName = user ? `${user.first_name} ${user.last_name}`.trim() : "Card holder";
+  const cardholderName = user ? `${user.first_name} ${user.last_name}`.trim() : t("cards.cardHolder");
   const selectedReusableCardType = selectedType === "DEBIT" || selectedType === "CREDIT";
   const selectedAccountLinkedCard = selectedType === "DEBIT" || selectedType === "ONE_TIME";
   const collateralDebitCards = useMemo(
@@ -282,7 +294,7 @@ export function CardsPage() {
   const selectedTypeCardCount = selectedType === "" ? 0 : cards.filter((card) => card.type === selectedType).length;
   const cardLimitReached =
     selectedType === "DEBIT" || selectedType === "CREDIT" ? selectedTypeCardCount >= MAX_CARDS_PER_TYPE : false;
-  const selectedTypeLabel = selectedType === "" ? "Card" : formatCardType(selectedType);
+  const selectedTypeLabel = selectedType === "" ? t("cards.cardFallback") : formatCardType(selectedType, t);
   const canCreateCard =
     selectedType !== "" &&
     !cardLimitReached &&
@@ -323,7 +335,7 @@ export function CardsPage() {
       setCards([]);
       setWallets([]);
       setTransactions([]);
-      setError(err instanceof ApiError ? err.message : "Could not load cards.");
+      setError(err instanceof ApiError ? err.message : t("cards.couldNotLoadCards"));
     } finally {
       setIsLoading(false);
     }
@@ -436,7 +448,7 @@ export function CardsPage() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not create card.");
+      setError(err instanceof ApiError ? err.message : t("cards.couldNotCreateCard"));
     } finally {
       setIsSaving(false);
     }
@@ -458,7 +470,7 @@ export function CardsPage() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not update card.");
+      setError(err instanceof ApiError ? err.message : t("cards.couldNotUpdateCard"));
     } finally {
       setActionCardId(null);
     }
@@ -466,7 +478,7 @@ export function CardsPage() {
 
   async function deleteCard(card: Card) {
     if (!accessToken || deletingCardId) return;
-    const confirmed = window.confirm(`Delete card ending in ${card.last_four}?`);
+    const confirmed = window.confirm(t("cards.deleteCardConfirm", { lastFour: card.last_four }));
     if (!confirmed) return;
 
     setDeletingCardId(card.id);
@@ -497,7 +509,7 @@ export function CardsPage() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not delete card.");
+      setError(err instanceof ApiError ? err.message : t("cards.couldNotDeleteCard"));
     } finally {
       setDeletingCardId(null);
     }
@@ -570,7 +582,7 @@ export function CardsPage() {
     const pin = pinSettingsInputs[card.id] ?? "";
     clearCardSecurityFeedback(card.id);
     if (!/^\d{4}$/.test(pin)) {
-      setCardSecurityErrors((current) => ({ ...current, [card.id]: "PIN must be 4 digits." }));
+      setCardSecurityErrors((current) => ({ ...current, [card.id]: t("cards.pinMustBe4Digits") }));
       return;
     }
 
@@ -583,7 +595,7 @@ export function CardsPage() {
         next.delete(card.id);
         return next;
       });
-      setCardSecurityMessages((current) => ({ ...current, [card.id]: "PIN saved." }));
+      setCardSecurityMessages((current) => ({ ...current, [card.id]: t("cards.pinSaved") }));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
@@ -591,7 +603,7 @@ export function CardsPage() {
       }
       setCardSecurityErrors((current) => ({
         ...current,
-        [card.id]: err instanceof ApiError ? err.message : "Could not save PIN.",
+        [card.id]: err instanceof ApiError ? err.message : t("cards.couldNotSavePin"),
       }));
     } finally {
       setPinActionCardId(null);
@@ -614,7 +626,7 @@ export function CardsPage() {
     const pin = pinInputs[card.id] ?? "";
     clearCardSecurityFeedback(card.id);
     if (!/^\d{4}$/.test(pin)) {
-      setCardSecurityErrors((current) => ({ ...current, [card.id]: "Enter the 4-digit PIN." }));
+      setCardSecurityErrors((current) => ({ ...current, [card.id]: t("cards.enter4DigitPin") }));
       return;
     }
 
@@ -640,7 +652,7 @@ export function CardsPage() {
             body: { pin },
           });
           showRevealedCardDetails(card.id, details);
-          setCardSecurityMessages((current) => ({ ...current, [card.id]: "PIN saved." }));
+          setCardSecurityMessages((current) => ({ ...current, [card.id]: t("cards.pinSaved") }));
           return;
         } catch (retryErr) {
           if (retryErr instanceof ApiError && retryErr.status === 401) {
@@ -656,14 +668,14 @@ export function CardsPage() {
           setCards((current) => current.map((item) => (item.id === card.id ? { ...item, has_pin: false } : item)));
           setCardSecurityErrors((current) => ({
             ...current,
-            [card.id]: retryErr instanceof ApiError || retryErr instanceof Error ? retryErr.message : "Could not save PIN.",
+            [card.id]: retryErr instanceof ApiError || retryErr instanceof Error ? retryErr.message : t("cards.couldNotSavePin"),
           }));
           return;
         }
       }
       setCardSecurityErrors((current) => ({
         ...current,
-        [card.id]: err instanceof ApiError || err instanceof Error ? err.message : "Could not reveal card details.",
+        [card.id]: err instanceof ApiError || err instanceof Error ? err.message : t("cards.couldNotRevealDetails"),
       }));
     } finally {
       setPinActionCardId(null);
@@ -693,14 +705,14 @@ export function CardsPage() {
     if (!details) {
       if (card.has_pin) {
         setPinPromptCardId(card.id);
-        setCardSecurityErrors((current) => ({ ...current, [card.id]: "Enter PIN to copy card number." }));
+        setCardSecurityErrors((current) => ({ ...current, [card.id]: t("cards.enterPinToCopy") }));
       } else {
         setPinSettingsCardIds((current) => {
           const next = new Set(current);
           next.add(card.id);
           return next;
         });
-        setCardSecurityErrors((current) => ({ ...current, [card.id]: "Set a PIN before copying card number." }));
+        setCardSecurityErrors((current) => ({ ...current, [card.id]: t("cards.setPinBeforeCopy") }));
       }
       return;
     }
@@ -725,7 +737,7 @@ export function CardsPage() {
           setCopiedCardId((current) => (current === card.id ? null : current));
         }, 1600);
       } else {
-        setError("Could not copy card number.");
+        setError(t("cards.couldNotCopyCardNumber"));
       }
     }
   }
@@ -769,11 +781,15 @@ export function CardsPage() {
   function paymentSourceLabel(): string {
     if (paymentSourceType === "ACCOUNT") {
       const wallet = wallets.find((item) => item.id === paymentSourceId);
-      return wallet ? walletDisplayName(wallet) : "selected account";
+      return wallet ? walletDisplayName(wallet) : t("cards.selectedAccount");
     }
     const debitCard = activeDebitCards.find((card) => card.id === paymentSourceId);
     const wallet = debitCard ? wallets.find((item) => item.id === debitCard.default_wallet_id) : undefined;
-    return debitCard ? `Debit **** ${debitCard.last_four}${wallet ? ` - ${walletDisplayName(wallet)}` : ""}` : "selected debit card";
+    return debitCard
+      ? wallet
+        ? t("cards.debitLastFourWithWallet", { lastFour: debitCard.last_four, wallet: walletDisplayName(wallet) })
+        : t("cards.debitLastFour", { lastFour: debitCard.last_four })
+      : t("cards.selectedDebitCard");
   }
 
   async function submitCreditCardPayment(card: Card) {
@@ -787,23 +803,23 @@ export function CardsPage() {
     setPaymentError(null);
 
     if (!sourceWallet) {
-      setPaymentError("Choose a payment source.");
+      setPaymentError(t("cards.chooseSource"));
       return;
     }
     if (sourceWallet.currency !== (card.credit_account?.currency ?? "RON")) {
-      setPaymentError("Choose a source in the same currency as the credit card balance.");
+      setPaymentError(t("cards.chooseSameCurrencySource"));
       return;
     }
     if (!Number.isFinite(amount) || amount <= 0) {
-      setPaymentError("Enter a valid payment amount.");
+      setPaymentError(t("cards.enterValidAmount"));
       return;
     }
     if (amount > Number(sourceWallet.available_balance)) {
-      setPaymentError("The selected source does not have enough available balance.");
+      setPaymentError(t("cards.insufficientBalance"));
       return;
     }
     if (amount > currentBalanceDue) {
-      setPaymentError("Payment is higher than the current card balance.");
+      setPaymentError(t("cards.higherThanBalance"));
       return;
     }
 
@@ -824,7 +840,7 @@ export function CardsPage() {
         logout();
         return;
       }
-      setPaymentError(err instanceof ApiError ? err.message : "Could not pay credit card.");
+      setPaymentError(err instanceof ApiError ? err.message : t("cards.couldNotPayCreditCard"));
       return;
     }
 
@@ -852,7 +868,7 @@ export function CardsPage() {
     );
     setCreditBalanceOverrides((current) => ({ ...current, [card.id]: nextBalanceDue }));
     setPaymentAmount("");
-    setPaymentMessage(`${formatCurrencyAmount(amount, sourceWallet.currency)} paid via ${paymentSourceLabel()}.`);
+    setPaymentMessage(t("cards.paidVia", { amount: formatCurrencyAmount(amount, sourceWallet.currency), source: paymentSourceLabel() }));
     void loadCardsData(accessToken);
   }
 
@@ -860,12 +876,12 @@ export function CardsPage() {
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
       <div className="tile">
         <div className="tile__header">
-          <span className="eyebrow">Card controls</span>
+          <span className="eyebrow">{t("cards.cardControls")}</span>
         </div>
         <div className={`card-control-layout${selectedReusableCardType ? "" : " card-control-layout--single"}`}>
           <div className="card-control-form">
             <label>
-              Card type
+              {t("cards.cardType")}
               <select
                 value={selectedType}
                 onChange={(event) => {
@@ -883,11 +899,11 @@ export function CardsPage() {
                 }}
               >
                 <option value="" disabled hidden>
-                  Select card type
+                  {t("cards.selectCardType")}
                 </option>
                 {CARD_TYPES.map((type) => (
                   <option key={type} value={type}>
-                    {formatCardType(type)}
+                    {formatCardType(type, t)}
                   </option>
                 ))}
               </select>
@@ -896,14 +912,14 @@ export function CardsPage() {
               <>
                 {selectedType === "DEBIT" && (
                   <div className="credit-issue-controls debit-issue-controls">
-                    <span className="eyebrow">Current account</span>
+                    <span className="eyebrow">{t("cards.currentAccount")}</span>
                     <div className="credit-issue-mode">
                       <button
                         type="button"
                         className={debitIssueMode === "EXISTING_ACCOUNT" ? "active" : ""}
                         onClick={() => setDebitIssueMode("EXISTING_ACCOUNT")}
                       >
-                        Existing account
+                        {t("cards.existingAccount")}
                       </button>
                       <button
                         type="button"
@@ -917,12 +933,12 @@ export function CardsPage() {
                           );
                         }}
                       >
-                        New account
+                        {t("cards.newAccount")}
                       </button>
                     </div>
                     {debitIssueMode === "NEW_ACCOUNT" && (
                       <label>
-                        Currency
+                        {t("cards.currency")}
                         <select
                           value={selectedDebitCurrency}
                           onChange={(event) => setSelectedDebitCurrency(event.target.value)}
@@ -939,14 +955,14 @@ export function CardsPage() {
                 )}
                 {(selectedType !== "DEBIT" || debitIssueMode === "EXISTING_ACCOUNT") && (
                   <label>
-                    Account
+                    {t("cards.account")}
                     <select value={selectedWalletId} onChange={(event) => setSelectedWalletId(event.target.value)}>
-                      <option value="">Select account</option>
+                      <option value="">{t("cards.selectAccount")}</option>
                       {activeWallets.map((wallet) => {
                         const debitAlreadyExists = selectedType === "DEBIT" && debitWalletIds.has(wallet.id);
                         return (
                           <option key={wallet.id} value={wallet.id} disabled={debitAlreadyExists}>
-                            {walletOptionLabel(wallet, debitAlreadyExists)}
+                            {walletOptionLabel(wallet, debitAlreadyExists, t)}
                           </option>
                         );
                       })}
@@ -957,10 +973,10 @@ export function CardsPage() {
             )}
             {selectedReusableCardType && (
               <div className="compact-tier-picker" aria-label="Card tier">
-                <span className="eyebrow">Tier</span>
+                <span className="eyebrow">{t("cards.tier")}</span>
                 <div className="compact-tier-picker__options">
                   {CARD_TIER_PRODUCT_LIST.map((tier) => {
-                    const tierValue = tier.name.toUpperCase() as CardTier;
+                    const tierValue = tier.name;
                     const isSelected = tierValue === selectedTier;
                     return (
                       <button
@@ -970,7 +986,7 @@ export function CardsPage() {
                         onClick={() => setSelectedTier(tierValue)}
                         aria-pressed={isSelected}
                       >
-                        <strong>{tier.name}</strong>
+                        <strong>{tier.label}</strong>
                         <span>{selectedType === "DEBIT" ? tier.debit : tier.credit}</span>
                       </button>
                     );
@@ -980,29 +996,29 @@ export function CardsPage() {
             )}
             {selectedType === "CREDIT" && (
               <div className="credit-issue-controls">
-                <span className="eyebrow">Issuance path</span>
+                <span className="eyebrow">{t("cards.issuancePath")}</span>
                 <div className="credit-issue-mode">
                   <button
                     type="button"
                     className={creditIssueMode === "SECURED" ? "active" : ""}
                     onClick={() => setCreditIssueMode("SECURED")}
                   >
-                    Use collateral
+                    {t("cards.useCollateral")}
                   </button>
                   <button
                     type="button"
                     className={creditIssueMode === "ADMIN_REVIEW" ? "active" : ""}
                     onClick={() => setCreditIssueMode("ADMIN_REVIEW")}
                   >
-                    Credit score evaluation
+                    {t("cards.creditScoreEvaluation")}
                   </button>
                 </div>
                 <div className="credit-tier-limit">
-                  <span>Credit limit</span>
+                  <span>{t("cards.creditLimit")}</span>
                   <strong>{formatCurrencyAmount(CREDIT_CARD_LIMITS[selectedTier], selectedCreditCurrency)}</strong>
                 </div>
                 <label>
-                  Currency
+                  {t("cards.currency")}
                   <select
                     value={selectedCreditCurrency}
                     onChange={(event) => setSelectedCreditCurrency(event.target.value)}
@@ -1016,14 +1032,14 @@ export function CardsPage() {
                 </label>
                 {creditIssueMode === "SECURED" && (
                   <label>
-                    Collateral debit card
+                    {t("cards.collateralDebitCard")}
                     <select value={collateralCardId} onChange={(event) => setCollateralCardId(event.target.value)}>
                       <option value="" disabled hidden>
-                        Select debit card
+                        {t("cards.selectDebitCard")}
                       </option>
                       {collateralDebitCards.map(({ card, wallet }) => (
                         <option key={card.id} value={card.id}>
-                          Debit **** {card.last_four} - {walletDisplayName(wallet)} - {formatWalletBalance(wallet)}
+                          {t("cards.debitLastFourWithWallet", { lastFour: card.last_four, wallet: `${walletDisplayName(wallet)} - ${formatWalletBalance(wallet)}` })}
                         </option>
                       ))}
                     </select>
@@ -1033,46 +1049,46 @@ export function CardsPage() {
             )}
             <button type="button" onClick={createCard} disabled={isSaving || !canCreateCard}>
               {isSaving
-                ? "Creating..."
+                ? t("cards.creating")
                 : cardLimitReached
-                  ? `${selectedTypeLabel} limit reached`
+                  ? t("cards.limitReached", { type: selectedTypeLabel })
                 : selectedType === ""
-                  ? "Select card type"
+                  ? t("cards.selectCardTypeButton")
                 : selectedAccountAlreadyHasDebit
-                  ? "Account already has debit"
+                  ? t("cards.accountAlreadyHasDebit")
                 : debitNewAccountAlreadyExists
-                  ? `${selectedDebitCurrency} account already exists`
+                  ? t("cards.accountAlreadyExists", { currency: selectedDebitCurrency })
                 : selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT" && !hasNewDebitAccountCurrency
-                  ? "All account currencies exist"
+                  ? t("cards.allCurrenciesExist")
                 : selectedOneTimeAlreadyExists
-                  ? "One-time card already exists"
+                  ? t("cards.oneTimeCardExists")
                 : selectedAccountLinkedCard &&
                     !(selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT") &&
                     !selectedWalletId
-                  ? "Select account"
+                  ? t("cards.selectAccountButton")
                 : selectedType === "CREDIT" && !creditAmountIsValid
-                  ? "Enter credit limit"
+                  ? t("cards.enterCreditLimit")
                 : selectedType === "CREDIT" && creditIssueMode === "SECURED" && !selectedCollateralSource
-                  ? "Select collateral"
+                  ? t("cards.selectCollateral")
                 : selectedType === "CREDIT" && creditIssueMode === "SECURED" && !selectedCollateralHasFunds
-                  ? "Insufficient collateral"
+                  ? t("cards.insufficientCollateral")
                 : selectedType === "CREDIT" && creditIssueMode === "ADMIN_REVIEW"
-                  ? "Send for credit score evaluation"
+                  ? t("cards.sendForEvaluation")
                 : selectedReusableCardType
                   ? selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT"
-                    ? `Create ${selectedDebitCurrency} account and debit card`
-                    : `Create ${CARD_TIER_LABELS[selectedTier]} ${formatCardType(selectedType)}`
-                  : "Create one-time card"}
+                    ? t("cards.createAccountAndDebit", { currency: selectedDebitCurrency })
+                    : t("cards.createTierCard", { tier: tierLabel(selectedTier, t), type: formatCardType(selectedType, t) })
+                  : t("cards.createOneTimeCard")}
             </button>
           </div>
 
           {selectedReusableCardType && (
             <aside className="card-choice-explainer">
-              <span className="eyebrow">Selection details</span>
+              <span className="eyebrow">{t("cards.selectionDetails")}</span>
               <strong>
-                {CARD_TIER_LABELS[selectedTier]} {formatCardType(selectedType)}
+                {tierLabel(selectedTier, t)} {formatCardType(selectedType, t)}
               </strong>
-              <p>{selectedTierDetails(selectedType, selectedTier)}</p>
+              <p>{selectedTierDetails(selectedType, selectedTier, t)}</p>
               <div className="card-choice-explainer__chips">
                 {CARD_TIER_REWARDS[selectedTier].slice(0, 3).map((reward) => (
                   <span key={reward}>{reward}</span>
@@ -1080,17 +1096,17 @@ export function CardsPage() {
               </div>
               <small>
                 {selectedType === "DEBIT"
-                  ? "Debit cards spend from the selected linked account."
+                  ? t("cards.debitSpendsFrom")
                   : creditIssueMode === "SECURED"
-                    ? "Collateral-backed cards are issued immediately after the selected debit-linked account has funds reserved."
-                    : "The request goes to the admin with the client's credit score before approval or rejection."}
+                    ? t("cards.securedCardsImmediate")
+                    : t("cards.adminReviewNote")}
               </small>
             </aside>
           )}
         </div>
         {cardLimitReached && (
           <p className="eyebrow" style={{ margin: "0.85rem 0 0" }}>
-            You can have up to {MAX_CARDS_PER_TYPE} {selectedTypeLabel.toLowerCase()} cards.
+            {t("cards.cardLimitNote", { max: MAX_CARDS_PER_TYPE, type: selectedTypeLabel.toLowerCase() })}
           </p>
         )}
         {notice && <p style={{ color: "var(--color-success)", margin: "0.85rem 0 0" }}>{notice}</p>}
@@ -1099,10 +1115,10 @@ export function CardsPage() {
 
       <div className="tile">
         <div className="tile__header">
-          <span className="eyebrow">My cards</span>
+          <span className="eyebrow">{t("cards.myCards")}</span>
         </div>
-        {isLoading && <div className="card-empty">Loading cards...</div>}
-        {!isLoading && cards.length === 0 && <div className="card-empty">No cards yet.</div>}
+        {isLoading && <div className="card-empty">{t("cards.loadingCards")}</div>}
+        {!isLoading && cards.length === 0 && <div className="card-empty">{t("cards.noCardsYet")}</div>}
         {!isLoading && cards.length > 0 && (
           <div className="card-gallery">
             {cards.map((card) => {
@@ -1129,14 +1145,14 @@ export function CardsPage() {
                 cardTransactions.length > 0
                   ? cardTransactions.map((transaction) => ({
                       id: transaction.id,
-                      description: transaction.description || formatTransactionType(transaction.type),
+                      description: transaction.description || formatTransactionType(transaction.type, t),
                       created_at: transaction.created_at,
                       amount: transaction.amount,
                       currency: transaction.currency,
                       status: transaction.status,
                       direction: cardTransactionDirection(transaction, card),
                     }))
-                  : mockCardTransactions(card, wallet);
+                  : mockCardTransactions(card, t, wallet);
               const cardActivityRows = [...cardTransactionRows].sort(
                 (first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime(),
               );
@@ -1152,7 +1168,7 @@ export function CardsPage() {
                   .map((sourceWallet) => ({
                     value: `ACCOUNT:${sourceWallet.id}`,
                     walletId: sourceWallet.id,
-                    label: `${walletDisplayName(sourceWallet)} account`,
+                    label: t("cards.accountSuffix", { wallet: walletDisplayName(sourceWallet) }),
                   })),
                 ...activeDebitCards
                   .map((debitCard) => {
@@ -1160,7 +1176,9 @@ export function CardsPage() {
                     return {
                       value: `DEBIT_CARD:${debitCard.id}`,
                       walletId: debitCard.default_wallet_id ?? "",
-                      label: `Debit **** ${debitCard.last_four}${linkedWallet ? ` - ${walletDisplayName(linkedWallet)}` : ""}`,
+                      label: linkedWallet
+                        ? t("cards.debitLastFourWithWallet", { lastFour: debitCard.last_four, wallet: walletDisplayName(linkedWallet) })
+                        : t("cards.debitLastFour", { lastFour: debitCard.last_four }),
                       currency: linkedWallet?.currency,
                     };
                   })
@@ -1179,7 +1197,7 @@ export function CardsPage() {
                       <div className="bank-card__identity">
                         <span className="bank-card__brand">EASYB</span>
                         <span className="bank-card__product">
-                          {card.tier ? `${formatCardTier(card.tier)} ${formatCardType(card.type)}` : "One-time"}
+                          {card.tier ? `${formatCardTier(card.tier, t)} ${formatCardType(card.type, t)}` : t("cards.oneTime")}
                         </span>
                       </div>
                       <div className="bank-card__top-actions">
@@ -1189,8 +1207,8 @@ export function CardsPage() {
                           className="bank-card__lock"
                           onClick={() => updateCardStatus(card)}
                           disabled={actionCardId === card.id || (card.status !== "ACTIVE" && card.status !== "FROZEN")}
-                          aria-label={card.status === "FROZEN" ? "Unfreeze card" : "Freeze card"}
-                          title={card.status === "FROZEN" ? "Unfreeze card" : "Freeze card"}
+                          aria-label={card.status === "FROZEN" ? t("cards.unfreezeCard") : t("cards.freezeCard")}
+                          title={card.status === "FROZEN" ? t("cards.unfreezeCard") : t("cards.freezeCard")}
                         >
                           {card.status === "FROZEN" ? (
                             <Unlock size={15} strokeWidth={2.2} />
@@ -1210,8 +1228,8 @@ export function CardsPage() {
                         type="button"
                         className={`bank-card__copy${copiedCardId === card.id ? " bank-card__copy--copied" : ""}`}
                         onClick={() => copyCardNumber(card)}
-                        aria-label={copiedCardId === card.id ? "Card number copied" : "Copy card number"}
-                        title={copiedCardId === card.id ? "Copied" : "Copy card number"}
+                        aria-label={copiedCardId === card.id ? t("cards.cardNumberCopied") : t("cards.copyCardNumber")}
+                        title={copiedCardId === card.id ? t("cards.copied") : t("cards.copyCardNumber")}
                       >
                         <Copy size={16} strokeWidth={2.2} />
                       </button>
@@ -1219,25 +1237,25 @@ export function CardsPage() {
                         type="button"
                         className="bank-card__reveal"
                         onClick={() => toggleCardReveal(card)}
-                        aria-label={isRevealed ? "Hide card details" : "Reveal card details"}
-                        title={isRevealed ? "Hide card details" : "Reveal card details"}
+                        aria-label={isRevealed ? t("cards.hideCardDetails") : t("cards.revealCardDetails")}
+                        title={isRevealed ? t("cards.hideCardDetails") : t("cards.revealCardDetails")}
                       >
                         {isRevealed ? <Eye size={16} strokeWidth={2.2} /> : <EyeOff size={16} strokeWidth={2.2} />}
                       </button>
                     </div>
                     <div className="bank-card__holder">
-                      <span>Card holder</span>
+                      <span>{t("cards.cardHolder")}</span>
                       <strong>{cardholderName}</strong>
                     </div>
                     <div className="bank-card__footer">
                       <span>
-                        {card.tier ? `${formatCardTier(card.tier)} ${formatCardType(card.type)}` : formatCardType(card.type)}
+                        {card.tier ? `${formatCardTier(card.tier, t)} ${formatCardType(card.type, t)}` : formatCardType(card.type, t)}
                       </span>
                       <span className="bank-card__security">
                         <span>
                           EXP {String(card.expiration_month).padStart(2, "0")}/{card.expiration_year}
                         </span>
-                        <span>Mock CVV {isRevealed && sensitiveDetails ? sensitiveDetails.mock_cvv : "***"}</span>
+                        <span>{t("cards.mockCvv", { cvv: isRevealed && sensitiveDetails ? sensitiveDetails.mock_cvv : "***" })}</span>
                       </span>
                     </div>
                   </div>
@@ -1245,7 +1263,7 @@ export function CardsPage() {
                   {isPinPromptOpen && (
                     <div className="card-detail-pin">
                       <label>
-                        PIN
+                        {t("cards.pin")}
                         <input
                           type="text"
                           className="card-pin-input"
@@ -1270,7 +1288,7 @@ export function CardsPage() {
                         onClick={() => revealCardDetails(card)}
                         disabled={pinActionCardId === card.id}
                       >
-                        {pinActionCardId === card.id ? "Checking..." : "View details"}
+                        {pinActionCardId === card.id ? t("cards.checking") : t("cards.viewDetails")}
                       </button>
                       {cardSecurityError && <div className="card-detail-pin__error">{cardSecurityError}</div>}
                     </div>
@@ -1278,22 +1296,22 @@ export function CardsPage() {
 
                   <div className="card-panel__meta">
                     <div>
-                      <div className="eyebrow">{isCreditCard ? "Available credit" : "Linked account"}</div>
+                      <div className="eyebrow">{isCreditCard ? t("cards.availableCredit") : t("cards.linkedAccount")}</div>
                       <div className="card-panel__value">
                         {isCreditCard
                           ? formatCurrencyAmount(creditAvailable, creditAccountCurrency)
                           : isAccountLinkedCard
                             ? wallet
                               ? walletDisplayName(wallet)
-                              : "Not linked"
-                            : "Not required"}
+                              : t("cards.notLinked")
+                            : t("cards.notRequired")}
                       </div>
                       {wallet && isAccountLinkedCard && (
-                        <div className="card-panel__subvalue">Wallet balance {formatWalletBalance(wallet)}</div>
+                        <div className="card-panel__subvalue">{t("cards.walletBalance", { balance: formatWalletBalance(wallet) })}</div>
                       )}
                       {isCreditCard && (
                         <div className="card-panel__subvalue">
-                          Balance due {formatCurrencyAmount(creditBalanceDue, creditAccountCurrency)}
+                          {t("cards.balanceDue", { amount: formatCurrencyAmount(creditBalanceDue, creditAccountCurrency) })}
                         </div>
                       )}
                     </div>
@@ -1302,8 +1320,8 @@ export function CardsPage() {
                         type="button"
                         className="card-panel__icon-action"
                         onClick={() => togglePinSettings(card)}
-                        aria-label="Card settings"
-                        title="Card settings"
+                        aria-label={t("cards.cardSettings")}
+                        title={t("cards.cardSettings")}
                       >
                         <Settings size={16} strokeWidth={2.2} />
                       </button>
@@ -1312,8 +1330,8 @@ export function CardsPage() {
                         className="card-panel__icon-action button--danger"
                         onClick={() => deleteCard(card)}
                         disabled={deletingCardId === card.id}
-                        aria-label="Delete card"
-                        title="Delete card"
+                        aria-label={t("cards.deleteCard")}
+                        title={t("cards.deleteCard")}
                       >
                         <Trash2 size={16} strokeWidth={2.2} />
                       </button>
@@ -1328,7 +1346,7 @@ export function CardsPage() {
                         onClick={() => togglePaymentPanel(card)}
                         aria-expanded={isPaymentPanelOpen}
                       >
-                        {isPaymentPanelOpen ? "Close payment" : "Make a payment"}
+                        {isPaymentPanelOpen ? t("cards.closePayment") : t("cards.makeAPayment")}
                       </button>
                     )}
 
@@ -1338,7 +1356,7 @@ export function CardsPage() {
                       onClick={() => toggleCardTransactions(card.id)}
                       aria-expanded={isTransactionsExpanded}
                     >
-                      <span>{isTransactionsExpanded ? "Hide history" : "Transaction history"}</span>
+                      <span>{isTransactionsExpanded ? t("cards.hideHistory") : t("cards.transactionHistory")}</span>
                       <span className="card-panel__details-icon">
                         {isTransactionsExpanded ? <ChevronUp size={16} strokeWidth={2.2} /> : <ChevronDown size={16} strokeWidth={2.2} />}
                       </span>
@@ -1350,7 +1368,7 @@ export function CardsPage() {
                       {isPinSettingsOpen && (
                         <div className="credit-card-payment__grid">
                           <label>
-                            Card PIN
+                            {t("cards.cardPin")}
                             <input
                               type="text"
                               className="card-pin-input"
@@ -1375,7 +1393,7 @@ export function CardsPage() {
                             onClick={() => updateCardPin(card)}
                             disabled={pinActionCardId === card.id}
                           >
-                            {pinActionCardId === card.id ? "Saving..." : card.has_pin ? "Reset PIN" : "Set PIN"}
+                            {pinActionCardId === card.id ? t("cards.saving") : card.has_pin ? t("cards.resetPin") : t("cards.setPin")}
                           </button>
                         </div>
                       )}
@@ -1389,11 +1407,11 @@ export function CardsPage() {
                     <div className="credit-card-payment">
                       <div className="credit-card-payment__summary">
                         <div>
-                          <span>Card balance</span>
+                          <span>{t("cards.cardBalance")}</span>
                           <strong>{formatCurrencyAmount(creditBalanceDue, creditAccountCurrency)}</strong>
                         </div>
                         <div>
-                          <span>Available after payment</span>
+                          <span>{t("cards.availableAfterPayment")}</span>
                           <strong>
                             {formatCurrencyAmount(
                               creditAvailableBalance(
@@ -1408,7 +1426,7 @@ export function CardsPage() {
 
                       <div className="credit-card-payment__grid">
                         <label>
-                          Pay from
+                          {t("cards.payFrom")}
                           <select
                             value={selectedPaymentSourceValue}
                             disabled={paymentSourceOptions.length === 0}
@@ -1421,7 +1439,7 @@ export function CardsPage() {
                             }}
                           >
                             {paymentSourceOptions.length === 0 ? (
-                              <option value="">No payment source available</option>
+                              <option value="">{t("cards.noPaymentSourceAvailable")}</option>
                             ) : (
                               paymentSourceOptions.map((source) => (
                                 <option key={source.value} value={source.value}>
@@ -1432,13 +1450,13 @@ export function CardsPage() {
                           </select>
                           {selectedPaymentWallet && (
                             <small className="credit-card-payment__source-balance">
-                              Available {formatWalletBalance(selectedPaymentWallet)}
+                              {t("cards.available", { balance: formatWalletBalance(selectedPaymentWallet) })}
                             </small>
                           )}
                         </label>
 
                         <div className="credit-card-payment__amount">
-                          <span>Amount</span>
+                          <span>{t("cards.amount")}</span>
                           <div className="credit-card-payment__amount-options">
                             <label>
                               <input
@@ -1451,7 +1469,7 @@ export function CardsPage() {
                                   setPaymentMessage(null);
                                 }}
                               />
-                              Whole balance
+                              {t("cards.wholeBalance")}
                             </label>
                             <label>
                               <input
@@ -1464,7 +1482,7 @@ export function CardsPage() {
                                   setPaymentMessage(null);
                                 }}
                               />
-                              Enter amount
+                              {t("cards.enterAmount")}
                             </label>
                           </div>
                           {paymentAmountMode === "CUSTOM" ? (
@@ -1494,7 +1512,7 @@ export function CardsPage() {
                         onClick={() => submitCreditCardPayment(card)}
                         disabled={creditBalanceDue <= 0}
                       >
-                        Pay credit card
+                        {t("cards.payCreditCard")}
                       </button>
                       {paymentError && <div className="credit-card-payment__error">{paymentError}</div>}
                       {paymentMessage && <div className="credit-card-payment__message">{paymentMessage}</div>}
@@ -1504,7 +1522,7 @@ export function CardsPage() {
                   {isTransactionsExpanded && (
                     <div className="card-transactions">
                       {isShowingPlaceholderTransactions && (
-                        <div className="card-transactions__note">Recent card activity</div>
+                        <div className="card-transactions__note">{t("cards.recentCardActivity")}</div>
                       )}
                       {cardActivityRows.slice(0, 8).map((transaction) => (
                           <div className="card-transaction-row" key={transaction.id}>
@@ -1521,7 +1539,7 @@ export function CardsPage() {
                                 })}{" "}
                                 {transaction.currency}
                               </strong>
-                              <span>{transaction.status}</span>
+                              <span>{t(`common.status.${transaction.status}`, { defaultValue: transaction.status })}</span>
                             </div>
                           </div>
                         ))}
