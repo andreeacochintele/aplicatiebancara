@@ -1204,11 +1204,6 @@ export function PaymentsPage() {
                 )}
               </div>
             </section>
-
-            <section className="tile backend-note">
-              <span className="eyebrow">What the backend does</span>
-              <p>IBAN transfer - external bank mock - debits your wallet ledger - optional beneficiary save</p>
-            </section>
           </div>
         </div>
       ) : activeTab === "phone" ? (
@@ -1449,11 +1444,6 @@ export function PaymentsPage() {
               {qrPaying ? "Paying..." : "Pay request"}
             </button>
           </form>
-
-          <section className="tile backend-note qr-note">
-            <span className="eyebrow">What the backend does</span>
-            <p>payment_requests ACTIVE - QR carries request id only - payer confirms before transaction is created</p>
-          </section>
         </div>
       ) : activeTab === "scheduled" ? (
         <div className="scheduled-grid">
@@ -1684,11 +1674,6 @@ export function PaymentsPage() {
               )}
             </div>
           </section>
-
-          <section className="tile backend-note scheduled-note">
-            <span className="eyebrow">What the backend does</span>
-            <p>scheduled_payments CRUD - owner scoped - validates source wallet - stores status for the future runner</p>
-          </section>
         </div>
       ) : activeTab === "folders" ? (
         <div className="folder-view-grid">
@@ -1805,11 +1790,6 @@ export function PaymentsPage() {
                 <div className="empty-state">No transaction folders yet.</div>
               )}
             </div>
-          </section>
-
-          <section className="tile backend-note scheduled-note">
-            <span className="eyebrow">What the backend does</span>
-            <p>transaction_folders - owner scoped - stores transaction references without changing ledger rows</p>
           </section>
         </div>
       ) : (
