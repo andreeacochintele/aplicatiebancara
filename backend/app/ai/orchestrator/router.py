@@ -97,7 +97,6 @@ def get_conversation_messages(
     """Chronological page of this conversation's messages — the most recent
     page by default, or the page immediately before `before` (an ISO
     timestamp) for loading older messages on scroll-up."""
-    messages = OrchestratorService(db).get_conversation_messages(
+    return OrchestratorService(db).get_conversation_messages(
         current_user.id, conversation_id, limit=limit, before=before
     )
-    return [ConversationMessagePublic.model_validate(message) for message in messages]

@@ -1,11 +1,12 @@
 """Intent classification for the Orchestrator Agent.
 
-Classifies a user message into one of five categories via the shared Azure
+Classifies a user message into one of six categories via the shared Azure
 GPT-5-mini client (never a separate/local classifier). `personal_finance`,
-`credit`, and `support` route to a specialized agent (see registry.py);
-`greeting` and `out_of_scope` are answered directly by the orchestrator
-(see service.py) and never reach an agent. Fraud is intentionally absent —
-the Fraud Investigation Agent is out of scope for this orchestrator.
+`credit`, `support`, and `action` route to a specialized agent (see
+registry.py); `greeting` and `out_of_scope` are answered directly by the
+orchestrator (see service.py) and never reach an agent. Fraud is
+intentionally absent — the Fraud Investigation Agent is out of scope for
+this orchestrator.
 """
 from enum import Enum
 
@@ -18,6 +19,9 @@ _SYSTEM_PROMPT = (
     "- personal_finance: spending, budgets, savings goals, cash flow, cashback\n"
     "- credit: credit score, loans, eligibility, repayment\n"
     "- support: account/app help that isn't personal_finance or credit\n"
+    "- action: the user wants to DO a banking action right now — send money "
+    "or make a transfer to a named person (e.g. 'trimite 100 lei lui Alex', "
+    "'send 50 RON to Maria'). NOT a how-to question about transfers.\n"
     "- greeting: a greeting or small talk with no banking request\n"
     "- out_of_scope: anything unrelated to banking (general knowledge, code, "
     "other unrelated tasks)\n"
@@ -52,6 +56,10 @@ _SYSTEM_PROMPT = (
     "'Cat am in cont?' -> personal_finance\n"
     "'Cum functioneaza bugetele?' -> support\n"
     "'Arata-mi cheltuielile din ultima luna' -> personal_finance\n"
+    "'Trimite 100 lei lui Alex' -> action\n"
+    "'Vreau sa-i trimit 150 RON Mariei' -> action\n"
+    "'Cum trimit bani cuiva?' -> support\n"
+    "'Send 50 RON to Andrei' -> action\n"
     "\n"
     "Conversation history, if shown below, is ONLY there to help you resolve "
     "ambiguous references in the current message (e.g. 'that', 'it', 'the same "
@@ -67,6 +75,7 @@ class IntentCategory(str, Enum):
     PERSONAL_FINANCE = "personal_finance"
     CREDIT = "credit"
     SUPPORT = "support"
+    ACTION = "action"
     GREETING = "greeting"
     OUT_OF_SCOPE = "out_of_scope"
 

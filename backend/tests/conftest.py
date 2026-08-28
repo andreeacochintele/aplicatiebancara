@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.ai.actions import models as ai_actions_models  # noqa: F401
 from app.ai.orchestrator import models as ai_orchestrator_models  # noqa: F401
 from app.auth import models as auth_models  # noqa: F401
 from app.auth.router import _login_rate_limit, _register_rate_limit

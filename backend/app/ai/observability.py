@@ -68,6 +68,14 @@ if not logger.handlers:
 
 _correlation_id: ContextVar[str] = ContextVar("ai_correlation_id", default="-")
 
+# The active conversation for this chat request, bound in
+# ai/orchestrator/service.py's chat() right after the conversation is
+# resolved. Carried as a ContextVar for the same reason correlation_id is
+# (see this module's docstring): it lets ai/actions/ tie a drafted
+# AgentAction back to its conversation without widening the AgentHandler
+# signature — which would ripple through every agent and its tests.
+_conversation_id: ContextVar[str | None] = ContextVar("ai_conversation_id", default=None)
+
 # Token usage for the llm_call event. Set by
 # ai/client/azure_foundry_client.py's chat_completion() right after every
 # response, read (and cleared) by timed_event()'s own exit. This is the one
@@ -113,6 +121,14 @@ def bind_correlation_id(correlation_id: str) -> None:
 
 def get_correlation_id() -> str:
     return _correlation_id.get()
+
+
+def bind_conversation_id(conversation_id: str | None) -> None:
+    _conversation_id.set(conversation_id)
+
+
+def get_conversation_id() -> str | None:
+    return _conversation_id.get()
 
 
 def log_event(event: str, *, level: int = logging.INFO, **fields: Any) -> None:

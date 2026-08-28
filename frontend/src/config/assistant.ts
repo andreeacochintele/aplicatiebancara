@@ -16,4 +16,5 @@ export const ASSISTANT_QUICK_ACTIONS: AssistantQuickAction[] = [
   { intent: "personal_finance", label: "Personal Finance", starterPrompt: "How much did I spend this month?" },
   { intent: "credit", label: "Credit", starterPrompt: "What's my credit score?" },
   { intent: "support", label: "Support", starterPrompt: "How do budgets work in this app?" },
+  { intent: "action", label: "Trimite bani", starterPrompt: "Trimite 50 RON lui " },
 ];

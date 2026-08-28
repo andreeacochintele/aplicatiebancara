@@ -823,7 +823,43 @@ export interface FraudCaseDetail extends FraudCaseSummary {
   agent_analysis: FraudAgentAnalysis | null;
 }
 
-export type OrchestratorIntent = "personal_finance" | "credit" | "support" | "greeting" | "out_of_scope";
+export type OrchestratorIntent = "personal_finance" | "credit" | "support" | "action" | "greeting" | "out_of_scope";
+
+export type AgentActionStatus =
+  | "DRAFT"
+  | "CONFIRMED"
+  | "EXECUTED"
+  | "EXPIRED"
+  | "CANCELLED"
+  | "FAILED"
+  | "SUPERSEDED"
+  | "NEEDS_REVIEW";
+
+// Closed catalog of interactive cards the assistant can render. The backend
+// builds these from validated data — the model never emits UI.
+export interface PhoneTransferConfirmCard {
+  kind: "phone_transfer_confirm";
+  action_id: string;
+  recipient_name: string;
+  recipient_phone_masked: string | null;
+  amount: string;
+  currency: string;
+  source_wallet_label: string;
+  expires_at: string;
+}
+
+export type ActionCard = PhoneTransferConfirmCard;
+
+// Outcome of POST /ai/actions/{id}/confirm|cancel and the GET poll.
+export interface AgentActionResult {
+  action_id: string;
+  type: string;
+  status: AgentActionStatus;
+  result_transaction_id: string | null;
+  error_code: string | null;
+  error_detail: string | null;
+  card: ActionCard | null;
+}
 
 export interface OrchestratorChatResponse {
   intent: OrchestratorIntent;
@@ -831,6 +867,7 @@ export interface OrchestratorChatResponse {
   correlation_id: string;
   conversation_id: string;
   suggested_followups: string[];
+  action_card: ActionCard | null;
 }
 
 export interface ConversationMessagePublic {
@@ -838,6 +875,11 @@ export interface ConversationMessagePublic {
   role: "user" | "assistant";
   content: string;
   agent_used: OrchestratorIntent | null;
+  action_id: string | null;
+  /** Current server-side state of the action this message drafted (card
+   * data + live status), embedded so the UI redraws the confirm card
+   * instantly on reopen. */
+  action: AgentActionResult | null;
   created_at: string;
 }
 

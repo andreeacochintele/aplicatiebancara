@@ -54,12 +54,14 @@ def test_parse_followups_caps_at_three_even_if_the_model_returns_more():
     assert _parse_followups(raw) == ["Question 0?", "Question 1?", "Question 2?"]
 
 
-def test_registry_has_no_fraud_entry_and_exactly_the_three_routable_agents():
+def test_registry_has_no_fraud_entry_and_exactly_the_routable_agents():
     assert set(AGENT_REGISTRY.keys()) == {
         IntentCategory.PERSONAL_FINANCE,
         IntentCategory.CREDIT,
         IntentCategory.SUPPORT,
+        IntentCategory.ACTION,
     }
+    assert not hasattr(IntentCategory, "FRAUD")
 
 
 def test_chat_propagates_azure_not_configured_instead_of_swallowing_it(db_session, monkeypatch):

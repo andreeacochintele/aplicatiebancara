@@ -1,11 +1,14 @@
-import { Bot, Check, Copy, CreditCard, LifeBuoy, MessageCircle, Plus, Sparkles, Trash2, Wallet } from "lucide-react";
+import { Bot, Check, Copy, CreditCard, LifeBuoy, MessageCircle, Plus, Send, Sparkles, Trash2, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { ASSISTANT_NAME, ASSISTANT_QUICK_ACTIONS } from "../config/assistant";
+import { PhoneTransferConfirmCard } from "../features/assistant";
 import { useAuth } from "../hooks/useAuth";
 import type {
+  ActionCard,
+  AgentActionStatus,
   ConversationMessagePublic,
   ConversationPublic,
   ConversationSummary,
@@ -18,16 +21,22 @@ interface ChatMessage {
   text: string;
   intent?: OrchestratorIntent;
   createdAt: string;
-  /** Only ever set on the assistant reply just received this session — not
-   * reconstructed from history, since the backend doesn't persist these
-   * (see OrchestratorChatResponse.suggested_followups). */
+  /** Only ever set on the assistant reply just received this session — the
+   * backend doesn't persist suggested followups. */
   followups?: string[];
+  /** Persisted (ai_conversation_messages.action_id): the drafted action's
+   * id. On reopen we fetch its current state into actionCard/actionStatus. */
+  actionId?: string;
+  actionCard?: ActionCard;
+  actionStatus?: AgentActionStatus;
+  actionDetail?: string | null;
 }
 
 const INTENT_LABEL: Record<OrchestratorIntent, string> = {
   personal_finance: "Personal finance",
   credit: "Credit",
   support: "Support",
+  action: "Action",
   greeting: "Greeting",
   out_of_scope: "Out of scope",
 };
@@ -36,6 +45,7 @@ const QUICK_ACTION_ICON: Record<OrchestratorIntent, LucideIcon> = {
   personal_finance: Wallet,
   credit: CreditCard,
   support: LifeBuoy,
+  action: Send,
   greeting: Bot,
   out_of_scope: Bot,
 };
@@ -48,6 +58,10 @@ function toChatMessage(entry: ConversationMessagePublic): ChatMessage {
     text: entry.content,
     intent: entry.agent_used ?? undefined,
     createdAt: entry.created_at,
+    actionId: entry.action_id ?? undefined,
+    actionCard: entry.action?.card ?? undefined,
+    actionStatus: entry.action?.status,
+    actionDetail: entry.action?.error_detail,
   };
 }
 
@@ -233,6 +247,9 @@ export function AssistantPage() {
           intent: response.intent,
           createdAt: new Date().toISOString(),
           followups: response.suggested_followups,
+          actionId: response.action_card?.action_id,
+          actionCard: response.action_card ?? undefined,
+          actionStatus: response.action_card ? "DRAFT" : undefined,
         },
       ]);
       setActiveConversationId(response.conversation_id);
@@ -374,6 +391,15 @@ export function AssistantPage() {
                   <span className="assistant-message__agent">
                     <Bot size={11} /> {INTENT_LABEL[message.intent]}
                   </span>
+                )}
+                {message.role === "assistant" && message.actionCard?.kind === "phone_transfer_confirm" && (
+                  <PhoneTransferConfirmCard
+                    key={message.actionStatus ?? "DRAFT"}
+                    card={message.actionCard}
+                    token={accessToken}
+                    initialStatus={message.actionStatus}
+                    initialDetail={message.actionDetail}
+                  />
                 )}
                 <div className="assistant-message__meta">
                   <span className="assistant-message__time">{formatMessageTime(message.createdAt)}</span>

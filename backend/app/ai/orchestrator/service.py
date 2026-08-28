@@ -24,13 +24,20 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.ai.observability import bind_correlation_id, get_correlation_id, log_event, new_correlation_id
+from app.ai.actions.schemas import AgentResult
+from app.ai.observability import (
+    bind_conversation_id,
+    bind_correlation_id,
+    get_correlation_id,
+    log_event,
+    new_correlation_id,
+)
 from app.ai.orchestrator.followups import generate_followup_questions
 from app.ai.orchestrator.intent import IntentCategory, classify_intent
 from app.ai.orchestrator.models import Conversation, ConversationMessage
 from app.ai.orchestrator.registry import AGENT_REGISTRY
 from app.ai.orchestrator.repository import ConversationRepository
-from app.ai.orchestrator.schemas import ConversationSummary, OrchestratorChatResponse
+from app.ai.orchestrator.schemas import ConversationMessagePublic, ConversationSummary, OrchestratorChatResponse
 from app.ai.orchestrator.title import generate_conversation_title
 from app.core.exceptions import NotFoundError
 
@@ -99,8 +106,10 @@ class OrchestratorService:
         log_event("request_received", user_id=_mask_user_id(user_id), message_length=len(message))
 
         conversation = self._resolve_conversation(user_id, conversation_id)
+        bind_conversation_id(str(conversation.id))
         history = self._load_history(conversation.id)
 
+        action_card = None
         try:
             intent = classify_intent(message, history)
 
@@ -112,7 +121,11 @@ class OrchestratorService:
                 reply = _OUT_OF_SCOPE_REPLY_RO if _reply_in_romanian(message) else _OUT_OF_SCOPE_REPLY_EN
             else:
                 log_event("agent_dispatched", agent=intent.value, intent=intent.value)
-                reply = AGENT_REGISTRY[intent](message, user_id, self.db, history)
+                agent_output = AGENT_REGISTRY[intent](message, user_id, self.db, history)
+                if isinstance(agent_output, AgentResult):
+                    reply, action_card = agent_output.reply, agent_output.action_card
+                else:
+                    reply = agent_output
         except Exception as exc:
             log_event(
                 "request_failed",
@@ -125,11 +138,22 @@ class OrchestratorService:
         # a request that raised above leaves nothing written, so history
         # never contains a dangling user message with no reply.
         agent_used = intent.value if intent in AGENT_REGISTRY else None
-        self._persist_turn(conversation, message, reply, agent_used)
+        action_id = action_card.action_id if action_card is not None else None
+        self._persist_turn(conversation, message, reply, agent_used, action_id)
         self._maybe_generate_title(conversation, message, reply)
-        # Only for a routed agent reply — greeting/out_of_scope are fixed
-        # strings with no LLM call of their own, not worth the extra one here.
-        suggested_followups = self._generate_followups(message, reply) if agent_used is not None else []
+        # Only for a routed personal_finance / credit / support reply.
+        # Skipped for greeting/out_of_scope (fixed strings, no LLM call of
+        # their own) and for the whole ACTION intent: the generic follow-up
+        # model doesn't know what the actions agent can actually do, so it
+        # invents options (pay by IBAN, add a beneficiary from chat, cancel
+        # a payment) the agent can't honour — worse than no chips. An action
+        # reply's real next step is the card's Accept/Cancel or a plain
+        # rephrase.
+        suggested_followups = (
+            self._generate_followups(message, reply)
+            if agent_used is not None and intent != IntentCategory.ACTION
+            else []
+        )
 
         log_event("final_response", intent=intent.value, duration_ms=_elapsed_ms(start))
         return OrchestratorChatResponse(
@@ -138,6 +162,7 @@ class OrchestratorService:
             correlation_id=get_correlation_id(),
             conversation_id=conversation.id,
             suggested_followups=suggested_followups,
+            action_card=action_card,
         )
 
     def create_conversation(self, user_id: uuid.UUID) -> Conversation:
@@ -170,15 +195,40 @@ class OrchestratorService:
         conversation_id: uuid.UUID,
         limit: int = MESSAGES_PAGE_LIMIT,
         before: datetime | None = None,
-    ) -> list[ConversationMessage]:
+    ) -> list[ConversationMessagePublic]:
         """One page of `conversation_id`'s messages, chronological (oldest
         first, ready to render) — the most recent page by default, or the
-        page immediately before `before` for loading older messages.
-        Raises NotFoundError if the conversation doesn't exist or doesn't
-        belong to `user_id` (never leaks another user's conversation)."""
+        page immediately before `before` for loading older messages. Any
+        message that drafted an agent action carries that action's current
+        state inline (`.action`) so the UI redraws its confirm card with no
+        extra round-trip. Raises NotFoundError if the conversation doesn't
+        exist or doesn't belong to `user_id`."""
         self._get_owned_conversation(user_id, conversation_id)
-        page = self.conversations.list_messages_for_conversation(conversation_id, limit=limit, before=before)
-        return list(reversed(page))
+        page = list(reversed(self.conversations.list_messages_for_conversation(conversation_id, limit=limit, before=before)))
+        actions_by_id = self._actions_for_page(page)
+        result: list[ConversationMessagePublic] = []
+        for message in page:
+            dto = ConversationMessagePublic.model_validate(message)
+            if message.action_id is not None:
+                dto.action = actions_by_id.get(message.action_id)
+            result.append(dto)
+        return result
+
+    def _actions_for_page(self, page: list[ConversationMessage]) -> dict:
+        action_ids = list({m.action_id for m in page if m.action_id is not None})
+        if not action_ids:
+            return {}
+        # Lazy import: keeps ai/actions/ off this module's import graph at
+        # load time (it pulls in the transaction engine), same pattern the
+        # rest of the codebase uses to avoid cycles.
+        from app.ai.actions.repository import AgentActionRepository
+        from app.ai.actions.service import ActionService
+
+        service = ActionService(self.db)
+        return {
+            action.id: service.public_view(action)
+            for action in AgentActionRepository(self.db).list_by_ids(action_ids)
+        }
 
     def _resolve_conversation(self, user_id: uuid.UUID, conversation_id: uuid.UUID | None) -> Conversation:
         if conversation_id is None:
@@ -196,7 +246,14 @@ class OrchestratorService:
         chronological = reversed(recent)  # repository returns newest-first
         return [{"role": row.role, "content": row.content} for row in chronological]
 
-    def _persist_turn(self, conversation: Conversation, message: str, reply: str, agent_used: str | None) -> None:
+    def _persist_turn(
+        self,
+        conversation: Conversation,
+        message: str,
+        reply: str,
+        agent_used: str | None,
+        action_id: uuid.UUID | None = None,
+    ) -> None:
         self.conversations.add(
             ConversationMessage(
                 user_id=conversation.user_id, conversation_id=conversation.id, role="user", content=message, agent_used=None
@@ -209,6 +266,7 @@ class OrchestratorService:
                 role="assistant",
                 content=reply,
                 agent_used=agent_used,
+                action_id=action_id,
             )
         )
         self.conversations.touch_conversation(conversation, datetime.now(timezone.utc))
