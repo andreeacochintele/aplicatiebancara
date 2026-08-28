@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.analytics.repository import AnalyticsRepository
 from app.analytics.schemas import (
     CategorySpendingFlag,
+    CounterpartySpending,
     ForecastPoint,
     ForecastResponse,
     MonthlyTrendItem,
@@ -24,10 +25,13 @@ from app.analytics.schemas import (
     SpendingByType,
     SpendingByTypeResponse,
     SpendingComparisonPoint,
+    TopCounterpartiesResponse,
     WalletBalanceItem,
 )
 from app.core.exceptions import NotFoundError, ValidationError
 from app.fx.service import FXService
+from app.merchants.repository import MerchantRepository
+from app.users.repository import UserRepository
 from app.wallets.models import Wallet, WalletStatus
 from app.wallets.repository import WalletRepository
 
@@ -58,6 +62,8 @@ class AnalyticsService:
         self.repository = AnalyticsRepository(db)
         self.wallet_repository = WalletRepository(db)
         self.fx_service = FXService(db)
+        self.merchants = MerchantRepository(db)
+        self.users = UserRepository(db)
 
     def _month_period_bounds(self, year: int | None, month: int | None) -> tuple[datetime, datetime]:
         if (year is None) != (month is None):
@@ -99,6 +105,53 @@ class AnalyticsService:
         return SpendingByCategoryResponse(
             period_start=period_start.date(), period_end=period_end.date(), items=items
         )
+
+    def top_counterparties(
+        self, user_id: uuid.UUID, year: int | None, month: int | None, limit: int = 10
+    ) -> TopCounterpartiesResponse:
+        period_start, period_end = self._month_period_bounds(year, month)
+        transactions = self.repository.spend_transactions_for_counterparties(user_id, period_start, period_end)
+
+        name_cache: dict[tuple[str, uuid.UUID], str] = {}
+        totals: dict[tuple[str, str], dict[str, object]] = {}
+        for transaction in transactions:
+            name = self._resolve_counterparty_name(transaction, name_cache)
+            if not name:
+                continue
+            key = (name, transaction.currency)
+            bucket = totals.setdefault(key, {"total": Decimal("0"), "count": 0})
+            bucket["total"] += transaction.amount
+            bucket["count"] += 1
+
+        items = sorted(
+            (
+                CounterpartySpending(name=name, currency=currency, total_amount=b["total"], transaction_count=b["count"])
+                for (name, currency), b in totals.items()
+            ),
+            key=lambda item: item.total_amount,
+            reverse=True,
+        )[:limit]
+        return TopCounterpartiesResponse(period_start=period_start.date(), period_end=period_end.date(), items=items)
+
+    def _resolve_counterparty_name(self, transaction, cache: dict[tuple[str, uuid.UUID], str]) -> str:
+        """Same resolution order as exports/service.py's _resolve_counterparty
+        (merchant first, then a counterparty user, else unnamed) — kept as
+        its own small copy rather than a shared import since the two callers
+        sit in different modules with no natural owner for a shared helper
+        this size."""
+        if transaction.merchant_id is not None:
+            key = ("merchant", transaction.merchant_id)
+            if key not in cache:
+                merchant = self.merchants.get_by_id(transaction.merchant_id)
+                cache[key] = merchant.name if merchant is not None else ""
+            return cache[key]
+        if transaction.counterparty_user_id is not None:
+            key = ("user", transaction.counterparty_user_id)
+            if key not in cache:
+                counterparty = self.users.get_by_id(transaction.counterparty_user_id)
+                cache[key] = f"{counterparty.first_name} {counterparty.last_name}" if counterparty is not None else ""
+            return cache[key]
+        return (transaction.description or "")[:60]
 
     def spending_recommendations(self, user_id: uuid.UUID) -> list[CategorySpendingFlag]:
         """Pure calculation, no AI — see ai/personal_finance/insights.py for

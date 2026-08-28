@@ -139,6 +139,35 @@ class AnalyticsRepository:
         )
         return list(self.db.execute(stmt).all())
 
+    def spend_transactions_for_counterparties(
+        self, user_id: uuid.UUID, period_start: datetime, period_end: datetime
+    ) -> list[Transaction]:
+        """Real-spend transactions (see _is_real_spend) with merchant_id/
+        counterparty_user_id/description intact, for top_counterparties() to
+        resolve a display name from — unlike spending_by_merchant_category,
+        this isn't card-payments-only, so an IBAN/phone transfer to an
+        external vendor counts too."""
+        own_wallet_ids = self._own_wallet_ids(user_id)
+
+        if is_supabase_session(self.db):
+            transactions = self.db.fetch_many(
+                Transaction,
+                {
+                    "initiator_user_id": f"eq.{user_id}",
+                    "status": f"eq.{TransactionStatus.COMPLETED.value}",
+                    "and": f"(created_at.gte.{period_start.isoformat()},created_at.lt.{period_end.isoformat()})",
+                },
+            )
+            return [t for t in transactions if self._is_real_spend(t, own_wallet_ids)]
+
+        stmt = select(Transaction).where(
+            Transaction.initiator_user_id == user_id,
+            Transaction.status == TransactionStatus.COMPLETED,
+            Transaction.created_at >= period_start,
+            Transaction.created_at < period_end,
+        )
+        return [t for t in self.db.scalars(stmt) if self._is_real_spend(t, own_wallet_ids)]
+
     def completed_transactions_in_range(
         self, user_id: uuid.UUID, period_start: datetime, period_end: datetime
     ) -> list[tuple]:

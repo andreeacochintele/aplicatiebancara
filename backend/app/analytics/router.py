@@ -13,6 +13,7 @@ from app.analytics.schemas import (
     NetWorthResponse,
     SpendingByCategoryResponse,
     SpendingByTypeResponse,
+    TopCounterpartiesResponse,
 )
 from app.analytics.service import AnalyticsService
 from app.auth.dependencies import get_current_user
@@ -40,6 +41,17 @@ def get_spending_by_category(
     db: Session = Depends(get_db),
 ) -> SpendingByCategoryResponse:
     return AnalyticsService(db).spending_by_category(current_user.id, year, month)
+
+
+@router.get("/top-counterparties", response_model=TopCounterpartiesResponse)
+def get_top_counterparties(
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TopCounterpartiesResponse:
+    return AnalyticsService(db).top_counterparties(current_user.id, year, month, limit)
 
 
 @router.get("/monthly-trend", response_model=MonthlyTrendResponse)
