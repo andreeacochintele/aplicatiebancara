@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.ai.actions.schemas import ActionCard
 from app.ai.orchestrator.intent import IntentCategory
 
 
@@ -21,8 +22,14 @@ class OrchestratorChatResponse(BaseModel):
     conversation_id: uuid.UUID
     # 2-3 clickable next-question suggestions — only populated for a routed
     # agent reply (personal_finance/credit/support), always empty for
-    # greeting/out_of_scope. See OrchestratorService._generate_followups().
+    # greeting/out_of_scope and for an action-card reply.
+    # See OrchestratorService._generate_followups().
     suggested_followups: list[str] = Field(default_factory=list)
+    # Set only when the actions agent drafted something needing confirmation
+    # (see ai/actions/). The frontend renders it as an interactive card; the
+    # user's Accept hits POST /ai/actions/{id}/confirm. Not persisted in
+    # conversation history (same as suggested_followups).
+    action_card: ActionCard | None = None
 
 
 class ConversationMessagePublic(BaseModel):

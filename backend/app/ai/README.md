@@ -1,8 +1,20 @@
 # AI module
 
-Phase 5 (Agentic AI). The Orchestrator and all three registered agents
-(Personal Finance, Credit, Support) are implemented. Fraud is
+Phase 5 (Agentic AI). The Orchestrator and all four registered agents
+(Personal Finance, Credit, Support, Actions) are implemented. Fraud is
 untouched/out of scope for the orchestrator.
+
+The first three agents are read-only (they explain data). **Actions**
+(`actions/`) is the first to prepare a state-changing operation — a
+phone/name transfer — via the draft → confirm → execute flow from rule 3
+below: one strict-JSON extraction call, then fully deterministic
+(recipient resolved against the user's own beneficiaries, 500 RON cap,
+balance check, light fraud screen). `POST /ai/actions/{id}/confirm`
+re-validates from the stored draft and reuses
+`TransactionService.create_internal_transfer` — the chat message never
+carries authority. Follow-up not in this pass: routing agent transfers
+through the full fraud engine (its HOLD/approve path is card-payment-only
+today).
 
 ## Constraint: single model, single provider
 
@@ -28,6 +40,8 @@ ai/
 ├── credit/             # implemented — score/loans/payment/principal/early-repayment (approx.)
 ├── support/            # implemented — app FAQ + qualitative fraud awareness, no tools/data access
 │   └── knowledge/       # static .md files loaded into the system prompt (not tool-called)
+├── actions/            # implemented — prepares a phone/name transfer (draft → confirm → execute),
+│                        #   AgentAction table, confirm/cancel routes, light pre-execution fraud screen
 ├── fraud/               # future: fraud case investigation support (untouched, out of scope)
 └── tools/              # base.py: shared ToolContext/ToolDataUnavailableError contract —
                         # each agent's own tools.py wraps that agent's backend services

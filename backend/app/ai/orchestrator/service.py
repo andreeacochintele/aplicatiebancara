@@ -24,7 +24,14 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.ai.observability import bind_correlation_id, get_correlation_id, log_event, new_correlation_id
+from app.ai.actions.schemas import AgentResult
+from app.ai.observability import (
+    bind_conversation_id,
+    bind_correlation_id,
+    get_correlation_id,
+    log_event,
+    new_correlation_id,
+)
 from app.ai.orchestrator.followups import generate_followup_questions
 from app.ai.orchestrator.intent import IntentCategory, classify_intent
 from app.ai.orchestrator.models import Conversation, ConversationMessage
@@ -99,8 +106,10 @@ class OrchestratorService:
         log_event("request_received", user_id=_mask_user_id(user_id), message_length=len(message))
 
         conversation = self._resolve_conversation(user_id, conversation_id)
+        bind_conversation_id(str(conversation.id))
         history = self._load_history(conversation.id)
 
+        action_card = None
         try:
             intent = classify_intent(message, history)
 
@@ -112,7 +121,11 @@ class OrchestratorService:
                 reply = _OUT_OF_SCOPE_REPLY_RO if _reply_in_romanian(message) else _OUT_OF_SCOPE_REPLY_EN
             else:
                 log_event("agent_dispatched", agent=intent.value, intent=intent.value)
-                reply = AGENT_REGISTRY[intent](message, user_id, self.db, history)
+                agent_output = AGENT_REGISTRY[intent](message, user_id, self.db, history)
+                if isinstance(agent_output, AgentResult):
+                    reply, action_card = agent_output.reply, agent_output.action_card
+                else:
+                    reply = agent_output
         except Exception as exc:
             log_event(
                 "request_failed",
@@ -129,7 +142,12 @@ class OrchestratorService:
         self._maybe_generate_title(conversation, message, reply)
         # Only for a routed agent reply — greeting/out_of_scope are fixed
         # strings with no LLM call of their own, not worth the extra one here.
-        suggested_followups = self._generate_followups(message, reply) if agent_used is not None else []
+        # Also skipped for an action-card reply: the card already carries the
+        # user's next step (Accept / Cancel), a "what next" chip row would
+        # just compete with it.
+        suggested_followups = (
+            self._generate_followups(message, reply) if agent_used is not None and action_card is None else []
+        )
 
         log_event("final_response", intent=intent.value, duration_ms=_elapsed_ms(start))
         return OrchestratorChatResponse(
@@ -138,6 +156,7 @@ class OrchestratorService:
             correlation_id=get_correlation_id(),
             conversation_id=conversation.id,
             suggested_followups=suggested_followups,
+            action_card=action_card,
         )
 
     def create_conversation(self, user_id: uuid.UUID) -> Conversation:

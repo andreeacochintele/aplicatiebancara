@@ -2334,3 +2334,18 @@
   color: var(--easyb-accent-dark);
   background: var(--easyb-accent-soft);
 }
+
+.easyb-shell .assistant-action-card {
+  background: var(--easyb-surface-alt);
+  border-color: var(--easyb-border);
+}
+
+.easyb-shell .assistant-action-card__title,
+.easyb-shell .assistant-action-card__value {
+  color: var(--easyb-text);
+}
+
+.easyb-shell .assistant-action-card__label,
+.easyb-shell .assistant-action-card__timer {
+  color: var(--easyb-text-soft);
+}
