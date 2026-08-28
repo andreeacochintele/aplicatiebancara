@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
+import { walletLabel } from "../utils";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -21,6 +22,7 @@ interface BusinessExportRow {
 interface WalletOption {
   id: string;
   currency: string;
+  nickname: string | null;
   iban: string;
 }
 
@@ -202,7 +204,7 @@ export function BusinessExportPage() {
               <option value="">All wallets</option>
               {wallets.map((wallet) => (
                 <option key={wallet.id} value={wallet.id}>
-                  {wallet.currency} &middot; {wallet.iban}
+                  {walletLabel(wallet)}
                 </option>
               ))}
             </select>

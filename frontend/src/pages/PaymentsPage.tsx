@@ -157,7 +157,8 @@ function beneficiarySubtitle(beneficiary: Beneficiary): string {
 }
 
 function walletLabel(wallet: Wallet): string {
-  return `${wallet.currency} - ${wallet.available_balance}`;
+  const base = wallet.nickname ? `${wallet.currency} — ${wallet.nickname}` : wallet.currency;
+  return `${base} - ${wallet.available_balance}`;
 }
 
 function walletCurrency(wallets: Wallet[], walletId: string): string {

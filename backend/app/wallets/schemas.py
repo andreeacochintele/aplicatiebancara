@@ -10,6 +10,7 @@ from app.wallets.models import WalletStatus
 
 class WalletCreate(BaseModel):
     currency: str
+    nickname: str | None = None
     is_main: bool = False
 
 
@@ -19,6 +20,7 @@ class WalletPublic(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     currency: str
+    nickname: str | None
     iban: str
     available_balance: Decimal
     reserved_balance: Decimal

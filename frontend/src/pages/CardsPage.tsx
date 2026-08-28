@@ -114,7 +114,8 @@ function creditAvailableBalance(card: Card, balanceDue: number): number {
 }
 
 function walletDisplayName(wallet: Wallet): string {
-  return `${wallet.currency}${wallet.is_main ? " - Main" : ""}`;
+  const base = wallet.nickname ? `${wallet.currency} — ${wallet.nickname}` : wallet.currency;
+  return `${base}${wallet.is_main ? " - Main" : ""}`;
 }
 
 function walletOptionLabel(wallet: Wallet, debitAlreadyExists: boolean): string {

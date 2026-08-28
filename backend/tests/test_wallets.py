@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.exceptions import NotFoundError, ValidationError
 from app.users.schemas import UserCreate
 from app.users.service import UserService
 from app.wallets.iban import generate_iban
@@ -75,12 +75,17 @@ def test_unsupported_currency_code_is_rejected(db_session, seeded_user):
         service.create_wallet(seeded_user.id, WalletCreate(currency="ZZZ"))
 
 
-def test_duplicate_currency_wallet_rejected(db_session, seeded_user):
+def test_multiple_wallets_in_the_same_currency_are_allowed(db_session, seeded_user):
     service = WalletService(db_session)
-    service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    first = service.create_wallet(seeded_user.id, WalletCreate(currency="RON", nickname="Spending"))
+    second = service.create_wallet(seeded_user.id, WalletCreate(currency="RON", nickname="Savings"))
 
-    with pytest.raises(ConflictError):
-        service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    assert first.id != second.id
+    assert first.iban != second.iban
+    assert first.nickname == "Spending"
+    assert second.nickname == "Savings"
+    ron_wallets = [w for w in service.list_wallets(seeded_user.id) if w.currency == "RON"]
+    assert len(ron_wallets) == 2
 
 
 def test_only_one_main_wallet(db_session, seeded_user):
@@ -179,28 +184,49 @@ def test_currency_can_be_reopened_after_closing(db_session, seeded_user):
     assert reopened.iban != original_iban
 
 
-def test_concurrent_create_wallet_race_raises_conflict_not_a_bare_500(db_session, seeded_user, monkeypatch):
-    """Simulates two requests racing past the pre-check: the DB-level unique
-    constraint is what actually stops the second insert, surfacing as an
-    IntegrityError at flush() — must become a clean ConflictError, not a
-    bare 500."""
-    from sqlalchemy.exc import IntegrityError
+def test_get_by_user_and_currency_prefers_main_then_oldest_active(db_session, seeded_user):
+    service = WalletService(db_session)
+    service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))  # becomes main, not EUR
+    older = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
 
+    # Neither EUR wallet is the (RON) main wallet, so the oldest active one wins.
+    resolved = service.repository.get_by_user_and_currency(seeded_user.id, "EUR")
+    assert resolved.id == older.id
+
+    service.close_wallet(seeded_user.id, older.id)
+    still_resolved = service.repository.get_by_user_and_currency(seeded_user.id, "EUR")
+    assert still_resolved.id != older.id  # a closed wallet is never picked
+
+
+def test_close_wallet_sweeps_into_chosen_destination_not_just_main(db_session, seeded_user):
+    service = WalletService(db_session)
+    main = service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    usd = service.create_wallet(seeded_user.id, WalletCreate(currency="USD"))
+    eur = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    eur.available_balance = Decimal("50.00")
+    db_session.flush()
+
+    closed = service.close_wallet(seeded_user.id, eur.id, destination_wallet_id=usd.id)
+
+    assert closed.status == WalletStatus.CLOSED
+    refreshed_main = service.repository.get_by_id(main.id)
+    refreshed_usd = service.repository.get_by_id(usd.id)
+    assert refreshed_main.available_balance == Decimal("0.00")  # untouched — not the chosen destination
+    assert refreshed_usd.available_balance > Decimal("0.00")
+
+
+def test_close_wallet_rejects_closed_or_self_destination(db_session, seeded_user):
     service = WalletService(db_session)
     service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    eur = service.create_wallet(seeded_user.id, WalletCreate(currency="EUR"))
+    usd = service.create_wallet(seeded_user.id, WalletCreate(currency="USD"))
+    service.close_wallet(seeded_user.id, usd.id)
 
-    original_get = service.repository.get_by_user_and_currency
-    monkeypatch.setattr(service.repository, "get_by_user_and_currency", lambda *a, **k: None)
-
-    def _boom(*args, **kwargs):
-        raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed: wallets.user_id, wallets.currency"))
-
-    monkeypatch.setattr(service.repository, "add", _boom)
-
-    with pytest.raises(ConflictError):
-        service.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
-
-    monkeypatch.setattr(service.repository, "get_by_user_and_currency", original_get)
+    with pytest.raises(NotFoundError):
+        service.close_wallet(seeded_user.id, eur.id, destination_wallet_id=usd.id)
+    with pytest.raises(ValidationError):
+        service.close_wallet(seeded_user.id, eur.id, destination_wallet_id=eur.id)
 
 
 def test_oversized_currency_returns_422_not_a_bare_500(client):

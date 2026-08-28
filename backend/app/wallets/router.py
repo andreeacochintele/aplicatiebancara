@@ -1,7 +1,7 @@
 """Wallet endpoints, scoped to the authenticated user."""
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -46,12 +46,16 @@ def set_main_wallet(
 @router.delete("/{wallet_id}", response_model=WalletPublic)
 def close_wallet(
     wallet_id: uuid.UUID,
+    destination_wallet_id: uuid.UUID | None = Query(None),
+    fx_quote_id: uuid.UUID | None = Query(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> WalletPublic:
-    """Closes the wallet, sweeping any remaining balance into the user's
-    main wallet first (same-currency transfer, or a priced FX quote+transfer
-    when currencies differ)."""
-    wallet = WalletService(db).close_wallet(current_user.id, wallet_id)
+    """Closes the wallet, sweeping any remaining balance into
+    destination_wallet_id (defaults to the user's main wallet) — a
+    same-currency transfer, or a priced FX quote+transfer when currencies
+    differ. Pass fx_quote_id to reuse a quote already shown to the user as a
+    preview (POST /fx/quote); otherwise a fresh one is fetched."""
+    wallet = WalletService(db).close_wallet(current_user.id, wallet_id, destination_wallet_id, fx_quote_id)
     db.commit()
     return wallet
