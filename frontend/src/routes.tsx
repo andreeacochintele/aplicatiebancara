@@ -61,7 +61,14 @@ export const routes: RouteObject[] = [
           </ProtectedRoute>
         ),
       },
-      { path: "/credit", element: <CreditPage /> },
+      {
+        path: "/credit",
+        element: (
+          <ProtectedRoute blockUserType="BUSINESS">
+            <CreditPage />
+          </ProtectedRoute>
+        ),
+      },
       { path: "/assistant", element: <AssistantPage /> },
       { path: "/notifications", element: <NotificationsPage /> },
       { path: "/profile", element: <ProfilePage /> },

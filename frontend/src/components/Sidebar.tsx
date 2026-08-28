@@ -66,8 +66,13 @@ export function Sidebar() {
   // the points/referral loyalty framing on this page is personal-banking
   // shaped — hidden for business accounts as a deliberate product choice,
   // not because anything about it is broken there.
+  // Credit hidden too: the score is an explicit 300-850 personal FICO-style
+  // number and the loan products (Mortgage/Auto/Student/Home Improvement/
+  // Personal Loan) are all personal life-event loans — none of it fits a
+  // business account. Unlike Rewards, there's no working part to keep (a
+  // real business credit-card product would need its own build).
   const intelligenceItems = isBusiness
-    ? INTELLIGENCE_ITEMS.filter((item) => item.to !== "/rewards")
+    ? INTELLIGENCE_ITEMS.filter((item) => item.to !== "/rewards" && item.to !== "/credit")
     : INTELLIGENCE_ITEMS;
 
   return (

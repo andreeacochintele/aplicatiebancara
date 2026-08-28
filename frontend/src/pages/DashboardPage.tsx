@@ -81,10 +81,14 @@ export function DashboardPage() {
     apiRequest<SpendingByTypeResponse>("/analytics/spending-by-type", { token: accessToken })
       .then(setSpending)
       .catch(() => setSpending(null));
-    apiRequest<CreditScore>("/credit/score", { token: accessToken })
-      .then(setCreditScore)
-      .catch(() => setCreditScore(null));
-  }, [accessToken]);
+    if (user?.user_type !== "BUSINESS") {
+      // Credit is hidden for business accounts (personal FICO-style score,
+      // personal loan products) — skip the fetch, not just the card below.
+      apiRequest<CreditScore>("/credit/score", { token: accessToken })
+        .then(setCreditScore)
+        .catch(() => setCreditScore(null));
+    }
+  }, [accessToken, user?.user_type]);
 
   async function setMainWallet(walletId: string) {
     if (!accessToken || settingMainId) return;
