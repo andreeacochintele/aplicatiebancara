@@ -9,10 +9,21 @@ from sqlalchemy.orm import Session
 
 from app.merchants.models import Merchant
 from app.supabase import is_supabase_session
-from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
+from app.transactions.categories import (
+    UNCATEGORIZED as _UNCATEGORIZED,
+    effective_category_column,
+    join_category_sources,
+    resolve_effective_category,
+)
+from app.transactions.models import (
+    LedgerEntryType,
+    Transaction,
+    TransactionCategory,
+    TransactionStatus,
+    TransactionType,
+    WalletLedgerEntry,
+)
 from app.wallets.models import Wallet
-
-_UNCATEGORIZED = "Other"
 
 
 class AnalyticsRepository:
@@ -92,8 +103,12 @@ class AnalyticsRepository:
     def spending_by_merchant_category(
         self, user_id: uuid.UUID, period_start: datetime, period_end: datetime
     ) -> list[tuple]:
-        """Card payments only, grouped by the paying merchant's own category
-        — transfers and loan payments are never "spending at a merchant" and
+        """Card payments only, grouped by effective category — the user's
+        own per-transaction choice where they made one, otherwise the paying
+        merchant's category (see transactions/categories.py, which Budgets
+        resolves through too so the two views can't disagree).
+
+        Transfers and loan payments are never "spending at a merchant" and
         are excluded outright rather than filtered via _is_real_spend, which
         only knows how to tell real spend apart within a much broader set of
         transaction types than this view needs."""
@@ -108,35 +123,31 @@ class AnalyticsRepository:
                 },
             )
             merchants_by_id = {m.id: m for m in self.db.fetch_many(Merchant, {})}
+            categories_by_id = {c.id: c for c in self.db.fetch_many(TransactionCategory, {})}
             totals: dict[tuple[str, str], dict[str, object]] = {}
             for transaction in transactions:
-                merchant = merchants_by_id.get(transaction.merchant_id) if transaction.merchant_id else None
-                category = merchant.category if merchant is not None else _UNCATEGORIZED
+                category = resolve_effective_category(transaction, merchants_by_id, categories_by_id)
                 key = (category, transaction.currency)
                 bucket = totals.setdefault(key, {"total": Decimal("0"), "count": 0})
                 bucket["total"] += transaction.amount
                 bucket["count"] += 1
             return [(category, currency, item["total"], item["count"]) for (category, currency), item in totals.items()]
 
-        category_col = func.coalesce(Merchant.category, _UNCATEGORIZED)
-        stmt = (
+        category_col = effective_category_column()
+        stmt = join_category_sources(
             select(
                 category_col,
                 Transaction.currency,
                 func.sum(Transaction.amount),
                 func.count(Transaction.id),
-            )
-            .select_from(Transaction)
-            .outerjoin(Merchant, Merchant.id == Transaction.merchant_id)
-            .where(
-                Transaction.initiator_user_id == user_id,
-                Transaction.status == TransactionStatus.COMPLETED,
-                Transaction.type == TransactionType.CARD_PAYMENT,
-                Transaction.created_at >= period_start,
-                Transaction.created_at < period_end,
-            )
-            .group_by(category_col, Transaction.currency)
-        )
+            ).select_from(Transaction)
+        ).where(
+            Transaction.initiator_user_id == user_id,
+            Transaction.status == TransactionStatus.COMPLETED,
+            Transaction.type == TransactionType.CARD_PAYMENT,
+            Transaction.created_at >= period_start,
+            Transaction.created_at < period_end,
+        ).group_by(category_col, Transaction.currency)
         return list(self.db.execute(stmt).all())
 
     def spend_transactions_for_counterparties(

@@ -664,3 +664,148 @@ def test_top_up_rejects_negative_amount(db_session, payer_with_wallet):
     with pytest.raises(ValidationError):
         TransactionService(db_session).create_card_top_up(payer.id, _top_up(wallet.id, card, Decimal("-10.00")))
     assert wallet.available_balance == Decimal("0.00")
+
+
+# ---- per-transaction spending category (Transactions page "change category")
+
+
+def test_transaction_is_served_with_its_merchants_category(db_session, payer_with_wallet_and_merchant):
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+    service = TransactionService(db_session)
+    service.create_card_payment(
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("120.00"), cvv=card.mock_cvv)
+    )
+
+    [public] = service.list_public_for_user(payer.id)
+
+    assert public.category == "Retail"
+    assert public.category_id is None  # inherited, not a deliberate choice
+
+
+def test_setting_a_category_overrides_the_merchants_and_is_reversible(db_session, payer_with_wallet_and_merchant):
+    from app.transactions.models import TransactionCategory
+
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+    service = TransactionService(db_session)
+    transaction = service.create_card_payment(
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("120.00"), cvv=card.mock_cvv)
+    )
+    food = TransactionCategory(name="Food")
+    db_session.add(food)
+    db_session.flush()
+
+    updated = service.set_category(payer.id, transaction.id, food.id)
+    assert updated.category == "Food"
+    assert updated.category_id == food.id
+
+    cleared = service.set_category(payer.id, transaction.id, None)
+    assert cleared.category == "Retail"
+    assert cleared.category_id is None
+
+
+def test_setting_a_category_leaves_the_money_alone(db_session, payer_with_wallet_and_merchant):
+    from app.transactions.models import TransactionCategory
+
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+    service = TransactionService(db_session)
+    transaction = service.create_card_payment(
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("120.00"), cvv=card.mock_cvv)
+    )
+    food = TransactionCategory(name="Food")
+    db_session.add(food)
+    db_session.flush()
+    balance_before = wallet.available_balance
+    ledger_before = len(transaction.ledger_entries)
+
+    service.set_category(payer.id, transaction.id, food.id)
+
+    assert wallet.available_balance == balance_before
+    assert len(transaction.ledger_entries) == ledger_before
+    assert transaction.status == TransactionStatus.COMPLETED
+    assert transaction.amount == Decimal("120.00")
+
+
+def test_setting_an_unknown_category_is_rejected(db_session, payer_with_wallet_and_merchant):
+    import uuid
+
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+    service = TransactionService(db_session)
+    transaction = service.create_card_payment(
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("120.00"), cvv=card.mock_cvv)
+    )
+
+    with pytest.raises(NotFoundError):
+        service.set_category(payer.id, transaction.id, uuid.uuid4())
+
+
+def test_only_card_payments_can_be_recategorised(db_session, payer_with_wallet_and_merchant):
+    """Nothing else reaches the donut or a budget, so storing a category on
+    a transfer would be a setting with no visible effect."""
+    from app.transactions.models import TransactionCategory
+
+    payer, wallet, _merchant = payer_with_wallet_and_merchant
+    recipient = UserService(db_session).create_user(
+        UserCreate(email="cat-recipient@example.com", password="Sup3rSecret!", first_name="Cat", last_name="Recipient")
+    )
+    recipient_wallet = WalletService(db_session).create_wallet(recipient.id, WalletCreate(currency="RON"))
+    db_session.flush()
+    service = TransactionService(db_session)
+    transfer = service.create_internal_transfer(
+        payer.id,
+        InternalTransferCreate(
+            source_wallet_id=wallet.id, destination_wallet_id=recipient_wallet.id, amount=Decimal("10.00")
+        ),
+    )
+    food = TransactionCategory(name="Food")
+    db_session.add(food)
+    db_session.flush()
+
+    with pytest.raises(ValidationError):
+        service.set_category(payer.id, transfer.id, food.id)
+
+
+def test_another_user_cannot_recategorise_your_transaction(db_session, payer_with_wallet_and_merchant):
+    from app.transactions.models import TransactionCategory
+
+    payer, wallet, merchant = payer_with_wallet_and_merchant
+    card = CardService(db_session).create_card(payer.id, CardCreate(default_wallet_id=wallet.id))
+    service = TransactionService(db_session)
+    transaction = service.create_card_payment(
+        payer.id, CardPaymentCreate(card_id=card.id, merchant_id=merchant.id, amount=Decimal("120.00"), cvv=card.mock_cvv)
+    )
+    stranger = UserService(db_session).create_user(
+        UserCreate(email="cat-stranger@example.com", password="Sup3rSecret!", first_name="Cat", last_name="Stranger")
+    )
+    food = TransactionCategory(name="Food")
+    db_session.add(food)
+    db_session.flush()
+
+    with pytest.raises(NotFoundError):
+        service.set_category(stranger.id, transaction.id, food.id)
+
+
+def test_a_transfer_is_served_without_a_category(db_session, payer_with_wallet_and_merchant):
+    """No merchant, and no category view counts it — a badge here would
+    point at a slice that does not exist."""
+    payer, wallet, _merchant = payer_with_wallet_and_merchant
+    recipient = UserService(db_session).create_user(
+        UserCreate(email="cat-nocat@example.com", password="Sup3rSecret!", first_name="No", last_name="Cat")
+    )
+    recipient_wallet = WalletService(db_session).create_wallet(recipient.id, WalletCreate(currency="RON"))
+    db_session.flush()
+    service = TransactionService(db_session)
+    service.create_internal_transfer(
+        payer.id,
+        InternalTransferCreate(
+            source_wallet_id=wallet.id, destination_wallet_id=recipient_wallet.id, amount=Decimal("10.00")
+        ),
+    )
+
+    [public] = service.list_public_for_user(payer.id)
+
+    assert public.type == TransactionType.TRANSFER
+    assert public.category is None

@@ -1,12 +1,20 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
+import { CategoryIcon } from "../features/transactions";
 import { useAuth } from "../hooks/useAuth";
-import type { Beneficiary, BillSplit, Transaction, TransactionFolder, Wallet } from "../types";
+import type {
+  Beneficiary,
+  BillSplit,
+  Transaction,
+  TransactionCategory,
+  TransactionFolder,
+  Wallet,
+} from "../types";
 
 const FOLDER_NAME_MAX_LENGTH = 40;
 const FOLDER_DESCRIPTION_MAX_LENGTH = 120;
@@ -124,6 +132,10 @@ export function TransactionsPage() {
   const [splitError, setSplitError] = useState<string | null>(null);
   const [splitSubmitting, setSplitSubmitting] = useState(false);
   const [splitActionId, setSplitActionId] = useState<string | null>(null);
+  const [categories, setCategories] = useState<TransactionCategory[]>([]);
+  const [categoryTransaction, setCategoryTransaction] = useState<Transaction | null>(null);
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
   const [transactionsPage, setTransactionsPage] = useState(1);
@@ -191,14 +203,16 @@ export function TransactionsPage() {
     setTransactionsLoading(true);
     setTransactionsError(null);
     try {
-      const [nextTransactions, nextWallets, nextBillSplits] = await Promise.all([
+      const [nextTransactions, nextWallets, nextBillSplits, nextCategories] = await Promise.all([
         apiRequest<Transaction[]>("/transactions", { token: accessToken }),
         apiRequest<Wallet[]>("/wallets", { token: accessToken }).catch(() => []),
         apiRequest<BillSplit[]>("/payments/bill-splits", { token: accessToken }).catch(() => []),
+        apiRequest<TransactionCategory[]>("/transactions/categories", { token: accessToken }).catch(() => []),
       ]);
       setTransactions(nextTransactions);
       setWallets(nextWallets);
       setBillSplits(nextBillSplits);
+      setCategories(nextCategories);
       await loadTransactionFolders();
     } catch (err) {
       setTransactions([]);
@@ -222,6 +236,32 @@ export function TransactionsPage() {
       setTransactionFolders(list);
     } catch {
       setTransactionFolders([]);
+    }
+  }
+
+  function openCategoryModal(transaction: Transaction) {
+    setCategoryTransaction(transaction);
+    setCategoryError(null);
+  }
+
+  async function applyCategory(categoryId: string | null) {
+    if (!accessToken || !categoryTransaction) return;
+    setCategorySaving(true);
+    setCategoryError(null);
+    try {
+      const updated = await apiRequest<Transaction>(
+        `/transactions/${categoryTransaction.id}/category`,
+        { method: "PATCH", token: accessToken, body: { category_id: categoryId } },
+      );
+      // Patch the row in place rather than refetching the list: the amount,
+      // status and ledger are untouched by a re-categorisation, so the only
+      // thing that can have changed is this row's own category.
+      setTransactions((current) => current.map((tx) => (tx.id === updated.id ? updated : tx)));
+      setCategoryTransaction(null);
+    } catch (err) {
+      setCategoryError(err instanceof ApiError ? err.message : t("transactions.couldNotChangeCategory"));
+    } finally {
+      setCategorySaving(false);
     }
   }
 
@@ -623,6 +663,59 @@ export function TransactionsPage() {
           </button>
         </div>
       ) : null}
+      {categoryTransaction ? (
+        <div className="folder-modal-backdrop" role="presentation">
+          <section
+            className="tile folder-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("transactions.changeCategory")}
+          >
+            <div className="tile__header">
+              <div>
+                <span className="eyebrow">{t("transactions.changeCategory")}</span>
+                <h2>{categoryTransaction.description || categoryTransaction.type}</h2>
+              </div>
+              <button className="button--ghost" onClick={() => setCategoryTransaction(null)} type="button">
+                {t("transactions.close")}
+              </button>
+            </div>
+            {categoryError && <p className="status-line status-line--error">{categoryError}</p>}
+            <div className="category-choices">
+              {categories.map((category) => {
+                const active = categoryTransaction.category === category.name;
+                return (
+                  <button
+                    className={active ? "category-choice category-choice--active" : "category-choice"}
+                    disabled={categorySaving}
+                    key={category.id}
+                    onClick={() => applyCategory(category.id)}
+                    type="button"
+                  >
+                    <CategoryIcon category={category.name} size={18} />
+                    <span>{category.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* Only offered once the user has actually overridden something
+                — there is nothing to reset back to while the category still
+                comes from the merchant. */}
+            {categoryTransaction.category_id && (
+              <div className="category-modal__footer">
+                <button
+                  className="button--ghost button--wide"
+                  disabled={categorySaving}
+                  onClick={() => applyCategory(null)}
+                  type="button"
+                >
+                  {t("transactions.resetCategoryToMerchant")}
+                </button>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
       {folderTransaction ? (
         <div className="folder-modal-backdrop" role="presentation">
           <section className="tile folder-modal" role="dialog" aria-modal="true" aria-label={t("transactions.addTransactionToFolderLabel")}>
@@ -737,7 +830,12 @@ export function TransactionsPage() {
                 <tr key={tx.id}>
                   <td>{new Date(tx.created_at).toLocaleString()}</td>
                   <td>{formatTransactionType(tx, userWalletIds, t)}</td>
-                  <td>{tx.description}</td>
+                  <td>
+                    <span className="transaction-description">
+                      <span className="transaction-description__text">{tx.description}</span>
+                      {tx.category && <CategoryIcon category={tx.category} />}
+                    </span>
+                  </td>
                   <td className={isIncomingOnly(tx, userWalletIds) ? "transaction-amount--in" : "transaction-amount--out"}>
                     {formatAmount(tx, userWalletIds)}
                   </td>
@@ -757,6 +855,22 @@ export function TransactionsPage() {
                         </button>
                       ) : (
                         <span className="button--ghost button--wide transaction-actions__placeholder" aria-hidden="true" />
+                      )}
+                      {/* Card payments only: nothing else reaches the
+                          Analytics donut or a budget, so the button would
+                          promise an effect the user could never see. */}
+                      {tx.status === "COMPLETED" && tx.type === "CARD_PAYMENT" ? (
+                        <button
+                          aria-label={t("transactions.changeCategory")}
+                          className="button--ghost button--round"
+                          onClick={() => openCategoryModal(tx)}
+                          title={t("transactions.changeCategory")}
+                          type="button"
+                        >
+                          <Plus size={16} />
+                        </button>
+                      ) : (
+                        <span className="button--ghost button--round transaction-actions__placeholder" aria-hidden="true" />
                       )}
                     </div>
                   </td>

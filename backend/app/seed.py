@@ -346,12 +346,12 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
     # First 5 are architecture.md §11's example line-up; the rest round out
     # the catalog with more categories (e.g. a first Entertainment merchant).
     merchants = [
-        ("merchant-nike", "Nike", "Retail"),
+        ("merchant-nike", "Nike", "Shopping"),
         ("merchant-starbucks", "Starbucks", "Food"),
-        ("merchant-emag", "eMAG", "Retail"),
+        ("merchant-emag", "eMAG", "Shopping"),
         ("merchant-omv", "OMV", "Fuel"),
         ("merchant-booking", "Booking.com", "Travel"),
-        ("merchant-zara", "Zara", "Retail"),
+        ("merchant-zara", "Zara", "Shopping"),
         ("merchant-kfc", "KFC", "Food"),
         ("merchant-petrom", "Petrom", "Fuel"),
         ("merchant-emirates", "Emirates", "Travel"),
@@ -385,12 +385,12 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                     "status": "ACTIVE",
                 }
                 for key, _name, _category, percent in [
-                    ("merchant-nike", "Nike", "Retail", "7.00"),
+                    ("merchant-nike", "Nike", "Shopping", "7.00"),
                     ("merchant-starbucks", "Starbucks", "Food", "10.00"),
-                    ("merchant-emag", "eMAG", "Retail", "5.00"),
+                    ("merchant-emag", "eMAG", "Shopping", "5.00"),
                     ("merchant-omv", "OMV", "Fuel", "3.00"),
                     ("merchant-booking", "Booking.com", "Travel", "4.00"),
-                    ("merchant-zara", "Zara", "Retail", "6.00"),
+                    ("merchant-zara", "Zara", "Shopping", "6.00"),
                     ("merchant-kfc", "KFC", "Food", "8.00"),
                     ("merchant-petrom", "Petrom", "Fuel", "4.00"),
                     ("merchant-emirates", "Emirates", "Travel", "5.00"),
@@ -659,12 +659,12 @@ def run() -> None:
         # line-up; the rest just round out the catalog with more categories
         # (e.g. a first Entertainment merchant) for the Rewards demo.
         offer_window = {"start_date": date.today() - timedelta(days=30), "end_date": date.today() + timedelta(days=335)}
-        nike = Merchant(name="Nike", category="Retail", verified=True)
+        nike = Merchant(name="Nike", category="Shopping", verified=True)
         starbucks = Merchant(name="Starbucks", category="Food", verified=True)
-        emag = Merchant(name="eMAG", category="Retail", verified=True)
+        emag = Merchant(name="eMAG", category="Shopping", verified=True)
         omv = Merchant(name="OMV", category="Fuel", verified=True)
         booking = Merchant(name="Booking.com", category="Travel", verified=True)
-        zara = Merchant(name="Zara", category="Retail", verified=True)
+        zara = Merchant(name="Zara", category="Shopping", verified=True)
         kfc = Merchant(name="KFC", category="Food", verified=True)
         petrom = Merchant(name="Petrom", category="Fuel", verified=True)
         emirates = Merchant(name="Emirates", category="Travel", verified=True)

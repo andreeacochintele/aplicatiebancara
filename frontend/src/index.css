@@ -1360,9 +1360,83 @@ th {
 
 .transaction-actions {
   display: grid;
-  grid-template-columns: 140px 140px;
+  /* Third slot is the round change-category button, which is icon-sized
+     rather than label-sized. */
+  grid-template-columns: 140px 140px 36px;
   gap: 1.5rem;
   justify-content: end;
+  align-items: center;
+}
+
+/* Icon-only action: a circle, sized independently of .button--wide's
+   label-driven min-width. */
+.button--round {
+  min-width: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+}
+
+.transaction-description {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.transaction-description__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keeps the glyph from being pushed out by a long description — the label
+   can ellipsis, the category marker should always stay visible. */
+.category-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.category-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  /* Every tile the same height, including the rows whose label wraps to two
+     lines ("Beauty & Personal care"). Without this each row sizes to its own
+     tallest label and the grid comes out ragged. */
+  grid-auto-rows: 1fr;
+  gap: 0.65rem;
+  margin-block: 0.35rem 0.25rem;
+}
+
+/* Separated from the grid: it's the "undo" for the choices above, not a
+   tenth choice, and it was reading as a cramped afterthought tucked under
+   the last tile. */
+.category-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--color-divider);
+}
+
+.category-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  text-align: left;
+}
+
+.category-choice--active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
 /* Same box model as a real .button--ghost.button--wide, just invisible --

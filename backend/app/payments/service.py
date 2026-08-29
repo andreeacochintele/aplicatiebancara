@@ -198,7 +198,22 @@ class IbanTransferService:
         destination = self.wallets.get_by_iban(data.iban)
         if destination is not None and destination.id == source.id:
             raise ValidationError("Cannot transfer to the same account")
-        if destination is not None and destination.currency == currency:
+        if destination is not None and destination.currency != currency:
+            # Deliberately an error rather than a conversion. Whether the IBAN
+            # is on-us is decided above, on its own; letting a currency
+            # mismatch fall through to the external branch below would debit
+            # the sender, set destination_wallet_id to NULL and mark the
+            # transfer COMPLETED while the recipient — a real account on this
+            # very system — is never credited. Same answer the phone-transfer
+            # path already gives ("Recipient has no EUR wallet"); converting
+            # instead would need an FX quote priced against the destination's
+            # currency, which the sender has no way to ask for yet.
+            raise ValidationError(
+                f"This EasyB account holds {destination.currency}, not {currency}. "
+                f"Send {destination.currency} instead, or ask the recipient to open "
+                f"a {currency} account."
+            )
+        if destination is not None:
             transaction = self.transactions.create_internal_transfer(
                 initiator_user_id,
                 InternalTransferCreate(
