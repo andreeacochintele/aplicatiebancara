@@ -34,6 +34,19 @@ class CardStatus(str, enum.Enum):
     CANCELLED = "CANCELLED"
 
 
+class CardFreezeReason(str, enum.Enum):
+    """Why a FROZEN card is frozen. USER_REQUESTED is the cardholder's own
+    self-service freeze (cards/router.py's PATCH /freeze); FRAUD_HOLD is set
+    only by FraudService when a payment on this card crosses the fraud
+    threshold (fraud/service.py) and can only be cleared by an admin via
+    POST /fraud/cases/{id}/activate-card — the cardholder's own unfreeze
+    endpoint refuses while this reason is set. Null whenever status is not
+    FROZEN."""
+
+    USER_REQUESTED = "USER_REQUESTED"
+    FRAUD_HOLD = "FRAUD_HOLD"
+
+
 class Card(Base):
     __tablename__ = "cards"
 
@@ -48,6 +61,19 @@ class Card(Base):
     status: Mapped[CardStatus] = mapped_column(
         Enum(CardStatus, name="card_status"), default=CardStatus.ACTIVE, nullable=False
     )
+    freeze_reason: Mapped[CardFreezeReason | None] = mapped_column(
+        Enum(CardFreezeReason, name="card_freeze_reason"), nullable=True
+    )
+    frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The admin who last cleared a FRAUD_HOLD via activate-card (see
+    # CardFreezeReason docstring) — never set for a USER_REQUESTED freeze,
+    # since that's the cardholder acting on their own card, not an admin
+    # action. Kept alongside admin_audit_logs (the authoritative record of
+    # who/when/why) purely so a card row can answer "which admin last
+    # reactivated this" without a join.
+    frozen_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
 
     masked_pan: Mapped[str] = mapped_column(String(19), nullable=False)
     last_four: Mapped[str] = mapped_column(String(4), nullable=False)
@@ -61,7 +87,10 @@ class Card(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
-    owner = relationship("User")
+    # Explicit foreign_keys: frozen_by_admin_id (added alongside freeze_reason
+    # above) is a second FK from this table to users.id, so SQLAlchemy can no
+    # longer infer which column this relationship should join on.
+    owner = relationship("User", foreign_keys=[user_id])
     default_wallet = relationship("Wallet")
     payment_preferences = relationship(
         "CardPaymentPreferences",

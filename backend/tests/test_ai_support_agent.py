@@ -3,6 +3,7 @@ import uuid
 import pytest
 
 from app.ai.client.azure_foundry_client import AzureFoundryNotConfiguredError
+from app.ai.guardrails import INJECTION_GUARDRAILS, RESPONSE_FORMAT_RULE
 from app.ai.support import agent
 
 # fraud/service.py's real, non-public constants — the exact values that must
@@ -76,10 +77,42 @@ def test_fraud_policy_knowledge_does_not_contain_any_real_fraud_engine_number():
         assert number not in agent._FRAUD_POLICY
 
 
-def test_system_prompt_includes_all_three_knowledge_files_verbatim():
+def test_system_prompt_includes_all_knowledge_files_verbatim():
     assert agent._FRAUD_POLICY in agent._SYSTEM_PROMPT
     assert agent._APP_FAQ in agent._SYSTEM_PROMPT
     assert agent._SECURITY_AND_PRIVACY in agent._SYSTEM_PROMPT
+    assert agent._APP_OVERVIEW in agent._SYSTEM_PROMPT
+
+
+# ---- shared ai/knowledge/app_overview.md: same qualitative/no-leakage bar
+# as the fraud knowledge above, since it's shared with Personal Finance too ----
+
+
+def test_app_overview_knowledge_does_not_contain_the_fraud_score_threshold():
+    # Unlike fraud_policy.md (held to a strict zero-digits bar — small
+    # numbers are expected here for legitimate reasons, e.g. tier point
+    # multipliers and step numbering), so this checks specifically for the
+    # one number that would matter if it leaked: the deterministic fraud
+    # engine's actual pass/fail threshold, not every generic small integer
+    # a fraud constant happens to also equal.
+    assert str(FRAUD_SCORE_THRESHOLD) not in agent._APP_OVERVIEW
+
+
+def test_app_overview_knowledge_has_no_internal_implementation_detail():
+    lowered = agent._APP_OVERVIEW.lower()
+    for leaky_term in (
+        "sqlalchemy", "postgres", "fraud_cases", "fraud_score",
+        "card_freeze_reason", "risk_score", "azure", "gpt-5",
+    ):
+        assert leaky_term not in lowered
+
+
+# ---- shared ai/guardrails.py: injection resistance + response-format rule ----
+
+
+def test_system_prompt_includes_the_shared_injection_and_format_guardrails():
+    assert INJECTION_GUARDRAILS in agent._SYSTEM_PROMPT
+    assert RESPONSE_FORMAT_RULE in agent._SYSTEM_PROMPT
 
 
 def test_system_prompt_forbids_numeric_fraud_details_and_specific_case_confirmation():

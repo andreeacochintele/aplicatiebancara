@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { Bot, Loader2 } from "lucide-react";
+import { Bot, Loader2, ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { ApiError, apiRequest } from "../../api/apiClient";
@@ -68,6 +68,7 @@ export function FraudReviewSection() {
   const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null);
   const [decisionCaseId, setDecisionCaseId] = useState<string | null>(null);
   const [investigationCaseId, setInvestigationCaseId] = useState<string | null>(null);
+  const [activationCaseId, setActivationCaseId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -164,6 +165,27 @@ export function FraudReviewSection() {
     }
   }
 
+  async function activateCard(caseId: string) {
+    if (!accessToken || activationCaseId) return;
+    setActivationCaseId(caseId);
+    setError(null);
+    try {
+      const detail = await apiRequest<FraudCaseDetail>(`/fraud/cases/${caseId}/activate-card`, {
+        method: "POST",
+        token: accessToken,
+      });
+      setDetails((current) => ({ ...current, [caseId]: detail }));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : t("admin.couldNotActivateCard"));
+    } finally {
+      setActivationCaseId(null);
+    }
+  }
+
   if (user?.role !== "ADMIN") {
     return null;
   }
@@ -240,6 +262,8 @@ export function FraudReviewSection() {
                             detail={detail}
                             isInvestigating={investigationCaseId === fraudCase.id}
                             onInvestigate={() => investigate(fraudCase.id)}
+                            isActivatingCard={activationCaseId === fraudCase.id}
+                            onActivateCard={() => activateCard(fraudCase.id)}
                           />
                         )}
                       </td>
@@ -264,10 +288,14 @@ function FraudCaseEvidence({
   detail,
   isInvestigating,
   onInvestigate,
+  isActivatingCard,
+  onActivateCard,
 }: {
   detail: FraudCaseDetail;
   isInvestigating: boolean;
   onInvestigate: () => void;
+  isActivatingCard: boolean;
+  onActivateCard: () => void;
 }) {
   const { t } = useTranslation();
   const analysis = detail.agent_analysis;
@@ -294,6 +322,20 @@ function FraudCaseEvidence({
           {hasAnalysis ? t("admin.refreshReview") : t("admin.runReview")}
         </button>
       </div>
+
+      {detail.frozen_card && (
+        <div className="fraud-card-hold">
+          <div>
+            <span className="eyebrow">{t("admin.cardFrozenForFraud")}</span>
+            <strong>{detail.frozen_card.masked_pan}</strong>
+            {detail.card_hold_notice && <p>{detail.card_hold_notice}</p>}
+          </div>
+          <button type="button" className="fraud-review-button" onClick={onActivateCard} disabled={isActivatingCard}>
+            {isActivatingCard ? <Loader2 size={14} /> : <ShieldCheck size={14} />}
+            {t("admin.activateCard")}
+          </button>
+        </div>
+      )}
 
       <div className="fraud-analysis-grid">
         <section className="fraud-analysis-block">

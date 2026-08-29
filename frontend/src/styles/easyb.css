@@ -1671,13 +1671,18 @@
 .easyb-shell .fraud-rule-list p,
 .easyb-shell .fraud-agent-summary p,
 .easyb-shell .fraud-analysis-empty,
-.easyb-shell .fraud-metric-grid span {
+.easyb-shell .fraud-metric-grid span,
+.easyb-shell .fraud-card-hold p {
   color: var(--easyb-text-soft);
 }
 
 .easyb-shell .fraud-agent-summary {
   border-color: var(--easyb-accent);
   background: var(--easyb-accent-soft);
+}
+
+.easyb-shell .fraud-card-hold strong {
+  color: var(--easyb-text);
 }
 
 .easyb-shell .fraud-rule-list span,
