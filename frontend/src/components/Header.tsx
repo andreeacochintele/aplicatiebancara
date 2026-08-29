@@ -306,7 +306,14 @@ export function Header() {
           <div className="header__user">
             {user.role === "ADMIN" && <span className="tag tag--accent">{t("header.admin")}</span>}
             {user.user_type === "BUSINESS" && (
-              <span className="tag tag--outline">{activeCompanyName ?? t("header.business")}</span>
+              <button
+                type="button"
+                className="tag tag--outline header__company-switch"
+                onClick={() => navigate("/business/profile")}
+                title={t("header.switchCompany")}
+              >
+                {activeCompanyName ?? t("header.business")}
+              </button>
             )}
             <span className="avatar">{initials(user.first_name, user.last_name)}</span>
             <span>

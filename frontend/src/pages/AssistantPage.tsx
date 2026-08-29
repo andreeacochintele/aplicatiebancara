@@ -1,4 +1,4 @@
-import { Bot, Check, Copy, CreditCard, LifeBuoy, MessageCircle, Plus, Send, Sparkles, Trash2, Wallet } from "lucide-react";
+import { Bot, Check, Copy, CreditCard, Download, LifeBuoy, MessageCircle, Plus, Send, Sparkles, Trash2, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -13,9 +13,13 @@ import type {
   ConversationMessagePublic,
   ConversationPublic,
   ConversationSummary,
+  DownloadAttachment,
   OrchestratorChatResponse,
   OrchestratorIntent,
 } from "../types";
+import { downloadBlob } from "../utils";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -31,6 +35,10 @@ interface ChatMessage {
   actionCard?: ActionCard;
   actionStatus?: AgentActionStatus;
   actionDetail?: string | null;
+  /** Only ever set on the assistant reply just received this session, same
+   * as followups — the underlying export endpoint works anytime, so
+   * there's nothing to persist or reconstruct on reopen. */
+  download?: DownloadAttachment;
 }
 
 const QUICK_ACTION_ICON: Record<OrchestratorIntent, LucideIcon> = {
@@ -241,6 +249,7 @@ export function AssistantPage() {
           actionId: response.action_card?.action_id,
           actionCard: response.action_card ?? undefined,
           actionStatus: response.action_card ? "DRAFT" : undefined,
+          download: response.download ?? undefined,
         },
       ]);
       setActiveConversationId(response.conversation_id);
@@ -265,6 +274,18 @@ export function AssistantPage() {
 
   function sendFollowup(text: string) {
     void sendMessage(text);
+  }
+
+  async function downloadAttachment(attachment: DownloadAttachment) {
+    if (!accessToken) return;
+    const response = await fetch(`${API_BASE_URL}${attachment.url}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) {
+      setError(t("assistant.couldNotDownload"));
+      return;
+    }
+    await downloadBlob(response, "statement.pdf");
   }
 
   // Auto-scroll to bottom only for genuinely new messages (initial open,
@@ -386,6 +407,15 @@ export function AssistantPage() {
                     initialStatus={message.actionStatus}
                     initialDetail={message.actionDetail}
                   />
+                )}
+                {message.role === "assistant" && message.download && (
+                  <button
+                    type="button"
+                    className="assistant-download"
+                    onClick={() => void downloadAttachment(message.download!)}
+                  >
+                    <Download size={13} /> {t("assistant.downloadStatement")}
+                  </button>
                 )}
                 <div className="assistant-message__meta">
                   <span className="assistant-message__time">{formatMessageTime(message.createdAt)}</span>

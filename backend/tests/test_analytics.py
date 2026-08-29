@@ -747,3 +747,99 @@ def test_balance_history_raises_not_found_for_unknown_wallet(db_session, user_on
         AnalyticsService(db_session).wallet_balance_history(
             user_only.id, wallet_id=uuid.uuid4(), date_from=today - timedelta(days=1), date_to=today
         )
+
+
+# ---- per-transaction category override. The user re-files one payment from
+# the Transactions page; the donut and Budgets both resolve through
+# transactions/categories.py, so both must move together.
+
+
+def test_spending_by_category_prefers_the_users_own_category_over_the_merchants(
+    db_session, seeded_user_with_wallet
+):
+    from app.merchants.models import Merchant
+    from app.transactions.models import TransactionCategory
+
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    cinema = Merchant(name="Cinema City", category="Entertainment", verified=True)
+    food = TransactionCategory(name="Food")
+    db_session.add_all([cinema, food])
+    db_session.flush()
+
+    _add_transaction(
+        db_session, user, wallet, TransactionType.CARD_PAYMENT, "50.00",
+        TransactionStatus.COMPLETED, now, merchant_id=cinema.id,
+    )
+    kept = _add_transaction(
+        db_session, user, wallet, TransactionType.CARD_PAYMENT, "30.00",
+        TransactionStatus.COMPLETED, now, merchant_id=cinema.id,
+    )
+
+    before = {i.category: i.total_amount for i in AnalyticsService(db_session).spending_by_category(user.id, None, None).items}
+    assert before == {"Entertainment": Decimal("80.00")}
+
+    # Re-file only the 50.00 one.
+    moved = db_session.query(Transaction).filter(Transaction.amount == Decimal("50.00")).one()
+    moved.category_id = food.id
+    db_session.flush()
+
+    after = {i.category: i.total_amount for i in AnalyticsService(db_session).spending_by_category(user.id, None, None).items}
+    assert after == {"Entertainment": Decimal("30.00"), "Food": Decimal("50.00")}
+    assert kept.category_id is None  # untouched
+
+
+def test_spending_by_category_falls_back_to_the_merchant_when_the_override_is_cleared(
+    db_session, seeded_user_with_wallet
+):
+    from app.merchants.models import Merchant
+    from app.transactions.models import TransactionCategory
+
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    cinema = Merchant(name="Cinema City", category="Entertainment", verified=True)
+    food = TransactionCategory(name="Food")
+    db_session.add_all([cinema, food])
+    db_session.flush()
+    tx = _add_transaction(
+        db_session, user, wallet, TransactionType.CARD_PAYMENT, "50.00",
+        TransactionStatus.COMPLETED, now, merchant_id=cinema.id,
+    )
+    tx.category_id = food.id
+    db_session.flush()
+
+    tx.category_id = None
+    db_session.flush()
+
+    result = AnalyticsService(db_session).spending_by_category(user.id, None, None)
+    assert {i.category: i.total_amount for i in result.items} == {"Entertainment": Decimal("50.00")}
+
+
+def test_a_recategorised_payment_moves_between_budgets_too(db_session, seeded_user_with_wallet):
+    """The whole point of resolving in one place: Analytics and Budgets can
+    never report different spend for the same category and month."""
+    from app.budgets.repository import BudgetRepository
+    from app.merchants.models import Merchant
+    from app.transactions.models import TransactionCategory
+
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    cinema = Merchant(name="Cinema City", category="Entertainment", verified=True)
+    food = TransactionCategory(name="Food")
+    db_session.add_all([cinema, food])
+    db_session.flush()
+    tx = _add_transaction(
+        db_session, user, wallet, TransactionType.CARD_PAYMENT, "50.00",
+        TransactionStatus.COMPLETED, now, merchant_id=cinema.id,
+    )
+    period_start, period_end = now - timedelta(days=1), now + timedelta(days=1)
+    budgets = BudgetRepository(db_session)
+
+    assert budgets.spent_amount(user.id, "Entertainment", "RON", period_start, period_end) == Decimal("50.00")
+    assert budgets.spent_amount(user.id, "Food", "RON", period_start, period_end) == Decimal("0")
+
+    tx.category_id = food.id
+    db_session.flush()
+
+    assert budgets.spent_amount(user.id, "Entertainment", "RON", period_start, period_end) == Decimal("0")
+    assert budgets.spent_amount(user.id, "Food", "RON", period_start, period_end) == Decimal("50.00")

@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session
 from app.budgets.models import Budget
 from app.merchants.models import Merchant
 from app.supabase import is_supabase_session
-from app.transactions.models import Transaction, TransactionStatus, TransactionType
+from app.transactions.categories import (
+    effective_category_column,
+    join_category_sources,
+    resolve_effective_category,
+)
+from app.transactions.models import Transaction, TransactionCategory, TransactionStatus, TransactionType
 
 
 class BudgetRepository:
@@ -48,12 +53,16 @@ class BudgetRepository:
         period_start: datetime,
         period_end: datetime,
     ) -> Decimal:
-        """Card payments to merchants in this category, same category
-        dimension AnalyticsRepository.spending_by_merchant_category groups
-        by for the Analytics donut — a budget tracks real purchases at
-        merchants of one category, so transfers and loan payments (neither
-        is a "purchase" against any category) are excluded outright rather
-        than through CASHBACK-style filtering."""
+        """Card payments in this category, resolved the same way the
+        Analytics donut resolves it (transactions/categories.py): the user's
+        own per-transaction choice where they made one, otherwise the paying
+        merchant's category. Re-filing a payment therefore moves it between
+        budgets exactly as it moves it between donut slices — the two views
+        must never report different spend for the same month.
+
+        A budget tracks real purchases, so transfers and loan payments
+        (neither is a "purchase" against any category) are excluded outright
+        rather than through CASHBACK-style filtering."""
         if is_supabase_session(self.db):
             rows = self.db.fetch_many(
                 Transaction,
@@ -65,27 +74,24 @@ class BudgetRepository:
                 },
             )
             merchants_by_id = {m.id: m for m in self.db.fetch_many(Merchant, {})}
+            categories_by_id = {c.id: c for c in self.db.fetch_many(TransactionCategory, {})}
             total = Decimal("0")
             for transaction in rows:
                 if not (period_start <= transaction.created_at <= period_end):
                     continue
-                merchant = merchants_by_id.get(transaction.merchant_id) if transaction.merchant_id else None
-                if merchant is not None and merchant.category == category:
+                if resolve_effective_category(transaction, merchants_by_id, categories_by_id) == category:
                     total += transaction.amount
             return total
 
-        stmt = (
-            select(func.coalesce(func.sum(Transaction.amount), 0))
-            .select_from(Transaction)
-            .join(Merchant, Merchant.id == Transaction.merchant_id)
-            .where(
-                Transaction.initiator_user_id == user_id,
-                Transaction.status == TransactionStatus.COMPLETED,
-                Transaction.type == TransactionType.CARD_PAYMENT,
-                Transaction.currency == currency,
-                Merchant.category == category,
-                Transaction.created_at >= period_start,
-                Transaction.created_at <= period_end,
-            )
+        stmt = join_category_sources(
+            select(func.coalesce(func.sum(Transaction.amount), 0)).select_from(Transaction)
+        ).where(
+            Transaction.initiator_user_id == user_id,
+            Transaction.status == TransactionStatus.COMPLETED,
+            Transaction.type == TransactionType.CARD_PAYMENT,
+            Transaction.currency == currency,
+            effective_category_column() == category,
+            Transaction.created_at >= period_start,
+            Transaction.created_at <= period_end,
         )
         return self.db.scalar(stmt) or Decimal("0")

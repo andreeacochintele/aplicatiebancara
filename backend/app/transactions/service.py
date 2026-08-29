@@ -35,9 +35,16 @@ from app.merchants.repository import MerchantRepository
 from app.merchants.service import MerchantService
 from app.notifications.service import NotificationsService
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
-from app.transactions.repository import TransactionRepository
-from app.transactions.schemas import CardPaymentCreate, CreditCardRepaymentCreate, InternalTransferCreate
-from app.wallets.models import Wallet
+from app.transactions.categories import resolve_effective_category
+from app.transactions.repository import TransactionCategoryRepository, TransactionRepository
+from app.transactions.schemas import (
+    CardPaymentCreate,
+    CardTopUpCreate,
+    CreditCardRepaymentCreate,
+    InternalTransferCreate,
+    TransactionPublic,
+)
+from app.wallets.models import Wallet, WalletStatus
 from app.wallets.repository import WalletRepository
 
 logger = logging.getLogger(__name__)
@@ -62,9 +69,24 @@ class TransactionService:
         self.fx = FXService(db)
         self.cards = CardRepository(db)
         self.merchants = MerchantRepository(db)
+        self.categories = TransactionCategoryRepository(db)
         self.notifications = NotificationsService(db)
 
-    def create_internal_transfer(self, initiator_user_id: uuid.UUID, data: InternalTransferCreate) -> Transaction:
+    def create_internal_transfer(
+        self,
+        initiator_user_id: uuid.UUID,
+        data: InternalTransferCreate,
+        *,
+        screen_for_fraud: bool = True,
+    ) -> Transaction:
+        """`screen_for_fraud` defaults to True so any new caller is covered by
+        default. It's turned off only for settlement flows that immediately
+        record their own outcome against the returned transaction — paying a
+        bill-split share or a payment request marks the participant/request
+        PAID and notifies the payee right away (app/payments/service.py),
+        which would be wrong if the money were sitting on a fraud HOLD. Those
+        flows are user-to-user settlements of an amount both sides already
+        agreed on, so screening them is also the weaker case."""
         if data.amount <= 0:
             raise ValidationError("Transfer amount must be positive")
 
@@ -75,8 +97,10 @@ class TransactionService:
             raise ValidationError("Source wallet does not belong to the initiating user")
 
         if source.currency == destination.currency:
-            return self._execute_same_currency_transfer(initiator_user_id, source, destination, data)
-        return self._execute_fx_transfer(initiator_user_id, source, destination, data)
+            return self._execute_same_currency_transfer(
+                initiator_user_id, source, destination, data, screen_for_fraud
+            )
+        return self._execute_fx_transfer(initiator_user_id, source, destination, data, screen_for_fraud)
 
     def _lock_wallet_pair(
         self, id_a: uuid.UUID, id_b: uuid.UUID
@@ -94,7 +118,12 @@ class TransactionService:
         return by_id.get(id_a), by_id.get(id_b)
 
     def _execute_same_currency_transfer(
-        self, initiator_user_id: uuid.UUID, source: Wallet, destination: Wallet, data: InternalTransferCreate
+        self,
+        initiator_user_id: uuid.UUID,
+        source: Wallet,
+        destination: Wallet,
+        data: InternalTransferCreate,
+        screen_for_fraud: bool = True,
     ) -> Transaction:
         if source.available_balance < data.amount:
             raise ConflictError("Insufficient available balance")
@@ -112,11 +141,24 @@ class TransactionService:
                 processed_at=datetime.now(timezone.utc),
             )
         )
+
+        # Same seam as create_card_payment's: scoring runs before any money
+        # moves, and a blocked transfer is HOLD'd + set to PENDING_REVIEW by
+        # FraudService, so neither leg of _settle() ever runs. The
+        # destination is credited later, by FraudService.approve().
+        if screen_for_fraud and FraudService(self.db).evaluate_transaction(transaction, source).blocked:
+            return transaction
+
         self._settle(transaction, source, data.amount, destination, data.amount)
         return transaction
 
     def _execute_fx_transfer(
-        self, initiator_user_id: uuid.UUID, source: Wallet, destination: Wallet, data: InternalTransferCreate
+        self,
+        initiator_user_id: uuid.UUID,
+        source: Wallet,
+        destination: Wallet,
+        data: InternalTransferCreate,
+        screen_for_fraud: bool = True,
     ) -> Transaction:
         if data.fx_quote_id is None:
             raise ValidationError("Cross-currency transfers require an fx_quote_id — request one via POST /fx/quote")
@@ -146,6 +188,15 @@ class TransactionService:
                 processed_at=datetime.now(timezone.utc),
             )
         )
+        # The quote is consumed by the attempt itself, held or not: the
+        # transaction already carries the priced source_amount/target amount
+        # and exchange_rate that FraudService.approve() will settle with, and
+        # leaving the quote OPEN would let the same pricing fund a second
+        # transfer while this one sits under review.
+        if screen_for_fraud and FraudService(self.db).evaluate_transaction(transaction, source).blocked:
+            self.fx.mark_accepted(quote)
+            return transaction
+
         self._settle(transaction, source, quote.source_amount, destination, quote.target_amount)
         self.fx.mark_accepted(quote)
         return transaction
@@ -328,6 +379,88 @@ class TransactionService:
         now = datetime.now(timezone.utc)
         return (card.expiration_year, card.expiration_month) < (now.year, now.month)
 
+    def create_card_top_up(self, initiator_user_id: uuid.UUID, data: CardTopUpCreate) -> Transaction:
+        """Mock card top-up: credits a wallet after validating the typed card
+        details against one of the caller's own cards (the same mock_pan/
+        mock_cvv/expiration a real card payment already checks) instead of
+        accepting arbitrary input — so any card issued through the existing
+        Cards feature works here too, nothing hardcoded. Wrong PAN/CVV/expiry
+        all raise the same generic "not recognized" error, mimicking a real
+        authorization decline that never tells the caller which field was
+        wrong; only once the card is conclusively the caller's own do later
+        checks (expired/frozen/cancelled) get a specific message."""
+        if data.amount <= 0:
+            raise ValidationError("Top-up amount must be positive")
+
+        wallet = self.wallets.get_by_id_for_update(data.destination_wallet_id)
+        if wallet is None or wallet.user_id != initiator_user_id:
+            raise NotFoundError("Wallet not found")
+        if wallet.status != WalletStatus.ACTIVE:
+            raise ValidationError(f"Wallet is {wallet.status.value}, cannot receive a top-up")
+
+        normalized_input_pan = "".join(data.card_number.split())
+        card = next(
+            (
+                c
+                for c in self.cards.list_for_user(initiator_user_id)
+                if "".join(c.mock_pan.split()) == normalized_input_pan
+            ),
+            None,
+        )
+        if card is None:
+            raise ValidationError("Card not recognized")
+        if (
+            data.cvv.strip() != card.mock_cvv
+            or data.expiry_month != card.expiration_month
+            or data.expiry_year != card.expiration_year
+        ):
+            raise ValidationError("Card not recognized")
+
+        if self._card_is_expired(card):
+            card.status = CardStatus.EXPIRED
+            self.db.flush()
+            raise ValidationError("Card is expired")
+        if card.status != CardStatus.ACTIVE:
+            raise ValidationError(f"Card is {card.status.value}, top-ups require an ACTIVE card")
+
+        transaction = self.repository.add(
+            Transaction(
+                initiator_user_id=initiator_user_id,
+                source_wallet_id=None,
+                destination_wallet_id=wallet.id,
+                card_id=card.id,
+                type=TransactionType.TOP_UP,
+                status=TransactionStatus.COMPLETED,
+                amount=data.amount,
+                currency=wallet.currency,
+                description=f"Card top-up — {card.masked_pan}",
+                completed_at=datetime.now(timezone.utc),
+            )
+        )
+        wallet.available_balance += data.amount
+        self.repository.add_ledger_entry(
+            WalletLedgerEntry(
+                wallet_id=wallet.id,
+                transaction_id=transaction.id,
+                entry_type=LedgerEntryType.CREDIT,
+                amount=data.amount,
+                currency=wallet.currency,
+                balance_after=wallet.available_balance,
+            )
+        )
+        self.db.flush()
+        try:
+            self.notifications.create(
+                initiator_user_id,
+                type="TOP_UP",
+                title="Money added",
+                message=f"{data.amount} {wallet.currency} was added to your {wallet.currency} account.",
+                related_transaction_id=transaction.id,
+            )
+        except Exception:
+            logger.exception("Failed to send top-up notification for transaction %s", transaction.id)
+        return transaction
+
     def create_credit_card_repayment(self, initiator_user_id: uuid.UUID, data: CreditCardRepaymentCreate) -> Transaction:
         if data.amount <= 0:
             raise ValidationError("Payment amount must be positive")
@@ -405,3 +538,64 @@ class TransactionService:
         if transaction is None:
             raise NotFoundError("Transaction not found")
         return transaction
+
+    def list_public_for_user(self, user_id: uuid.UUID) -> list[TransactionPublic]:
+        return self.to_public_many(self.repository.list_for_user(user_id))
+
+    def get_public_for_user(self, user_id: uuid.UUID, transaction_id: uuid.UUID) -> TransactionPublic:
+        return self.to_public(self.get_for_user(user_id, transaction_id))
+
+    def to_public(self, transaction: Transaction) -> TransactionPublic:
+        return self.to_public_many([transaction])[0]
+
+    def to_public_many(self, transactions: list[Transaction]) -> list[TransactionPublic]:
+        """Attaches the effective spending category to each card payment.
+
+        Left null on everything else, deliberately. A transfer or a loan
+        instalment has no merchant and no category, and the spending views
+        that give a category its meaning (the Analytics donut, Budgets)
+        count card payments only — labelling a transfer "Other" would put a
+        category badge on a row that no category view will ever include.
+
+        Both lookup tables are fetched whole rather than per transaction:
+        they are small fixed lists (a seeded category set, the merchant
+        directory) and the alternative is one round trip per row, which on
+        the Supabase REST backend is a real HTTP request each. Skipped
+        entirely when nothing in the batch is a card payment."""
+        categorisable = [t for t in transactions if t.type == TransactionType.CARD_PAYMENT]
+        if categorisable:
+            merchants_by_id = {m.id: m for m in self.merchants.list_active()}
+            categories_by_id = {c.id: c for c in self.categories.list_all()}
+        else:
+            merchants_by_id, categories_by_id = {}, {}
+
+        public: list[TransactionPublic] = []
+        for transaction in transactions:
+            item = TransactionPublic.model_validate(transaction)
+            if transaction.type == TransactionType.CARD_PAYMENT:
+                item.category = resolve_effective_category(transaction, merchants_by_id, categories_by_id)
+            public.append(item)
+        return public
+
+    def set_category(
+        self, user_id: uuid.UUID, transaction_id: uuid.UUID, category_id: uuid.UUID | None
+    ) -> TransactionPublic:
+        """Re-files one transaction under a category of the user's choosing.
+
+        Only the category moves — no balance, status or ledger entry is
+        touched. Because Analytics and Budgets both resolve through
+        transactions/categories.py, the payment moves between donut slices
+        and between budgets at the same time.
+        """
+        transaction = self.get_for_user(user_id, transaction_id)
+        if transaction.type != TransactionType.CARD_PAYMENT:
+            # Nothing else reaches the spending views, so accepting a
+            # category here would store a value the user can never see the
+            # effect of.
+            raise ValidationError("Only card payments can be re-categorised")
+        if category_id is not None and self.categories.get_by_id(category_id) is None:
+            raise NotFoundError("Transaction category not found")
+
+        transaction.category_id = category_id
+        self.db.flush()
+        return self.to_public(transaction)

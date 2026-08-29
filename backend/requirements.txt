@@ -10,6 +10,10 @@ passlib[bcrypt]==1.7.4
 # pinned <4.1: passlib 1.7.4 (unmaintained) breaks against newer bcrypt releases
 bcrypt==4.0.1
 python-multipart==0.0.32
+# Pooled keep-alive HTTP client for the Supabase REST adapter (app/supabase.py).
+# Already present transitively via openai below and pinned to the same version
+# in requirements-dev.txt; declared explicitly because app code imports it.
+httpx==0.28.1
 openai==1.109.1
 fpdf2==2.8.4
 openpyxl==3.1.5

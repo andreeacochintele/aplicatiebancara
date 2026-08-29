@@ -179,6 +179,110 @@ def test_business_profile_endpoints(client, db_session):
     assert updated.json()["company_name"] == "HTTP SRL"
 
 
+def _login_http(client, email: str, password: str) -> str:
+    # Public /auth/register has no user_type field (self-service signup is
+    # always PERSONAL — see RegisterRequest), so a business-user HTTP token
+    # has to come from logging in as a user the DB layer already created
+    # BUSINESS, not from registering one through the API.
+    response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert response.status_code == 200
+    return response.json()["tokens"]["access_token"]
+
+
+# ---- router commit coverage: the `client` fixture (conftest.py) overrides
+# get_db to hand every request in a test the SAME already-open db_session
+# with no close/rollback between them, so a router that flushes but never
+# calls db.commit() still "works" in every test here — the write is visible
+# to a later call in the same test purely because it's the same in-memory
+# ORM session, not because it was actually persisted. That's exactly the
+# live bug that shipped: POST /business/profiles, PUT .../activate and PUT
+# a profile all returned a correct-looking 200/201 with no error, but
+# nothing survived past the request — confirmed live via curl (a fresh
+# GET /business/profiles right after came back empty).
+#
+# Naively spying on db_session.commit doesn't work either: EVERY
+# authenticated request — a plain GET included — already triggers one
+# commit of its own, from get_current_session's last_activity_at bump
+# (auth/dependencies.py). A spy that just asserts "commit was called at
+# least once" would have passed even before this fix, since that one auth
+# commit alone satisfies it. The only way to isolate the router's OWN
+# commit is a differential: count commits on a same-auth-path GET first as
+# a baseline, then assert the write endpoint commits strictly more than
+# that baseline. ----
+
+
+def _count_commits(db_session, monkeypatch, make_request):
+    calls = []
+    monkeypatch.setattr(db_session, "commit", lambda: calls.append(1))
+    response = make_request()
+    monkeypatch.undo()
+    return response, len(calls)
+
+
+def test_create_profile_endpoint_commits(client, db_session, business_user, monkeypatch):
+    token = _login_http(client, "biz-profile@example.com", "Sup3rSecret!")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    baseline_response, baseline_commits = _count_commits(
+        db_session, monkeypatch, lambda: client.get("/api/v1/business/profiles", headers=headers)
+    )
+    assert baseline_response.status_code == 200
+
+    response, commits = _count_commits(
+        db_session,
+        monkeypatch,
+        lambda: client.post("/api/v1/business/profiles", headers=headers, json={"company_name": "Acme SRL"}),
+    )
+
+    assert response.status_code == 201
+    assert commits > baseline_commits, "POST /business/profiles must call db.commit() or the write never persists"
+
+
+def test_update_profile_endpoint_commits(client, db_session, business_user, monkeypatch):
+    token = _login_http(client, "biz-profile@example.com", "Sup3rSecret!")
+    headers = {"Authorization": f"Bearer {token}"}
+    profile = client.post("/api/v1/business/profiles", headers=headers, json={"company_name": "Acme SRL"}).json()
+
+    baseline_response, baseline_commits = _count_commits(
+        db_session, monkeypatch, lambda: client.get("/api/v1/business/profiles", headers=headers)
+    )
+    assert baseline_response.status_code == 200
+
+    response, commits = _count_commits(
+        db_session,
+        monkeypatch,
+        lambda: client.put(
+            f"/api/v1/business/profiles/{profile['id']}",
+            headers=headers,
+            json={"company_name": "Acme Updated SRL"},
+        ),
+    )
+
+    assert response.status_code == 200
+    assert commits > baseline_commits, "PUT /business/profiles/{id} must call db.commit() or the edit never persists"
+
+
+def test_activate_profile_endpoint_commits(client, db_session, business_user, monkeypatch):
+    token = _login_http(client, "biz-profile@example.com", "Sup3rSecret!")
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/v1/business/profiles", headers=headers, json={"company_name": "Acme SRL"})
+    second = client.post("/api/v1/business/profiles", headers=headers, json={"company_name": "Beta SRL"}).json()
+
+    baseline_response, baseline_commits = _count_commits(
+        db_session, monkeypatch, lambda: client.get("/api/v1/business/profiles", headers=headers)
+    )
+    assert baseline_response.status_code == 200
+
+    response, commits = _count_commits(
+        db_session,
+        monkeypatch,
+        lambda: client.put(f"/api/v1/business/profiles/{second['id']}/activate", headers=headers),
+    )
+
+    assert response.status_code == 200
+    assert commits > baseline_commits, "PUT .../activate must call db.commit() or the switch never persists"
+
+
 def test_business_profile_endpoint_rejects_personal_user(client):
     client.post(
         "/api/v1/auth/register",

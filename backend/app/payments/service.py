@@ -7,6 +7,7 @@ from decimal import ROUND_UP, Decimal
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.fraud.service import FraudService
 from app.fx.models import FXQuote
 from app.fx.schemas import FXQuoteRequest
 from app.fx.service import FEE_RATE, FXService
@@ -197,7 +198,22 @@ class IbanTransferService:
         destination = self.wallets.get_by_iban(data.iban)
         if destination is not None and destination.id == source.id:
             raise ValidationError("Cannot transfer to the same account")
-        if destination is not None and destination.currency == currency:
+        if destination is not None and destination.currency != currency:
+            # Deliberately an error rather than a conversion. Whether the IBAN
+            # is on-us is decided above, on its own; letting a currency
+            # mismatch fall through to the external branch below would debit
+            # the sender, set destination_wallet_id to NULL and mark the
+            # transfer COMPLETED while the recipient — a real account on this
+            # very system — is never credited. Same answer the phone-transfer
+            # path already gives ("Recipient has no EUR wallet"); converting
+            # instead would need an FX quote priced against the destination's
+            # currency, which the sender has no way to ask for yet.
+            raise ValidationError(
+                f"This EasyB account holds {destination.currency}, not {currency}. "
+                f"Send {destination.currency} instead, or ask the recipient to open "
+                f"a {currency} account."
+            )
+        if destination is not None:
             transaction = self.transactions.create_internal_transfer(
                 initiator_user_id,
                 InternalTransferCreate(
@@ -237,19 +253,28 @@ class IbanTransferService:
                 processed_at=datetime.now(timezone.utc),
             )
         )
-        source.available_balance -= debit_amount
-        self.transactions.repository.add_ledger_entry(
-            WalletLedgerEntry(
-                wallet_id=source.id,
-                transaction_id=transaction.id,
-                entry_type=LedgerEntryType.DEBIT,
-                amount=debit_amount,
-                currency=source.currency,
-                balance_after=source.available_balance,
+        # Money leaving the bank entirely, so this gets the same fraud seam
+        # the internal-transfer path uses — scored before any balance moves.
+        # A blocked transfer is HOLD'd and left PENDING_REVIEW by
+        # FraudService; there's no destination wallet here, so approving it
+        # later is just the DEBIT that FraudService.approve() already writes.
+        if not FraudService(self.db).evaluate_transaction(transaction, source).blocked:
+            source.available_balance -= debit_amount
+            self.transactions.repository.add_ledger_entry(
+                WalletLedgerEntry(
+                    wallet_id=source.id,
+                    transaction_id=transaction.id,
+                    entry_type=LedgerEntryType.DEBIT,
+                    amount=debit_amount,
+                    currency=source.currency,
+                    balance_after=source.available_balance,
+                )
             )
-        )
-        transaction.status = TransactionStatus.COMPLETED
-        transaction.completed_at = datetime.now(timezone.utc)
+            transaction.status = TransactionStatus.COMPLETED
+            transaction.completed_at = datetime.now(timezone.utc)
+        # Consumed either way: the held transaction already carries this
+        # quote's priced amounts, and leaving it OPEN would let the same
+        # pricing fund a second transfer while this one is under review.
         if quote is not None:
             self.fx.mark_accepted(quote)
 
@@ -506,6 +531,11 @@ class PaymentRequestService:
                 amount=amount,
                 description=data.description or f"QR payment request {payment_request.id}",
             ),
+            # The request is marked PAID unconditionally just below, so a
+            # fraud HOLD here would report a settled request whose money is
+            # still frozen. Screening this flow needs that status handling
+            # first — see create_internal_transfer's docstring.
+            screen_for_fraud=False,
         )
         payment_request.status = PaymentRequestStatus.PAID
         self.db.flush()
@@ -663,6 +693,12 @@ class BillSplitService:
                 amount=participant.amount,
                 description=data.description or f"Bill split payment - {bill_split.title}",
             ),
+            # The participant is marked PAID and the owner notified
+            # "payment received" immediately below, so a fraud HOLD here
+            # would announce money that hasn't arrived. Screening this flow
+            # needs that status handling first — see
+            # create_internal_transfer's docstring.
+            screen_for_fraud=False,
         )
 
         participant.status = BillSplitParticipantStatus.PAID
@@ -804,8 +840,15 @@ class TransactionFolderService:
             raise ValidationError("Only completed transactions can be added to a folder")
         if transaction.type not in FOLDER_ELIGIBLE_TRANSACTION_TYPES:
             raise ValidationError("Only payments and cashback can be added to a folder")
-        if self.repository.get_item(folder.id, transaction_id) is not None:
-            raise ConflictError("Transaction is already in this folder")
+        # One folder per transaction. Two folders holding the same payment
+        # each count it toward their own total and can each be split
+        # independently, so settling one leaves the other quietly claiming
+        # money that has already been accounted for.
+        existing = self.repository.get_item_for_transaction(transaction_id)
+        if existing is not None:
+            if existing.folder_id == folder.id:
+                raise ConflictError("Transaction is already in this folder")
+            raise ConflictError("Transaction is already in another folder — remove it from that one first")
         self.repository.add_item(TransactionFolderItem(folder_id=folder.id, transaction_id=transaction_id))
         return self._to_public(folder)
 

@@ -11,6 +11,16 @@
 -- columns missing. The ALTER TABLE ADD COLUMN IF NOT EXISTS lines below
 -- backfill them onto that already-existing table.
 --
+-- Also drops a stray UNIQUE(user_id) constraint (business_profiles_user_id_key)
+-- left over from an even earlier single-company version of this table. The
+-- CREATE TABLE above never declares user_id UNIQUE (correctly — one user can
+-- own several companies, is_active picks the current one), but a table
+-- created before that was decided still has the old constraint live, which
+-- makes POST /business/profiles for a second company fail with a 409
+-- ("duplicate key value violates unique constraint") even though the exact
+-- same request already works fine locally. Confirmed live against the
+-- shared project on 2026-08-29.
+--
 -- Run this in the Supabase SQL Editor.
 
 BEGIN;
@@ -30,6 +40,7 @@ CREATE TABLE IF NOT EXISTS business_profiles (
 
 ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS representative_name VARCHAR(200);
 ALTER TABLE business_profiles ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE business_profiles DROP CONSTRAINT IF EXISTS business_profiles_user_id_key;
 
 -- Backfill: any row inserted before is_active existed defaulted to FALSE
 -- above. For a user with no active company at all, mark their oldest one

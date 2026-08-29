@@ -175,6 +175,16 @@ export interface Transaction {
   description: string | null;
   created_at: string;
   completed_at: string | null;
+  // Resolved spending category: the user's own choice for this transaction
+  // if they made one, otherwise the merchant's. `category_id` is null while
+  // the category is inherited — that's how the picker tells the two apart.
+  category: string | null;
+  category_id: string | null;
+}
+
+export interface TransactionCategory {
+  id: string;
+  name: string;
 }
 
 export interface Beneficiary {
@@ -789,7 +799,8 @@ export type FraudFlagCode =
   | "UNUSUAL_COUNTRY"
   | "REWARD_ABUSE_PATTERN"
   | "HIGH_VELOCITY"
-  | "UNUSUAL_TIME";
+  | "UNUSUAL_TIME"
+  | "REPEATED_TRANSFER_PATTERN";
 
 export interface FraudFlag {
   id: string;
@@ -887,6 +898,10 @@ export interface AgentActionResult {
   card: ActionCard | null;
 }
 
+export interface DownloadAttachment {
+  url: string;
+}
+
 export interface OrchestratorChatResponse {
   intent: OrchestratorIntent;
   reply: string;
@@ -894,6 +909,7 @@ export interface OrchestratorChatResponse {
   conversation_id: string;
   suggested_followups: string[];
   action_card: ActionCard | null;
+  download: DownloadAttachment | null;
 }
 
 export interface ConversationMessagePublic {

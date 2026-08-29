@@ -54,7 +54,8 @@
       "SCHEDULED_PAYMENT": "Scheduled payment",
       "BILL_SPLIT_PAYMENT": "Bill split payment",
       "SAVINGS_CONTRIBUTION": "Savings contribution",
-      "SAVINGS_WITHDRAWAL": "Savings withdrawal"
+      "SAVINGS_WITHDRAWAL": "Savings withdrawal",
+      "TOP_UP": "Top-up"
     }
   },
   "nav": {
@@ -284,7 +285,19 @@
     "fetchingEstimate": "Fetching the conversion estimate…",
     "noOtherActiveAccount": "No other active account available — add one first before closing this one.",
     "closing": "Closing…",
-    "yesCloseAccount": "Yes, close this account"
+    "yesCloseAccount": "Yes, close this account",
+    "addMoney": "Add money",
+    "addingMoney": "Adding…",
+    "cardNumber": "Card number",
+    "cardNumberPlaceholder": "1234 5678 9012 3456",
+    "cardholderName": "Cardholder name",
+    "cardholderNamePlaceholder": "Name on card",
+    "cardExpiry": "Expiry (MM/YY)",
+    "cardCvv": "CVV",
+    "topUpAmount": "Amount to add",
+    "cardDetailsHint": "Use the details of one of your own EasyB cards.",
+    "couldNotAddMoney": "Could not add money",
+    "topUpSuccess": "Added {{amount}} {{currency}} to your wallet."
   },
   "statements": {
     "wallet": "Wallet",
@@ -302,6 +315,7 @@
     "totalIncoming": "Total incoming",
     "totalOutgoing": "Total outgoing",
     "date": "Date",
+    "transactionId": "Transaction ID",
     "description": "Description",
     "type": "Type",
     "direction": "Direction",
@@ -313,7 +327,15 @@
     "format": "Format",
     "rows": "Rows",
     "download": "Download",
-    "noStatementsGenerated": "No statements generated yet."
+    "noStatementsGenerated": "No statements generated yet.",
+    "showingRange": "Showing {{first}}-{{last}} of {{total}}",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "goToPage": "Go to page {{page}}",
+    "showingHistoryRange": "Showing {{first}}-{{last}} of {{total}}",
+    "previousHistoryPage": "Previous statement history page",
+    "nextHistoryPage": "Next statement history page",
+    "goToHistoryPage": "Go to statement history page {{page}}"
   },
   "notifications": {
     "type": {
@@ -323,7 +345,8 @@
       "CASHBACK": "Cashback",
       "CREDIT": "Credit",
       "SPLIT_BILL": "Split bill",
-      "SYSTEM": "System"
+      "SYSTEM": "System",
+      "TOP_UP": "Top-up"
     },
     "unreadCount": "{{count}} unread",
     "allCaughtUp": "All caught up",
@@ -357,6 +380,7 @@
     "export": "Export {{format}}",
     "transactionsCount": "{{count}} transactions",
     "date": "Date",
+    "transactionId": "Transaction ID",
     "type": "Type",
     "counterparty": "Counterparty",
     "category": "Category",
@@ -368,7 +392,15 @@
     "period": "Period",
     "rows": "Rows",
     "download": "Download",
-    "noExportsGenerated": "No exports generated yet."
+    "noExportsGenerated": "No exports generated yet.",
+    "showingRange": "Showing {{first}}-{{last}} of {{total}}",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "goToPage": "Go to page {{page}}",
+    "showingHistoryRange": "Showing {{first}}-{{last}} of {{total}}",
+    "previousHistoryPage": "Previous export history page",
+    "nextHistoryPage": "Next export history page",
+    "goToHistoryPage": "Go to export history page {{page}}"
   },
   "businessProfile": {
     "onlyForBusiness": "The company profile is only available to business accounts.",
@@ -441,6 +473,9 @@
     "sending": "Sending...",
     "sendMoneyRequests": "Send money requests",
     "addToFolder": "Add to folder",
+    "changeCategory": "Change category",
+    "resetCategoryToMerchant": "Use the merchant's category",
+    "couldNotChangeCategory": "Could not change the category",
     "addTransactionToFolderLabel": "Add transaction to folder",
     "folderTitle": "Folder title",
     "description": "Description",
@@ -497,6 +532,8 @@
     "loadOlderMessages": "Load older messages",
     "askAbout": "Ask about your spending, budgets, savings, cashback, or credit.",
     "copyMessage": "Copy message",
+    "downloadStatement": "Download PDF",
+    "couldNotDownload": "Could not download the file",
     "thinking": "Thinking…",
     "askThePlaceholder": "Ask the assistant…",
     "send": "Send",
@@ -602,7 +639,8 @@
       "UNUSUAL_COUNTRY": "Check whether the device location matches the customer's known locations before relying on it.",
       "REWARD_ABUSE_PATTERN": "Review same-amount payments to this merchant and separate duplicate checkout attempts from coordinated abuse.",
       "HIGH_VELOCITY": "Inspect transactions immediately before and after this payment to understand the burst pattern.",
-      "UNUSUAL_TIME": "Check whether this UTC transaction time is unusual for this customer, not just unusual in general."
+      "UNUSUAL_TIME": "Check whether this UTC transaction time is unusual for this customer, not just unusual in general.",
+      "REPEATED_TRANSFER_PATTERN": "Review the repeated transfers to this account and confirm the customer knows the recipient and intended to send each one."
     },
     "couldNotLoadFraudCases": "Could not load fraud cases.",
     "couldNotLoadFraudCaseDetails": "Could not load fraud case details.",
@@ -1442,6 +1480,7 @@
     "logout": "Logout",
     "business": "BUSINESS",
     "admin": "ADMIN",
+    "switchCompany": "Switch company",
     "noWalletAvailable": "No {{currency}} wallet available.",
     "couldNotDismissNotification": "Could not dismiss notification",
     "couldNotPayRequest": "Could not pay request",

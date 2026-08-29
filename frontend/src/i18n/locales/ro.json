@@ -54,7 +54,8 @@
       "SCHEDULED_PAYMENT": "Plată programată",
       "BILL_SPLIT_PAYMENT": "Plată notă împărțită",
       "SAVINGS_CONTRIBUTION": "Contribuție economii",
-      "SAVINGS_WITHDRAWAL": "Retragere economii"
+      "SAVINGS_WITHDRAWAL": "Retragere economii",
+      "TOP_UP": "Reîncărcare"
     }
   },
   "nav": {
@@ -284,7 +285,19 @@
     "fetchingEstimate": "Se obține estimarea conversiei…",
     "noOtherActiveAccount": "Niciun alt cont activ disponibil — adaugă unul înainte de a-l închide pe acesta.",
     "closing": "Se închide…",
-    "yesCloseAccount": "Da, închide acest cont"
+    "yesCloseAccount": "Da, închide acest cont",
+    "addMoney": "Adaugă bani",
+    "addingMoney": "Se adaugă…",
+    "cardNumber": "Număr card",
+    "cardNumberPlaceholder": "1234 5678 9012 3456",
+    "cardholderName": "Numele titularului",
+    "cardholderNamePlaceholder": "Numele de pe card",
+    "cardExpiry": "Expirare (LL/AA)",
+    "cardCvv": "CVV",
+    "topUpAmount": "Sumă de adăugat",
+    "cardDetailsHint": "Folosește datele unuia dintre cardurile tale EasyB.",
+    "couldNotAddMoney": "Nu s-au putut adăuga banii",
+    "topUpSuccess": "Ai adăugat {{amount}} {{currency}} în portofel."
   },
   "statements": {
     "wallet": "Portofel",
@@ -302,6 +315,7 @@
     "totalIncoming": "Total încasări",
     "totalOutgoing": "Total plăți",
     "date": "Dată",
+    "transactionId": "ID tranzacție",
     "description": "Descriere",
     "type": "Tip",
     "direction": "Direcție",
@@ -313,7 +327,15 @@
     "format": "Format",
     "rows": "Rânduri",
     "download": "Descarcă",
-    "noStatementsGenerated": "Niciun extras generat încă."
+    "noStatementsGenerated": "Niciun extras generat încă.",
+    "showingRange": "Se afișează {{first}}-{{last}} din {{total}}",
+    "previousPage": "Pagina anterioară",
+    "nextPage": "Pagina următoare",
+    "goToPage": "Mergi la pagina {{page}}",
+    "showingHistoryRange": "Se afișează {{first}}-{{last}} din {{total}}",
+    "previousHistoryPage": "Pagina anterioară din istoricul extraselor",
+    "nextHistoryPage": "Pagina următoare din istoricul extraselor",
+    "goToHistoryPage": "Mergi la pagina {{page}} din istoricul extraselor"
   },
   "notifications": {
     "type": {
@@ -323,7 +345,8 @@
       "CASHBACK": "Cashback",
       "CREDIT": "Credit",
       "SPLIT_BILL": "Împărțire notă de plată",
-      "SYSTEM": "Sistem"
+      "SYSTEM": "Sistem",
+      "TOP_UP": "Reîncărcare"
     },
     "unreadCount": "{{count}} necitite",
     "allCaughtUp": "Ești la zi",
@@ -357,6 +380,7 @@
     "export": "Exportă {{format}}",
     "transactionsCount": "{{count}} tranzacții",
     "date": "Dată",
+    "transactionId": "ID tranzacție",
     "type": "Tip",
     "counterparty": "Contraparte",
     "category": "Categorie",
@@ -368,7 +392,15 @@
     "period": "Perioadă",
     "rows": "Rânduri",
     "download": "Descarcă",
-    "noExportsGenerated": "Niciun export generat încă."
+    "noExportsGenerated": "Niciun export generat încă.",
+    "showingRange": "Se afișează {{first}}-{{last}} din {{total}}",
+    "previousPage": "Pagina anterioară",
+    "nextPage": "Pagina următoare",
+    "goToPage": "Mergi la pagina {{page}}",
+    "showingHistoryRange": "Se afișează {{first}}-{{last}} din {{total}}",
+    "previousHistoryPage": "Pagina anterioară din istoricul exporturilor",
+    "nextHistoryPage": "Pagina următoare din istoricul exporturilor",
+    "goToHistoryPage": "Mergi la pagina {{page}} din istoricul exporturilor"
   },
   "businessProfile": {
     "onlyForBusiness": "Profilul companiei este disponibil doar pentru conturi business.",
@@ -441,6 +473,9 @@
     "sending": "Se trimite...",
     "sendMoneyRequests": "Trimite cererile de plată",
     "addToFolder": "Adaugă în folder",
+    "changeCategory": "Schimbă categoria",
+    "resetCategoryToMerchant": "Folosește categoria comerciantului",
+    "couldNotChangeCategory": "Categoria nu a putut fi schimbată",
     "addTransactionToFolderLabel": "Adaugă tranzacția într-un folder",
     "folderTitle": "Titlul folderului",
     "description": "Descriere",
@@ -497,6 +532,8 @@
     "loadOlderMessages": "Încarcă mesaje mai vechi",
     "askAbout": "Întreabă despre cheltuielile, bugetele, economiile, cashback-ul sau creditul tău.",
     "copyMessage": "Copiază mesajul",
+    "downloadStatement": "Descarcă PDF",
+    "couldNotDownload": "Fișierul nu a putut fi descărcat",
     "thinking": "Se gândește…",
     "askThePlaceholder": "Întreabă asistentul…",
     "send": "Trimite",
@@ -602,7 +639,8 @@
       "UNUSUAL_COUNTRY": "Verifică dacă locația dispozitivului corespunde locațiilor cunoscute ale clientului înainte de a te baza pe ea.",
       "REWARD_ABUSE_PATTERN": "Verifică plățile cu aceeași sumă către acest comerciant și separă încercările duplicate de checkout de abuzul coordonat.",
       "HIGH_VELOCITY": "Inspectează tranzacțiile imediat înainte și după această plată pentru a înțelege modelul de rafală.",
-      "UNUSUAL_TIME": "Verifică dacă această oră de tranzacție UTC este neobișnuită pentru acest client, nu doar neobișnuită în general."
+      "UNUSUAL_TIME": "Verifică dacă această oră de tranzacție UTC este neobișnuită pentru acest client, nu doar neobișnuită în general.",
+      "REPEATED_TRANSFER_PATTERN": "Verifică transferurile repetate către acest cont și confirmă că respectivul client cunoaște destinatarul și a intenționat să trimită fiecare transfer."
     },
     "couldNotLoadFraudCases": "Cazurile de fraudă nu au putut fi încărcate.",
     "couldNotLoadFraudCaseDetails": "Detaliile cazului de fraudă nu au putut fi încărcate.",
@@ -1450,6 +1488,7 @@
     "logout": "Deconectare",
     "business": "BUSINESS",
     "admin": "ADMIN",
+    "switchCompany": "Schimbă compania",
     "noWalletAvailable": "Niciun portofel {{currency}} disponibil.",
     "couldNotDismissNotification": "Notificarea nu a putut fi închisă",
     "couldNotPayRequest": "Cererea nu a putut fi plătită",
