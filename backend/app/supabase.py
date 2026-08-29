@@ -2,21 +2,29 @@
 
 This is intentionally narrow: it preserves the service/repository shape while
 we migrate modules gradually from SQLAlchemy sessions to Supabase REST calls.
+
+Every call goes through one pooled, keep-alive HTTP client (see
+_http_client()). This used to be a bare urlopen() per call, which opened a
+fresh TCP+TLS connection every single time. That handshake is cheap while
+the Supabase instance is healthy (~27ms of a ~110ms call) but collapses
+under load: measured against the shared project instance mid-stall, a fresh
+connection took ~4.0s per request while a reused one took ~0.65s — 6x. Since
+a single page load fans out into many of these calls, connection setup, not
+query time, was what made the whole app crawl in waves.
 """
 import json
 import logging
 import re
-import time
+import threading
 import uuid
 from collections.abc import Iterable, Mapping
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import Any, TypeVar
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
+import httpx
 from sqlalchemy import inspect as sa_inspect
 
 from app.config import get_settings
@@ -25,18 +33,30 @@ logger = logging.getLogger(__name__)
 
 ModelT = TypeVar("ModelT")
 
-# The network path to Supabase from this environment is intermittently slow
-# or drops connections outright (confirmed live: back-to-back requests in
-# the same minute ranging from <1s to a full unresponsive 35s) — a real,
-# environment-level issue, not something fixable here. A single 30s-per-call
-# budget with no retry meant one bad hop made the whole request (e.g. login)
-# hang for 30s and then fail outright. Shortening the per-attempt timeout
-# and retrying a couple of times on a transient network failure (never on a
-# real HTTPError — that's a genuine server answer, not a network blip) turns
-# most of those into a ~1-2s blip instead.
-_REQUEST_TIMEOUT_SECONDS = 12
-_MAX_ATTEMPTS = 3
-_RETRY_BACKOFF_SECONDS = 1
+# Shared across every SupabaseRestSession (one is built per request via
+# get_db()), so connections survive between HTTP requests instead of being
+# thrown away with the session. httpx.Client is thread-safe, which matters
+# because FastAPI runs these sync endpoints in a worker threadpool.
+_client_lock = threading.Lock()
+_client: httpx.Client | None = None
+
+
+def _http_client() -> httpx.Client:
+    global _client
+    if _client is None:
+        with _client_lock:
+            if _client is None:
+                _client = httpx.Client(
+                    # Read timeout unchanged at 30s (what urlopen used); the
+                    # separate, shorter connect timeout means a stalled
+                    # instance fails fast on connect instead of burning the
+                    # full 30s before the query even starts.
+                    timeout=httpx.Timeout(30.0, connect=10.0),
+                    limits=httpx.Limits(
+                        max_keepalive_connections=10, max_connections=20, keepalive_expiry=60.0
+                    ),
+                )
+    return _client
 
 
 def utcnow_iso() -> str:
@@ -112,43 +132,51 @@ class SupabaseRestSession:
         body: object | None = None,
         prefer: str | None = None,
     ) -> object:
+        # The query string is still built by hand rather than handed to httpx
+        # as `params`: PostgREST filters like `or=(a.eq.1,b.eq.2)` depend on
+        # this exact encoding, and re-encoding them differently would quietly
+        # change which rows come back.
         query = f"?{urlencode(params)}" if params else ""
         data = json.dumps(body).encode("utf-8") if body is not None else None
         headers = dict(self.headers)
         if prefer:
             headers["Prefer"] = prefer
-        http_request = Request(f"{self.base_url}/{table}{query}", data=data, headers=headers, method=method)
-        raw = self._send_with_retries(http_request, method, table)
+        response = self._send(method, f"{self.base_url}/{table}{query}", data, headers)
+        if response.status_code >= 400:
+            # Message format is load-bearing: repositories across the app
+            # match on it to detect a missing table or column (see
+            # _missing_schema_column and the repository fallbacks).
+            raise RuntimeError(
+                f"Supabase REST request failed with HTTP {response.status_code}: {response.text}"
+            )
+        raw = response.content
         if not raw:
             return None
         return json.loads(raw.decode("utf-8"))
 
-    def _send_with_retries(self, http_request: Request, method: str, table: str) -> bytes:
-        last_error: Exception | None = None
-        for attempt in range(_MAX_ATTEMPTS):
+    def _send(self, method: str, url: str, data: bytes | None, headers: dict[str, str]) -> httpx.Response:
+        """Retried once, and only for GET.
+
+        A pooled connection can be closed by the server while idle, and the
+        client only finds out when it sends the next request on it. Replaying
+        a GET is harmless. Replaying a POST/PATCH/DELETE is not: the server
+        may already have applied it, and a duplicated INSERT here means a
+        duplicated transaction or ledger entry.
+        """
+        try:
+            return _http_client().request(method, url, content=data, headers=headers)
+        except httpx.TimeoutException as exc:
+            # Preserved as the stdlib TimeoutError that urlopen used to
+            # raise, so nothing downstream has to learn a new exception type.
+            raise TimeoutError(f"Supabase REST request timed out: {exc}") from exc
+        except (httpx.ConnectError, httpx.RemoteProtocolError) as exc:
+            if method != "GET":
+                raise
+            logger.debug("Retrying GET %s after a stale pooled connection: %s", url, exc)
             try:
-                with urlopen(http_request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:
-                    return response.read()
-            except HTTPError as exc:
-                # A real answer from the server (4xx/5xx) — not a network
-                # blip, so not retried.
-                detail = exc.read().decode("utf-8", errors="replace")
-                raise RuntimeError(f"Supabase REST request failed with HTTP {exc.code}: {detail}") from exc
-            except (TimeoutError, URLError, ConnectionError) as exc:
-                last_error = exc
-                if attempt < _MAX_ATTEMPTS - 1:
-                    logger.warning(
-                        "Supabase REST %s %s attempt %d/%d failed (%s) - retrying",
-                        method,
-                        table,
-                        attempt + 1,
-                        _MAX_ATTEMPTS,
-                        exc,
-                    )
-                    time.sleep(_RETRY_BACKOFF_SECONDS * (attempt + 1))
-        raise RuntimeError(
-            f"Supabase REST {method} {table} failed after {_MAX_ATTEMPTS} attempts: {last_error}"
-        ) from last_error
+                return _http_client().request(method, url, content=data, headers=headers)
+            except httpx.TimeoutException as retry_exc:
+                raise TimeoutError(f"Supabase REST request timed out: {retry_exc}") from retry_exc
 
     def add(self, model: object) -> object:
         self._ensure_defaults(model)

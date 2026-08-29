@@ -5,6 +5,23 @@ code, never by an LLM — the (not yet built) Fraud Investigation Agent on
 feature/dev4/ai-agents will only ever explain a score that's already been
 computed here, never produce one itself.
 
+What gets screened (SCREENED_TRANSACTION_TYPES): CARD_PAYMENT and TRANSFER
+only. Everything else the ledger produces is either system-generated
+(CASHBACK), gated by its own module's rules (LOAN_PAYMENT, SAVINGS_*), or
+not a user-initiated outflow at all — a loan disbursement is a TRANSFER
+with no source wallet and never reaches this service. Screening happens at
+each engine seam before any balance moves: TransactionService's
+create_card_payment / _execute_same_currency_transfer / _execute_fx_transfer,
+and PaymentsService.create_iban_transfer's external leg. Bill-split and
+payment-request settlements deliberately opt out (see
+create_internal_transfer's `screen_for_fraud`).
+
+Because a TRANSFER has a second leg a HOLD never touches, approve() credits
+the destination wallet as well — see _credit_destination_if_transfer().
+Amounts used for scoring and for the hold are always the SOURCE side, so a
+cross-currency transfer is measured by what actually left the payer's
+wallet; see _screened_amount().
+
 Flag signals and their data sources:
   - NEW_DEVICE / UNUSUAL_COUNTRY: `create_card_payment` isn't passed any
     device/session context of its own, so "which device is paying" is
@@ -16,6 +33,15 @@ Flag signals and their data sources:
     location-seen-before are categorical facts, not magnitudes — there's no
     natural "how untrusted" or "how far from a known location" scale to
     proportion against with the data actually available.
+  - REPEATED_TRANSFER_PATTERN: the transfer-side counterpart of
+    REWARD_ABUSE_PATTERN, sharing its calibration and scaling. Both detect
+    "N near-identical repeats to the same counterparty inside a short
+    window"; they differ only in what counts as the counterparty
+    (merchant_id vs destination_wallet_id — see _repeat_key()) and in the
+    behavior they point at, which is why they're separate codes rather than
+    one. Neither can fire without a counterparty id: an external IBAN
+    transfer stores its IBAN only in free-text description, so repeats to
+    one external account are not detectable here and rely on HIGH_VELOCITY.
   - HIGH_AMOUNT / HIGH_VELOCITY / REWARD_ABUSE_PATTERN: proportional. Each
     scales from a base point value at its minimum trigger condition up to a
     capped maximum as the signal gets further past that minimum (further
@@ -58,6 +84,7 @@ resolved via "most recently active session" — a current-state lookup, not a
 historical one, so it can't answer "where was transaction N-1 relative to
 transaction N".
 """
+import logging
 import uuid
 from collections import Counter
 from dataclasses import dataclass
@@ -78,6 +105,7 @@ from app.fraud.repository import FraudRepository
 from app.fraud.schemas import FraudAgentAnalysisPublic, FraudCaseDetail, FraudCaseSummary, FraudFlagPublic, FraudRiskLevel
 from app.merchants.repository import MerchantRepository
 from app.merchants.service import MerchantService
+from app.notifications.service import NotificationsService
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
 from app.users.models import User
@@ -88,6 +116,13 @@ from app.wallets.repository import WalletRepository
 # below (was a flat 50) — see the calibration table in the task report for
 # the before/after scores this was picked against.
 FRAUD_SCORE_THRESHOLD = Decimal("65")
+
+# Only these two types are ever scored. Everything else the ledger produces
+# is either system-generated (CASHBACK), already gated by its own module's
+# rules (LOAN_PAYMENT, SAVINGS_*), or not a user-initiated outflow at all
+# (a loan disbursement is a TRANSFER with no source wallet — it never
+# reaches evaluate_transaction because nothing calls it there).
+SCREENED_TRANSACTION_TYPES = frozenset({TransactionType.CARD_PAYMENT, TransactionType.TRANSFER})
 
 # NEW_DEVICE / UNUSUAL_COUNTRY: binary/categorical, see module docstring.
 NEW_DEVICE_POINTS = Decimal("25")
@@ -158,6 +193,8 @@ UNUSUAL_TIME_POINTS = Decimal("10")
 MULTI_FLAG_BONUS_PER_EXTRA_FLAG = Decimal("0.15")
 MULTI_FLAG_BONUS_MAX = Decimal("0.40")
 
+logger = logging.getLogger(__name__)
+
 FlagHit = tuple[FraudFlagCode, Decimal, str]
 
 
@@ -168,6 +205,49 @@ def _as_aware_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value
+
+
+def _screened_amount(transaction: Transaction) -> Decimal:
+    """What actually leaves the payer's wallet, in that wallet's currency.
+
+    For a card payment and a same-currency transfer this is just `amount`.
+    For a cross-currency transfer `amount`/`currency` describe the *target*
+    side (what the recipient gets), while `source_amount`/`source_currency`
+    describe what was debited — and it's the debited side that every fraud
+    signal here cares about: "how big is this for this user", "is this the
+    same amount as the last three", and how much gets put on HOLD. Comparing
+    a 20 EUR target against a RON baseline would be meaningless.
+    """
+    return transaction.source_amount if transaction.source_amount is not None else transaction.amount
+
+
+def _screened_currency(transaction: Transaction) -> str:
+    """The currency `_screened_amount()` is denominated in — see above."""
+    return transaction.source_currency if transaction.source_currency is not None else transaction.currency
+
+
+def _type_label(transaction: Transaction) -> str:
+    """Human wording for flag descriptions and analyst-facing data gaps."""
+    return "card payment" if transaction.type == TransactionType.CARD_PAYMENT else "transfer"
+
+
+def _repeat_key(transaction: Transaction) -> tuple[str, uuid.UUID] | None:
+    """What "the same counterparty" means for repeat detection, per type: a
+    card payment repeats against a merchant, a transfer against the
+    destination wallet.
+
+    None means repeats aren't detectable for this transaction at all — a
+    merchant-less card payment, or a transfer leaving the bank (an external
+    IBAN transfer has destination_wallet_id NULL, and the IBAN itself is
+    only ever stored inside the free-text description, so there's no field
+    to key on). Those bursts can still be caught by HIGH_VELOCITY, which
+    doesn't need a counterparty; see this module's docstring.
+    """
+    if transaction.type == TransactionType.CARD_PAYMENT:
+        return ("merchant", transaction.merchant_id) if transaction.merchant_id is not None else None
+    if transaction.type == TransactionType.TRANSFER:
+        return ("wallet", transaction.destination_wallet_id) if transaction.destination_wallet_id is not None else None
+    return None
 
 
 def _scaled_points(over_minimum: Decimal, base: Decimal, per_extra: Decimal, max_points: Decimal) -> Decimal:
@@ -242,13 +322,28 @@ class FraudService:
         self.merchants = MerchantRepository(db)
 
     def evaluate_transaction(self, transaction: Transaction, wallet: Wallet) -> FraudDecision:
+        if transaction.type not in SCREENED_TRANSACTION_TYPES:
+            # Deliberately leaves fraud_score NULL rather than writing 0:
+            # "never screened" and "screened and came back clean" are
+            # different facts, and an admin reading the column should be
+            # able to tell them apart.
+            return FraudDecision(blocked=False, score=Decimal("0"), case=None)
+
+        # Fetched once and shared by every flag below. Each of these used to
+        # run its own list_for_user() — the same query, three times over —
+        # which on the Supabase REST backend is two HTTP round-trips apiece
+        # (wallets, then transactions). Six round-trips became two, and this
+        # runs synchronously inside the payment/transfer request, so it is
+        # latency the user waits on. See app/supabase.py.
+        history = self.transactions.list_for_user(transaction.initiator_user_id, limit=100)
+
         flags: list[FlagHit] = []
         flags.extend(self._device_flags(transaction.initiator_user_id))
-        high_amount = self._high_amount_flag(transaction)
+        high_amount = self._high_amount_flag(transaction, history)
         if high_amount is not None:
             flags.append(high_amount)
-        flags.extend(self._velocity_and_abuse_flags(transaction))
-        unusual_time = self._unusual_time_flag(transaction)
+        flags.extend(self._velocity_and_repeat_flags(transaction, history))
+        unusual_time = self._unusual_time_flag(transaction, history)
         if unusual_time is not None:
             flags.append(unusual_time)
 
@@ -262,7 +357,11 @@ class FraudService:
         return FraudDecision(blocked=True, score=score, case=case)
 
     def get_recent_activity(
-        self, user_id: uuid.UUID, window: timedelta = timedelta(hours=24), as_of: datetime | None = None
+        self,
+        user_id: uuid.UUID,
+        window: timedelta = timedelta(hours=24),
+        as_of: datetime | None = None,
+        history: list[Transaction] | None = None,
     ) -> list[Transaction]:
         """This user's transactions within `window` of `as_of` (defaults to
         now) — the same underlying lookup _velocity_and_abuse_flags() uses
@@ -273,10 +372,17 @@ class FraudService:
         wall-clock now — evaluate_transaction() uses this to anchor to the
         transaction being scored, so tests with fixed historical timestamps
         get reproducible results regardless of when the test actually runs.
+
+        `history` lets a caller that has already fetched this user's
+        transactions pass them in instead of paying for the same query again;
+        evaluate_transaction() shares one fetch across all its flags this
+        way. Left None, this fetches for itself as before.
         """
         reference = _as_aware_utc(as_of) if as_of is not None else datetime.now(timezone.utc)
         cutoff = reference - window
-        return [t for t in self.transactions.list_for_user(user_id, limit=100) if _as_aware_utc(t.created_at) >= cutoff]
+        if history is None:
+            history = self.transactions.list_for_user(user_id, limit=100)
+        return [t for t in history if _as_aware_utc(t.created_at) >= cutoff]
 
     def get_user_spending_profile(self, user_id: uuid.UUID) -> SpendingProfile:
         """Combines a per-currency card-payment average baseline with this
@@ -370,10 +476,18 @@ class FraudService:
         historical_transactions = [
             t for t in history if t.id != transaction.id and _as_aware_utc(t.created_at) <= anchor
         ]
-        completed_card_history = [
+        # Scoped to the transaction's own type (and to what this user sent,
+        # not received), mirroring _high_amount_flag()'s baseline: an admin
+        # reviewing a held transfer must be shown the transfer history it was
+        # actually measured against, not an unrelated card-payment average.
+        # The dict keys below keep their original "card payment" names so the
+        # admin UI and any cached agent_analysis rows stay readable.
+        completed_same_type_history = [
             t
             for t in historical_transactions
-            if t.type == TransactionType.CARD_PAYMENT and t.status == TransactionStatus.COMPLETED
+            if t.type == transaction.type
+            and t.status == TransactionStatus.COMPLETED
+            and t.initiator_user_id == case.user_id
         ]
         merchant = self.merchants.get_by_id(transaction.merchant_id) if transaction.merchant_id is not None else None
         devices = self.get_known_devices(case.user_id)
@@ -403,21 +517,24 @@ class FraudService:
         if not previous_cases:
             data_gaps.append("No previous fraud-case decisions are available for this user.")
 
-        amount_baseline = self._amount_baseline(transaction, completed_card_history)
+        amount_baseline = self._amount_baseline(transaction, completed_same_type_history)
         if amount_baseline["sample_size"] < HIGH_AMOUNT_MIN_HISTORY:
             # Checked against the same-currency sample size, not the total
             # history count across all currencies — see _amount_baseline().
             data_gaps.append(
-                f"Insufficient completed {transaction.currency} card-payment history for robust amount baselines."
+                f"Insufficient completed {_screened_currency(transaction)} {_type_label(transaction)} history "
+                "for robust amount baselines."
             )
         ratio = amount_baseline.get("amount_to_average_ratio")
         if ratio is not None:
             if Decimal(str(ratio)) > HIGH_AMOUNT_MULTIPLIER:
                 suspicious_signals.append(
-                    f"Amount is {ratio}x the user's average completed card payment."
+                    f"Amount is {ratio}x the user's average completed {_type_label(transaction)}."
                 )
-            elif completed_card_history:
-                reassuring_signals.append("Amount is within the user's established completed card-payment range.")
+            elif completed_same_type_history:
+                reassuring_signals.append(
+                    f"Amount is within the user's established completed {_type_label(transaction)} range."
+                )
 
         merchant_analysis = self._merchant_analysis(transaction, historical_transactions, merchant, previous_case_details)
         if merchant_analysis["first_recorded_interaction"]:
@@ -458,13 +575,15 @@ class FraudService:
             "case_overview": self._case_overview(case, transaction, flags, merchant),
             "behavioral_analysis": {
                 "history_transaction_count": len(historical_transactions),
-                "completed_card_payment_count": len(completed_card_history),
+                "completed_card_payment_count": len(completed_same_type_history),
                 "amount_baseline": amount_baseline,
                 "transaction_counts": self._transaction_counts(transaction, history),
-                "usual_transaction_types": self._top_values([t.type.value for t in completed_card_history]),
-                "usual_merchant_ids": self._top_values([str(t.merchant_id) for t in completed_card_history if t.merchant_id]),
+                "usual_transaction_types": self._top_values([t.type.value for t in completed_same_type_history]),
+                "usual_merchant_ids": self._top_values(
+                    [str(t.merchant_id) for t in completed_same_type_history if t.merchant_id]
+                ),
                 "usual_transaction_hours_utc": self._top_values(
-                    [str(_as_aware_utc(t.created_at).hour) for t in completed_card_history]
+                    [str(_as_aware_utc(t.created_at).hour) for t in completed_same_type_history]
                 ),
             },
             "velocity_analysis": velocity_analysis,
@@ -507,16 +626,19 @@ class FraudService:
             ],
         }
 
-    def _amount_baseline(self, transaction: Transaction, completed_card_history: list[Transaction]) -> dict[str, Any]:
-        """`completed_card_history` may span multiple currencies (callers
-        build it from the user's full history); the baseline itself must
-        only ever compare `transaction` against that same-currency subset —
-        see module docstring."""
-        same_currency_history = [t for t in completed_card_history if t.currency == transaction.currency]
-        amounts = sorted(t.amount for t in same_currency_history)
+    def _amount_baseline(self, transaction: Transaction, completed_history: list[Transaction]) -> dict[str, Any]:
+        """`completed_history` may span multiple currencies (callers build it
+        from the user's full history); the baseline itself must only ever
+        compare `transaction` against that same-currency subset — see module
+        docstring. Amounts are the source-side ones (_screened_amount), so a
+        cross-currency transfer is measured by what left the payer's wallet."""
+        amount = _screened_amount(transaction)
+        currency = _screened_currency(transaction)
+        same_currency_history = [t for t in completed_history if _screened_currency(t) == currency]
+        amounts = sorted(_screened_amount(t) for t in same_currency_history)
         if not amounts:
             return {
-                "currency": transaction.currency,
+                "currency": currency,
                 "average_completed_card_payment": None,
                 "median_completed_card_payment": None,
                 "largest_completed_card_payment": None,
@@ -536,13 +658,13 @@ class FraudService:
             )
         ratio = None
         if average > 0:
-            ratio = (transaction.amount / average).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+            ratio = (amount / average).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
         percentile = (
-            (Decimal(sum(1 for amount in amounts if amount <= transaction.amount)) / Decimal(len(amounts)) * Decimal("100"))
+            (Decimal(sum(1 for item in amounts if item <= amount)) / Decimal(len(amounts)) * Decimal("100"))
             .quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
         )
         return {
-            "currency": transaction.currency,
+            "currency": currency,
             "average_completed_card_payment": average,
             "median_completed_card_payment": median,
             "largest_completed_card_payment": amounts[-1],
@@ -594,13 +716,15 @@ class FraudService:
             for item in history
             if anchor - REWARD_ABUSE_WINDOW <= _as_aware_utc(item.created_at) <= anchor
         ]
+        repeat_key = _repeat_key(transaction)
         near_identical_count = sum(
             1
             for item in ten_minute_items
-            if transaction.merchant_id is not None
-            and item.merchant_id == transaction.merchant_id
-            and item.currency == transaction.currency
-            and abs(item.amount - transaction.amount) < Decimal("0.01")
+            if repeat_key is not None
+            and item.type == transaction.type
+            and _repeat_key(item) == repeat_key
+            and _screened_currency(item) == _screened_currency(transaction)
+            and abs(_screened_amount(item) - _screened_amount(transaction)) < Decimal("0.01")
         )
         return {
             "windows": window_results,
@@ -711,6 +835,9 @@ class FraudService:
         if FraudFlagCode.REWARD_ABUSE_PATTERN in flag_codes:
             checks.append("Check whether same-amount same-merchant payments are legitimate duplicate checkout attempts.")
             checks.append("Review merchant cashback/reward eligibility for the repeated payments before clearing the case.")
+        if FraudFlagCode.REPEATED_TRANSFER_PATTERN in flag_codes:
+            checks.append("Check whether the repeated transfers to this account are duplicate submissions by the customer.")
+            checks.append("Verify the customer knows the destination account holder and intended to send each transfer.")
         if FraudFlagCode.HIGH_AMOUNT in flag_codes:
             checks.append("Compare the held amount with this customer's largest previous completed card payments.")
         if FraudFlagCode.NEW_DEVICE in flag_codes:
@@ -795,24 +922,39 @@ class FraudService:
                 )
         return flags
 
-    def _high_amount_flag(self, transaction: Transaction) -> FlagHit | None:
+    def _high_amount_flag(self, transaction: Transaction, history: list[Transaction]) -> FlagHit | None:
         # Same-currency only — see module docstring. A user with no prior
         # history in this transaction's currency simply has no baseline to
         # compare against, so this falls through the same insufficient-
         # history path as a brand-new user (return None), rather than ever
         # falling back to a cross-currency average.
-        history = [
+        #
+        # Also same-TYPE only: a transfer is compared against the user's own
+        # transfer history and a card payment against their card payments.
+        # Somebody whose card spending averages 50 RON isn't thereby unusual
+        # for moving 300 RON between their own accounts, and vice versa —
+        # blending the two would produce a baseline that describes neither
+        # behavior. The initiator filter matters for transfers specifically:
+        # list_for_user also returns transfers this user *received* (they own
+        # the destination wallet), and money coming in says nothing about
+        # what's normal for them to send.
+        baseline = [
             t
-            for t in self.transactions.list_for_user(transaction.initiator_user_id, limit=100)
-            if t.type == TransactionType.CARD_PAYMENT
+            for t in history
+            if t.type == transaction.type
             and t.status == TransactionStatus.COMPLETED
-            and t.currency == transaction.currency
+            and t.initiator_user_id == transaction.initiator_user_id
+            and t.id != transaction.id
+            and _screened_currency(t) == _screened_currency(transaction)
         ]
-        if len(history) < HIGH_AMOUNT_MIN_HISTORY:
+        if len(baseline) < HIGH_AMOUNT_MIN_HISTORY:
             return None
 
-        average = sum((t.amount for t in history), Decimal("0")) / len(history)
-        ratio = transaction.amount / average
+        amount = _screened_amount(transaction)
+        average = sum((_screened_amount(t) for t in baseline), Decimal("0")) / len(baseline)
+        if average <= 0:
+            return None
+        ratio = amount / average
         if ratio <= HIGH_AMOUNT_MULTIPLIER:
             return None
 
@@ -822,34 +964,50 @@ class FraudService:
         return (
             FraudFlagCode.HIGH_AMOUNT,
             points,
-            f"{transaction.amount} is {ratio.quantize(Decimal('0.1'))}x this user's average card payment "
-            f"({average.quantize(Decimal('0.01'))})",
+            f"{amount} is {ratio.quantize(Decimal('0.1'))}x this user's average "
+            f"{_type_label(transaction)} ({average.quantize(Decimal('0.01'))})",
         )
 
-    def _velocity_and_abuse_flags(self, transaction: Transaction) -> list[FlagHit]:
+    def _velocity_and_repeat_flags(self, transaction: Transaction, history: list[Transaction]) -> list[FlagHit]:
+        """HIGH_VELOCITY plus whichever repeat-pattern flag fits this
+        transaction's type — REWARD_ABUSE_PATTERN for card payments (repeats
+        to one merchant), REPEATED_TRANSFER_PATTERN for transfers (repeats to
+        one destination wallet). Both are the same underlying shape and share
+        the REWARD_ABUSE_* calibration below; only the counterparty they key
+        on and the wording differ."""
         flags: list[FlagHit] = []
         now = _as_aware_utc(transaction.created_at or datetime.now(timezone.utc))
         lookback = max(HIGH_VELOCITY_WINDOW, REWARD_ABUSE_WINDOW)
         recent = [
             t
-            for t in self.get_recent_activity(transaction.initiator_user_id, window=lookback, as_of=now)
+            for t in self.get_recent_activity(
+                transaction.initiator_user_id, window=lookback, as_of=now, history=history
+            )
             # CASHBACK is money the system credits back as a side effect of a
             # CARD_PAYMENT, not a separate user action — without this filter
             # every cashback-eligible payment counts twice toward velocity
             # (the payment, then its own cashback a moment later), same
             # rationale as analytics' _is_real_spend excluding CASHBACK.
-            if t.id != transaction.id and t.type != TransactionType.CASHBACK
+            #
+            # The initiator filter keeps *incoming* transfers out of a user's
+            # velocity count: list_for_user also returns transactions they
+            # merely received, and being paid by other people is not this
+            # user transacting rapidly.
+            if t.id != transaction.id
+            and t.type != TransactionType.CASHBACK
+            and t.initiator_user_id == transaction.initiator_user_id
         ]
 
+        repeat_key = _repeat_key(transaction)
         matching = [
             t
             for t in recent
-            if transaction.merchant_id is not None
-            and t.type == TransactionType.CARD_PAYMENT
-            and t.merchant_id == transaction.merchant_id
+            if repeat_key is not None
+            and t.type == transaction.type
+            and _repeat_key(t) == repeat_key
             and _as_aware_utc(t.created_at) >= now - REWARD_ABUSE_WINDOW
-            and t.currency == transaction.currency
-            and abs(t.amount - transaction.amount) < Decimal("0.01")
+            and _screened_currency(t) == _screened_currency(transaction)
+            and abs(_screened_amount(t) - _screened_amount(transaction)) < Decimal("0.01")
         ]
         matching_ids = {t.id for t in matching}
 
@@ -872,7 +1030,7 @@ class FraudService:
             )
 
         total_matching = len(matching) + 1
-        if total_matching >= REWARD_ABUSE_MIN_COUNT:
+        if repeat_key is not None and total_matching >= REWARD_ABUSE_MIN_COUNT:
             minutes = REWARD_ABUSE_WINDOW.seconds // 60
             points = _scaled_points(
                 Decimal(total_matching - REWARD_ABUSE_MIN_COUNT),
@@ -880,29 +1038,46 @@ class FraudService:
                 REWARD_ABUSE_POINTS_PER_EXTRA,
                 REWARD_ABUSE_MAX_POINTS,
             )
-            flags.append(
-                (
-                    FraudFlagCode.REWARD_ABUSE_PATTERN,
-                    points,
-                    f"{total_matching} near-identical payments to the same merchant within {minutes} minutes",
+            if transaction.type == TransactionType.TRANSFER:
+                flags.append(
+                    (
+                        FraudFlagCode.REPEATED_TRANSFER_PATTERN,
+                        points,
+                        f"{total_matching} near-identical transfers to the same account within {minutes} minutes",
+                    )
                 )
-            )
+            else:
+                flags.append(
+                    (
+                        FraudFlagCode.REWARD_ABUSE_PATTERN,
+                        points,
+                        f"{total_matching} near-identical payments to the same merchant within {minutes} minutes",
+                    )
+                )
         return flags
 
-    def _unusual_time_flag(self, transaction: Transaction) -> FlagHit | None:
+    def _unusual_time_flag(self, transaction: Transaction, history: list[Transaction]) -> FlagHit | None:
         now = _as_aware_utc(transaction.created_at or datetime.now(timezone.utc))
         hour = now.hour
         if not (UNUSUAL_TIME_WINDOW_START_HOUR <= hour < UNUSUAL_TIME_WINDOW_END_HOUR):
             return None
 
-        history = [
+        # Precedent is looked for within the same transaction type (and only
+        # among transactions this user initiated): somebody who routinely
+        # transfers at 03:00 but has never made a night card payment has
+        # established that the hour is normal *for transferring*, and money
+        # arriving overnight from someone else establishes nothing at all.
+        precedent = [
             t
-            for t in self.transactions.list_for_user(transaction.initiator_user_id, limit=100)
-            if t.type == TransactionType.CARD_PAYMENT and t.status == TransactionStatus.COMPLETED and t.id != transaction.id
+            for t in history
+            if t.type == transaction.type
+            and t.status == TransactionStatus.COMPLETED
+            and t.initiator_user_id == transaction.initiator_user_id
+            and t.id != transaction.id
         ]
         has_night_precedent = any(
             UNUSUAL_TIME_WINDOW_START_HOUR <= _as_aware_utc(t.created_at).hour < UNUSUAL_TIME_WINDOW_END_HOUR
-            for t in history
+            for t in precedent
         )
         if has_night_precedent:
             return None
@@ -917,14 +1092,20 @@ class FraudService:
     def _hold_and_create_case(
         self, transaction: Transaction, wallet: Wallet, score: Decimal, flags: list[FlagHit]
     ) -> FraudCase:
-        wallet.available_balance -= transaction.amount
-        wallet.reserved_balance += transaction.amount
+        # The hold is always the SOURCE side: on a cross-currency transfer
+        # `transaction.amount` is what the recipient would receive in their
+        # currency, which is not what leaves this wallet. Reserving that
+        # figure would take the wrong number of the wrong currency out of the
+        # payer's balance. See _screened_amount().
+        hold_amount = _screened_amount(transaction)
+        wallet.available_balance -= hold_amount
+        wallet.reserved_balance += hold_amount
         self.transactions.add_ledger_entry(
             WalletLedgerEntry(
                 wallet_id=wallet.id,
                 transaction_id=transaction.id,
                 entry_type=LedgerEntryType.HOLD,
-                amount=transaction.amount,
+                amount=hold_amount,
                 currency=wallet.currency,
                 balance_after=wallet.available_balance,
             )
@@ -936,13 +1117,63 @@ class FraudService:
                 transaction_id=transaction.id,
                 user_id=transaction.initiator_user_id,
                 risk_score=score,
-                hold_amount=transaction.amount,
+                hold_amount=hold_amount,
             )
         )
         for code, points, description in flags:
             self.repository.add_flag(FraudFlag(fraud_case_id=case.id, code=code, points=points, description=description))
         self.db.flush()
         return case
+
+    def _credit_destination_if_transfer(self, transaction: Transaction) -> None:
+        """Completes the *other half* of an approved transfer.
+
+        A HOLD only ever moves money out of the payer's wallet. For a card
+        payment that's the whole story — the money leaves the bank. A
+        transfer between two EasyB wallets has a second leg the hold never
+        touched, so approving one without crediting the destination would
+        make the money disappear from the system. This mirrors
+        TransactionService._settle()'s CREDIT leg, including its best-effort
+        recipient notification.
+
+        Credits `transaction.amount`, not `case.hold_amount`: on a
+        cross-currency transfer the recipient gets the target-side amount at
+        the rate already priced onto the transaction when it was created, so
+        how long an admin sits on the case can't change what they receive.
+        """
+        if transaction.destination_wallet_id is None:
+            return
+
+        destination = self.wallets.get_by_id_for_update(transaction.destination_wallet_id)
+        if destination is None:
+            raise NotFoundError("Transfer destination wallet not found")
+
+        destination.available_balance += transaction.amount
+        self.transactions.add_ledger_entry(
+            WalletLedgerEntry(
+                wallet_id=destination.id,
+                transaction_id=transaction.id,
+                entry_type=LedgerEntryType.CREDIT,
+                amount=transaction.amount,
+                currency=destination.currency,
+                balance_after=destination.available_balance,
+            )
+        )
+
+        # Best-effort, same as _settle(): a notification failure must never
+        # make an otherwise-successful approval look like it failed.
+        try:
+            NotificationsService(self.db).create(
+                destination.user_id,
+                type="TRANSACTION",
+                title="Money received",
+                message=f"You received {transaction.amount} {destination.currency}.",
+                related_transaction_id=transaction.id,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to create 'money received' notification for approved transaction %s", transaction.id
+            )
 
     def approve(self, case: FraudCase, admin: User) -> FraudCase:
         if case.status != FraudCaseStatus.PENDING_REVIEW:
@@ -962,6 +1193,7 @@ class FraudService:
                 balance_after=wallet.available_balance,
             )
         )
+        self._credit_destination_if_transfer(transaction)
         transaction.status = TransactionStatus.COMPLETED
         transaction.completed_at = datetime.now(timezone.utc)
 
@@ -1034,7 +1266,9 @@ class FraudService:
             risk_score=case.risk_score,
             status=case.status,
             hold_amount=case.hold_amount,
-            hold_currency=transaction.currency,
+            # The hold sits in the SOURCE wallet's currency, which differs
+            # from transaction.currency on a cross-currency transfer.
+            hold_currency=_screened_currency(transaction),
             created_at=case.created_at,
             flag_codes=[flag.code for flag in flags],
             decided_by_admin_id=case.decided_by_admin_id,
@@ -1057,7 +1291,7 @@ class FraudService:
             risk_score=case.risk_score,
             status=case.status,
             hold_amount=case.hold_amount,
-            hold_currency=transaction.currency if transaction is not None else "RON",
+            hold_currency=_screened_currency(transaction) if transaction is not None else "RON",
             created_at=case.created_at,
             flag_codes=[flag.code for flag in flags],
         )

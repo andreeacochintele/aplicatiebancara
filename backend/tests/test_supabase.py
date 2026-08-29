@@ -5,12 +5,11 @@ dirty-tracking: a row that was only ever fetched (or just added/PATCHed with
 no further change) must not get re-PATCHed on the next flush(), which is
 what made a handful of real writes in a request balloon into dozens of
 redundant HTTP round-trips."""
-import io
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.error import HTTPError
 
+import httpx
 import pytest
 
 import app.supabase as supabase_module
@@ -378,78 +377,91 @@ def test_credit_repository_skips_installment_persistence_when_supabase_table_is_
     assert CreditRepository(session).add_installments(installments) == installments
 
 
-# ---- transient-network-failure resilience fix: a flaky hop to Supabase
-# (confirmed live — the same request ranging from <1s to a full 35s hang in
-# the same minute) used to burn the full 30s timeout on the first bad
-# attempt with no retry. request() -> _send_with_retries() now uses a
-# shorter per-attempt timeout and retries a couple of times on a transient
-# failure, but never on a real HTTPError (a genuine server answer).
+# ---- pooled-client resilience: a shared, keep-alive httpx.Client can have a
+# connection closed by the server while idle, and the client only discovers
+# that on the next request sent over it. request() -> _send() retries once,
+# and only for GET — replaying a POST/PATCH/DELETE risks a duplicated
+# INSERT (a duplicated transaction or ledger entry) if the server already
+# applied it before the connection dropped. A real HTTP error (4xx/5xx) is
+# a genuine server answer and never triggers a retry either way (see
+# request()'s status_code check, which _send() doesn't touch).
 
 
-class _FakeUrlopenResponse:
-    def __init__(self, payload: bytes) -> None:
-        self._payload = payload
+class _FakeHttpxClient:
+    """Stands in for _http_client(): .request() plays back queued results,
+    each either a fake response or a raised exception."""
 
-    def __enter__(self) -> "_FakeUrlopenResponse":
-        return self
+    def __init__(self, results: list[object]) -> None:
+        self._results = list(results)
+        self.calls: list[str] = []
 
-    def __exit__(self, *exc_info: object) -> bool:
-        return False
-
-    def read(self) -> bytes:
-        return self._payload
-
-
-@pytest.fixture()
-def no_sleep(monkeypatch):
-    monkeypatch.setattr(supabase_module.time, "sleep", lambda seconds: None)
+    def request(self, method, url, *, content=None, headers=None):
+        self.calls.append(method)
+        result = self._results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
-def test_request_retries_a_transient_timeout_then_succeeds(session, monkeypatch, no_sleep):
-    calls = {"count": 0}
+def _fake_response(status_code: int = 200, body: bytes = b'[{"id": "abc"}]') -> httpx.Response:
+    return httpx.Response(status_code, content=body, request=httpx.Request("GET", "http://fake.local"))
 
-    def fake_urlopen(request, timeout):
-        calls["count"] += 1
-        if calls["count"] < 2:
-            raise TimeoutError("simulated transient timeout")
-        return _FakeUrlopenResponse(b'[{"id": "abc"}]')
 
-    monkeypatch.setattr(supabase_module, "urlopen", fake_urlopen)
+def _use_fake_client(monkeypatch, *results: object) -> _FakeHttpxClient:
+    client = _FakeHttpxClient(list(results))
+    monkeypatch.setattr(supabase_module, "_http_client", lambda: client)
+    return client
+
+
+def test_get_retries_once_after_a_stale_pooled_connection(session, monkeypatch):
+    client = _use_fake_client(
+        monkeypatch,
+        httpx.ConnectError("stale connection"),
+        _fake_response(),
+    )
 
     result = session.request("GET", "merchants")
 
-    assert calls["count"] == 2
+    assert client.calls == ["GET", "GET"]
     assert result == [{"id": "abc"}]
 
 
-def test_request_gives_up_after_max_attempts_on_a_persistent_timeout(session, monkeypatch, no_sleep):
-    calls = {"count": 0}
+def test_get_propagates_when_the_retry_also_fails(session, monkeypatch):
+    _use_fake_client(
+        monkeypatch,
+        httpx.ConnectError("stale connection"),
+        httpx.ConnectError("still stale"),
+    )
 
-    def fake_urlopen(request, timeout):
-        calls["count"] += 1
-        raise TimeoutError("simulated persistent timeout")
-
-    monkeypatch.setattr(supabase_module, "urlopen", fake_urlopen)
-
-    with pytest.raises(RuntimeError, match="failed after"):
+    with pytest.raises(httpx.ConnectError):
         session.request("GET", "merchants")
 
-    assert calls["count"] == supabase_module._MAX_ATTEMPTS
+
+def test_write_is_not_retried_after_a_stale_pooled_connection(session, monkeypatch):
+    client = _use_fake_client(monkeypatch, httpx.ConnectError("stale connection"))
+
+    with pytest.raises(httpx.ConnectError):
+        session.request("POST", "transactions", body={})
+
+    assert client.calls == ["POST"]  # never replayed — could duplicate the write
 
 
-def test_request_does_not_retry_a_real_http_error(session, monkeypatch, no_sleep):
-    calls = {"count": 0}
+def test_timeout_is_never_retried_regardless_of_method(session, monkeypatch):
+    client = _use_fake_client(monkeypatch, httpx.TimeoutException("simulated timeout"))
 
-    def fake_urlopen(request, timeout):
-        calls["count"] += 1
-        raise HTTPError(request.full_url, 400, "Bad Request", {}, io.BytesIO(b'{"message": "bad request"}'))
+    with pytest.raises(TimeoutError):
+        session.request("GET", "merchants")
 
-    monkeypatch.setattr(supabase_module, "urlopen", fake_urlopen)
+    assert client.calls == ["GET"]  # a timeout doesn't prove the request never landed
+
+
+def test_request_does_not_retry_a_real_http_error(session, monkeypatch):
+    client = _use_fake_client(monkeypatch, _fake_response(status_code=400, body=b'{"message": "bad request"}'))
 
     with pytest.raises(RuntimeError, match="HTTP 400"):
         session.request("GET", "merchants")
 
-    assert calls["count"] == 1  # not retried — a real server answer, not a network blip
+    assert client.calls == ["GET"]  # not retried — a real server answer, not a network blip
 
 
 def test_credit_repository_skips_loan_payment_persistence_when_supabase_table_is_missing(session, monkeypatch):

@@ -1,10 +1,13 @@
 """Lightweight pre-execution fraud screen for agent-initiated transfers.
 
-Deliberately NOT the full deterministic fraud engine (app/fraud/service.py):
-that engine's HOLD / PENDING_REVIEW path and its admin approve()/reject()
-are built for card payments — approve() would debit the held source but
-never credit a transfer's destination. Wiring transfers into it is a real
-cross-module change (Dev1 + Dev4), tracked as a separate follow-up.
+Deliberately NOT the full deterministic fraud engine (app/fraud/service.py).
+That engine does now cover transfers — it scores them, holds the funds, opens
+a FraudCase and lets an admin approve/reject (approve() credits the
+destination too) — but it can only act once the transfer is actually being
+executed. This screen runs one step earlier, when the agent proposes to act,
+and blocks by parking the AgentAction in NEEDS_REVIEW so nothing executes at
+all. The two are complementary: this one prevents an agent-initiated attempt,
+the engine holds a transfer that does get attempted.
 
 For v1 the meaningful controls are the hard limits (≤ 500 RON, recipient
 must be an already-saved beneficiary, explicit human confirm). This screen

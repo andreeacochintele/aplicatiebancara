@@ -636,7 +636,8 @@
       "UNUSUAL_COUNTRY": "Verifică dacă locația dispozitivului corespunde locațiilor cunoscute ale clientului înainte de a te baza pe ea.",
       "REWARD_ABUSE_PATTERN": "Verifică plățile cu aceeași sumă către acest comerciant și separă încercările duplicate de checkout de abuzul coordonat.",
       "HIGH_VELOCITY": "Inspectează tranzacțiile imediat înainte și după această plată pentru a înțelege modelul de rafală.",
-      "UNUSUAL_TIME": "Verifică dacă această oră de tranzacție UTC este neobișnuită pentru acest client, nu doar neobișnuită în general."
+      "UNUSUAL_TIME": "Verifică dacă această oră de tranzacție UTC este neobișnuită pentru acest client, nu doar neobișnuită în general.",
+      "REPEATED_TRANSFER_PATTERN": "Verifică transferurile repetate către acest cont și confirmă că respectivul client cunoaște destinatarul și a intenționat să trimită fiecare transfer."
     },
     "couldNotLoadFraudCases": "Cazurile de fraudă nu au putut fi încărcate.",
     "couldNotLoadFraudCaseDetails": "Detaliile cazului de fraudă nu au putut fi încărcate.",

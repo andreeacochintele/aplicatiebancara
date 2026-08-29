@@ -786,7 +786,8 @@ export type FraudFlagCode =
   | "UNUSUAL_COUNTRY"
   | "REWARD_ABUSE_PATTERN"
   | "HIGH_VELOCITY"
-  | "UNUSUAL_TIME";
+  | "UNUSUAL_TIME"
+  | "REPEATED_TRANSFER_PATTERN";
 
 export interface FraudFlag {
   id: string;
