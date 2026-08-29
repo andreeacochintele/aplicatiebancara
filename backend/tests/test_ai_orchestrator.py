@@ -8,6 +8,7 @@ from openai import APIConnectionError
 
 from app.ai.client.azure_foundry_client import AzureFoundryNotConfiguredError
 from app.ai.credit import agent as credit_agent
+from app.ai.guardrails import _FALLBACK_MESSAGE
 from app.ai.orchestrator import router as orchestrator_router
 from app.ai.orchestrator import service as orchestrator_service
 from app.ai.orchestrator.followups import _parse_followups
@@ -162,6 +163,20 @@ def test_chat_routes_each_routable_intent_to_its_agent_handler(db_session, monke
     response = OrchestratorService(db_session).chat(uuid.uuid4(), "some message")
     assert response.intent == intent
     assert response.reply == AGENT_REGISTRY[intent]("some message", uuid.uuid4(), db_session)
+
+
+# ---- ensure_plain_text() backstop (ai/guardrails.py): applied once in
+# chat(), so every routed agent's reply goes through it regardless of
+# whether that agent's own system prompt was followed ----
+
+
+def test_chat_scrubs_a_raw_json_reply_from_a_routed_agent(db_session, monkeypatch):
+    monkeypatch.setattr(
+        support_agent, "_explain", lambda message, history=None: '{"risk_level": "HIGH"}'
+    )
+    monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message, history=None: IntentCategory.SUPPORT)
+    response = OrchestratorService(db_session).chat(uuid.uuid4(), "some message")
+    assert response.reply == _FALLBACK_MESSAGE
 
 
 def test_chat_route_maps_azure_api_errors_to_a_clean_503_without_leaking_details(db_session, monkeypatch):

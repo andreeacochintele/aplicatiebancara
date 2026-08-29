@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from app.ai.client.azure_foundry_client import AzureFoundryNotConfiguredError
+from app.ai.guardrails import INJECTION_GUARDRAILS, RESPONSE_FORMAT_RULE
 from app.ai.personal_finance import agent, tools
 from app.ai.tools.base import ToolContext, ToolDataUnavailableError
 from app.analytics.schemas import ForecastResponse
@@ -147,6 +148,31 @@ def test_net_worth_summary_states_a_real_converted_total_and_excludes_reserved(d
 def test_system_prompt_forbids_claiming_a_calculation_that_wasnt_actually_run():
     lowered = agent._SYSTEM_PROMPT.lower()
     assert "never claim you calculated, converted, totaled" in lowered
+
+
+# ---- shared ai/knowledge/app_overview.md + ai/guardrails.py: same static
+# knowledge and guardrails the Support Agent uses, kept clearly separate
+# from the "never state a number from the (per-request) data below" rule ----
+
+
+def test_system_prompt_includes_the_shared_app_overview_verbatim():
+    assert agent._APP_OVERVIEW in agent._SYSTEM_PROMPT
+
+
+def test_system_prompt_includes_the_shared_injection_and_format_guardrails():
+    assert INJECTION_GUARDRAILS in agent._SYSTEM_PROMPT
+    assert RESPONSE_FORMAT_RULE in agent._SYSTEM_PROMPT
+
+
+def test_system_prompt_scopes_the_never_state_a_number_rule_to_the_data_block_only():
+    # The app overview legitimately contains numbers (e.g. a tier's points
+    # multiplier) — the "never state a number" rule must read as applying
+    # only to the per-request data block, not to this general reference
+    # text, or the model would be told to contradict itself.
+    assert any(char.isdigit() for char in agent._APP_OVERVIEW)
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "never state a number from the data below" in lowered or "the data below" in lowered
+    assert "applies only to that per-request block" in lowered
 
 
 def test_get_budgets_reuses_budgets_service(db_session, seeded_user):

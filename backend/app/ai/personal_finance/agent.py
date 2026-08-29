@@ -18,15 +18,32 @@ message. That's a scope decision for this pass, not an oversight.
 memory) is passed through to the LLM explanation call as prior context —
 it never affects which tool gets picked; tool selection is keyword-only
 on the current message, same as before history existed.
+
+The system prompt also carries the shared ai/knowledge/app_overview.md
+(general tier/product knowledge — same file ai/support/agent.py uses) plus
+ai/guardrails.py's shared injection/response-format rules, clearly
+separated from the "never restate the data below" rules above: those apply
+only to the per-request data block in the user message, never to this
+general reference material. Known gap this doesn't fix: _DISPATCH below has
+no keyword path for a purely conceptual reward/tier question ("what does
+Gold get me") — it still falls through to _DEFAULT_TOOL and gets a wallet-
+balances summary appended underneath whatever the model says. Giving this
+agent's dispatch its own reward/tier route (or routing that phrasing to
+Support, which now has the same knowledge without that mismatch) is a
+follow-up, not attempted here.
 """
 import uuid
 
 from sqlalchemy.orm import Session
 
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
+from app.ai.guardrails import INJECTION_GUARDRAILS, RESPONSE_FORMAT_RULE
+from app.ai.knowledge import get_app_overview
 from app.ai.observability import log_debug, timed_event
 from app.ai.personal_finance import tools
 from app.ai.tools.base import ToolContext, ToolDataUnavailableError
+
+_APP_OVERVIEW = get_app_overview()
 
 _SYSTEM_PROMPT = (
     "You are the Personal Finance Agent of a banking assistant. You will be "
@@ -57,7 +74,15 @@ _SYSTEM_PROMPT = (
     "(what you do have is below) rather than asserting you performed a "
     "calculation you didn't.\n"
     "Always respond in the same language the user's message is written in. "
-    "If the message is ambiguous or too short to tell, default to Romanian."
+    "If the message is ambiguous or too short to tell, default to Romanian.\n\n"
+    f"{INJECTION_GUARDRAILS}\n\n"
+    f"{RESPONSE_FORMAT_RULE}\n\n"
+    "--- General app & product information (NOT this user's own data — safe to "
+    "reference freely, e.g. what a card tier generally offers. Keep this clearly "
+    "separate from the user-specific data block you'll be shown per-request: the "
+    "'never state a number from the data below' rule above applies only to that "
+    "per-request block, never to this general reference material.) ---\n"
+    f"{_APP_OVERVIEW}"
 )
 
 # First keyword match wins; order encodes priority for overlapping words
