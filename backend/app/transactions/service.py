@@ -36,8 +36,8 @@ from app.merchants.service import MerchantService
 from app.notifications.service import NotificationsService
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.repository import TransactionRepository
-from app.transactions.schemas import CardPaymentCreate, CreditCardRepaymentCreate, InternalTransferCreate
-from app.wallets.models import Wallet
+from app.transactions.schemas import CardPaymentCreate, CardTopUpCreate, CreditCardRepaymentCreate, InternalTransferCreate
+from app.wallets.models import Wallet, WalletStatus
 from app.wallets.repository import WalletRepository
 
 logger = logging.getLogger(__name__)
@@ -327,6 +327,88 @@ class TransactionService:
     def _card_is_expired(self, card) -> bool:
         now = datetime.now(timezone.utc)
         return (card.expiration_year, card.expiration_month) < (now.year, now.month)
+
+    def create_card_top_up(self, initiator_user_id: uuid.UUID, data: CardTopUpCreate) -> Transaction:
+        """Mock card top-up: credits a wallet after validating the typed card
+        details against one of the caller's own cards (the same mock_pan/
+        mock_cvv/expiration a real card payment already checks) instead of
+        accepting arbitrary input — so any card issued through the existing
+        Cards feature works here too, nothing hardcoded. Wrong PAN/CVV/expiry
+        all raise the same generic "not recognized" error, mimicking a real
+        authorization decline that never tells the caller which field was
+        wrong; only once the card is conclusively the caller's own do later
+        checks (expired/frozen/cancelled) get a specific message."""
+        if data.amount <= 0:
+            raise ValidationError("Top-up amount must be positive")
+
+        wallet = self.wallets.get_by_id_for_update(data.destination_wallet_id)
+        if wallet is None or wallet.user_id != initiator_user_id:
+            raise NotFoundError("Wallet not found")
+        if wallet.status != WalletStatus.ACTIVE:
+            raise ValidationError(f"Wallet is {wallet.status.value}, cannot receive a top-up")
+
+        normalized_input_pan = "".join(data.card_number.split())
+        card = next(
+            (
+                c
+                for c in self.cards.list_for_user(initiator_user_id)
+                if "".join(c.mock_pan.split()) == normalized_input_pan
+            ),
+            None,
+        )
+        if card is None:
+            raise ValidationError("Card not recognized")
+        if (
+            data.cvv.strip() != card.mock_cvv
+            or data.expiry_month != card.expiration_month
+            or data.expiry_year != card.expiration_year
+        ):
+            raise ValidationError("Card not recognized")
+
+        if self._card_is_expired(card):
+            card.status = CardStatus.EXPIRED
+            self.db.flush()
+            raise ValidationError("Card is expired")
+        if card.status != CardStatus.ACTIVE:
+            raise ValidationError(f"Card is {card.status.value}, top-ups require an ACTIVE card")
+
+        transaction = self.repository.add(
+            Transaction(
+                initiator_user_id=initiator_user_id,
+                source_wallet_id=None,
+                destination_wallet_id=wallet.id,
+                card_id=card.id,
+                type=TransactionType.TOP_UP,
+                status=TransactionStatus.COMPLETED,
+                amount=data.amount,
+                currency=wallet.currency,
+                description=f"Card top-up — {card.masked_pan}",
+                completed_at=datetime.now(timezone.utc),
+            )
+        )
+        wallet.available_balance += data.amount
+        self.repository.add_ledger_entry(
+            WalletLedgerEntry(
+                wallet_id=wallet.id,
+                transaction_id=transaction.id,
+                entry_type=LedgerEntryType.CREDIT,
+                amount=data.amount,
+                currency=wallet.currency,
+                balance_after=wallet.available_balance,
+            )
+        )
+        self.db.flush()
+        try:
+            self.notifications.create(
+                initiator_user_id,
+                type="TOP_UP",
+                title="Money added",
+                message=f"{data.amount} {wallet.currency} was added to your {wallet.currency} account.",
+                related_transaction_id=transaction.id,
+            )
+        except Exception:
+            logger.exception("Failed to send top-up notification for transaction %s", transaction.id)
+        return transaction
 
     def create_credit_card_repayment(self, initiator_user_id: uuid.UUID, data: CreditCardRepaymentCreate) -> Transaction:
         if data.amount <= 0:

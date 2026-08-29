@@ -38,7 +38,9 @@ def create_business_profile(
     current_user: User = Depends(require_business),
     db: Session = Depends(get_db),
 ):
-    return BusinessProfileService(db).create_profile(current_user.id, payload)
+    profile = BusinessProfileService(db).create_profile(current_user.id, payload)
+    db.commit()
+    return profile
 
 
 @router.put("/profiles/{profile_id}", response_model=BusinessProfilePublic)
@@ -48,7 +50,9 @@ def update_business_profile(
     current_user: User = Depends(require_business),
     db: Session = Depends(get_db),
 ):
-    return BusinessProfileService(db).update_profile(current_user.id, profile_id, payload)
+    profile = BusinessProfileService(db).update_profile(current_user.id, profile_id, payload)
+    db.commit()
+    return profile
 
 
 @router.put("/profiles/{profile_id}/activate", response_model=BusinessProfilePublic)
@@ -57,4 +61,6 @@ def activate_business_profile(
     current_user: User = Depends(require_business),
     db: Session = Depends(get_db),
 ):
-    return BusinessProfileService(db).set_active_profile(current_user.id, profile_id)
+    profile = BusinessProfileService(db).set_active_profile(current_user.id, profile_id)
+    db.commit()
+    return profile

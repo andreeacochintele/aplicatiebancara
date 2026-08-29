@@ -32,6 +32,16 @@ class CreditCardRepaymentCreate(BaseModel):
     amount: Decimal
 
 
+class CardTopUpCreate(BaseModel):
+    destination_wallet_id: uuid.UUID
+    card_number: str
+    cardholder_name: str
+    expiry_month: int
+    expiry_year: int
+    cvv: str
+    amount: Decimal
+
+
 class TransactionPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

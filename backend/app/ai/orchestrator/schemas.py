@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.ai.actions.schemas import ActionCard, AgentActionResultPublic
+from app.ai.actions.schemas import ActionCard, AgentActionResultPublic, DownloadAttachment
 from app.ai.orchestrator.intent import IntentCategory
 
 
@@ -30,6 +30,13 @@ class OrchestratorChatResponse(BaseModel):
     # user's Accept hits POST /ai/actions/{id}/confirm. Not persisted in
     # conversation history (same as suggested_followups).
     action_card: ActionCard | None = None
+    # Set only for a personal_finance reply that produced a real export
+    # (currently: an account statement). `url` is a ready-to-fetch REST path
+    # the frontend downloads with the user's own token — never a file the
+    # agent generated itself. Not persisted, same reasoning as action_card:
+    # the underlying export endpoint works anytime, so there's nothing to
+    # reconstruct on reopen.
+    download: DownloadAttachment | None = None
 
 
 class ConversationMessagePublic(BaseModel):

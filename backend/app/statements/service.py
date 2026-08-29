@@ -175,7 +175,7 @@ class StatementService:
 
     @staticmethod
     def to_pdf(statement: StatementPublic) -> bytes:
-        from app.core.pdf_branding import BORDER, GREEN, RED, ROW_ALT, TEXT_DARK, TEXT_SOFT, gradient_color, new_branded_pdf
+        from app.core.pdf_branding import BORDER, GREEN, RED, ROW_ALT, TEXT_DARK, TEXT_SOFT, gradient_color, new_branded_pdf, pdf_safe_text
 
         _TEXT_DARK, _TEXT_SOFT, _BORDER, _ROW_ALT, _GREEN, _RED = TEXT_DARK, TEXT_SOFT, BORDER, ROW_ALT, GREEN, RED
         _gradient_color = gradient_color
@@ -192,8 +192,12 @@ class StatementService:
         pdf.set_text_color(*_TEXT_SOFT)
         label_w = 32
         detail_lines = [
-            ("Account holder", statement.account_holder_name or "-"),
-            *([("Representative", statement.representative_name)] if statement.representative_name else []),
+            ("Account holder", pdf_safe_text(statement.account_holder_name) or "-"),
+            *(
+                [("Representative", pdf_safe_text(statement.representative_name))]
+                if statement.representative_name
+                else []
+            ),
             ("IBAN", statement.iban),
             ("Period", f"{statement.date_from} to {statement.date_to}"),
         ]
@@ -251,7 +255,7 @@ class StatementService:
                 tx.type.value.replace("_", " ").title(),
                 tx.direction,
                 f"{'+' if tx.direction == 'IN' else '-'}{tx.amount}",
-                (tx.description or "")[:42],
+                pdf_safe_text(tx.description)[:42],
             )
             pdf.set_text_color(*_TEXT_DARK)
             for col, (value, width) in enumerate(zip(row, col_widths)):

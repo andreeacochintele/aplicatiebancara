@@ -15,3 +15,47 @@ export function walletLabel(wallet: { currency: string; nickname: string | null;
   if (wallet.nickname) return `${wallet.currency} — ${wallet.nickname}`;
   return `${wallet.currency} (····${wallet.iban.slice(-4)})`;
 }
+
+/** Live-formats a card-number input as the user types: digits only, capped
+ * at 16, grouped every 4 characters — e.g. "4000123456786387" ->
+ * "4000 1234 5678 6387". Matches the spacing EasyB's own mock_pan already
+ * uses, so a copy-pasted card number from the Cards page needs no manual
+ * cleanup, but the backend re-normalizes (strips whitespace) either way. */
+export function formatCardNumberInput(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 16);
+  return digits.replace(/(.{4})/g, "$1 ").trim();
+}
+
+/** Live-formats an expiry input as the user types: digits only, capped at 4,
+ * auto-inserting "/" after the 2nd digit — e.g. "1225" -> "12/25". */
+export function formatExpiryInput(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 4);
+  return digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits;
+}
+
+/** Parses a "MM/YY" expiry display value into the full-year shape the
+ * backend expects, or null if the input isn't a complete, valid MM/YY. */
+export function parseExpiryInput(value: string): { month: number; year: number } | null {
+  const match = /^(\d{2})\/(\d{2})$/.exec(value);
+  if (!match) return null;
+  const month = Number(match[1]);
+  if (month < 1 || month > 12) return null;
+  return { month, year: 2000 + Number(match[2]) };
+}
+
+/** Saves a file-download `fetch` Response to disk client-side: reads the
+ * server-suggested filename off Content-Disposition (falling back to
+ * `fallbackName`), then drives the browser's save dialog via a throwaway
+ * object URL. Shared by every page that streams back a CSV/PDF export
+ * instead of JSON. */
+export async function downloadBlob(response: Response, fallbackName: string): Promise<void> {
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = match?.[1] ?? fallbackName;
+  link.click();
+  URL.revokeObjectURL(objectUrl);
+}

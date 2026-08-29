@@ -54,7 +54,8 @@
       "SCHEDULED_PAYMENT": "Plată programată",
       "BILL_SPLIT_PAYMENT": "Plată notă împărțită",
       "SAVINGS_CONTRIBUTION": "Contribuție economii",
-      "SAVINGS_WITHDRAWAL": "Retragere economii"
+      "SAVINGS_WITHDRAWAL": "Retragere economii",
+      "TOP_UP": "Reîncărcare"
     }
   },
   "nav": {
@@ -284,7 +285,19 @@
     "fetchingEstimate": "Se obține estimarea conversiei…",
     "noOtherActiveAccount": "Niciun alt cont activ disponibil — adaugă unul înainte de a-l închide pe acesta.",
     "closing": "Se închide…",
-    "yesCloseAccount": "Da, închide acest cont"
+    "yesCloseAccount": "Da, închide acest cont",
+    "addMoney": "Adaugă bani",
+    "addingMoney": "Se adaugă…",
+    "cardNumber": "Număr card",
+    "cardNumberPlaceholder": "1234 5678 9012 3456",
+    "cardholderName": "Numele titularului",
+    "cardholderNamePlaceholder": "Numele de pe card",
+    "cardExpiry": "Expirare (LL/AA)",
+    "cardCvv": "CVV",
+    "topUpAmount": "Sumă de adăugat",
+    "cardDetailsHint": "Folosește datele unuia dintre cardurile tale EasyB.",
+    "couldNotAddMoney": "Nu s-au putut adăuga banii",
+    "topUpSuccess": "Ai adăugat {{amount}} {{currency}} în portofel."
   },
   "statements": {
     "wallet": "Portofel",
@@ -323,7 +336,8 @@
       "CASHBACK": "Cashback",
       "CREDIT": "Credit",
       "SPLIT_BILL": "Împărțire notă de plată",
-      "SYSTEM": "Sistem"
+      "SYSTEM": "Sistem",
+      "TOP_UP": "Reîncărcare"
     },
     "unreadCount": "{{count}} necitite",
     "allCaughtUp": "Ești la zi",
@@ -497,6 +511,8 @@
     "loadOlderMessages": "Încarcă mesaje mai vechi",
     "askAbout": "Întreabă despre cheltuielile, bugetele, economiile, cashback-ul sau creditul tău.",
     "copyMessage": "Copiază mesajul",
+    "downloadStatement": "Descarcă PDF",
+    "couldNotDownload": "Fișierul nu a putut fi descărcat",
     "thinking": "Se gândește…",
     "askThePlaceholder": "Întreabă asistentul…",
     "send": "Trimite",
@@ -1447,6 +1463,7 @@
     "logout": "Deconectare",
     "business": "BUSINESS",
     "admin": "ADMIN",
+    "switchCompany": "Schimbă compania",
     "noWalletAvailable": "Niciun portofel {{currency}} disponibil.",
     "couldNotDismissNotification": "Notificarea nu a putut fi închisă",
     "couldNotPayRequest": "Cererea nu a putut fi plătită",

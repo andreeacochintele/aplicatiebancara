@@ -78,6 +78,7 @@ def test_system_prompt_contains_the_data_vs_how_it_works_heuristic():
         ("Do I have any cashback right now?", "personal_finance", IntentCategory.PERSONAL_FINANCE),
         ("What counts as a transaction?", "support", IntentCategory.SUPPORT),
         ("Show me my recent transactions", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+        ("Can I get an account statement?", "personal_finance", IntentCategory.PERSONAL_FINANCE),
     ],
 )
 def test_classify_intent_returns_the_correct_category_when_the_model_answers_correctly(
@@ -85,6 +86,22 @@ def test_classify_intent_returns_the_correct_category_when_the_model_answers_cor
 ):
     monkeypatch.setattr(intent, "get_azure_foundry_client", lambda: _FakeClient(model_reply))
     assert classify_intent(message) == expected
+
+
+# ---- account-statement misclassification: live-observed drifting to
+# support ("Nu am acces la datele tale") on a follow-up chip click inside a
+# conversation that had already gone off into support — no example anywhere
+# taught the classifier that a statement request is personal_finance's own
+# real-data territory, unlike balance/spending/savings/cashback/transactions,
+# which all already had one. Not reliably reproduced in isolation (LLM
+# classification isn't deterministic), but this is a real, verifiable gap in
+# the few-shot examples regardless of the exact trigger. ----
+
+
+def test_system_prompt_contains_the_statement_examples():
+    assert "'Can I get an account statement?' -> personal_finance" in intent._SYSTEM_PROMPT
+    assert "'Vreau un extras de cont' -> personal_finance" in intent._SYSTEM_PROMPT
+    assert "'Arata-mi extrasul de cont pentru RON' -> personal_finance" in intent._SYSTEM_PROMPT
 
 
 # ---- Romanian support: live-found while investigating a report — messages in
@@ -113,6 +130,8 @@ def test_system_prompt_contains_the_romanian_examples():
         ("Cat am in cont?", "personal_finance", IntentCategory.PERSONAL_FINANCE),
         ("Cum functioneaza bugetele?", "support", IntentCategory.SUPPORT),
         ("Arata-mi cheltuielile din ultima luna", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+        ("Vreau un extras de cont", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+        ("Arata-mi extrasul de cont pentru RON", "personal_finance", IntentCategory.PERSONAL_FINANCE),
     ],
 )
 def test_classify_intent_returns_the_correct_category_for_romanian_messages(

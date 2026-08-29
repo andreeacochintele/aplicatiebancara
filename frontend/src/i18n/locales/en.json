@@ -54,7 +54,8 @@
       "SCHEDULED_PAYMENT": "Scheduled payment",
       "BILL_SPLIT_PAYMENT": "Bill split payment",
       "SAVINGS_CONTRIBUTION": "Savings contribution",
-      "SAVINGS_WITHDRAWAL": "Savings withdrawal"
+      "SAVINGS_WITHDRAWAL": "Savings withdrawal",
+      "TOP_UP": "Top-up"
     }
   },
   "nav": {
@@ -284,7 +285,19 @@
     "fetchingEstimate": "Fetching the conversion estimate…",
     "noOtherActiveAccount": "No other active account available — add one first before closing this one.",
     "closing": "Closing…",
-    "yesCloseAccount": "Yes, close this account"
+    "yesCloseAccount": "Yes, close this account",
+    "addMoney": "Add money",
+    "addingMoney": "Adding…",
+    "cardNumber": "Card number",
+    "cardNumberPlaceholder": "1234 5678 9012 3456",
+    "cardholderName": "Cardholder name",
+    "cardholderNamePlaceholder": "Name on card",
+    "cardExpiry": "Expiry (MM/YY)",
+    "cardCvv": "CVV",
+    "topUpAmount": "Amount to add",
+    "cardDetailsHint": "Use the details of one of your own EasyB cards.",
+    "couldNotAddMoney": "Could not add money",
+    "topUpSuccess": "Added {{amount}} {{currency}} to your wallet."
   },
   "statements": {
     "wallet": "Wallet",
@@ -323,7 +336,8 @@
       "CASHBACK": "Cashback",
       "CREDIT": "Credit",
       "SPLIT_BILL": "Split bill",
-      "SYSTEM": "System"
+      "SYSTEM": "System",
+      "TOP_UP": "Top-up"
     },
     "unreadCount": "{{count}} unread",
     "allCaughtUp": "All caught up",
@@ -497,6 +511,8 @@
     "loadOlderMessages": "Load older messages",
     "askAbout": "Ask about your spending, budgets, savings, cashback, or credit.",
     "copyMessage": "Copy message",
+    "downloadStatement": "Download PDF",
+    "couldNotDownload": "Could not download the file",
     "thinking": "Thinking…",
     "askThePlaceholder": "Ask the assistant…",
     "send": "Send",
@@ -1439,6 +1455,7 @@
     "logout": "Logout",
     "business": "BUSINESS",
     "admin": "ADMIN",
+    "switchCompany": "Switch company",
     "noWalletAvailable": "No {{currency}} wallet available.",
     "couldNotDismissNotification": "Could not dismiss notification",
     "couldNotPayRequest": "Could not pay request",

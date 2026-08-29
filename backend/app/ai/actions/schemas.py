@@ -32,6 +32,18 @@ class PhoneTransferConfirmCard(BaseModel):
 ActionCard = PhoneTransferConfirmCard
 
 
+class DownloadAttachment(BaseModel):
+    """A file the frontend can fetch and save. `url` always points at an
+    existing, already-authenticated REST endpoint (e.g. GET
+    /statements/export) that the agent's tool call already used to produce
+    the data being summarized — the agent never generates a file itself,
+    only hands back a reference to the same deterministic export any page
+    can already trigger. Relative to the API base, same as every other
+    frontend apiRequest() path."""
+
+    url: str
+
+
 @dataclass
 class AgentResult:
     """What an orchestrator-registered agent may return instead of a bare
@@ -40,6 +52,7 @@ class AgentResult:
 
     reply: str
     action_card: ActionCard | None = None
+    download: DownloadAttachment | None = None
 
 
 class AgentActionResultPublic(BaseModel):

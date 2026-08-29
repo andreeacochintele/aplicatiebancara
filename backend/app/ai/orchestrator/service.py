@@ -110,6 +110,7 @@ class OrchestratorService:
         history = self._load_history(conversation.id)
 
         action_card = None
+        download = None
         try:
             intent = classify_intent(message, history)
 
@@ -123,7 +124,7 @@ class OrchestratorService:
                 log_event("agent_dispatched", agent=intent.value, intent=intent.value)
                 agent_output = AGENT_REGISTRY[intent](message, user_id, self.db, history)
                 if isinstance(agent_output, AgentResult):
-                    reply, action_card = agent_output.reply, agent_output.action_card
+                    reply, action_card, download = agent_output.reply, agent_output.action_card, agent_output.download
                 else:
                     reply = agent_output
         except Exception as exc:
@@ -163,6 +164,7 @@ class OrchestratorService:
             conversation_id=conversation.id,
             suggested_followups=suggested_followups,
             action_card=action_card,
+            download=download,
         )
 
     def create_conversation(self, user_id: uuid.UUID) -> Conversation:
