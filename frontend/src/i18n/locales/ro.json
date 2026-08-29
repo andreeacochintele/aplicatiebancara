@@ -1463,6 +1463,7 @@
     "logout": "Deconectare",
     "business": "BUSINESS",
     "admin": "ADMIN",
+    "switchCompany": "Schimbă compania",
     "noWalletAvailable": "Niciun portofel {{currency}} disponibil.",
     "couldNotDismissNotification": "Notificarea nu a putut fi închisă",
     "couldNotPayRequest": "Cererea nu a putut fi plătită",

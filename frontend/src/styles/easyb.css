@@ -2379,6 +2379,26 @@
   filter: none;
 }
 
+/* .easyb-shell .tag--outline already outranks .easyb-shell button on
+   specificity (two classes beats one class + one element), so turning this
+   tag into a button for the company-switch click doesn't need a repaint fix
+   like .assistant-download above — this just adds the hover/cursor
+   affordance a passive label didn't need. */
+.easyb-shell .header__company-switch {
+  background: transparent;
+  border: 1px solid var(--easyb-border);
+  color: var(--easyb-text-soft);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.easyb-shell .header__company-switch:hover {
+  background: var(--easyb-accent-soft);
+  border-color: var(--easyb-accent);
+  color: var(--easyb-accent-dark);
+  filter: none;
+}
+
 .easyb-shell .assistant-action-card {
   background: var(--easyb-surface-alt);
   border-color: var(--easyb-border);

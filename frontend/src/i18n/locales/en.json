@@ -1455,6 +1455,7 @@
     "logout": "Logout",
     "business": "BUSINESS",
     "admin": "ADMIN",
+    "switchCompany": "Switch company",
     "noWalletAvailable": "No {{currency}} wallet available.",
     "couldNotDismissNotification": "Could not dismiss notification",
     "couldNotPayRequest": "Could not pay request",
