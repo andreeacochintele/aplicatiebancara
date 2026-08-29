@@ -825,8 +825,15 @@ class TransactionFolderService:
             raise ValidationError("Only completed transactions can be added to a folder")
         if transaction.type not in FOLDER_ELIGIBLE_TRANSACTION_TYPES:
             raise ValidationError("Only payments and cashback can be added to a folder")
-        if self.repository.get_item(folder.id, transaction_id) is not None:
-            raise ConflictError("Transaction is already in this folder")
+        # One folder per transaction. Two folders holding the same payment
+        # each count it toward their own total and can each be split
+        # independently, so settling one leaves the other quietly claiming
+        # money that has already been accounted for.
+        existing = self.repository.get_item_for_transaction(transaction_id)
+        if existing is not None:
+            if existing.folder_id == folder.id:
+                raise ConflictError("Transaction is already in this folder")
+            raise ConflictError("Transaction is already in another folder — remove it from that one first")
         self.repository.add_item(TransactionFolderItem(folder_id=folder.id, transaction_id=transaction_id))
         return self._to_public(folder)
 

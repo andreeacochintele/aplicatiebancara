@@ -221,7 +221,7 @@ class ActionService:
                     source_wallet_id=source.id,
                     destination_wallet_id=destination.id,
                     amount=amount,
-                    description=f"Transfer către {beneficiary.name} (asistent AI)",
+                    description=f"Transfer către {beneficiary.name} (asistent Nova)",
                 ),
             )
         except DomainError as exc:

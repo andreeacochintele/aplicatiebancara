@@ -314,7 +314,40 @@ class SupabaseRestSession:
         for column in sa_inspect(type(model)).columns:
             if getattr(model, column.name) is None and column.default is not None:
                 default = column.default.arg
-                if not callable(default):
+                if callable(default):
+                    # SQLAlchemy applies Python-side callable defaults
+                    # (default=utcnow, default=uuid.uuid4) itself at flush
+                    # time, so the ORM path always has them populated.
+                    # Skipping them here left the in-memory object holding
+                    # None while the INSERT still succeeded (the value is
+                    # omitted from the payload, so the column's
+                    # server_default fills it). Because _hydrate() hands back
+                    # the tracked instance rather than the row just fetched,
+                    # that None survived into response serialization — a
+                    # write that worked, reported to the caller as a failure
+                    # (transaction_folder_items.added_at did exactly this).
+                    #
+                    # `.arg` is SQLAlchemy's wrapper, not the function that
+                    # was passed to `default=`: it always takes an execution
+                    # context, and for a plain zero-argument default it just
+                    # ignores it. (The wrapper keeps the original __name__,
+                    # so it looks zero-argument under inspection.) None is
+                    # enough of a context for those; a default that really
+                    # reads the context can't be resolved outside a live
+                    # SQLAlchemy INSERT, so leave it to the server default
+                    # exactly as before.
+                    try:
+                        value = default(None)
+                    except Exception:
+                        logger.debug(
+                            "Leaving %s.%s to its server default: its Python-side default needs a live "
+                            "SQLAlchemy execution context",
+                            self._table_name(type(model)),
+                            column.name,
+                        )
+                        continue
+                    setattr(model, column.name, value)
+                else:
                     setattr(model, column.name, default)
         now = datetime.now(timezone.utc)
         for field in ("created_at", "updated_at", "last_activity_at", "first_seen_at", "last_seen_at"):

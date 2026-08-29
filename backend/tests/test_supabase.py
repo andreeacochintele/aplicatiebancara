@@ -17,6 +17,7 @@ from app.credit.models import CreditDocument, CreditDocumentPurpose, CreditDocum
 import app.credit.repository as credit_repository_module
 from app.credit.repository import CreditRepository
 from app.merchants.models import Merchant, MerchantStatus
+from app.payments.models import TransactionFolderItem
 from app.fraud.models import FraudCase
 from app.fraud.repository import FraudRepository
 from app.supabase import SupabaseRestSession
@@ -483,3 +484,55 @@ def test_credit_repository_skips_loan_payment_persistence_when_supabase_table_is
     monkeypatch.setattr(session, "add", fake_add)
 
     assert CreditRepository(session).add_loan_payment(payment) is payment
+
+
+# ---- Python-side callable defaults (default=utcnow, default=uuid.uuid4).
+# SQLAlchemy resolves these itself at flush time, so the ORM path always has
+# them populated. The shim used to skip every callable default and patch over
+# the gap with a hardcoded list of common timestamp column names, which meant
+# any differently-named column (transaction_folder_items.added_at) stayed None
+# in memory while its INSERT still succeeded via the column's server_default.
+# _hydrate() then handed the tracked instance — still holding None — straight
+# back to response serialization, so a write that had actually worked was
+# reported to the caller as a failure.
+
+
+def test_ensure_defaults_resolves_a_callable_timestamp_default(session):
+    item = TransactionFolderItem(folder_id=uuid.uuid4(), transaction_id=uuid.uuid4())
+
+    session._ensure_defaults(item)
+
+    assert isinstance(item.added_at, datetime)
+    assert item.id is not None
+
+
+def test_an_added_row_carries_its_callable_defaults_into_the_insert(session, record_bodies):
+    item = TransactionFolderItem(folder_id=uuid.uuid4(), transaction_id=uuid.uuid4())
+
+    session.add(item)
+
+    method, table, body = record_bodies[-1]
+    assert (method, table) == ("POST", "transaction_folder_items")
+    assert body["added_at"] is not None
+
+
+def test_a_row_fetched_back_after_add_still_has_its_timestamp(session, monkeypatch):
+    """The end-to-end shape of the bug: add, then read the folder's items to
+    build the response. _hydrate returns the tracked instance, so whatever
+    add() left on it is what the caller serializes."""
+    item = TransactionFolderItem(folder_id=uuid.uuid4(), transaction_id=uuid.uuid4())
+    monkeypatch.setattr(session, "request", lambda method, table, **kwargs: None)
+    session.add(item)
+
+    # PostgREST echoes the server-filled row back on the subsequent GET.
+    row = {
+        "id": str(item.id),
+        "folder_id": str(item.folder_id),
+        "transaction_id": str(item.transaction_id),
+        "added_at": datetime.now(timezone.utc).isoformat(),
+    }
+    monkeypatch.setattr(session, "request", lambda method, table, **kwargs: [row])
+    [fetched] = session.fetch_many(TransactionFolderItem, {"folder_id": f"eq.{item.folder_id}"})
+
+    assert fetched is item  # tracked-instance reuse, unchanged behaviour
+    assert fetched.added_at is not None  # ...but no longer None

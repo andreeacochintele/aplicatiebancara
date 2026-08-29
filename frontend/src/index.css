@@ -1496,10 +1496,15 @@ th {
   gap: 0.2rem;
 }
 
-.folder-choice small,
-.folder-readonly-card__header span,
-.folder-transaction-row span {
+.folder-choice small {
   color: var(--color-text-muted);
+}
+
+/* The folder's name and description carry the strong treatment; the rows
+   inside it are stepped back (see .folder-transaction-row below). */
+.folder-readonly-card__header span {
+  color: var(--color-text);
+  font-weight: 500;
 }
 
 .folder-choice--active {
@@ -1549,6 +1554,11 @@ th {
   flex-wrap: wrap;
 }
 
+.folder-readonly-card__title strong {
+  font-size: 1.02rem;
+  color: var(--color-text);
+}
+
 .folder-readonly-card__actions {
   display: flex;
   flex-direction: row;
@@ -1590,7 +1600,9 @@ th {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 1rem;
   align-items: center;
-  padding: 0.55rem 0;
+  /* Indented past the folder's name/description so the rows read as being
+     inside the folder rather than as siblings of its header. */
+  padding: 0.55rem 0 0.55rem 1.9rem;
   border-top: 1px solid var(--color-divider);
 }
 
@@ -1599,6 +1611,17 @@ th {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+}
+
+/* Stepped back behind the folder's own name and description above. */
+.folder-transaction-row span {
+  color: var(--color-text-muted);
+}
+
+.folder-transaction-row strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 .transaction-split-request {
