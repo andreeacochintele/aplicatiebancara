@@ -70,12 +70,20 @@ from sqlalchemy.orm import Session
 from app.analytics.schemas import SpendingByTypeResponse
 from app.analytics.service import AnalyticsService
 from app.auth.models import UserDevice
-from app.cards.models import CardStatus, CardType
+from app.cards.models import Card, CardFreezeReason, CardStatus, CardType
 from app.cards.repository import CardRepository
+from app.cards.service import CardService
 from app.core.exceptions import ConflictError, NotFoundError
 from app.fraud.models import FraudCase, FraudCaseStatus, FraudFlag, FraudFlagCode
 from app.fraud.repository import FraudRepository
-from app.fraud.schemas import FraudAgentAnalysisPublic, FraudCaseDetail, FraudCaseSummary, FraudFlagPublic, FraudRiskLevel
+from app.fraud.schemas import (
+    FraudAgentAnalysisPublic,
+    FraudCaseDetail,
+    FraudCaseSummary,
+    FraudFlagPublic,
+    FraudRiskLevel,
+    FrozenCardPublic,
+)
 from app.merchants.repository import MerchantRepository
 from app.merchants.service import MerchantService
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
@@ -157,6 +165,17 @@ UNUSUAL_TIME_POINTS = Decimal("10")
 # as more flags stack — see _combine_score() for the exact formula.
 MULTI_FLAG_BONUS_PER_EXTRA_FLAG = Decimal("0.15")
 MULTI_FLAG_BONUS_MAX = Decimal("0.40")
+
+# Fixed, hardcoded reminder attached to FraudCaseDetail (fraud/schemas.py)
+# whenever a card is frozen with CardFreezeReason.FRAUD_HOLD for this case —
+# see to_detail() below. Deliberately NOT part of the Fraud Investigation
+# Agent's prompt/output (ai/fraud/agent.py): this text must read identically
+# on every case regardless of what the LLM says, so it's a plain Python
+# constant the service attaches itself, never model-generated content.
+CARD_ACTIVATION_SAFETY_NOTICE = (
+    "You may only activate this card if you've verified the customer's identity and confirmed "
+    "their data is safe, after fully reviewing the report. The final decision is yours."
+)
 
 FlagHit = tuple[FraudFlagCode, Decimal, str]
 
@@ -941,6 +960,15 @@ class FraudService:
         )
         for code, points, description in flags:
             self.repository.add_flag(FraudFlag(fraud_case_id=case.id, code=code, points=points, description=description))
+
+        # Deterministic step, not an LLM decision (architecture.md §44 rule
+        # 3 / CLAUDE.md §12): freezing the card that made the flagged
+        # payment happens here, in the same rule engine that computed the
+        # score, at the same moment the wallet hold is placed. Only an
+        # admin can clear it afterwards, via activate_card() below.
+        if transaction.card_id is not None:
+            CardService(self.db).freeze_for_fraud_hold(transaction.card_id)
+
         self.db.flush()
         return case
 
@@ -1018,6 +1046,35 @@ class FraudService:
             raise NotFoundError("Fraud case not found")
         return case
 
+    def get_frozen_card_for_case(self, case: FraudCase) -> Card | None:
+        """The card behind this case's transaction, only if it's still
+        frozen with CardFreezeReason.FRAUD_HOLD — None once it's been
+        reactivated, or if the flagged transaction wasn't a card payment at
+        all. Backs both the admin panel's "Activate card" button (to_detail
+        below) and activate_card()'s own guard."""
+        transaction = self.transactions.get_by_id(case.transaction_id)
+        if transaction is None or transaction.card_id is None:
+            return None
+        card = self.cards.get_by_id(transaction.card_id)
+        if card is None or card.status != CardStatus.FROZEN or card.freeze_reason != CardFreezeReason.FRAUD_HOLD:
+            return None
+        return card
+
+    def activate_card(self, case: FraudCase, admin: User) -> Card:
+        """Clears a fraud-triggered card freeze — always a separate, manual
+        admin action from approve()/reject() above (CLAUDE.md §13: the
+        admin decides, never the AI, and never automatically). Deliberately
+        requires the flagged transaction to already be decided: reactivating
+        the card while the case is still PENDING_REVIEW would let the
+        customer place new payments on it before anyone has ruled on the
+        payment that triggered the hold in the first place."""
+        if case.status == FraudCaseStatus.PENDING_REVIEW:
+            raise ConflictError("Decide the flagged transaction (approve or reject) before reactivating the card")
+        card = self.get_frozen_card_for_case(case)
+        if card is None:
+            raise NotFoundError("No card with an active fraud hold is linked to this case")
+        return CardService(self.db).activate_card_after_fraud_hold(card.id, admin.id)
+
     def list_pending(self) -> list[FraudCaseSummary]:
         return [self._to_summary(case) for case in self.repository.list_pending()]
 
@@ -1027,6 +1084,7 @@ class FraudService:
         agent_analysis = (
             FraudAgentAnalysisPublic.model_validate_json(case.agent_analysis) if case.agent_analysis else None
         )
+        frozen_card = self.get_frozen_card_for_case(case)
         return FraudCaseDetail(
             id=case.id,
             transaction_id=case.transaction_id,
@@ -1045,6 +1103,17 @@ class FraudService:
             transaction_description=transaction.description,
             transaction_created_at=transaction.created_at,
             agent_analysis=agent_analysis,
+            frozen_card=(
+                FrozenCardPublic(
+                    id=frozen_card.id,
+                    last_four=frozen_card.last_four,
+                    masked_pan=frozen_card.masked_pan,
+                    frozen_at=frozen_card.frozen_at,
+                )
+                if frozen_card is not None
+                else None
+            ),
+            card_hold_notice=CARD_ACTIVATION_SAFETY_NOTICE if frozen_card is not None else None,
         )
 
     def _to_summary(self, case: FraudCase) -> FraudCaseSummary:

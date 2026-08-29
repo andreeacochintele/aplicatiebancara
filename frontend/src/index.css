@@ -3315,6 +3315,45 @@ th {
   background: var(--color-accent-soft);
 }
 
+.fraud-card-hold {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+}
+
+.fraud-card-hold div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.fraud-card-hold strong {
+  color: var(--color-text);
+}
+
+.fraud-card-hold p {
+  margin: 0.15rem 0 0;
+  max-width: 46ch;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.fraud-card-hold button {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  .fraud-card-hold {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 .fraud-agent-summary strong {
   color: var(--color-text);
 }

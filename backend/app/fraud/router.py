@@ -8,6 +8,12 @@ makes or overrides that decision, it only adds an advisory qualitative
 read the admin can see alongside the unchanged deterministic risk_score.
 /investigate is on-demand only — nothing here calls it automatically when a
 case is created.
+
+The card used for the flagged payment (if any) is frozen automatically at
+the same time the case is created (FraudService._hold_and_create_case ->
+CardService.freeze_for_fraud_hold) — /activate-card below is the only way
+to reverse that, and is itself gated on the case having already been
+decided via /decision first.
 """
 import uuid
 
@@ -65,6 +71,32 @@ def decide_fraud_case(
         entity_id=case.id,
         old_data={"status": old_status},
         new_data={"status": case.status.value},
+    )
+    db.commit()
+    return service.to_detail(case)
+
+
+@router.post("/cases/{case_id}/activate-card", response_model=FraudCaseDetail)
+def activate_card(
+    case_id: uuid.UUID,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> FraudCaseDetail:
+    """Reverses the fraud engine's automatic card freeze for this case
+    (fraud/service.py's _hold_and_create_case) — always a manual, admin-only
+    action, never automatic (CLAUDE.md §13). Raises if the flagged
+    transaction hasn't been decided yet, or if there's no card with an
+    active fraud hold linked to this case, rather than silently no-op'ing."""
+    service = FraudService(db)
+    case = service.get_case(case_id)
+    card = service.activate_card(case, admin)
+    AuditService(db).log_action(
+        admin.id,
+        action="ACTIVATE_CARD",
+        entity_type="CARD",
+        entity_id=card.id,
+        old_data={"status": "FROZEN", "freeze_reason": "FRAUD_HOLD"},
+        new_data={"status": "ACTIVE", "freeze_reason": None, "fraud_case_id": str(case.id)},
     )
     db.commit()
     return service.to_detail(case)

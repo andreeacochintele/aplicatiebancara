@@ -5,11 +5,11 @@ from decimal import Decimal
 import pytest
 
 from app.auth.models import SessionStatus, UserDevice, UserSession
-from app.cards.models import CardStatus, CardType
+from app.cards.models import CardFreezeReason, CardStatus, CardType
 from app.cards.schemas import CardCreate
 from app.cards.service import CardService
 from app.core.enums import UserRole
-from app.core.exceptions import ConflictError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.fraud.models import FraudCase, FraudCaseStatus, FraudFlagCode
 from app.fraud.schemas import FraudRiskLevel
 from app.fraud.service import FraudService
@@ -352,7 +352,7 @@ def test_reward_abuse_pattern_ignores_same_amount_payments_in_a_different_curren
 
 
 def test_create_card_payment_holds_funds_when_score_crosses_threshold(db_session, seeded_user):
-    transaction, wallet, _card, case = _create_blocked_payment(db_session, seeded_user)
+    transaction, wallet, card, case = _create_blocked_payment(db_session, seeded_user)
 
     assert transaction.status == TransactionStatus.PENDING_REVIEW
     assert transaction.fraud_score == Decimal("109.25")
@@ -366,6 +366,14 @@ def test_create_card_payment_holds_funds_when_score_crosses_threshold(db_session
     assert case.risk_score == Decimal("109.25")
     assert case.hold_amount == Decimal("500.00")
     assert {flag.code for flag in case.flags} == {FraudFlagCode.NEW_DEVICE, FraudFlagCode.HIGH_AMOUNT}
+
+    # Deterministic, not an LLM decision (CLAUDE.md §12/§13): the card used
+    # for the flagged payment is frozen in the same rule-engine step that
+    # creates the case, not decided or triggered by the Fraud Investigation
+    # Agent.
+    assert card.status == CardStatus.FROZEN
+    assert card.freeze_reason == CardFreezeReason.FRAUD_HOLD
+    assert card.frozen_at is not None
 
 
 def test_approve_debits_reserved_funds_completes_transaction_and_consumes_one_time_card(db_session, seeded_user):
@@ -453,6 +461,76 @@ def test_deciding_an_already_decided_case_raises_conflict(db_session, seeded_use
 
     with pytest.raises(ConflictError):
         service.reject(case, admin)
+
+
+# ---- activate_card(): reverses the automatic fraud-hold freeze, always a
+# separate manual admin action, gated on the flagged transaction having
+# already been decided (CLAUDE.md §13: admin decides, never automatic) ----
+
+
+def test_activate_card_requires_the_case_to_be_decided_first(db_session, seeded_user):
+    _transaction, _wallet, card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    service = FraudService(db_session)
+
+    with pytest.raises(ConflictError):
+        service.activate_card(case, admin)
+
+    db_session.refresh(card)
+    assert card.status == CardStatus.FROZEN
+    assert card.freeze_reason == CardFreezeReason.FRAUD_HOLD
+
+
+def test_activate_card_reactivates_the_card_once_the_case_is_decided(db_session, seeded_user):
+    _transaction, _wallet, card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    service = FraudService(db_session)
+    service.reject(case, admin)
+
+    reactivated = service.activate_card(case, admin)
+
+    assert reactivated.id == card.id
+    assert reactivated.status == CardStatus.ACTIVE
+    assert reactivated.freeze_reason is None
+    assert reactivated.frozen_by_admin_id == admin.id
+
+
+def test_activate_card_raises_when_no_frozen_card_is_linked_to_the_case(db_session, seeded_user):
+    """Avoids a silent no-op: once the card's already been reactivated,
+    calling activate_card again on the same case must fail loudly, not
+    quietly succeed a second time."""
+    _transaction, _wallet, _card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    service = FraudService(db_session)
+    service.reject(case, admin)
+    service.activate_card(case, admin)
+
+    with pytest.raises(NotFoundError):
+        service.activate_card(case, admin)
+
+
+def test_to_detail_exposes_the_frozen_card_and_fixed_safety_notice(db_session, seeded_user):
+    from app.fraud.service import CARD_ACTIVATION_SAFETY_NOTICE
+
+    _transaction, _wallet, card, case = _create_blocked_payment(db_session, seeded_user)
+    service = FraudService(db_session)
+
+    detail = service.to_detail(case)
+    assert detail.frozen_card is not None
+    assert detail.frozen_card.id == card.id
+    assert detail.frozen_card.masked_pan == card.masked_pan
+    # Fixed text, not model-generated (CLAUDE.md §14/ai/fraud/agent.py rules)
+    # — present even though no investigation has ever run for this case.
+    assert detail.card_hold_notice == CARD_ACTIVATION_SAFETY_NOTICE
+    assert detail.agent_analysis is None
+
+    admin = _admin(db_session)
+    service.reject(case, admin)
+    service.activate_card(case, admin)
+
+    reactivated_detail = service.to_detail(case)
+    assert reactivated_detail.frozen_card is None
+    assert reactivated_detail.card_hold_notice is None
 
 
 def test_list_pending_and_detail_expose_flags(db_session, seeded_user):
@@ -812,3 +890,89 @@ def test_get_case_endpoint_returns_cached_agent_analysis_without_rerunning_agent
     body = response.json()
     assert body["agent_analysis"]["risk_level"] == "LOW"
     assert body["agent_analysis"]["explanation"] == "Consistent with this user's prior activity."
+
+
+# ---- POST /fraud/cases/{id}/activate-card: admin-only, reverses the
+# automatic fraud-hold freeze, gated on the case already being decided ----
+
+
+def test_activate_card_endpoint_rejects_non_admin(client, db_session, seeded_user):
+    _transaction, _wallet, _card, case = _create_blocked_payment(db_session, seeded_user)
+
+    login = client.post("/api/v1/auth/login", json={"email": "fraud-user@example.com", "password": "Sup3rSecret!"})
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.post(
+        f"/api/v1/fraud/cases/{case.id}/activate-card", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 403
+
+
+def test_activate_card_endpoint_rejects_a_still_pending_case(client, db_session, seeded_user):
+    _transaction, _wallet, card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    admin.role = UserRole.ADMIN
+
+    login = client.post("/api/v1/auth/login", json={"email": "fraud-admin@example.com", "password": "Sup3rSecret!"})
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.post(
+        f"/api/v1/fraud/cases/{case.id}/activate-card", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 409
+    db_session.refresh(card)
+    assert card.status == CardStatus.FROZEN
+
+
+def test_activate_card_endpoint_reactivates_card_and_writes_audit_log(client, db_session, seeded_user):
+    _transaction, _wallet, card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    admin.role = UserRole.ADMIN
+    FraudService(db_session).reject(case, admin)
+
+    login = client.post("/api/v1/auth/login", json={"email": "fraud-admin@example.com", "password": "Sup3rSecret!"})
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.post(
+        f"/api/v1/fraud/cases/{case.id}/activate-card", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["frozen_card"] is None
+    assert body["card_hold_notice"] is None
+
+    db_session.refresh(card)
+    assert card.status == CardStatus.ACTIVE
+    assert card.freeze_reason is None
+    assert card.frozen_by_admin_id == admin.id
+
+    from app.audit.models import AdminAuditLog
+
+    log = (
+        db_session.query(AdminAuditLog)
+        .filter_by(entity_id=card.id, action="ACTIVATE_CARD", entity_type="CARD")
+        .one()
+    )
+    assert log.admin_user_id == admin.id
+    assert log.new_data["fraud_case_id"] == str(case.id)
+
+
+def test_activate_card_endpoint_returns_error_when_no_card_to_activate(client, db_session, seeded_user):
+    """Avoids a silent no-op over HTTP too: reactivating twice must surface
+    a clear error on the second call, not a quiet 200."""
+    _transaction, _wallet, _card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    admin.role = UserRole.ADMIN
+    FraudService(db_session).reject(case, admin)
+
+    login = client.post("/api/v1/auth/login", json={"email": "fraud-admin@example.com", "password": "Sup3rSecret!"})
+    token = login.json()["tokens"]["access_token"]
+
+    first = client.post(f"/api/v1/fraud/cases/{case.id}/activate-card", headers={"Authorization": f"Bearer {token}"})
+    assert first.status_code == 200
+
+    second = client.post(f"/api/v1/fraud/cases/{case.id}/activate-card", headers={"Authorization": f"Bearer {token}"})
+    assert second.status_code == 404

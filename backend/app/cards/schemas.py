@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.cards.models import CardStatus, CardTier, CardType
+from app.cards.models import CardFreezeReason, CardStatus, CardTier, CardType
 
 
 class CardCreate(BaseModel):
@@ -42,6 +42,8 @@ class CardPublic(BaseModel):
     type: CardType
     tier: CardTier | None
     status: CardStatus
+    freeze_reason: CardFreezeReason | None = None
+    frozen_at: datetime | None = None
     masked_pan: str
     last_four: str
     mock_pan: str

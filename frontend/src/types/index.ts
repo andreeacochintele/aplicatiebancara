@@ -283,6 +283,7 @@ export interface TransactionFolder {
 export type CardType = "DEBIT" | "CREDIT" | "ONE_TIME";
 export type CardTier = "REGULAR" | "GOLD" | "PLATINUM";
 export type CardStatus = "ACTIVE" | "FROZEN" | "EXPIRED" | "CANCELLED";
+export type CardFreezeReason = "USER_REQUESTED" | "FRAUD_HOLD";
 
 export interface Card {
   id: string;
@@ -291,6 +292,8 @@ export interface Card {
   type: CardType;
   tier: CardTier | null;
   status: CardStatus;
+  freeze_reason: CardFreezeReason | null;
+  frozen_at: string | null;
   masked_pan: string;
   last_four: string;
   has_pin: boolean;
@@ -826,10 +829,19 @@ export interface FraudCaseSummary {
   flag_codes: FraudFlagCode[];
 }
 
+export interface FrozenCard {
+  id: string;
+  last_four: string;
+  masked_pan: string;
+  frozen_at: string | null;
+}
+
 export interface FraudCaseDetail extends FraudCaseSummary {
   decided_by_admin_id: string | null;
   decided_at: string | null;
   flags: FraudFlag[];
+  frozen_card: FrozenCard | null;
+  card_hold_notice: string | null;
   transaction_amount: string;
   transaction_currency: string;
   transaction_description: string | null;

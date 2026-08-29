@@ -67,6 +67,14 @@ carry fees (e.g. foreign-currency, ATM) that depend on the card product —
 this assistant directs users to the app/tariff information for exact
 amounts rather than guessing one.
 
+A card can end up frozen two different ways: the user freezing it
+themselves (reversible any time with the app's own unfreeze option), or
+the system automatically placing it on a security hold tied to a payment
+under fraud review (see the fraud-awareness knowledge above) — that
+second kind cannot be undone with the app's own unfreeze button; only an
+admin can clear it once the review is done, which is why the app tells
+the user to contact support if they try.
+
 ## Notifications
 The app sends notifications for things like transactions, payment
 reminders, cashback, and credit updates.

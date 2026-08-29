@@ -6,10 +6,10 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.cards.models import Card, CardPaymentPreferences, CardStatus, CardTier, CardType, CreditCardAccount
+from app.cards.models import Card, CardFreezeReason, CardPaymentPreferences, CardStatus, CardTier, CardType, CreditCardAccount
 from app.cards.repository import CardRepository
 from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate, CardSensitiveDetails
-from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.exceptions import AuthorizationError, ConflictError, NotFoundError, ValidationError
 from app.core.security import hash_password, verify_password
 from app.database import utcnow
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
@@ -313,6 +313,8 @@ class CardService:
         if card.status != CardStatus.ACTIVE:
             raise ValidationError("Only active cards can be frozen")
         card.status = CardStatus.FROZEN
+        card.freeze_reason = CardFreezeReason.USER_REQUESTED
+        card.frozen_at = utcnow()
         self.db.flush()
         return card
 
@@ -322,7 +324,47 @@ class CardService:
             return card
         if card.status != CardStatus.FROZEN:
             raise ValidationError("Only frozen cards can be unfrozen")
+        if card.freeze_reason == CardFreezeReason.FRAUD_HOLD:
+            raise AuthorizationError("Your card is frozen for security reasons. Please contact support.")
         card.status = CardStatus.ACTIVE
+        card.freeze_reason = None
+        card.frozen_at = None
+        self.db.flush()
+        return card
+
+    def freeze_for_fraud_hold(self, card_id: uuid.UUID) -> Card:
+        """Deterministic, system-triggered freeze — called only from
+        FraudService when a payment on this card crosses the fraud
+        threshold (see fraud/service.py's module docstring: fraud scoring
+        and its consequences are computed in code, never decided by the
+        LLM). Not a `get_for_user` lookup: the fraud engine acts on the
+        card as the system, not on behalf of the cardholder, so there is no
+        acting user_id to scope the read to."""
+        card = self.repository.get_by_id(card_id)
+        if card is None:
+            raise NotFoundError("Card not found")
+        card.status = CardStatus.FROZEN
+        card.freeze_reason = CardFreezeReason.FRAUD_HOLD
+        card.frozen_at = utcnow()
+        self.db.flush()
+        return card
+
+    def activate_card_after_fraud_hold(self, card_id: uuid.UUID, admin_id: uuid.UUID) -> Card:
+        """Admin-only reversal of freeze_for_fraud_hold — the cardholder's
+        own unfreeze_card() refuses outright while freeze_reason is
+        FRAUD_HOLD, so this is the only path back to ACTIVE. Ordering
+        (has the flagged transaction itself already been decided) is
+        enforced by the caller (FraudService.activate_card), not here —
+        this method only knows about the card, not the fraud case."""
+        card = self.repository.get_by_id(card_id)
+        if card is None:
+            raise NotFoundError("Card not found")
+        if card.status != CardStatus.FROZEN or card.freeze_reason != CardFreezeReason.FRAUD_HOLD:
+            raise ConflictError("This card does not have an active fraud hold to clear")
+        card.status = CardStatus.ACTIVE
+        card.freeze_reason = None
+        card.frozen_at = None
+        card.frozen_by_admin_id = admin_id
         self.db.flush()
         return card
 
