@@ -19,10 +19,11 @@ Three things happen here:
      neither is a purchase, so neither belongs in a spending view.
   3. The remaining everyday categories are added.
 
-The deletes skip any category already assigned to a transaction, so this
-cannot orphan a Transaction.category_id. Nothing assigns one today, but
-that stops being true the moment the feature this migration exists for
-ships, and a re-run has to stay safe.
+A retired category's transactions are re-filed onto its successor before it
+is deleted, so nothing is orphaned and nothing survives the merge. Guarding
+the delete on "not referenced" instead would quietly leave a category the
+user had already picked sitting in the picker next to the one it was meant
+to fold into.
 
 Revision ID: 0052_unify_transaction_categories
 Revises: 0051_one_folder_per_transaction
@@ -62,9 +63,17 @@ _CATEGORIES = [
     "Other",
 ]
 
-# Restaurants is covered by Food; Income and Transfers are not purchases;
-# Retail is now Shopping.
-_REMOVED = ["Restaurants", "Income", "Transfers", "Retail"]
+# Retired names, and where a transaction already filed under one should end
+# up. Restaurants and Retail have a real successor; Income and Transfers do
+# not — nothing in a spending vocabulary means "this was not spending", so
+# those transactions go back to inheriting their merchant's category (None
+# clears Transaction.category_id).
+_MERGED_INTO: dict[str, str | None] = {
+    "Restaurants": "Food",
+    "Retail": "Shopping",
+    "Income": None,
+    "Transfers": None,
+}
 
 
 def upgrade() -> None:
@@ -78,16 +87,29 @@ def upgrade() -> None:
     if missing:
         op.bulk_insert(categories, [{"id": str(uuid.uuid4()), "name": name} for name in missing])
 
+    # Re-file before deleting, or a category a user had already picked would
+    # survive the merge (a delete guarded on "not referenced" simply skips
+    # it) and keep showing up in the picker as a duplicate of the name it
+    # was supposed to fold into.
+    for retired, successor in _MERGED_INTO.items():
+        op.execute(
+            sa.text(
+                """
+                UPDATE transactions
+                SET category_id = (
+                    SELECT id FROM transaction_categories WHERE name = :successor
+                )
+                WHERE category_id = (
+                    SELECT id FROM transaction_categories WHERE name = :retired
+                )
+                """
+            ).bindparams(sa.bindparam("successor", value=successor), sa.bindparam("retired", value=retired))
+        )
+
     op.execute(
-        sa.text(
-            """
-            DELETE FROM transaction_categories
-            WHERE name = ANY(:removed)
-              AND id NOT IN (
-                  SELECT category_id FROM transactions WHERE category_id IS NOT NULL
-              )
-            """
-        ).bindparams(sa.bindparam("removed", value=_REMOVED, type_=sa.ARRAY(sa.String)))
+        sa.text("DELETE FROM transaction_categories WHERE name = ANY(:removed)").bindparams(
+            sa.bindparam("removed", value=list(_MERGED_INTO), type_=sa.ARRAY(sa.String))
+        )
     )
 
 

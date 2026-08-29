@@ -49,9 +49,22 @@ WHERE NOT EXISTS (
     SELECT 1 FROM transaction_categories existing WHERE existing.name = wanted.name
 );
 
+-- Re-file before deleting. A delete guarded on "not referenced" would skip
+-- any retired category a user had already picked, leaving it in the picker
+-- next to the one it was supposed to fold into. Restaurants and Retail have
+-- a successor; Income and Transfers do not, so those transactions go back
+-- to inheriting their merchant's category.
+UPDATE transactions SET category_id = (SELECT id FROM transaction_categories WHERE name = 'Food')
+WHERE category_id = (SELECT id FROM transaction_categories WHERE name = 'Restaurants');
+
+UPDATE transactions SET category_id = (SELECT id FROM transaction_categories WHERE name = 'Shopping')
+WHERE category_id = (SELECT id FROM transaction_categories WHERE name = 'Retail');
+
+UPDATE transactions SET category_id = NULL
+WHERE category_id IN (SELECT id FROM transaction_categories WHERE name IN ('Income', 'Transfers'));
+
 DELETE FROM transaction_categories
-WHERE name IN ('Restaurants', 'Income', 'Transfers', 'Retail')
-  AND id NOT IN (SELECT category_id FROM transactions WHERE category_id IS NOT NULL);
+WHERE name IN ('Restaurants', 'Income', 'Transfers', 'Retail');
 
 COMMIT;
 

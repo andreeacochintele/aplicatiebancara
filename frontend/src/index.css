@@ -1404,6 +1404,10 @@ th {
 .category-choices {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  /* Every tile the same height, including the rows whose label wraps to two
+     lines ("Beauty & Personal care"). Without this each row sizes to its own
+     tallest label and the grid comes out ragged. */
+  grid-auto-rows: 1fr;
   gap: 0.65rem;
   margin-block: 0.35rem 0.25rem;
 }
