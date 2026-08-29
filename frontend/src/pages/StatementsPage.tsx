@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -7,6 +8,8 @@ import type { Statement, Wallet } from "../types";
 import { downloadBlob, walletLabel } from "../utils";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
+const STATEMENT_ROWS_PER_PAGE = 15;
+const STATEMENT_HISTORY_PER_PAGE = 10;
 
 interface StatementExportJob {
   id: string;
@@ -35,6 +38,22 @@ export function StatementsPage() {
   const [history, setHistory] = useState<StatementExportJob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [transactionsPage, setTransactionsPage] = useState(1);
+  const [historyPage, setHistoryPage] = useState(1);
+
+  useEffect(() => {
+    setTransactionsPage((currentPage) => {
+      const maxPage = Math.max(1, Math.ceil((statement?.transactions.length ?? 0) / STATEMENT_ROWS_PER_PAGE));
+      return Math.min(currentPage, maxPage);
+    });
+  }, [statement]);
+
+  useEffect(() => {
+    setHistoryPage((currentPage) => {
+      const maxPage = Math.max(1, Math.ceil(history.length / STATEMENT_HISTORY_PER_PAGE));
+      return Math.min(currentPage, maxPage);
+    });
+  }, [history.length]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -64,6 +83,7 @@ export function StatementsPage() {
       const params = new URLSearchParams({ wallet_id: walletId, date_from: dateFrom, date_to: dateTo });
       const data = await apiRequest<Statement>(`/statements?${params.toString()}`, { token: accessToken });
       setStatement(data);
+      setTransactionsPage(1);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("statements.couldNotGenerate"));
     } finally {
@@ -96,6 +116,36 @@ export function StatementsPage() {
     }
     await downloadBlob(response, `statement_${job.date_from}_${job.date_to}.${job.format.toLowerCase()}`);
   }
+
+  const statementTransactions = statement?.transactions ?? [];
+  const transactionPageCount = Math.max(1, Math.ceil(statementTransactions.length / STATEMENT_ROWS_PER_PAGE));
+  const currentTransactionsPage = Math.min(transactionsPage, transactionPageCount);
+  const transactionsPageStart = (currentTransactionsPage - 1) * STATEMENT_ROWS_PER_PAGE;
+  const visibleTransactions = statementTransactions.slice(transactionsPageStart, transactionsPageStart + STATEMENT_ROWS_PER_PAGE);
+  const firstVisibleTransaction = statementTransactions.length === 0 ? 0 : transactionsPageStart + 1;
+  const lastVisibleTransaction = Math.min(transactionsPageStart + STATEMENT_ROWS_PER_PAGE, statementTransactions.length);
+  const transactionPageButtonCount = Math.min(5, transactionPageCount);
+  const firstTransactionPageButton = Math.min(
+    Math.max(1, currentTransactionsPage - 2),
+    Math.max(1, transactionPageCount - transactionPageButtonCount + 1),
+  );
+  const transactionPageNumbers = Array.from(
+    { length: transactionPageButtonCount },
+    (_, index) => firstTransactionPageButton + index,
+  );
+
+  const historyPageCount = Math.max(1, Math.ceil(history.length / STATEMENT_HISTORY_PER_PAGE));
+  const currentHistoryPage = Math.min(historyPage, historyPageCount);
+  const historyPageStart = (currentHistoryPage - 1) * STATEMENT_HISTORY_PER_PAGE;
+  const visibleHistory = history.slice(historyPageStart, historyPageStart + STATEMENT_HISTORY_PER_PAGE);
+  const firstVisibleHistory = history.length === 0 ? 0 : historyPageStart + 1;
+  const lastVisibleHistory = Math.min(historyPageStart + STATEMENT_HISTORY_PER_PAGE, history.length);
+  const historyPageButtonCount = Math.min(5, historyPageCount);
+  const firstHistoryPageButton = Math.min(
+    Math.max(1, currentHistoryPage - 2),
+    Math.max(1, historyPageCount - historyPageButtonCount + 1),
+  );
+  const historyPageNumbers = Array.from({ length: historyPageButtonCount }, (_, index) => firstHistoryPageButton + index);
 
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -161,6 +211,7 @@ export function StatementsPage() {
             <thead>
               <tr>
                 <th>{t("statements.date")}</th>
+                <th>{t("statements.transactionId")}</th>
                 <th>{t("statements.description")}</th>
                 <th>{t("statements.type")}</th>
                 <th>{t("statements.direction")}</th>
@@ -168,9 +219,10 @@ export function StatementsPage() {
               </tr>
             </thead>
             <tbody>
-              {statement.transactions.map((tx) => (
+              {visibleTransactions.map((tx) => (
                 <tr key={tx.id}>
                   <td>{new Date(tx.created_at).toLocaleDateString()}</td>
+                  <td title={tx.id}>{tx.id.slice(0, 8)}</td>
                   <td>{tx.description ?? "—"}</td>
                   <td>{t(`common.txType.${tx.type}`, { defaultValue: tx.type })}</td>
                   <td>
@@ -181,13 +233,68 @@ export function StatementsPage() {
                   <td style={{ textAlign: "right" }}>{tx.amount}</td>
                 </tr>
               ))}
-              {statement.transactions.length === 0 && (
+              {statementTransactions.length === 0 && (
                 <tr>
-                  <td colSpan={5}>{t("statements.noActivity")}</td>
+                  <td colSpan={6}>{t("statements.noActivity")}</td>
                 </tr>
               )}
             </tbody>
           </table>
+          {statementTransactions.length > STATEMENT_ROWS_PER_PAGE && (
+            <div
+              style={{
+                alignItems: "center",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "0.6rem",
+                justifyContent: "space-between",
+                marginTop: "1rem",
+              }}
+            >
+              <span className="eyebrow">
+                {t("statements.showingRange", {
+                  first: firstVisibleTransaction,
+                  last: lastVisibleTransaction,
+                  total: statementTransactions.length,
+                })}
+              </span>
+              <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                <button
+                  type="button"
+                  className="button--ghost"
+                  aria-label={t("statements.previousPage")}
+                  disabled={currentTransactionsPage === 1}
+                  onClick={() => setTransactionsPage((value) => Math.max(1, value - 1))}
+                  style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+                >
+                  <ChevronLeft size={16} aria-hidden="true" />
+                </button>
+                {transactionPageNumbers.map((pageNumber) => (
+                  <button
+                    key={pageNumber}
+                    type="button"
+                    className={pageNumber === currentTransactionsPage ? undefined : "button--ghost"}
+                    aria-label={t("statements.goToPage", { page: pageNumber })}
+                    aria-current={pageNumber === currentTransactionsPage ? "page" : undefined}
+                    onClick={() => setTransactionsPage(pageNumber)}
+                    style={{ minWidth: 40, padding: "0.65rem 0.75rem" }}
+                  >
+                    {pageNumber}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="button--ghost"
+                  aria-label={t("statements.nextPage")}
+                  disabled={currentTransactionsPage === transactionPageCount}
+                  onClick={() => setTransactionsPage((value) => Math.min(transactionPageCount, value + 1))}
+                  style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+                >
+                  <ChevronRight size={16} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -206,7 +313,7 @@ export function StatementsPage() {
             </tr>
           </thead>
           <tbody>
-            {history.map((job) => (
+            {visibleHistory.map((job) => (
               <tr key={job.id}>
                 <td>{new Date(job.created_at).toLocaleString()}</td>
                 <td>
@@ -226,6 +333,61 @@ export function StatementsPage() {
             )}
           </tbody>
         </table>
+        {history.length > STATEMENT_HISTORY_PER_PAGE && (
+          <div
+            style={{
+              alignItems: "center",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.6rem",
+              justifyContent: "space-between",
+              marginTop: "1rem",
+            }}
+          >
+            <span className="eyebrow">
+              {t("statements.showingHistoryRange", {
+                first: firstVisibleHistory,
+                last: lastVisibleHistory,
+                total: history.length,
+              })}
+            </span>
+            <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+              <button
+                type="button"
+                className="button--ghost"
+                aria-label={t("statements.previousHistoryPage")}
+                disabled={currentHistoryPage === 1}
+                onClick={() => setHistoryPage((value) => Math.max(1, value - 1))}
+                style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+              >
+                <ChevronLeft size={16} aria-hidden="true" />
+              </button>
+              {historyPageNumbers.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  className={pageNumber === currentHistoryPage ? undefined : "button--ghost"}
+                  aria-label={t("statements.goToHistoryPage", { page: pageNumber })}
+                  aria-current={pageNumber === currentHistoryPage ? "page" : undefined}
+                  onClick={() => setHistoryPage(pageNumber)}
+                  style={{ minWidth: 40, padding: "0.65rem 0.75rem" }}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="button--ghost"
+                aria-label={t("statements.nextHistoryPage")}
+                disabled={currentHistoryPage === historyPageCount}
+                onClick={() => setHistoryPage((value) => Math.min(historyPageCount, value + 1))}
+                style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+              >
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

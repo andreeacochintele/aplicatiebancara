@@ -315,6 +315,7 @@
     "totalIncoming": "Total încasări",
     "totalOutgoing": "Total plăți",
     "date": "Dată",
+    "transactionId": "ID tranzacție",
     "description": "Descriere",
     "type": "Tip",
     "direction": "Direcție",
@@ -326,7 +327,15 @@
     "format": "Format",
     "rows": "Rânduri",
     "download": "Descarcă",
-    "noStatementsGenerated": "Niciun extras generat încă."
+    "noStatementsGenerated": "Niciun extras generat încă.",
+    "showingRange": "Se afișează {{first}}-{{last}} din {{total}}",
+    "previousPage": "Pagina anterioară",
+    "nextPage": "Pagina următoare",
+    "goToPage": "Mergi la pagina {{page}}",
+    "showingHistoryRange": "Se afișează {{first}}-{{last}} din {{total}}",
+    "previousHistoryPage": "Pagina anterioară din istoricul extraselor",
+    "nextHistoryPage": "Pagina următoare din istoricul extraselor",
+    "goToHistoryPage": "Mergi la pagina {{page}} din istoricul extraselor"
   },
   "notifications": {
     "type": {
@@ -371,6 +380,7 @@
     "export": "Exportă {{format}}",
     "transactionsCount": "{{count}} tranzacții",
     "date": "Dată",
+    "transactionId": "ID tranzacție",
     "type": "Tip",
     "counterparty": "Contraparte",
     "category": "Categorie",
@@ -382,7 +392,15 @@
     "period": "Perioadă",
     "rows": "Rânduri",
     "download": "Descarcă",
-    "noExportsGenerated": "Niciun export generat încă."
+    "noExportsGenerated": "Niciun export generat încă.",
+    "showingRange": "Se afișează {{first}}-{{last}} din {{total}}",
+    "previousPage": "Pagina anterioară",
+    "nextPage": "Pagina următoare",
+    "goToPage": "Mergi la pagina {{page}}",
+    "showingHistoryRange": "Se afișează {{first}}-{{last}} din {{total}}",
+    "previousHistoryPage": "Pagina anterioară din istoricul exporturilor",
+    "nextHistoryPage": "Pagina următoare din istoricul exporturilor",
+    "goToHistoryPage": "Mergi la pagina {{page}} din istoricul exporturilor"
   },
   "businessProfile": {
     "onlyForBusiness": "Profilul companiei este disponibil doar pentru conturi business.",
