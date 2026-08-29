@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { Statement, Wallet } from "../types";
-import { walletLabel } from "../utils";
+import { downloadBlob, walletLabel } from "../utils";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -22,18 +22,6 @@ function todayMinus(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
   return d.toISOString().slice(0, 10);
-}
-
-async function downloadBlob(response: Response, fallbackName: string) {
-  const disposition = response.headers.get("Content-Disposition") ?? "";
-  const match = /filename="([^"]+)"/.exec(disposition);
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = match?.[1] ?? fallbackName;
-  link.click();
-  URL.revokeObjectURL(objectUrl);
 }
 
 export function StatementsPage() {

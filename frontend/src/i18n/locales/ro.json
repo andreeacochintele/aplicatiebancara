@@ -511,6 +511,8 @@
     "loadOlderMessages": "Încarcă mesaje mai vechi",
     "askAbout": "Întreabă despre cheltuielile, bugetele, economiile, cashback-ul sau creditul tău.",
     "copyMessage": "Copiază mesajul",
+    "downloadStatement": "Descarcă PDF",
+    "couldNotDownload": "Fișierul nu a putut fi descărcat",
     "thinking": "Se gândește…",
     "askThePlaceholder": "Întreabă asistentul…",
     "send": "Trimite",

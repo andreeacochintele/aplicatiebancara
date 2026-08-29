@@ -42,3 +42,20 @@ export function parseExpiryInput(value: string): { month: number; year: number }
   if (month < 1 || month > 12) return null;
   return { month, year: 2000 + Number(match[2]) };
 }
+
+/** Saves a file-download `fetch` Response to disk client-side: reads the
+ * server-suggested filename off Content-Disposition (falling back to
+ * `fallbackName`), then drives the browser's save dialog via a throwaway
+ * object URL. Shared by every page that streams back a CSV/PDF export
+ * instead of JSON. */
+export async function downloadBlob(response: Response, fallbackName: string): Promise<void> {
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = match?.[1] ?? fallbackName;
+  link.click();
+  URL.revokeObjectURL(objectUrl);
+}

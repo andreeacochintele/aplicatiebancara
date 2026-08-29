@@ -875,6 +875,10 @@ export interface AgentActionResult {
   card: ActionCard | null;
 }
 
+export interface DownloadAttachment {
+  url: string;
+}
+
 export interface OrchestratorChatResponse {
   intent: OrchestratorIntent;
   reply: string;
@@ -882,6 +886,7 @@ export interface OrchestratorChatResponse {
   conversation_id: string;
   suggested_followups: string[];
   action_card: ActionCard | null;
+  download: DownloadAttachment | null;
 }
 
 export interface ConversationMessagePublic {

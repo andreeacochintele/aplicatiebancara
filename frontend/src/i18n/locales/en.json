@@ -511,6 +511,8 @@
     "loadOlderMessages": "Load older messages",
     "askAbout": "Ask about your spending, budgets, savings, cashback, or credit.",
     "copyMessage": "Copy message",
+    "downloadStatement": "Download PDF",
+    "couldNotDownload": "Could not download the file",
     "thinking": "Thinking…",
     "askThePlaceholder": "Ask the assistant…",
     "send": "Send",

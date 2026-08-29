@@ -23,10 +23,12 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.ai.actions.schemas import AgentResult, DownloadAttachment
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
 from app.ai.observability import log_debug, timed_event
 from app.ai.personal_finance import tools
 from app.ai.tools.base import ToolContext, ToolDataUnavailableError
+from app.statements.schemas import StatementPublic
 
 _SYSTEM_PROMPT = (
     "You are the Personal Finance Agent of a banking assistant. You will be "
@@ -91,9 +93,29 @@ _DISPATCH: list[tuple[str, tuple[str, ...]]] = [
 _DEFAULT_TOOL = "wallet_balances"
 
 
-def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str, str]] | None = None) -> str:
+def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str, str]] | None = None) -> "str | AgentResult":
     ctx = ToolContext(user_id=user_id, db=db)
     tool_name = _select_tool(message)
+
+    # Special-cased ahead of the generic _SUMMARIZERS dispatch: a statement
+    # is the one personal_finance reply the user can also want as a real
+    # file, not just chat text, so this needs the underlying StatementPublic
+    # (for its wallet_id/date range) in addition to a summary string.
+    if tool_name == "statement":
+        try:
+            statement = tools.get_account_statement(ctx)
+        except ToolDataUnavailableError as exc:
+            return str(exc)
+        summary = _format_statement_summary(statement)
+        explanation = _explain(message, summary, history)
+        reply = _append_summary(explanation, summary)
+        download = DownloadAttachment(
+            url=(
+                f"/statements/export?wallet_id={statement.wallet_id}"
+                f"&date_from={statement.date_from}&date_to={statement.date_to}&format=pdf"
+            )
+        )
+        return AgentResult(reply=reply, download=download)
 
     try:
         summary = _SUMMARIZERS[tool_name](ctx)
@@ -253,8 +275,7 @@ def _cashback_offers(ctx: ToolContext) -> str:
     return "Active cashback offers:\n" + "\n".join(lines)
 
 
-def _statement(ctx: ToolContext) -> str:
-    s = tools.get_account_statement(ctx)
+def _format_statement_summary(s: StatementPublic) -> str:
     header = (
         f"Account statement, {s.date_from} to {s.date_to} ({s.currency}):\n"
         f"- Opening balance: {s.opening_balance} {s.currency}\n"
@@ -294,7 +315,6 @@ def _recurring(ctx: ToolContext) -> str:
 
 
 _SUMMARIZERS = {
-    "statement": _statement,
     "net_worth": _net_worth,
     "wallet_balances": _wallet_balances,
     "transactions": _transactions,

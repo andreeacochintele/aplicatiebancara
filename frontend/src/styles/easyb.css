@@ -2362,6 +2362,23 @@
   background: var(--easyb-accent-soft);
 }
 
+/* Same specificity fix as .assistant-followup above: .easyb-shell button
+   (one class + one element) otherwise beats the plain .assistant-download
+   rule in index.css and repaints it with the default gradient/pill look. */
+.easyb-shell .assistant-download {
+  background: var(--easyb-accent-soft);
+  border: 1px solid var(--easyb-accent);
+  border-radius: 999px;
+  color: var(--easyb-accent-dark);
+  font-weight: 600;
+}
+
+.easyb-shell .assistant-download:hover {
+  background: var(--easyb-accent);
+  color: #fff;
+  filter: none;
+}
+
 .easyb-shell .assistant-action-card {
   background: var(--easyb-surface-alt);
   border-color: var(--easyb-border);

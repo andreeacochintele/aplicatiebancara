@@ -13,8 +13,11 @@ receives it as context, but which agent gets called is decided fresh
 each turn by intent.py's classifier, never by which agent handled the
 previous turn.
 
-The three read-only agents return a plain `str`; the actions agent returns
-an `AgentResult` (reply + optional action_card). service.py handles both.
+Credit and support always return a plain `str`. The actions agent always
+returns an `AgentResult` (reply + optional action_card). Personal finance
+returns a plain `str` except for a statement reply, which also returns an
+`AgentResult` (reply + optional download). service.py handles both shapes
+uniformly via `isinstance(agent_output, AgentResult)`.
 """
 import uuid
 from typing import Callable
