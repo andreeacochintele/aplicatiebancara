@@ -27,6 +27,7 @@ const PAGE_INFO: Record<string, { titleKey: string; subtitleKey: string }> = {
   "/admin": { titleKey: "pageInfo.admin.title", subtitleKey: "pageInfo.admin.subtitle" },
   "/admin/credit": { titleKey: "pageInfo.adminCredit.title", subtitleKey: "pageInfo.adminCredit.subtitle" },
   "/admin/fraud": { titleKey: "pageInfo.adminFraud.title", subtitleKey: "pageInfo.adminFraud.subtitle" },
+  "/admin/audit-log": { titleKey: "pageInfo.adminAuditLog.title", subtitleKey: "pageInfo.adminAuditLog.subtitle" },
 };
 
 const HEADER_NOTIFICATIONS_PER_PAGE = 4;

@@ -840,6 +840,17 @@ export interface FraudCaseSummary {
   flag_codes: FraudFlagCode[];
 }
 
+export interface AdminAuditLog {
+  id: string;
+  admin_user_id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  old_data: Record<string, unknown> | null;
+  new_data: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export interface FrozenCard {
   id: string;
   last_four: string;

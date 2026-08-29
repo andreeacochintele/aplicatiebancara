@@ -79,7 +79,8 @@
     "businessExport": "Export tranzacții",
     "businessProfile": "Profil companie",
     "creditAndLoans": "Credit și împrumuturi",
-    "fraudReview": "Verificare fraudă"
+    "fraudReview": "Verificare fraudă",
+    "auditLog": "Jurnal de audit"
   },
   "language": {
     "english": "Engleză",
@@ -102,7 +103,8 @@
     "businessProfile": { "title": "Profil companie", "subtitle": "Doar conturi business · gestionează companiile tale" },
     "admin": { "title": "Panou admin", "subtitle": "Prezentare generală operațiuni" },
     "adminCredit": { "title": "Credit și împrumuturi", "subtitle": "Cereri, documente și verificare scor de credit" },
-    "adminFraud": { "title": "Verificare fraudă", "subtitle": "Motor determinist · decizie umană" }
+    "adminFraud": { "title": "Verificare fraudă", "subtitle": "Motor determinist · decizie umană" },
+    "adminAuditLog": { "title": "Jurnal de audit", "subtitle": "Fiecare decizie de admin, cine a luat-o și ce s-a schimbat" }
   },
   "auth": {
     "nameLengthError": "{{label}} trebuie să aibă între 2 și 50 de caractere",
@@ -633,6 +635,21 @@
     "creditApplications": "Cereri de credit",
     "fraudCases": "Cazuri de fraudă",
     "notAvailable": "N/A",
+    "auditLog": "Jurnal de audit",
+    "auditLogDescription": "Fiecare decizie de admin, înregistrată alături de starea pe care a schimbat-o — cine, ce și când.",
+    "entityType": "Tip entitate",
+    "allEntityTypes": "Toate tipurile",
+    "when": "Când",
+    "adminId": "Admin",
+    "action": "Acțiune",
+    "entity": "Entitate",
+    "change": "Modificare",
+    "loadingAuditLog": "Se încarcă jurnalul de audit...",
+    "noAuditLogEntries": "Nicio înregistrare în jurnalul de audit încă.",
+    "couldNotLoadAuditLog": "Jurnalul de audit nu a putut fi încărcat.",
+    "previousPage": "Pagina anterioară",
+    "nextPage": "Pagina următoare",
+    "pageNumber": "Pagina {{page}}",
     "reviewFocus": {
       "NEW_DEVICE": "Confirmă dacă dispozitivul activ aparține clientului și dacă are utilizări anterioare reușite.",
       "HIGH_AMOUNT": "Compară suma reținută cu media plăților cu cardul finalizate de client și achizițiile recente mari.",
