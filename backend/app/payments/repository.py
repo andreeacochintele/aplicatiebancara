@@ -385,6 +385,22 @@ class TransactionFolderRepository:
             )
         )
 
+    def get_item_for_transaction(self, transaction_id: uuid.UUID) -> TransactionFolderItem | None:
+        """The transaction's folder membership, whichever folder that is.
+
+        Unscoped by folder on purpose: a transaction belongs to exactly one
+        folder (see TransactionFolderService.add_transaction), so this is
+        what answers "is it already filed somewhere". Safe to leave unscoped
+        by user too — only CARD_PAYMENT/SCHEDULED_PAYMENT/CASHBACK can be
+        foldered, and none of those are visible to a second user the way a
+        transfer's receiving side is.
+        """
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(TransactionFolderItem, {"transaction_id": f"eq.{transaction_id}"})
+        return self.db.scalar(
+            select(TransactionFolderItem).where(TransactionFolderItem.transaction_id == transaction_id)
+        )
+
     def list_items(self, folder_id: uuid.UUID) -> list[TransactionFolderItem]:
         if is_supabase_session(self.db):
             return self.db.fetch_many(TransactionFolderItem, {"folder_id": f"eq.{folder_id}", "order": "added_at.asc"})
