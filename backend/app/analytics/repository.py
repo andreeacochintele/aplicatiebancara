@@ -43,6 +43,11 @@ class AnalyticsRepository:
     def spending_by_type(
         self, user_id: uuid.UUID, period_start: datetime, period_end: datetime
     ) -> list[tuple]:
+        """LOAN_PAYMENT is real money leaving the wallet (so _is_real_spend
+        alone wouldn't exclude it), but it's debt repayment, not consumption
+        spending, and its size can swamp a discretionary-spending breakdown
+        — excluded here specifically, same reasoning as
+        spending_by_merchant_category's loan-payment exclusion."""
         own_wallet_ids = self._own_wallet_ids(user_id)
 
         if is_supabase_session(self.db):
@@ -57,6 +62,8 @@ class AnalyticsRepository:
             totals: dict[tuple[object, str], dict[str, object]] = {}
             for transaction in transactions:
                 if not self._is_real_spend(transaction, own_wallet_ids):
+                    continue
+                if transaction.type == TransactionType.LOAN_PAYMENT:
                     continue
                 key = (transaction.type, transaction.currency)
                 bucket = totals.setdefault(key, {"total": Decimal("0"), "count": 0})
@@ -77,6 +84,7 @@ class AnalyticsRepository:
                 Transaction.created_at >= period_start,
                 Transaction.created_at < period_end,
                 Transaction.type != TransactionType.CASHBACK,
+                Transaction.type != TransactionType.LOAN_PAYMENT,
                 not_(
                     and_(
                         Transaction.type == TransactionType.TRANSFER,
