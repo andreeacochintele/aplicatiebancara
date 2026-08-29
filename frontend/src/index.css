@@ -1496,9 +1496,15 @@ th {
   gap: 0.2rem;
 }
 
-.folder-choice small,
-.folder-readonly-card__header span {
+.folder-choice small {
   color: var(--color-text-muted);
+}
+
+/* The folder's name and description carry the strong treatment; the rows
+   inside it are stepped back (see .folder-transaction-row below). */
+.folder-readonly-card__header span {
+  color: var(--color-text);
+  font-weight: 500;
 }
 
 .folder-choice--active {
@@ -1548,13 +1554,9 @@ th {
   flex-wrap: wrap;
 }
 
-/* Inside a folder the transactions are the content; the folder's own name
-   and description are just the label on the box. Step the header back so
-   the rows below read as the primary thing (see .folder-transaction-row). */
 .folder-readonly-card__title strong {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
+  font-size: 1.02rem;
+  color: var(--color-text);
 }
 
 .folder-readonly-card__actions {
@@ -1600,7 +1602,7 @@ th {
   align-items: center;
   /* Indented past the folder's name/description so the rows read as being
      inside the folder rather than as siblings of its header. */
-  padding: 0.55rem 0 0.55rem 1.1rem;
+  padding: 0.55rem 0 0.55rem 1.9rem;
   border-top: 1px solid var(--color-divider);
 }
 
@@ -1611,14 +1613,15 @@ th {
   gap: 0.2rem;
 }
 
-/* Full-strength, deliberately ahead of the folder title/description above. */
+/* Stepped back behind the folder's own name and description above. */
 .folder-transaction-row span {
-  color: var(--color-text);
-  font-weight: 500;
+  color: var(--color-text-muted);
 }
 
 .folder-transaction-row strong {
-  font-size: 1.02rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 .transaction-split-request {

@@ -1592,19 +1592,20 @@
   filter: none;
 }
 
-.easyb-shell .folder-choice small,
-.easyb-shell .folder-readonly-card__header span {
+.easyb-shell .folder-choice small {
   color: var(--easyb-text-soft);
 }
 
-/* Mirrors the hierarchy flip in index.css: the folder's own name steps back,
-   the transactions inside it come forward. */
+/* Mirrors index.css: the folder's name and description carry the strong
+   treatment, the rows inside it step back. */
+.easyb-shell .folder-readonly-card__header span,
 .easyb-shell .folder-readonly-card__title strong {
-  color: var(--easyb-text-soft);
+  color: var(--easyb-text);
 }
 
-.easyb-shell .folder-transaction-row span {
-  color: var(--easyb-text);
+.easyb-shell .folder-transaction-row span,
+.easyb-shell .folder-transaction-row strong {
+  color: var(--easyb-text-soft);
 }
 
 .easyb-shell .folder-readonly-card {
