@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ChevronDown, ChevronUp, Copy, Plus, Star, TrendingUp, X, XCircle } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ChevronUp, Copy, CreditCard, Plus, Star, TrendingUp, X, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,7 +7,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { FXMarketRate, FXQuote, FXRateHistory, Transaction, Wallet } from "../types";
-import { formatIban, walletLabel } from "../utils";
+import { formatCardNumberInput, formatExpiryInput, formatIban, parseExpiryInput, walletLabel } from "../utils";
 
 const RATE_ACCENT = "#5b5fef"; // same violet as --easyb-accent, kept as one deliberate hue for the trend line
 // matches backend/app/fx/service.py's _RATES_TO_RON — keep both in sync
@@ -114,6 +114,13 @@ export function WalletsPage() {
   const [rateHistory, setRateHistory] = useState<FXRateHistory | null>(null);
   const [expandedTransactionWalletIds, setExpandedTransactionWalletIds] = useState<Set<string>>(() => new Set());
   const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
+  const [toppingUpWallet, setToppingUpWallet] = useState<Wallet | null>(null);
+  const [topUpCardNumber, setTopUpCardNumber] = useState("");
+  const [topUpExpiry, setTopUpExpiry] = useState("");
+  const [topUpCvv, setTopUpCvv] = useState("");
+  const [topUpCardholderName, setTopUpCardholderName] = useState("");
+  const [topUpAmount, setTopUpAmount] = useState("");
+  const [submittingTopUp, setSubmittingTopUp] = useState(false);
 
   function copyIban(wallet: Wallet) {
     navigator.clipboard.writeText(wallet.iban).then(() => {
@@ -221,6 +228,49 @@ export function WalletsPage() {
       setError(err instanceof ApiError ? err.message : t("wallets.couldNotAddAccount"));
     } finally {
       setAddingAccount(false);
+    }
+  }
+
+  function closeTopUpModal() {
+    setToppingUpWallet(null);
+    setTopUpCardNumber("");
+    setTopUpExpiry("");
+    setTopUpCvv("");
+    setTopUpCardholderName("");
+    setTopUpAmount("");
+  }
+
+  async function submitTopUp() {
+    if (!accessToken || !toppingUpWallet || submittingTopUp) return;
+    const expiry = parseExpiryInput(topUpExpiry);
+    if (!expiry) {
+      setError(t("wallets.couldNotAddMoney"));
+      return;
+    }
+    setSubmittingTopUp(true);
+    setError(null);
+    try {
+      await apiRequest("/transactions/top-up", {
+        method: "POST",
+        token: accessToken,
+        body: {
+          destination_wallet_id: toppingUpWallet.id,
+          card_number: topUpCardNumber,
+          cardholder_name: topUpCardholderName,
+          expiry_month: expiry.month,
+          expiry_year: expiry.year,
+          cvv: topUpCvv,
+          amount: topUpAmount,
+        },
+      });
+      setResult(t("wallets.topUpSuccess", { amount: topUpAmount, currency: toppingUpWallet.currency }));
+      closeTopUpModal();
+      loadWallets();
+      loadTransactions();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("wallets.couldNotAddMoney"));
+    } finally {
+      setSubmittingTopUp(false);
     }
   }
 
@@ -467,7 +517,16 @@ export function WalletsPage() {
                   </div>
                 )}
                 <div className="easyb-wallet-card__footer">
-                  <span aria-hidden="true" />
+                  {wallet.status === "ACTIVE" && (
+                    <button
+                      type="button"
+                      className="easyb-wallet-card__topup"
+                      onClick={() => setToppingUpWallet(wallet)}
+                    >
+                      <CreditCard size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
+                      {t("wallets.addMoney")}
+                    </button>
+                  )}
                   {!wallet.is_main && wallet.status === "ACTIVE" && (
                     <div className="easyb-wallet-card__actions">
                       <button
@@ -496,6 +555,7 @@ export function WalletsPage() {
           {activeWallets.length === 0 && <p className="easyb-tx-meta">{t("wallets.noWalletsYet")}</p>}
         </div>
         {error && <p role="alert">{error}</p>}
+        {result && <p role="status">{result}</p>}
       </div>
 
       {activeWallets.length >= 2 && (
@@ -737,6 +797,89 @@ export function WalletsPage() {
                 disabled={closingAccount || !closeDestinationId}
               >
                 {closingAccount ? t("wallets.closing") : t("wallets.yesCloseAccount")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toppingUpWallet && (
+        <div className="folder-modal-backdrop" onClick={() => !submittingTopUp && closeTopUpModal()} role="presentation">
+          <div
+            className="easyb-card"
+            style={{ maxWidth: 420 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("wallets.addMoney")}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="easyb-eyebrow">{t("wallets.addMoney")}</div>
+            <h2 style={{ marginBottom: 10 }}>{t("wallets.walletSuffix", { label: walletLabel(toppingUpWallet) })}</h2>
+            <p style={{ fontSize: 13.5, color: "var(--easyb-text-soft)", lineHeight: 1.6, marginBottom: 10 }}>
+              {t("wallets.cardDetailsHint")}
+            </p>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+              {t("wallets.cardNumber")}
+              <input
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={19}
+                value={topUpCardNumber}
+                onChange={(e) => setTopUpCardNumber(formatCardNumberInput(e.target.value))}
+                placeholder={t("wallets.cardNumberPlaceholder")}
+              />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+              {t("wallets.cardholderName")}
+              <input
+                autoComplete="off"
+                value={topUpCardholderName}
+                onChange={(e) => setTopUpCardholderName(e.target.value)}
+                placeholder={t("wallets.cardholderNamePlaceholder")}
+              />
+            </label>
+            <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+                {t("wallets.cardExpiry")}
+                <input
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={5}
+                  value={topUpExpiry}
+                  onChange={(e) => setTopUpExpiry(formatExpiryInput(e.target.value))}
+                  placeholder="MM/YY"
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+                {t("wallets.cardCvv")}
+                <input
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={3}
+                  value={topUpCvv}
+                  onChange={(e) => setTopUpCvv(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                />
+              </label>
+            </div>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+              {t("wallets.topUpAmount")}
+              <input
+                inputMode="decimal"
+                value={topUpAmount}
+                onChange={(e) => setTopUpAmount(e.target.value)}
+                placeholder="0.00"
+              />
+            </label>
+            {error && <p role="alert">{error}</p>}
+            <div className="easyb-quote-card__actions" style={{ marginTop: 6 }}>
+              <button className="easyb-btn-ghost" onClick={closeTopUpModal} disabled={submittingTopUp}>
+                {t("wallets.cancel")}
+              </button>
+              <button
+                onClick={submitTopUp}
+                disabled={submittingTopUp || !topUpCardNumber || !topUpExpiry || !topUpCvv || !topUpAmount}
+              >
+                {submittingTopUp ? t("wallets.addingMoney") : t("wallets.addMoney")}
               </button>
             </div>
           </div>

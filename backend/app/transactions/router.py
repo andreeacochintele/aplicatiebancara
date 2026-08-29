@@ -7,7 +7,13 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db
-from app.transactions.schemas import CardPaymentCreate, CreditCardRepaymentCreate, InternalTransferCreate, TransactionPublic
+from app.transactions.schemas import (
+    CardPaymentCreate,
+    CardTopUpCreate,
+    CreditCardRepaymentCreate,
+    InternalTransferCreate,
+    TransactionPublic,
+)
 from app.transactions.service import TransactionService
 from app.users.models import User
 
@@ -60,5 +66,16 @@ def create_credit_card_repayment(
     db: Session = Depends(get_db),
 ) -> TransactionPublic:
     transaction = TransactionService(db).create_credit_card_repayment(current_user.id, payload)
+    db.commit()
+    return transaction
+
+
+@router.post("/top-up", response_model=TransactionPublic, status_code=201)
+def create_card_top_up(
+    payload: CardTopUpCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TransactionPublic:
+    transaction = TransactionService(db).create_card_top_up(current_user.id, payload)
     db.commit()
     return transaction
