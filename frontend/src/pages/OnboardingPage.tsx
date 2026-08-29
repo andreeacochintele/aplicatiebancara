@@ -7,6 +7,7 @@ import {
   type ReactNode,
   type SelectHTMLAttributes,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import { ApiError } from "../api/apiClient";
@@ -37,19 +38,19 @@ import { useAuth } from "../hooks/useAuth";
 import type { EmploymentStatus, OnboardingStep2Payload, OnboardingStep4Payload, UserFullProfile } from "../types";
 
 const steps = [
-  { number: 1, label: "Account" },
-  { number: 2, label: "Personal" },
-  { number: 3, label: "Identity" },
-  { number: 4, label: "Financial" },
+  { number: 1, labelKey: "onboarding.stepAccount" },
+  { number: 2, labelKey: "onboarding.stepPersonal" },
+  { number: 3, labelKey: "onboarding.stepIdentity" },
+  { number: 4, labelKey: "onboarding.stepFinancial" },
 ];
 
-const employmentStatuses: Array<{ value: EmploymentStatus; label: string }> = [
-  { value: "EMPLOYED", label: "Employed" },
-  { value: "SELF_EMPLOYED", label: "Self-employed" },
-  { value: "STUDENT", label: "Student" },
-  { value: "UNEMPLOYED", label: "Unemployed" },
-  { value: "RETIRED", label: "Retired" },
-  { value: "OTHER", label: "Other" },
+const employmentStatuses: Array<{ value: EmploymentStatus; labelKey: string }> = [
+  { value: "EMPLOYED", labelKey: "onboarding.employed" },
+  { value: "SELF_EMPLOYED", labelKey: "onboarding.selfEmployed" },
+  { value: "STUDENT", labelKey: "onboarding.student" },
+  { value: "UNEMPLOYED", labelKey: "onboarding.unemployed" },
+  { value: "RETIRED", labelKey: "onboarding.retired" },
+  { value: "OTHER", labelKey: "onboarding.other" },
 ];
 
 function cleanOptional(value: string) {
@@ -85,6 +86,7 @@ const todayIso = new Date().toISOString().slice(0, 10);
 const MAX_IDENTITY_DOCUMENT_ATTEMPTS = 3;
 
 export function OnboardingPage() {
+  const { t } = useTranslation();
   const { accessToken, logout, markOnboardingCompleted } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<UserFullProfile | null>(null);
@@ -152,7 +154,7 @@ export function OnboardingPage() {
           return;
         }
         if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : "Could not load onboarding");
+          setError(err instanceof ApiError ? err.message : t("onboarding.couldNotLoad"));
         }
       } finally {
         if (!cancelled) {
@@ -212,7 +214,7 @@ export function OnboardingPage() {
     const dobError = validateDateOfBirth(step2.date_of_birth);
     if (dobError) return dobError;
     if (!cnpMatchesDateOfBirth(step2.cnp, step2.date_of_birth)) {
-      return "CNP does not match the date of birth provided";
+      return t("onboarding.cnpDobMismatch");
     }
     const streetError = validateStreet(step2.street);
     if (streetError) return streetError;
@@ -246,7 +248,7 @@ export function OnboardingPage() {
       setProfile(response);
       setViewStep(stepFromProfile(response));
     } catch (err) {
-      handleApiError(err, "Could not save personal details");
+      handleApiError(err, t("onboarding.couldNotSavePersonalDetails"));
     } finally {
       setSubmitting(false);
     }
@@ -256,7 +258,7 @@ export function OnboardingPage() {
     event.preventDefault();
     if (!accessToken) return;
     if (!step3.front || !step3.back) {
-      setError("Please select photos of both sides of your ID card");
+      setError(t("onboarding.selectBothIdPhotos"));
       return;
     }
     setSubmitting(true);
@@ -273,7 +275,7 @@ export function OnboardingPage() {
         setError(response.identity_document.failure_reason);
       }
     } catch (err) {
-      handleApiError(err, "Could not verify identity document");
+      handleApiError(err, t("onboarding.couldNotVerifyIdentity"));
     } finally {
       setSubmitting(false);
     }
@@ -282,11 +284,11 @@ export function OnboardingPage() {
   function validateStep4(): string | null {
     const occupationError = validateOccupation(step4.occupation ?? "");
     if (occupationError) return occupationError;
-    const employerError = validateOptionalFreeText(step4.employer ?? "", "Employer");
+    const employerError = validateOptionalFreeText(step4.employer ?? "", t("onboarding.employer"));
     if (employerError) return employerError;
-    const industryError = validateOptionalFreeText(step4.industry ?? "", "Industry");
+    const industryError = validateOptionalFreeText(step4.industry ?? "", t("onboarding.industry"));
     if (industryError) return industryError;
-    const incomeSourceError = validateOptionalFreeText(step4.income_source ?? "", "Income source");
+    const incomeSourceError = validateOptionalFreeText(step4.income_source ?? "", t("onboarding.incomeSource"));
     if (incomeSourceError) return incomeSourceError;
     const incomeError = validateMonthlyIncome(step4.approximate_monthly_income ?? "");
     if (incomeError) return incomeError;
@@ -317,7 +319,7 @@ export function OnboardingPage() {
       markOnboardingCompleted();
       navigate("/dashboard", { replace: true });
     } catch (err) {
-      handleApiError(err, "Could not finish onboarding");
+      handleApiError(err, t("onboarding.couldNotFinishOnboarding"));
     } finally {
       setSubmitting(false);
     }
@@ -332,7 +334,7 @@ export function OnboardingPage() {
       markOnboardingCompleted();
       navigate("/dashboard", { replace: true });
     } catch (err) {
-      handleApiError(err, "Could not skip financial profile");
+      handleApiError(err, t("onboarding.couldNotSkipFinancialProfile"));
     } finally {
       setSubmitting(false);
     }
@@ -342,7 +344,7 @@ export function OnboardingPage() {
     return (
       <div className="onboarding-shell">
         <section className="onboarding-card">
-          <p>Loading onboarding...</p>
+          <p>{t("onboarding.loadingOnboarding")}</p>
         </section>
       </div>
     );
@@ -353,26 +355,26 @@ export function OnboardingPage() {
       <section className="onboarding-card">
         <div className="onboarding-card__header">
           <div>
-            <span className="eyebrow">EasyB onboarding</span>
-            <h1>Finish setting up your account</h1>
+            <span className="eyebrow">{t("onboarding.eyebrow")}</span>
+            <h1>{t("onboarding.title")}</h1>
           </div>
           <button type="button" className="button--ghost" onClick={logout}>
-            Logout
+            {t("onboarding.logout")}
           </button>
         </div>
 
-        <ol className="onboarding-progress" aria-label="Onboarding progress">
+        <ol className="onboarding-progress" aria-label={t("onboarding.progressLabel")}>
           {progress.map((step) => (
             <li key={step.number} className={`onboarding-progress__step onboarding-progress__step--${step.state}`}>
               <span>{step.number}</span>
-              <strong>{step.label}</strong>
+              <strong>{t(step.labelKey)}</strong>
             </li>
           ))}
         </ol>
 
         {activeStep > 2 && (
           <button type="button" className="button--ghost onboarding-back" disabled={submitting} onClick={goBack}>
-            &larr; Back
+            {t("onboarding.back")}
           </button>
         )}
 
@@ -385,12 +387,12 @@ export function OnboardingPage() {
         {activeStep === 2 && (
           <form onSubmit={submitStep2} className="onboarding-form">
             <div className="auth-form__header">
-              <span className="eyebrow">Step 2</span>
-              <h2>Personal details</h2>
+              <span className="eyebrow">{t("onboarding.step2")}</span>
+              <h2>{t("onboarding.personalDetails")}</h2>
             </div>
             <div className="onboarding-form__grid">
               <Field
-                label="CNP"
+                label={t("onboarding.cnp")}
                 value={step2.cnp}
                 onChange={(e) => setStep2({ ...step2, cnp: e.target.value })}
                 required
@@ -398,7 +400,7 @@ export function OnboardingPage() {
                 maxLength={13}
               />
               <Field
-                label="Date of birth"
+                label={t("onboarding.dateOfBirth")}
                 type="date"
                 value={step2.date_of_birth}
                 onChange={(e) => setStep2({ ...step2, date_of_birth: e.target.value })}
@@ -407,65 +409,65 @@ export function OnboardingPage() {
                 max={todayIso}
               />
               <NationalitySearchSelect
-                label="Citizenship"
+                label={t("onboarding.citizenship")}
                 value={step2.citizenship}
                 onChange={(demonym) => setStep2({ ...step2, citizenship: demonym })}
                 required
-                placeholder="Start typing a nationality..."
+                placeholder={t("onboarding.citizenshipPlaceholder")}
               />
               <CountrySearchSelect
-                label="Country"
+                label={t("onboarding.country")}
                 value={step2.country}
                 onChange={(name) => setStep2({ ...step2, country: name })}
                 required
-                placeholder="Start typing a country..."
+                placeholder={t("onboarding.countryPlaceholder")}
               />
               <Field
-                label="County"
+                label={t("onboarding.county")}
                 value={step2.county}
                 onChange={(e) => setStep2({ ...step2, county: e.target.value })}
                 required
               />
-              <Field label="City" value={step2.city} onChange={(e) => setStep2({ ...step2, city: e.target.value })} required />
+              <Field label={t("onboarding.city")} value={step2.city} onChange={(e) => setStep2({ ...step2, city: e.target.value })} required />
               <Field
-                label="Street"
+                label={t("onboarding.street")}
                 value={step2.street}
                 onChange={(e) => setStep2({ ...step2, street: e.target.value })}
                 required
               />
               <Field
-                label="Street number"
+                label={t("onboarding.streetNumber")}
                 value={step2.street_number}
                 onChange={(e) => setStep2({ ...step2, street_number: e.target.value })}
                 required
               />
               <Field
-                label="Building"
+                label={t("onboarding.building")}
                 value={step2.building ?? ""}
                 onChange={(e) => setStep2({ ...step2, building: e.target.value })}
                 maxLength={32}
               />
               <Field
-                label="Staircase"
+                label={t("onboarding.staircase")}
                 value={step2.staircase ?? ""}
                 onChange={(e) => setStep2({ ...step2, staircase: e.target.value })}
                 maxLength={32}
               />
               <Field
-                label="Apartment"
+                label={t("onboarding.apartment")}
                 value={step2.apartment ?? ""}
                 onChange={(e) => setStep2({ ...step2, apartment: e.target.value })}
                 maxLength={32}
               />
               <Field
-                label="Postal code"
+                label={t("onboarding.postalCode")}
                 value={step2.postal_code ?? ""}
                 onChange={(e) => setStep2({ ...step2, postal_code: e.target.value })}
                 maxLength={12}
               />
             </div>
             <button type="submit" disabled={submitting}>
-              {submitting ? "Saving..." : "Continue"}
+              {submitting ? t("onboarding.saving") : t("onboarding.continue")}
             </button>
           </form>
         )}
@@ -473,41 +475,35 @@ export function OnboardingPage() {
         {activeStep === 3 && (
           <div className="onboarding-placeholder">
             <div className="auth-form__header">
-              <span className="eyebrow">Step 3</span>
-              <h2>Identity document</h2>
+              <span className="eyebrow">{t("onboarding.step3")}</span>
+              <h2>{t("onboarding.identityDocument")}</h2>
             </div>
             {profile?.identity_document.status === "NEEDS_REVIEW" ? (
-              <p>
-                We couldn't automatically verify your identity document after {MAX_IDENTITY_DOCUMENT_ATTEMPTS} attempts.
-                It's now with an admin for manual review — we'll let you know once that's done.
-              </p>
+              <p>{t("onboarding.needsReviewNotice", { maxAttempts: MAX_IDENTITY_DOCUMENT_ATTEMPTS })}</p>
             ) : profile?.identity_document.status === "REJECTED" ? (
-              <p>Your identity document was rejected on review. Please contact support to continue.</p>
+              <p>{t("onboarding.rejectedNotice")}</p>
             ) : (
               <form onSubmit={submitStep3} className="onboarding-form">
-                <p className="field-hint">
-                  Upload clear photos of both sides of your Romanian ID card. We only read the machine-readable strip
-                  on the back to verify your details from Step 2.
-                </p>
+                <p className="field-hint">{t("onboarding.uploadHint")}</p>
                 <div className="onboarding-form__grid">
                   <FileField
-                    label="Front of ID card"
+                    label={t("onboarding.frontOfId")}
                     disabled={submitting}
                     onFileSelected={(dataUrl) => setStep3((current) => ({ ...current, front: dataUrl }))}
                   />
                   <FileField
-                    label="Back of ID card"
+                    label={t("onboarding.backOfId")}
                     disabled={submitting}
                     onFileSelected={(dataUrl) => setStep3((current) => ({ ...current, back: dataUrl }))}
                   />
                 </div>
                 {profile && profile.identity_document.attempt_count > 0 && (
                   <p className="field-hint">
-                    Attempt {profile.identity_document.attempt_count} of {MAX_IDENTITY_DOCUMENT_ATTEMPTS}
+                    {t("onboarding.attemptCount", { current: profile.identity_document.attempt_count, max: MAX_IDENTITY_DOCUMENT_ATTEMPTS })}
                   </p>
                 )}
                 <button type="submit" disabled={submitting || !step3.front || !step3.back}>
-                  {submitting ? "Verifying..." : "Upload and verify"}
+                  {submitting ? t("onboarding.verifying") : t("onboarding.uploadAndVerify")}
                 </button>
               </form>
             )}
@@ -517,18 +513,18 @@ export function OnboardingPage() {
         {activeStep === 4 && (
           <form onSubmit={submitStep4} className="onboarding-form">
             <div className="auth-form__header">
-              <span className="eyebrow">Step 4</span>
-              <h2>Financial profile</h2>
+              <span className="eyebrow">{t("onboarding.step4")}</span>
+              <h2>{t("onboarding.financialProfile")}</h2>
             </div>
             <div className="onboarding-form__grid">
               <Field
-                label="Occupation"
+                label={t("onboarding.occupation")}
                 value={step4.occupation ?? ""}
                 onChange={(e) => setStep4({ ...step4, occupation: e.target.value })}
                 maxLength={100}
               />
               <SelectField
-                label="Employment status"
+                label={t("onboarding.employmentStatus")}
                 value={step4.employment_status ?? ""}
                 onChange={(e) => {
                   const nextStatus = e.target.value === "" ? null : (e.target.value as EmploymentStatus);
@@ -541,23 +537,23 @@ export function OnboardingPage() {
                   });
                 }}
               >
-                <option value="">Select status</option>
+                <option value="">{t("onboarding.selectStatus")}</option>
                 {employmentStatuses.map((status) => (
                   <option key={status.value} value={status.value}>
-                    {status.label}
+                    {t(status.labelKey)}
                   </option>
                 ))}
               </SelectField>
               {!(step4.employment_status && EMPLOYMENT_STATUSES_WITHOUT_EMPLOYER.has(step4.employment_status)) && (
                 <>
                   <Field
-                    label="Employer"
+                    label={t("onboarding.employer")}
                     value={step4.employer ?? ""}
                     onChange={(e) => setStep4({ ...step4, employer: e.target.value })}
                     maxLength={255}
                   />
                   <DropdownWithOther
-                    label="Industry"
+                    label={t("onboarding.industry")}
                     value={step4.industry ?? ""}
                     options={INDUSTRY_OPTIONS}
                     onChange={(value) => setStep4({ ...step4, industry: value })}
@@ -565,13 +561,13 @@ export function OnboardingPage() {
                 </>
               )}
               <DropdownWithOther
-                label="Income source"
+                label={t("onboarding.incomeSource")}
                 value={step4.income_source ?? ""}
                 options={INCOME_SOURCE_OPTIONS}
                 onChange={(value) => setStep4({ ...step4, income_source: value })}
               />
               <Field
-                label="Approximate monthly income"
+                label={t("onboarding.approximateMonthlyIncome")}
                 type="number"
                 min="0"
                 max="10000000"
@@ -581,7 +577,7 @@ export function OnboardingPage() {
               />
             </div>
             <label>
-              Account purpose
+              {t("onboarding.accountPurpose")}
               <input
                 value={step4.account_purpose ?? ""}
                 onChange={(e) => setStep4({ ...step4, account_purpose: e.target.value })}
@@ -589,10 +585,10 @@ export function OnboardingPage() {
             </label>
             <div className="form-actions">
               <button type="submit" disabled={submitting}>
-                {submitting ? "Finishing..." : "Finish"}
+                {submitting ? t("onboarding.finishing") : t("onboarding.finish")}
               </button>
               <button type="button" className="button--ghost" disabled={submitting} onClick={skipStep4}>
-                Skip for now
+                {t("onboarding.skipForNow")}
               </button>
             </div>
           </form>

@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 
 import { App } from "./App";
 import "./features/auth/flags.css";
+import "./i18n/config";
 import "./index.css";
 import "./styles/easyb.css";
 import { AuthProvider } from "./store/AuthContext";

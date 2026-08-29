@@ -1,16 +1,17 @@
 import { ArrowRight, Check, Clock, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { ApiError, apiRequest } from "../../api/apiClient";
 import type { AgentActionResult, AgentActionStatus, PhoneTransferConfirmCard as CardModel } from "../../types";
 
-const TERMINAL_COPY: Partial<Record<AgentActionStatus, { label: string; tone: "ok" | "bad" }>> = {
-  EXECUTED: { label: "Transfer trimis", tone: "ok" },
-  CANCELLED: { label: "Anulat", tone: "bad" },
-  EXPIRED: { label: "Draftul a expirat", tone: "bad" },
-  FAILED: { label: "Transferul a eșuat", tone: "bad" },
-  NEEDS_REVIEW: { label: "Verificare de siguranță necesară", tone: "bad" },
-  SUPERSEDED: { label: "Înlocuit de o cerere mai nouă", tone: "bad" },
+const TERMINAL_TONE: Partial<Record<AgentActionStatus, "ok" | "bad">> = {
+  EXECUTED: "ok",
+  CANCELLED: "bad",
+  EXPIRED: "bad",
+  FAILED: "bad",
+  NEEDS_REVIEW: "bad",
+  SUPERSEDED: "bad",
 };
 
 function useSecondsLeft(expiresAt: string): number {
@@ -53,11 +54,12 @@ export function PhoneTransferConfirmCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const secondsLeft = useSecondsLeft(card.expires_at);
+  const { t } = useTranslation();
 
   const status: AgentActionStatus = result?.status ?? "DRAFT";
   const isDraft = status === "DRAFT";
   const expired = isDraft && secondsLeft <= 0;
-  const terminal = !isDraft ? TERMINAL_COPY[status] : undefined;
+  const terminalTone = !isDraft ? TERMINAL_TONE[status] : undefined;
 
   async function act(kind: "confirm" | "cancel") {
     if (!token || busy) return;
@@ -70,7 +72,7 @@ export function PhoneTransferConfirmCard({
       });
       setResult(res);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Nu am putut procesa acțiunea.");
+      setError(err instanceof ApiError ? err.message : t("assistant.actionCard.couldNotProcess"));
     } finally {
       setBusy(false);
     }
@@ -78,23 +80,25 @@ export function PhoneTransferConfirmCard({
 
   return (
     <div className="assistant-action-card">
-      <div className="assistant-action-card__title">{terminal || expired ? "Transfer" : "Confirmă transferul"}</div>
+      <div className="assistant-action-card__title">
+        {terminalTone || expired ? t("assistant.actionCard.titleTransfer") : t("assistant.actionCard.titleConfirm")}
+      </div>
 
       <div className="assistant-action-card__row">
-        <span className="assistant-action-card__label">Către</span>
+        <span className="assistant-action-card__label">{t("assistant.actionCard.to")}</span>
         <span className="assistant-action-card__value">
           {card.recipient_name}
           {card.recipient_phone_masked ? ` · ${card.recipient_phone_masked}` : ""}
         </span>
       </div>
       <div className="assistant-action-card__row">
-        <span className="assistant-action-card__label">Sumă</span>
+        <span className="assistant-action-card__label">{t("assistant.actionCard.amount")}</span>
         <span className="assistant-action-card__value assistant-action-card__amount">
           {card.amount} {card.currency}
         </span>
       </div>
       <div className="assistant-action-card__row">
-        <span className="assistant-action-card__label">Din</span>
+        <span className="assistant-action-card__label">{t("assistant.actionCard.from")}</span>
         <span className="assistant-action-card__value">{card.source_wallet_label}</span>
       </div>
 
@@ -104,13 +108,13 @@ export function PhoneTransferConfirmCard({
         </p>
       )}
 
-      {terminal && (
+      {terminalTone && (
         <p
-          className={`assistant-action-card__status assistant-action-card__status--${terminal.tone}`}
+          className={`assistant-action-card__status assistant-action-card__status--${terminalTone}`}
           role="status"
         >
-          {terminal.tone === "ok" ? <Check size={14} /> : <X size={14} />}
-          {terminal.label}
+          {terminalTone === "ok" ? <Check size={14} /> : <X size={14} />}
+          {t(`assistant.actionCard.status.${status}`)}
           {result?.error_detail ? ` — ${result.error_detail}` : ""}
         </p>
       )}
@@ -119,14 +123,14 @@ export function PhoneTransferConfirmCard({
         <>
           <div className="assistant-action-card__actions">
             <button type="button" onClick={() => act("confirm")} disabled={busy}>
-              <ArrowRight size={15} /> Accept
+              <ArrowRight size={15} /> {t("assistant.actionCard.accept")}
             </button>
             <button type="button" className="button--ghost" onClick={() => act("cancel")} disabled={busy}>
-              Anulează
+              {t("assistant.actionCard.cancel")}
             </button>
           </div>
           <p className="assistant-action-card__timer">
-            <Clock size={12} /> expiră în {Math.floor(secondsLeft / 60)}:
+            <Clock size={12} /> {t("assistant.actionCard.expiresIn")} {Math.floor(secondsLeft / 60)}:
             {String(secondsLeft % 60).padStart(2, "0")}
           </p>
         </>
@@ -134,7 +138,7 @@ export function PhoneTransferConfirmCard({
 
       {expired && (
         <p className="assistant-action-card__status assistant-action-card__status--bad" role="status">
-          <X size={14} /> Draftul a expirat. Cere transferul din nou.
+          <X size={14} /> {t("assistant.actionCard.draftExpired")}
         </p>
       )}
     </div>

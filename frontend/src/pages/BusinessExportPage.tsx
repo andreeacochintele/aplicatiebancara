@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
@@ -69,6 +70,7 @@ async function downloadBlob(response: Response, fallbackName: string) {
 }
 
 export function BusinessExportPage() {
+  const { t } = useTranslation();
   const { user, accessToken } = useAuth();
   const [dateFrom, setDateFrom] = useState(todayMinus(30));
   const [dateTo, setDateTo] = useState(todayMinus(0));
@@ -94,7 +96,7 @@ export function BusinessExportPage() {
   if (!isBusiness) {
     return (
       <section className="tile">
-        <p>Transaction export is only available to business accounts.</p>
+        <p>{t("businessExport.onlyForBusiness")}</p>
       </section>
     );
   }
@@ -127,7 +129,7 @@ export function BusinessExportPage() {
       });
       setPreview(data);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not generate preview");
+      setError(err instanceof ApiError ? err.message : t("businessExport.couldNotGeneratePreview"));
     } finally {
       setBusy(false);
     }
@@ -136,7 +138,7 @@ export function BusinessExportPage() {
   async function download() {
     if (!accessToken) return;
     if (format === "mt940" && !walletId) {
-      setError("MT940 is a per-account statement — pick a wallet first.");
+      setError(t("businessExport.mt940RequiresWallet"));
       return;
     }
     setError(null);
@@ -147,7 +149,7 @@ export function BusinessExportPage() {
         { headers: { Authorization: `Bearer ${accessToken}` } },
       );
       if (!response.ok) {
-        setError("Export failed");
+        setError(t("businessExport.exportFailed"));
         return;
       }
       await downloadBlob(response, `transactions_${dateFrom}_${dateTo}.${format}`);
@@ -163,7 +165,7 @@ export function BusinessExportPage() {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) {
-      setError("Could not re-download this export");
+      setError(t("businessExport.couldNotRedownload"));
       return;
     }
     await downloadBlob(response, `transactions_${job.date_from}_${job.date_to}.${job.format.toLowerCase()}`);
@@ -174,23 +176,23 @@ export function BusinessExportPage() {
       <div className="tile" style={{ maxWidth: 620 }}>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           <label style={{ flex: 1 }}>
-            From
+            {t("businessExport.from")}
             <input type="date" value={dateFrom} max={dateTo} onChange={(e) => setDateFrom(e.target.value)} />
           </label>
           <label style={{ flex: 1 }}>
-            To
+            {t("businessExport.to")}
             <input type="date" value={dateTo} min={dateFrom} onChange={(e) => setDateTo(e.target.value)} />
           </label>
           <label style={{ flex: 1 }}>
-            Direction
+            {t("businessExport.direction")}
             <select value={direction} onChange={(e) => setDirection(e.target.value as "" | "incoming" | "outgoing")}>
-              <option value="">All</option>
-              <option value="incoming">Incoming</option>
-              <option value="outgoing">Outgoing</option>
+              <option value="">{t("businessExport.all")}</option>
+              <option value="incoming">{t("businessExport.incoming")}</option>
+              <option value="outgoing">{t("businessExport.outgoing")}</option>
             </select>
           </label>
           <label style={{ flex: 1 }}>
-            Format
+            {t("businessExport.format")}
             <select value={format} onChange={(e) => setFormat(e.target.value as "csv" | "xlsx" | "pdf" | "mt940")}>
               <option value="csv">CSV</option>
               <option value="xlsx">XLSX</option>
@@ -199,9 +201,9 @@ export function BusinessExportPage() {
             </select>
           </label>
           <label style={{ flex: 1 }}>
-            Wallet {format === "mt940" && "(required for MT940)"}
+            {t("businessExport.wallet")} {format === "mt940" && t("businessExport.requiredForMt940")}
             <select value={walletId} onChange={(e) => setWalletId(e.target.value)}>
-              <option value="">All wallets</option>
+              <option value="">{t("businessExport.allWallets")}</option>
               {wallets.map((wallet) => (
                 <option key={wallet.id} value={wallet.id}>
                   {walletLabel(wallet)}
@@ -212,10 +214,10 @@ export function BusinessExportPage() {
         </div>
         <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
           <button onClick={generatePreview} disabled={busy}>
-            Preview
+            {t("businessExport.preview")}
           </button>
           <button onClick={download} disabled={busy}>
-            Export {format.toUpperCase()}
+            {t("businessExport.export", { format: format.toUpperCase() })}
           </button>
         </div>
         {error && <p role="alert">{error}</p>}
@@ -225,7 +227,7 @@ export function BusinessExportPage() {
         <div className="tile">
           <div className="tile__header">
             <span className="eyebrow">
-              {preview.row_count} transactions &middot; {preview.date_from} &rarr; {preview.date_to}
+              {t("businessExport.transactionsCount", { count: preview.row_count })} &middot; {preview.date_from} &rarr; {preview.date_to}
             </span>
           </div>
 
@@ -246,20 +248,20 @@ export function BusinessExportPage() {
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Counterparty</th>
-                <th>Category</th>
-                <th>Direction</th>
-                <th style={{ textAlign: "right" }}>Amount</th>
-                <th>Status</th>
+                <th>{t("businessExport.date")}</th>
+                <th>{t("businessExport.type")}</th>
+                <th>{t("businessExport.counterparty")}</th>
+                <th>{t("businessExport.category")}</th>
+                <th>{t("businessExport.direction")}</th>
+                <th style={{ textAlign: "right" }}>{t("businessExport.amount")}</th>
+                <th>{t("businessExport.status")}</th>
               </tr>
             </thead>
             <tbody>
               {preview.transactions.map((row) => (
                 <tr key={row.transaction_id}>
                   <td>{new Date(row.date).toLocaleDateString()}</td>
-                  <td>{row.type}</td>
+                  <td>{t(`common.txType.${row.type}`, { defaultValue: row.type })}</td>
                   <td>{row.counterparty || row.description || "—"}</td>
                   <td>{row.category ?? "—"}</td>
                   <td>
@@ -272,13 +274,13 @@ export function BusinessExportPage() {
                     {row.amount} {row.currency}
                   </td>
                   <td>
-                    <span className="tag tag--neutral">{row.status}</span>
+                    <span className="tag tag--neutral">{t(`common.status.${row.status}`, { defaultValue: row.status })}</span>
                   </td>
                 </tr>
               ))}
               {preview.transactions.length === 0 && (
                 <tr>
-                  <td colSpan={7}>No transactions in this period.</td>
+                  <td colSpan={7}>{t("businessExport.noTransactionsInPeriod")}</td>
                 </tr>
               )}
             </tbody>
@@ -288,16 +290,16 @@ export function BusinessExportPage() {
 
       <div className="tile">
         <div className="tile__header">
-          <span className="eyebrow">Export history</span>
+          <span className="eyebrow">{t("businessExport.exportHistory")}</span>
         </div>
         <table>
           <thead>
             <tr>
-              <th>Generated</th>
-              <th>Period</th>
-              <th>Format</th>
-              <th>Rows</th>
-              <th>Status</th>
+              <th>{t("businessExport.generated")}</th>
+              <th>{t("businessExport.period")}</th>
+              <th>{t("businessExport.format")}</th>
+              <th>{t("businessExport.rows")}</th>
+              <th>{t("businessExport.status")}</th>
               <th></th>
             </tr>
           </thead>
@@ -311,16 +313,16 @@ export function BusinessExportPage() {
                 <td>{job.format}</td>
                 <td>{job.row_count}</td>
                 <td>
-                  <span className="tag tag--accent">{job.status}</span>
+                  <span className="tag tag--accent">{t(`common.status.${job.status}`, { defaultValue: job.status })}</span>
                 </td>
                 <td>
-                  <button onClick={() => redownload(job)}>Download</button>
+                  <button onClick={() => redownload(job)}>{t("businessExport.download")}</button>
                 </td>
               </tr>
             ))}
             {history.length === 0 && (
               <tr>
-                <td colSpan={6}>No exports generated yet.</td>
+                <td colSpan={6}>{t("businessExport.noExportsGenerated")}</td>
               </tr>
             )}
           </tbody>

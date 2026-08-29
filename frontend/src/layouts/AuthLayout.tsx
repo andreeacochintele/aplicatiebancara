@@ -1,13 +1,15 @@
 import { Outlet } from "react-router-dom";
 
 import { BrandMark } from "../components/BrandMark";
+import { LanguageToggle } from "../components/LanguageToggle";
 import { ThemeToggle } from "../components/ThemeToggle";
 
 export function AuthLayout() {
   return (
     <div className="auth-layout">
       <div className="auth-layout__card">
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <LanguageToggle />
           <ThemeToggle />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>

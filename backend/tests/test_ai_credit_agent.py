@@ -76,6 +76,29 @@ def test_select_tool_falls_back_to_credit_score_by_default():
     assert agent._select_tool("hello there, banking assistant") == "credit_score"
 
 
+# ---- Romanian support: live-found via the assistant UI — "Vreau o rambursare
+# anticipata de 500 RON la creditul meu" fell through every English-only
+# keyword straight to the credit_score default, so the reply mixed a graceful
+# LLM explanation with an unrelated raw credit-score summary dump instead of
+# routing to early_repayment. ----
+
+
+@pytest.mark.parametrize(
+    "message, expected_tool",
+    [
+        ("Vreau o rambursare anticipata de 500 RON la creditul meu", "early_repayment"),
+        ("Ce dobanda are un credit ipotecar?", "loan_products"),
+        ("Am vreo cerere de credit in asteptare?", "loan_applications"),
+        ("Care e rata mea lunara?", "monthly_payment"),
+        ("Cat mai am de platit din credit?", "remaining_principal"),
+        ("Arata-mi toate creditele mele", "loan_details"),
+        ("Care e scorul meu de credit?", "credit_score"),
+    ],
+)
+def test_select_tool_matches_expected_keyword_in_romanian(message, expected_tool):
+    assert agent._select_tool(message) == expected_tool
+
+
 # ---- tools.py: proves each tool reuses CreditService, not a reimplementation ----
 
 
