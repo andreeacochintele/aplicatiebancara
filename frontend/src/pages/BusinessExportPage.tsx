@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -6,6 +7,8 @@ import { useAuth } from "../hooks/useAuth";
 import { walletLabel } from "../utils";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
+const EXPORT_ROWS_PER_PAGE = 15;
+const EXPORT_HISTORY_PER_PAGE = 10;
 
 interface BusinessExportRow {
   date: string;
@@ -82,6 +85,8 @@ export function BusinessExportPage() {
   const [history, setHistory] = useState<ExportJob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [transactionsPage, setTransactionsPage] = useState(1);
+  const [historyPage, setHistoryPage] = useState(1);
 
   const isBusiness = user?.user_type === "BUSINESS";
 
@@ -92,6 +97,20 @@ export function BusinessExportPage() {
       .then(setWallets)
       .catch(() => setWallets([]));
   }, [isBusiness, accessToken]);
+
+  useEffect(() => {
+    setTransactionsPage((currentPage) => {
+      const maxPage = Math.max(1, Math.ceil((preview?.transactions.length ?? 0) / EXPORT_ROWS_PER_PAGE));
+      return Math.min(currentPage, maxPage);
+    });
+  }, [preview]);
+
+  useEffect(() => {
+    setHistoryPage((currentPage) => {
+      const maxPage = Math.max(1, Math.ceil(history.length / EXPORT_HISTORY_PER_PAGE));
+      return Math.min(currentPage, maxPage);
+    });
+  }, [history.length]);
 
   if (!isBusiness) {
     return (
@@ -128,6 +147,7 @@ export function BusinessExportPage() {
         token: accessToken,
       });
       setPreview(data);
+      setTransactionsPage(1);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("businessExport.couldNotGeneratePreview"));
     } finally {
@@ -170,6 +190,36 @@ export function BusinessExportPage() {
     }
     await downloadBlob(response, `transactions_${job.date_from}_${job.date_to}.${job.format.toLowerCase()}`);
   }
+
+  const previewTransactions = preview?.transactions ?? [];
+  const transactionPageCount = Math.max(1, Math.ceil(previewTransactions.length / EXPORT_ROWS_PER_PAGE));
+  const currentTransactionsPage = Math.min(transactionsPage, transactionPageCount);
+  const transactionsPageStart = (currentTransactionsPage - 1) * EXPORT_ROWS_PER_PAGE;
+  const visibleTransactions = previewTransactions.slice(transactionsPageStart, transactionsPageStart + EXPORT_ROWS_PER_PAGE);
+  const firstVisibleTransaction = previewTransactions.length === 0 ? 0 : transactionsPageStart + 1;
+  const lastVisibleTransaction = Math.min(transactionsPageStart + EXPORT_ROWS_PER_PAGE, previewTransactions.length);
+  const transactionPageButtonCount = Math.min(5, transactionPageCount);
+  const firstTransactionPageButton = Math.min(
+    Math.max(1, currentTransactionsPage - 2),
+    Math.max(1, transactionPageCount - transactionPageButtonCount + 1),
+  );
+  const transactionPageNumbers = Array.from(
+    { length: transactionPageButtonCount },
+    (_, index) => firstTransactionPageButton + index,
+  );
+
+  const historyPageCount = Math.max(1, Math.ceil(history.length / EXPORT_HISTORY_PER_PAGE));
+  const currentHistoryPage = Math.min(historyPage, historyPageCount);
+  const historyPageStart = (currentHistoryPage - 1) * EXPORT_HISTORY_PER_PAGE;
+  const visibleHistory = history.slice(historyPageStart, historyPageStart + EXPORT_HISTORY_PER_PAGE);
+  const firstVisibleHistory = history.length === 0 ? 0 : historyPageStart + 1;
+  const lastVisibleHistory = Math.min(historyPageStart + EXPORT_HISTORY_PER_PAGE, history.length);
+  const historyPageButtonCount = Math.min(5, historyPageCount);
+  const firstHistoryPageButton = Math.min(
+    Math.max(1, currentHistoryPage - 2),
+    Math.max(1, historyPageCount - historyPageButtonCount + 1),
+  );
+  const historyPageNumbers = Array.from({ length: historyPageButtonCount }, (_, index) => firstHistoryPageButton + index);
 
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -258,7 +308,7 @@ export function BusinessExportPage() {
               </tr>
             </thead>
             <tbody>
-              {preview.transactions.map((row) => (
+              {visibleTransactions.map((row) => (
                 <tr key={row.transaction_id}>
                   <td>{new Date(row.date).toLocaleDateString()}</td>
                   <td>{t(`common.txType.${row.type}`, { defaultValue: row.type })}</td>
@@ -278,13 +328,68 @@ export function BusinessExportPage() {
                   </td>
                 </tr>
               ))}
-              {preview.transactions.length === 0 && (
+              {previewTransactions.length === 0 && (
                 <tr>
                   <td colSpan={7}>{t("businessExport.noTransactionsInPeriod")}</td>
                 </tr>
               )}
             </tbody>
           </table>
+          {previewTransactions.length > EXPORT_ROWS_PER_PAGE && (
+            <div
+              style={{
+                alignItems: "center",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "0.6rem",
+                justifyContent: "space-between",
+                marginTop: "1rem",
+              }}
+            >
+              <span className="eyebrow">
+                {t("businessExport.showingRange", {
+                  first: firstVisibleTransaction,
+                  last: lastVisibleTransaction,
+                  total: previewTransactions.length,
+                })}
+              </span>
+              <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                <button
+                  type="button"
+                  className="button--ghost"
+                  aria-label={t("businessExport.previousPage")}
+                  disabled={currentTransactionsPage === 1}
+                  onClick={() => setTransactionsPage((value) => Math.max(1, value - 1))}
+                  style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+                >
+                  <ChevronLeft size={16} aria-hidden="true" />
+                </button>
+                {transactionPageNumbers.map((pageNumber) => (
+                  <button
+                    key={pageNumber}
+                    type="button"
+                    className={pageNumber === currentTransactionsPage ? undefined : "button--ghost"}
+                    aria-label={t("businessExport.goToPage", { page: pageNumber })}
+                    aria-current={pageNumber === currentTransactionsPage ? "page" : undefined}
+                    onClick={() => setTransactionsPage(pageNumber)}
+                    style={{ minWidth: 40, padding: "0.65rem 0.75rem" }}
+                  >
+                    {pageNumber}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="button--ghost"
+                  aria-label={t("businessExport.nextPage")}
+                  disabled={currentTransactionsPage === transactionPageCount}
+                  onClick={() => setTransactionsPage((value) => Math.min(transactionPageCount, value + 1))}
+                  style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+                >
+                  <ChevronRight size={16} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -304,7 +409,7 @@ export function BusinessExportPage() {
             </tr>
           </thead>
           <tbody>
-            {history.map((job) => (
+            {visibleHistory.map((job) => (
               <tr key={job.id}>
                 <td>{new Date(job.created_at).toLocaleString()}</td>
                 <td>
@@ -327,6 +432,61 @@ export function BusinessExportPage() {
             )}
           </tbody>
         </table>
+        {history.length > EXPORT_HISTORY_PER_PAGE && (
+          <div
+            style={{
+              alignItems: "center",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.6rem",
+              justifyContent: "space-between",
+              marginTop: "1rem",
+            }}
+          >
+            <span className="eyebrow">
+              {t("businessExport.showingHistoryRange", {
+                first: firstVisibleHistory,
+                last: lastVisibleHistory,
+                total: history.length,
+              })}
+            </span>
+            <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+              <button
+                type="button"
+                className="button--ghost"
+                aria-label={t("businessExport.previousHistoryPage")}
+                disabled={currentHistoryPage === 1}
+                onClick={() => setHistoryPage((value) => Math.max(1, value - 1))}
+                style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+              >
+                <ChevronLeft size={16} aria-hidden="true" />
+              </button>
+              {historyPageNumbers.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  className={pageNumber === currentHistoryPage ? undefined : "button--ghost"}
+                  aria-label={t("businessExport.goToHistoryPage", { page: pageNumber })}
+                  aria-current={pageNumber === currentHistoryPage ? "page" : undefined}
+                  onClick={() => setHistoryPage(pageNumber)}
+                  style={{ minWidth: 40, padding: "0.65rem 0.75rem" }}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="button--ghost"
+                aria-label={t("businessExport.nextHistoryPage")}
+                disabled={currentHistoryPage === historyPageCount}
+                onClick={() => setHistoryPage((value) => Math.min(historyPageCount, value + 1))}
+                style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
+              >
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

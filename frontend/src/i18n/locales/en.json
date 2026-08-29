@@ -326,7 +326,15 @@
     "format": "Format",
     "rows": "Rows",
     "download": "Download",
-    "noStatementsGenerated": "No statements generated yet."
+    "noStatementsGenerated": "No statements generated yet.",
+    "showingRange": "Showing {{first}}-{{last}} of {{total}}",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "goToPage": "Go to page {{page}}",
+    "showingHistoryRange": "Showing {{first}}-{{last}} of {{total}}",
+    "previousHistoryPage": "Previous statement history page",
+    "nextHistoryPage": "Next statement history page",
+    "goToHistoryPage": "Go to statement history page {{page}}"
   },
   "notifications": {
     "type": {
@@ -382,7 +390,15 @@
     "period": "Period",
     "rows": "Rows",
     "download": "Download",
-    "noExportsGenerated": "No exports generated yet."
+    "noExportsGenerated": "No exports generated yet.",
+    "showingRange": "Showing {{first}}-{{last}} of {{total}}",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "goToPage": "Go to page {{page}}",
+    "showingHistoryRange": "Showing {{first}}-{{last}} of {{total}}",
+    "previousHistoryPage": "Previous export history page",
+    "nextHistoryPage": "Next export history page",
+    "goToHistoryPage": "Go to export history page {{page}}"
   },
   "businessProfile": {
     "onlyForBusiness": "The company profile is only available to business accounts.",
