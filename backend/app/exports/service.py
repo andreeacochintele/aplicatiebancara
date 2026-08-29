@@ -348,8 +348,10 @@ class ExportService:
                 pdf.ln()
             pdf.ln(5)
 
-        col_widths = (22, 26, 35, 50, 24, 16, 22, 16, 22)
-        headers = ("Date", "Type", "Counterparty", "Description", "Category", "Direction", "Amount", "Currency", "Status")
+        col_widths = (20, 22, 24, 32, 44, 22, 15, 20, 15, 20)
+        headers = (
+            "Date", "Tx ID", "Type", "Counterparty", "Description", "Category", "Direction", "Amount", "Currency", "Status",
+        )
         pdf.set_font("Helvetica", "B", 8.5)
         pdf.set_fill_color(*gradient_color(0.15))
         pdf.set_text_color(255, 255, 255)
@@ -367,9 +369,10 @@ class ExportService:
             pdf.set_draw_color(*BORDER)
             row = (
                 tx.date.strftime("%Y-%m-%d"),
+                str(tx.transaction_id)[:8],
                 tx.type.value.replace("_", " ").title(),
-                pdf_safe_text(tx.counterparty)[:24],
-                pdf_safe_text(tx.description)[:36],
+                pdf_safe_text(tx.counterparty)[:20],
+                pdf_safe_text(tx.description)[:30],
                 pdf_safe_text(tx.category)[:18],
                 tx.direction,
                 f"{'+' if tx.direction == 'IN' else '-'}{tx.amount}",
@@ -378,10 +381,10 @@ class ExportService:
             )
             pdf.set_text_color(*TEXT_DARK)
             for col, (value, width) in enumerate(zip(row, col_widths)):
-                if col == 6:
+                if col == 7:
                     pdf.set_text_color(*(GREEN if tx.direction == "IN" else RED))
                 pdf.cell(width, 7, value, border="B", fill=True)
-                if col == 6:
+                if col == 7:
                     pdf.set_text_color(*TEXT_DARK)
             pdf.ln()
 
@@ -421,7 +424,8 @@ class ExportService:
             value_date = tx.created_at.strftime("%y%m%d")
             entry_date = tx.created_at.strftime("%m%d")
             dc = "C" if tx.direction == "IN" else "D"
-            lines.append(f":61:{value_date}{entry_date}{dc}{amount(tx.amount)}NTRFNONREF")
+            reference = tx.id.hex[:16].upper()
+            lines.append(f":61:{value_date}{entry_date}{dc}{amount(tx.amount)}NTRF{reference}")
             narrative = (tx.description or tx.type.value.replace("_", " ").title())[:65]
             lines.append(f":86:{narrative}")
         closing_dc = "D" if statement.closing_balance < 0 else "C"

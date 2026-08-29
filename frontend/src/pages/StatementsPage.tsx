@@ -211,6 +211,7 @@ export function StatementsPage() {
             <thead>
               <tr>
                 <th>{t("statements.date")}</th>
+                <th>{t("statements.transactionId")}</th>
                 <th>{t("statements.description")}</th>
                 <th>{t("statements.type")}</th>
                 <th>{t("statements.direction")}</th>
@@ -221,6 +222,7 @@ export function StatementsPage() {
               {visibleTransactions.map((tx) => (
                 <tr key={tx.id}>
                   <td>{new Date(tx.created_at).toLocaleDateString()}</td>
+                  <td title={tx.id}>{tx.id.slice(0, 8)}</td>
                   <td>{tx.description ?? "—"}</td>
                   <td>{t(`common.txType.${tx.type}`, { defaultValue: tx.type })}</td>
                   <td>
@@ -233,7 +235,7 @@ export function StatementsPage() {
               ))}
               {statementTransactions.length === 0 && (
                 <tr>
-                  <td colSpan={5}>{t("statements.noActivity")}</td>
+                  <td colSpan={6}>{t("statements.noActivity")}</td>
                 </tr>
               )}
             </tbody>

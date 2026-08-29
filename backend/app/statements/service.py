@@ -233,8 +233,8 @@ class StatementService:
         pdf.set_xy(x0, y0 + box_h + 6)
         pdf.set_text_color(*_TEXT_DARK)
 
-        col_widths = (24, 32, 20, 28, 66)
-        headers = ("Date", "Type", "Direction", "Amount", "Description")
+        col_widths = (22, 18, 30, 16, 26, 58)
+        headers = ("Date", "Tx ID", "Type", "Direction", "Amount", "Description")
         pdf.set_font("Helvetica", "B", 8.5)
         pdf.set_fill_color(*_gradient_color(0.15))
         pdf.set_text_color(255, 255, 255)
@@ -252,17 +252,18 @@ class StatementService:
             pdf.set_draw_color(*_BORDER)
             row = (
                 tx.created_at.strftime("%Y-%m-%d"),
+                str(tx.id)[:8],
                 tx.type.value.replace("_", " ").title(),
                 tx.direction,
                 f"{'+' if tx.direction == 'IN' else '-'}{tx.amount}",
-                pdf_safe_text(tx.description)[:42],
+                pdf_safe_text(tx.description)[:36],
             )
             pdf.set_text_color(*_TEXT_DARK)
             for col, (value, width) in enumerate(zip(row, col_widths)):
-                if col == 3:
+                if col == 4:
                     pdf.set_text_color(*(_GREEN if tx.direction == "IN" else _RED))
                 pdf.cell(width, 7, value, border="B", fill=True)
-                if col == 3:
+                if col == 4:
                     pdf.set_text_color(*_TEXT_DARK)
             pdf.ln()
 

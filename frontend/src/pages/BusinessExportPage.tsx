@@ -299,6 +299,7 @@ export function BusinessExportPage() {
             <thead>
               <tr>
                 <th>{t("businessExport.date")}</th>
+                <th>{t("businessExport.transactionId")}</th>
                 <th>{t("businessExport.type")}</th>
                 <th>{t("businessExport.counterparty")}</th>
                 <th>{t("businessExport.category")}</th>
@@ -311,6 +312,7 @@ export function BusinessExportPage() {
               {visibleTransactions.map((row) => (
                 <tr key={row.transaction_id}>
                   <td>{new Date(row.date).toLocaleDateString()}</td>
+                  <td title={row.transaction_id}>{row.transaction_id.slice(0, 8)}</td>
                   <td>{t(`common.txType.${row.type}`, { defaultValue: row.type })}</td>
                   <td>{row.counterparty || row.description || "—"}</td>
                   <td>{row.category ?? "—"}</td>
@@ -330,7 +332,7 @@ export function BusinessExportPage() {
               ))}
               {previewTransactions.length === 0 && (
                 <tr>
-                  <td colSpan={7}>{t("businessExport.noTransactionsInPeriod")}</td>
+                  <td colSpan={8}>{t("businessExport.noTransactionsInPeriod")}</td>
                 </tr>
               )}
             </tbody>
