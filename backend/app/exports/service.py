@@ -303,18 +303,28 @@ class ExportService:
     def to_pdf(
         preview: TransactionExportPreview, company_name: str | None = None, representative_name: str | None = None
     ) -> bytes:
-        from app.core.pdf_branding import BORDER, GREEN, RED, ROW_ALT, TEXT_DARK, TEXT_SOFT, gradient_color, new_branded_pdf
+        from app.core.pdf_branding import (
+            BORDER,
+            GREEN,
+            RED,
+            ROW_ALT,
+            TEXT_DARK,
+            TEXT_SOFT,
+            gradient_color,
+            new_branded_pdf,
+            pdf_safe_text,
+        )
 
         pdf = new_branded_pdf(subtitle="Business Transaction Export", orientation="L")
         pdf.footer_note = "sandbox export, not a legal document"
 
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(*TEXT_DARK)
-        pdf.cell(0, 8, company_name or "Transaction export", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 8, pdf_safe_text(company_name) or "Transaction export", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", "", 9.5)
         pdf.set_text_color(*TEXT_SOFT)
         if representative_name:
-            pdf.cell(0, 6, f"Representative: {representative_name}", new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 6, f"Representative: {pdf_safe_text(representative_name)}", new_x="LMARGIN", new_y="NEXT")
         pdf.cell(0, 6, f"Period: {preview.date_from} to {preview.date_to}", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(3)
 
@@ -358,9 +368,9 @@ class ExportService:
             row = (
                 tx.date.strftime("%Y-%m-%d"),
                 tx.type.value.replace("_", " ").title(),
-                tx.counterparty[:24],
-                (tx.description or "")[:36],
-                (tx.category or "")[:18],
+                pdf_safe_text(tx.counterparty)[:24],
+                pdf_safe_text(tx.description)[:36],
+                pdf_safe_text(tx.category)[:18],
                 tx.direction,
                 f"{'+' if tx.direction == 'IN' else '-'}{tx.amount}",
                 tx.currency,
