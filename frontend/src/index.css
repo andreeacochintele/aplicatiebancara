@@ -70,6 +70,34 @@ body {
   color: var(--color-accent-strong);
 }
 
+.language-toggle {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 18px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-divider);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.language-toggle:hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent-strong);
+}
+
+.language-toggle__flag {
+  border-radius: 3px;
+  width: 18px;
+  line-height: 18px;
+}
+
 /* ---- Shell layout ---- */
 
 .app-shell {
@@ -5055,6 +5083,25 @@ th {
   border-color: var(--color-accent);
   color: var(--color-accent-strong);
   background: var(--color-accent-soft);
+}
+
+.assistant-download {
+  margin-top: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--color-accent-soft);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent-strong);
+}
+
+.assistant-download:hover {
+  background: var(--color-accent);
+  color: #fff;
 }
 
 .assistant-action-card {

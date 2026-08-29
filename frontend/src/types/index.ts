@@ -624,6 +624,20 @@ export interface NetWorthHistoryResponse {
   note: string;
 }
 
+export interface BalanceHistoryPoint {
+  date: string;
+  balance: string;
+}
+
+export interface BalanceHistoryResponse {
+  wallet_id: string;
+  currency: string;
+  date_from: string;
+  date_to: string;
+  history: BalanceHistoryPoint[];
+  note: string;
+}
+
 export interface StatementTransaction {
   id: string;
   created_at: string;
@@ -862,6 +876,10 @@ export interface AgentActionResult {
   card: ActionCard | null;
 }
 
+export interface DownloadAttachment {
+  url: string;
+}
+
 export interface OrchestratorChatResponse {
   intent: OrchestratorIntent;
   reply: string;
@@ -869,6 +887,7 @@ export interface OrchestratorChatResponse {
   conversation_id: string;
   suggested_followups: string[];
   action_card: ActionCard | null;
+  download: DownloadAttachment | null;
 }
 
 export interface ConversationMessagePublic {

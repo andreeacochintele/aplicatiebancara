@@ -23,26 +23,41 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.ai.actions.schemas import AgentResult, DownloadAttachment
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
 from app.ai.observability import log_debug, timed_event
 from app.ai.personal_finance import tools
 from app.ai.tools.base import ToolContext, ToolDataUnavailableError
+from app.statements.schemas import StatementPublic
 
 _SYSTEM_PROMPT = (
     "You are the Personal Finance Agent of a banking assistant. You will be "
-    "shown the user's real financial data, already fetched from backend "
-    "services and quoted to the user verbatim right after your reply — do "
-    "not restate, recalculate, round, or invent any figure yourself. Write "
-    "only a short (1-3 sentence), friendly answer to the user's message "
-    "using that data as context.\n"
+    "shown the user's real financial data below. That exact data is shown "
+    "again to the user, formatted cleanly, immediately after your reply — "
+    "so your reply itself must NEVER contain any number, amount, currency "
+    "code, percentage, or date, and must NEVER quote, copy, or closely "
+    "paraphrase any line, label, or heading from the data — not even the "
+    "word 'Data' or a field name. Treat the data purely as something to "
+    "react to, not something to reproduce. Write only a short (1-2 "
+    "sentence), warm, natural-language reaction to what the data shows — "
+    "e.g. a brief acknowledgement or a qualitative observation — never a "
+    "restatement, list, or breakdown of it.\n"
     "Be direct and proactive: if the data below clearly answers the user's "
-    "question, present it confidently right away in this same reply — do "
-    "not ask for confirmation first or offer it as an optional follow-up "
-    "('would you like me to also show...?'). Only ask a clarifying question "
-    "if the request is genuinely ambiguous about which figure, category, or "
-    "time period is needed, or if the data below doesn't actually cover "
-    "what they asked. Don't invent a need for clarification on a request "
-    "that's already clear just to be cautious.\n"
+    "question, treat it as answered — do not ask for confirmation first or "
+    "offer an optional follow-up ('would you like me to also show...?') "
+    "about something the data already covers. Only ask a clarifying "
+    "question if the request is genuinely ambiguous about which figure, "
+    "category, or time period is needed, or if the data below doesn't "
+    "actually cover what they asked. Don't invent a need for clarification "
+    "on a request that's already clear just to be cautious.\n"
+    "Never claim you calculated, converted, totaled, or otherwise computed "
+    "something unless that exact computed result is present in the data "
+    "below — e.g. never say 'I calculated the total' or 'I converted this "
+    "to RON' if the data below is only a raw, unconverted, per-item listing. "
+    "If the data doesn't contain the specific computed figure the user "
+    "asked for, say plainly that you don't have that computed figure "
+    "(what you do have is below) rather than asserting you performed a "
+    "calculation you didn't.\n"
     "Always respond in the same language the user's message is written in. "
     "If the message is ambiguous or too short to tell, default to Romanian."
 )
@@ -59,14 +74,48 @@ _DISPATCH: list[tuple[str, tuple[str, ...]]] = [
     ("recurring", ("recurring", "subscription", "recurent", "abonament")),
     ("spending_by_type", ("spend", "spent", "spending", "expense", "category", "cheltui", "categorie")),
     ("transactions", ("transaction", "history", "tranzac", "istoric")),
+    (
+        "net_worth",
+        (
+            "net worth",
+            "total balance",
+            "combined balance",
+            "all my wallets",
+            "all my accounts",
+            "toate conturile",
+            "toate valutele",
+            "sold total",
+            "everything combined",
+        ),
+    ),
     ("wallet_balances", ("balance", "wallet", "money", "how much", "sold", "cont", "bani", "cat am", "cât am")),
 ]
 _DEFAULT_TOOL = "wallet_balances"
 
 
-def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str, str]] | None = None) -> str:
+def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str, str]] | None = None) -> "str | AgentResult":
     ctx = ToolContext(user_id=user_id, db=db)
     tool_name = _select_tool(message)
+
+    # Special-cased ahead of the generic _SUMMARIZERS dispatch: a statement
+    # is the one personal_finance reply the user can also want as a real
+    # file, not just chat text, so this needs the underlying StatementPublic
+    # (for its wallet_id/date range) in addition to a summary string.
+    if tool_name == "statement":
+        try:
+            statement = tools.get_account_statement(ctx, message)
+        except ToolDataUnavailableError as exc:
+            return str(exc)
+        summary = _format_statement_summary(statement)
+        explanation = _explain(message, summary, history)
+        reply = _append_summary(explanation, summary)
+        download = DownloadAttachment(
+            url=(
+                f"/statements/export?wallet_id={statement.wallet_id}"
+                f"&date_from={statement.date_from}&date_to={statement.date_to}&format=pdf"
+            )
+        )
+        return AgentResult(reply=reply, download=download)
 
     try:
         summary = _SUMMARIZERS[tool_name](ctx)
@@ -74,6 +123,18 @@ def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str
         return str(exc)
 
     explanation = _explain(message, summary, history)
+    return _append_summary(explanation, summary)
+
+
+def _append_summary(explanation: str, summary: str) -> str:
+    """Deterministic backstop for the "never quote the data" system-prompt
+    rule: a reasoning model doesn't always follow a "never do X" instruction
+    (confirmed live — GPT-5-mini occasionally echoes the labeled data block
+    verbatim into its own reply despite being told not to). If it already
+    did, appending the block again would duplicate it a second time, so
+    skip the append in that case instead of trusting the prompt alone."""
+    if summary.strip() and summary.strip() in explanation:
+        return explanation
     return f"{explanation}\n\n{summary}"
 
 
@@ -90,7 +151,15 @@ def _explain(message: str, data_summary: str, history: list[dict[str, str]] | No
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
         *(history or []),
-        {"role": "user", "content": f"User asked: {message}\n\nData:\n{data_summary}"},
+        {
+            "role": "user",
+            "content": (
+                f"User asked: {message}\n\n"
+                f"(For your reasoning only — never quote, copy, or restate this "
+                f"verbatim in your reply, the user will see it separately right "
+                f"after your reply:\n{data_summary}\n)"
+            ),
+        },
     ]
     log_debug("llm_call.request", agent="personal_finance", messages=messages)
     # No temperature override: this GPT-5-mini deployment is a reasoning
@@ -106,7 +175,7 @@ def _explain(message: str, data_summary: str, history: list[dict[str, str]] | No
 def _wallet_balances(ctx: ToolContext) -> str:
     wallets = tools.get_wallet_balances(ctx)
     if not wallets:
-        return "Wallet balances: no wallets found."
+        return "You don't have any wallets yet."
     lines = [
         f"- {w.currency} {w.available_balance} available"
         + (f" (reserved: {w.reserved_balance})" if w.reserved_balance else "")
@@ -116,10 +185,27 @@ def _wallet_balances(ctx: ToolContext) -> str:
     return "Wallet balances:\n" + "\n".join(lines)
 
 
+def _net_worth(ctx: ToolContext) -> str:
+    result = tools.get_net_worth(ctx)
+    if not result.wallets:
+        return "You don't have any wallets yet."
+    lines = [
+        f"- {w.currency} {w.available_balance} available -> {w.converted_available_balance} {result.base_currency}"
+        + (f" (reserved: {w.reserved_balance} {w.currency}, not included in the total)" if w.reserved_balance else "")
+        + (" — main wallet" if w.is_main else "")
+        for w in result.wallets
+    ]
+    return (
+        f"Total balance across all wallets, converted to {result.base_currency}, "
+        f"reserved amounts excluded: {result.total_available_balance} {result.base_currency}\n"
+        + "\n".join(lines)
+    )
+
+
 def _transactions(ctx: ToolContext) -> str:
     transactions = tools.get_transactions(ctx)
     if not transactions:
-        return "Transactions: none found."
+        return "No transactions found yet."
     shown = transactions[:10]
     lines = [
         f"- {t.created_at.date()} {t.type.value}: {t.amount} {t.currency} ({t.status.value})"
@@ -148,7 +234,7 @@ def _spending_by_type(ctx: ToolContext) -> str:
 def _budgets(ctx: ToolContext) -> str:
     budgets = tools.get_budgets(ctx)
     if not budgets:
-        return "Budgets: none set up."
+        return "You don't have any budgets set up yet."
     lines = [
         f"- {b.name}: {b.spent_amount}/{b.limit_amount} {b.currency} spent ({b.percent_used}%), "
         f"{b.remaining_amount} {b.currency} remaining, {b.days_remaining} days left in period"
@@ -160,7 +246,7 @@ def _budgets(ctx: ToolContext) -> str:
 def _savings_goals(ctx: ToolContext) -> str:
     goals = tools.get_savings_goals(ctx)
     if not goals:
-        return "Savings goals: none set up."
+        return "You don't have any savings goals set up yet."
     lines = []
     for g in goals:
         line = f"- {g.name}: {g.current_amount}/{g.target_amount} {g.currency} ({g.percent_complete}%)"
@@ -175,7 +261,7 @@ def _savings_goals(ctx: ToolContext) -> str:
 def _cashback_offers(ctx: ToolContext) -> str:
     merchants = tools.get_cashback_offers(ctx)
     if not merchants:
-        return "Cashback offers: none currently active."
+        return "There are no active cashback offers right now."
     lines = []
     for m in merchants:
         offer = m.active_offer
@@ -189,8 +275,7 @@ def _cashback_offers(ctx: ToolContext) -> str:
     return "Active cashback offers:\n" + "\n".join(lines)
 
 
-def _statement(ctx: ToolContext) -> str:
-    s = tools.get_account_statement(ctx)
+def _format_statement_summary(s: StatementPublic) -> str:
     header = (
         f"Account statement, {s.date_from} to {s.date_to} ({s.currency}):\n"
         f"- Opening balance: {s.opening_balance} {s.currency}\n"
@@ -230,7 +315,7 @@ def _recurring(ctx: ToolContext) -> str:
 
 
 _SUMMARIZERS = {
-    "statement": _statement,
+    "net_worth": _net_worth,
     "wallet_balances": _wallet_balances,
     "transactions": _transactions,
     "spending_by_type": _spending_by_type,

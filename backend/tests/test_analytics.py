@@ -690,3 +690,60 @@ def test_net_worth_history_reconstructs_daily_balances_from_ledger(db_session, s
 def test_net_worth_history_rejects_unknown_period(db_session, user_only):
     with pytest.raises(ValidationError):
         AnalyticsService(db_session).net_worth_history(user_only.id, period="bogus", base_currency=None)
+
+
+def test_balance_history_reconstructs_a_range_ending_before_today(db_session, seeded_user_with_wallet):
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    five_days_ago = now - timedelta(days=5)
+    wallet.created_at = five_days_ago - timedelta(days=5)
+    wallet.available_balance = Decimal("300.00")
+    db_session.flush()
+    tx = _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", TransactionStatus.COMPLETED, five_days_ago)
+    entry = WalletLedgerEntry(
+        wallet_id=wallet.id,
+        transaction_id=tx.id,
+        entry_type=LedgerEntryType.DEBIT,
+        amount=Decimal("100.00"),
+        currency=wallet.currency,
+        balance_after=Decimal("300.00"),
+        created_at=five_days_ago,
+    )
+    db_session.add(entry)
+    db_session.flush()
+
+    result = AnalyticsService(db_session).wallet_balance_history(
+        user.id,
+        wallet_id=None,
+        date_from=(five_days_ago - timedelta(days=2)).date(),
+        date_to=five_days_ago.date(),
+    )
+
+    assert result.currency == "RON"
+    dates = [point.date for point in result.history]
+    # date_to is before today: today must not leak into a bounded historical range.
+    assert now.date() not in dates
+    assert dates[-1] == five_days_ago.date()
+    by_date = {point.date: point.balance for point in result.history}
+    assert by_date[five_days_ago.date()] == Decimal("300.00")
+    day_before_debit = (five_days_ago - timedelta(days=1)).date()
+    assert by_date[day_before_debit] == Decimal("400.00")
+
+
+def test_balance_history_rejects_date_from_after_date_to(db_session, seeded_user_with_wallet):
+    user, _wallet = seeded_user_with_wallet
+    today = datetime.now(timezone.utc).date()
+    with pytest.raises(ValidationError):
+        AnalyticsService(db_session).wallet_balance_history(
+            user.id, wallet_id=None, date_from=today, date_to=today - timedelta(days=1)
+        )
+
+
+def test_balance_history_raises_not_found_for_unknown_wallet(db_session, user_only):
+    WalletService(db_session).create_wallet(user_only.id, WalletCreate(currency="RON", is_main=True))
+    db_session.flush()
+    today = datetime.now(timezone.utc).date()
+    with pytest.raises(NotFoundError):
+        AnalyticsService(db_session).wallet_balance_history(
+            user_only.id, wallet_id=uuid.uuid4(), date_from=today - timedelta(days=1), date_to=today
+        )

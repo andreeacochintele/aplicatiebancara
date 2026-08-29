@@ -1,6 +1,7 @@
 import { CreditCard, Gift, RefreshCw, ShieldCheck, Sparkles, Store, Users, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import {
@@ -23,8 +24,8 @@ import type {
   Wallet,
 } from "../types";
 
-function formatCardTierLabel(tier: CardTier | null): string {
-  return tier ? tier[0] + tier.slice(1).toLowerCase() : "One-time";
+function formatCardTierLabel(tier: CardTier | null, t: (key: string) => string): string {
+  return tier ? tier[0] + tier.slice(1).toLowerCase() : t("rewards.oneTime");
 }
 
 function formatCardTypeLabel(type: Card["type"]): string {
@@ -34,8 +35,8 @@ function formatCardTypeLabel(type: Card["type"]): string {
     .join(" ");
 }
 
-function formatCardLabel(card: Card): string {
-  return `${formatCardTierLabel(card.tier)} ${card.type[0]}${card.type.slice(1).toLowerCase()} •••• ${card.last_four}`;
+function formatCardLabel(card: Card, t: (key: string) => string): string {
+  return `${formatCardTierLabel(card.tier, t)} ${card.type[0]}${card.type.slice(1).toLowerCase()} •••• ${card.last_four}`;
 }
 
 function cardToneClass(card: Card): string {
@@ -70,6 +71,7 @@ function ConfirmModal({
   busy: boolean;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       role="presentation"
@@ -99,7 +101,7 @@ function ConfirmModal({
             type="button"
             className="button--ghost card-panel__icon-action"
             onClick={onCancel}
-            aria-label="Close"
+            aria-label={t("rewards.close")}
             style={{ marginLeft: "auto" }}
           >
             <X size={15} strokeWidth={2.2} />
@@ -108,7 +110,7 @@ function ConfirmModal({
         {children}
         <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem", justifyContent: "flex-end" }}>
           <button type="button" className="button--ghost" onClick={onCancel}>
-            Cancel
+            {t("rewards.cancel")}
           </button>
           <button type="button" onClick={onConfirm} disabled={busy}>
             {confirmLabel}
@@ -120,8 +122,9 @@ function ConfirmModal({
 }
 
 export function RewardsPage() {
+  const { t } = useTranslation();
   const { accessToken, user } = useAuth();
-  const cardholderName = user ? `${user.first_name} ${user.last_name}`.trim() : "Card holder";
+  const cardholderName = user ? `${user.first_name} ${user.last_name}`.trim() : t("rewards.cardHolderFallback");
   const [rewards, setRewards] = useState<RewardAccount | null>(null);
   const [benefits, setBenefits] = useState<RewardBenefit[]>([]);
   const [merchants, setMerchants] = useState<Merchant[]>([]);
@@ -208,15 +211,15 @@ export function RewardsPage() {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
-      return `${availableCredit} ${card.credit_account?.currency ?? "RON"} available credit`;
+      return t("rewards.availableCreditAmount", { amount: availableCredit, currency: card.credit_account?.currency ?? "RON" });
     }
-    return `${effectiveWallet(card)?.currency ?? "unknown"} wallet`;
+    return t("rewards.walletCurrency", { currency: effectiveWallet(card)?.currency ?? "unknown" });
   }
 
   function selectedCardFundingLabel(card: Card | undefined): string {
-    if (!card) return "Pick a card below";
-    if (card.type === "CREDIT") return "Uses available credit - pick a merchant below";
-    return `Pays from ${effectiveWallet(card)?.currency ?? "unknown"} wallet - pick a merchant below`;
+    if (!card) return t("rewards.pickCardBelow");
+    if (card.type === "CREDIT") return t("rewards.usesAvailableCredit");
+    return t("rewards.paysFromWallet", { currency: effectiveWallet(card)?.currency ?? "unknown" });
   }
 
   function refreshAfterChange() {
@@ -310,7 +313,7 @@ export function RewardsPage() {
       // the merchant and card.
       setSelectedMerchant(null);
       setCvvInput("");
-      const receipt = `Receipt #${transaction.id.slice(0, 8).toUpperCase()}`;
+      const receipt = t("rewards.receiptNumber", { id: transaction.id.slice(0, 8).toUpperCase() });
       loadCards();
       const earned = await syncRewards();
       const match = earned.find((p) => p.merchant_id === merchant.id);
@@ -321,17 +324,18 @@ export function RewardsPage() {
         // and cashback are independent: cashback is real money credited
         // back to the wallet, never extra points, so they're shown as two
         // separate numbers rather than a combined total.
-        const cashback = Number(match.cashback_amount) > 0 ? ` · ${match.cashback_amount} ${match.currency} cashback credited to your wallet` : "";
-        setToast(
-          `Payment confirmed — ${receipt} · Earned ${match.points_earned} points${cashback}`,
-        );
+        const cashback =
+          Number(match.cashback_amount) > 0
+            ? t("rewards.cashbackCreditedToWallet", { amount: match.cashback_amount, currency: match.currency })
+            : "";
+        setToast(t("rewards.paymentConfirmedEarned", { receipt, points: match.points_earned, cashback }));
       } else if (!merchant.verified) {
-        setToast(`Payment confirmed — ${receipt} · 0 points earned (merchant not verified yet)`);
+        setToast(t("rewards.paymentConfirmedNotVerified", { receipt }));
       } else {
-        setToast(`Payment confirmed — ${receipt}`);
+        setToast(t("rewards.paymentConfirmed", { receipt }));
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Payment failed");
+      setError(err instanceof ApiError ? err.message : t("rewards.paymentFailed"));
     } finally {
       setBusy(false);
     }
@@ -355,17 +359,17 @@ export function RewardsPage() {
       if (redemption?.redemption_code) {
         const validUntil = redemption.expires_at ? new Date(redemption.expires_at).toLocaleDateString() : null;
         setCodeReveal({
-          title: `Redeemed "${benefit.name}"`,
+          title: t("rewards.redeemedTitle", { name: benefit.name }),
           subtitle:
-            `${benefit.points_cost ?? 0} points spent — show this code at ${benefit.partner_name ?? "the partner"} to claim it.` +
-            (validUntil ? ` Valid until ${validUntil}, also saved under My vouchers below.` : ""),
+            t("rewards.redeemedSubtitle", { points: benefit.points_cost ?? 0, partner: benefit.partner_name ?? t("rewards.thePartner") }) +
+            (validUntil ? t("rewards.validUntilAlsoSaved", { date: validUntil }) : ""),
           code: redemption.redemption_code,
         });
       } else {
-        setToast(`Redeemed "${benefit.name}" for ${benefit.points_cost ?? 0} points.`);
+        setToast(t("rewards.redeemedToast", { name: benefit.name, points: benefit.points_cost ?? 0 }));
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Redeem failed");
+      setError(err instanceof ApiError ? err.message : t("rewards.redeemFailed"));
       setConfirmBenefit(null);
     } finally {
       setBusy(false);
@@ -383,7 +387,7 @@ export function RewardsPage() {
       });
       setRewards(updated);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not mark voucher as used");
+      setError(err instanceof ApiError ? err.message : t("rewards.couldNotMarkVoucherUsed"));
     } finally {
       setMarkingUsedId(null);
     }
@@ -431,21 +435,21 @@ export function RewardsPage() {
       <div className="tile" style={{ background: "var(--easyb-gradient, #5b5fef)", color: "#fff", border: "none" }}>
         <div className="eyebrow" style={{ color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
           <Sparkles size={14} strokeWidth={2.2} />
-          Your balance
+          {t("rewards.yourBalance")}
         </div>
         <div className="balance-hero__amount" style={{ color: "#fff" }}>
-          {rewards ? rewards.points_balance : "—"} <span style={{ fontSize: "1.1rem", fontWeight: 600 }}>pts</span>
+          {rewards ? rewards.points_balance : "—"} <span style={{ fontSize: "1.1rem", fontWeight: 600 }}>{t("rewards.pts")}</span>
         </div>
         <div style={{ marginTop: "1rem", display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
           <button type="button" onClick={() => scrollToId("rewards-pay")} style={{ background: "#fff", color: "#4548c9", border: "none" }}>
-            Earn points
+            {t("rewards.earnPoints")}
           </button>
           <button
             type="button"
             onClick={() => scrollToId("rewards-catalog")}
             style={{ background: "rgba(255,255,255,0.16)", color: "#fff", border: "1px solid rgba(255,255,255,0.4)" }}
           >
-            Redeem points
+            {t("rewards.redeemPoints")}
           </button>
         </div>
       </div>
@@ -457,7 +461,7 @@ export function RewardsPage() {
             <div className="tile__header">
               <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <CreditCard size={14} strokeWidth={2.2} />
-                Your cards & rewards
+                {t("rewards.yourCardsAndRewards")}
               </span>
               <button
                 type="button"
@@ -465,12 +469,11 @@ export function RewardsPage() {
                 onClick={() => setAreCardsExpanded((current) => !current)}
                 aria-expanded={areCardsExpanded}
               >
-                {areCardsExpanded ? "Retract" : "Expand"}
+                {areCardsExpanded ? t("rewards.retract") : t("rewards.expand")}
               </button>
             </div>
             <p className="eyebrow" style={{ marginTop: "-0.4rem", marginBottom: "0.75rem" }}>
-              Card tier sets how many points you earn per RON, and which rewards in the catalog below you can redeem
-              — some require owning at least a Gold or Platinum card.
+              {t("rewards.cardTierHint")}
             </p>
             {areCardsExpanded && cards.length > 0 ? (
               <div className="card-gallery">
@@ -482,8 +485,8 @@ export function RewardsPage() {
                           <span className="bank-card__brand">EASYB</span>
                           <span className="bank-card__product">
                             {card.tier
-                              ? `${formatCardTierLabel(card.tier)} ${formatCardTypeLabel(card.type)}`
-                              : "One-time"}
+                              ? `${formatCardTierLabel(card.tier, t)} ${formatCardTypeLabel(card.type)}`
+                              : t("rewards.oneTime")}
                           </span>
                         </div>
                         <span className={cardStatusClass(card.status)}>{card.status}</span>
@@ -496,13 +499,13 @@ export function RewardsPage() {
                         <div className="bank-card__number">{card.masked_pan}</div>
                       </div>
                       <div className="bank-card__holder">
-                        <span>Card holder</span>
+                        <span>{t("rewards.cardHolder")}</span>
                         <strong>{cardholderName}</strong>
                       </div>
                       <div className="bank-card__footer">
                         <span>
                           {card.tier
-                            ? `${formatCardTierLabel(card.tier)} ${formatCardTypeLabel(card.type)}`
+                            ? `${formatCardTierLabel(card.tier, t)} ${formatCardTypeLabel(card.type)}`
                             : formatCardTypeLabel(card.type)}
                         </span>
                         <span className="bank-card__security">
@@ -514,7 +517,7 @@ export function RewardsPage() {
                     </div>
                     <div className="card-panel__meta">
                       <div>
-                        <div className="eyebrow">This card's perks</div>
+                        <div className="eyebrow">{t("rewards.thisCardsPerks")}</div>
                         <ul style={{ margin: "0.3rem 0 0", padding: 0, listStyle: "none", display: "grid", gap: "0.25rem" }}>
                           {cardTierRewardBullets(card.tier ?? "REGULAR").map((perk) => (
                             <li key={perk} className="card-panel__value" style={{ fontSize: "0.85rem" }}>
@@ -528,11 +531,9 @@ export function RewardsPage() {
                 ))}
               </div>
             ) : areCardsExpanded ? (
-              <p className="eyebrow">No cards yet.</p>
+              <p className="eyebrow">{t("rewards.noCardsYet")}</p>
             ) : (
-              <p className="eyebrow">
-                {cards.length} card{cards.length === 1 ? "" : "s"} — expand to view.
-              </p>
+              <p className="eyebrow">{t("rewards.cardCount", { count: cards.length })}</p>
             )}
           </div>
 
@@ -541,7 +542,7 @@ export function RewardsPage() {
             <div className="tile__header">
               <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <Gift size={14} strokeWidth={2.2} />
-                Redeem your points
+                {t("rewards.redeemYourPoints")}
               </span>
             </div>
             {benefits.length > 0 ? (
@@ -553,7 +554,7 @@ export function RewardsPage() {
                     <article className="card-panel reward-card" key={benefit.id}>
                       <div className="reward-card__top">
                         <CategoryIconBadge category={benefit.category} />
-                        <PointsPill>{benefit.points_cost !== null ? `${benefit.points_cost} pts` : "Free"}</PointsPill>
+                        <PointsPill>{benefit.points_cost !== null ? `${benefit.points_cost} ${t("rewards.pts")}` : t("rewards.free")}</PointsPill>
                       </div>
                       <div className="card-panel__meta">
                         <div>
@@ -562,7 +563,7 @@ export function RewardsPage() {
                           {benefit.partner_name && (
                             <div className="eyebrow" style={{ marginTop: "0.15rem" }}>
                               {benefit.partner_name}
-                              {benefit.min_card_tier ? ` · ${formatCardTierLabel(benefit.min_card_tier)}+ card` : ""}
+                              {benefit.min_card_tier ? ` · ${formatCardTierLabel(benefit.min_card_tier, t)}+ card` : ""}
                             </div>
                           )}
                         </div>
@@ -576,11 +577,11 @@ export function RewardsPage() {
                             }}
                             disabled={busy || cards.length === 0}
                           >
-                            Redeem
+                            {t("rewards.redeem")}
                           </button>
                         ) : (
                           <span className="eyebrow">
-                            {missing && missing > 0 ? `Need ${missing} more points` : benefit.reason_if_locked}
+                            {missing && missing > 0 ? t("rewards.needMorePoints", { count: missing }) : benefit.reason_if_locked}
                           </span>
                         )}
                       </div>
@@ -589,7 +590,7 @@ export function RewardsPage() {
                 })}
               </div>
             ) : (
-              <p className="eyebrow">No benefits in the catalog yet.</p>
+              <p className="eyebrow">{t("rewards.noBenefitsYet")}</p>
             )}
           </div>
 
@@ -598,7 +599,7 @@ export function RewardsPage() {
             <div className="tile__header">
               <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <Store size={14} strokeWidth={2.2} />
-                Partner offers — earn cashback
+                {t("rewards.partnerOffers")}
               </span>
             </div>
 
@@ -646,13 +647,13 @@ export function RewardsPage() {
                     <CreditCard size={15} strokeWidth={2.4} />
                   </span>
                   <span className="eyebrow" style={{ fontSize: "0.85rem" }}>
-                    Pay with card
+                    {t("rewards.payWithCard")}
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end" }}>
                   <div style={{ flex: "2 1 220px", minWidth: 0 }}>
                     <label className="eyebrow" style={{ display: "block", marginBottom: "0.3rem" }}>
-                      Card
+                      {t("rewards.card")}
                     </label>
                     <select
                       value={payCardId}
@@ -661,14 +662,14 @@ export function RewardsPage() {
                     >
                       {cards.map((card) => (
                         <option key={card.id} value={card.id}>
-                          {formatCardLabel(card)} - {cardFundingLabel(card)}
+                          {formatCardLabel(card, t)} - {cardFundingLabel(card)}
                         </option>
                       ))}
                     </select>
                   </div>
                   <div style={{ flex: "1 1 110px" }}>
                     <label className="eyebrow" style={{ display: "block", marginBottom: "0.3rem" }}>
-                      Amount ({paymentCurrency(selectedCard)})
+                      {t("rewards.amountWithCurrency", { currency: paymentCurrency(selectedCard) })}
                     </label>
                     <input
                       value={payAmount}
@@ -691,7 +692,7 @@ export function RewardsPage() {
                     <Sparkles size={12} strokeWidth={2.4} />
                     {pointsPerRonLabel(selectedCard)}
                     {cardTierCashbackPercent(selectedCard) > 0
-                      ? ` · ${cardTierCashbackPercent(selectedCard)}% tier cashback to wallet at partners`
+                      ? t("rewards.tierCashbackToWallet", { percent: cardTierCashbackPercent(selectedCard) })
                       : ""}
                   </div>
                 )}
@@ -715,16 +716,16 @@ export function RewardsPage() {
                           display: "block",
                           width: "100%",
                         }}
-                        aria-label={`View details for ${merchant.name}`}
+                        aria-label={t("rewards.viewDetailsFor", { name: merchant.name })}
                       >
                         <div className="reward-card__top">
                           <CategoryIconBadge category={merchant.category} />
                           {merchant.active_offer ? (
                             <CategoryPill category={merchant.category}>
-                              {merchant.active_offer.cashback_percent}% cashback
+                              {t("rewards.cashbackPercent", { percent: merchant.active_offer.cashback_percent })}
                             </CategoryPill>
                           ) : (
-                            <span className="tag tag--outline">No active offer</span>
+                            <span className="tag tag--outline">{t("rewards.noActiveOffer")}</span>
                           )}
                         </div>
                         <div className="card-panel__meta">
@@ -733,20 +734,20 @@ export function RewardsPage() {
                             <div className="card-panel__value">{merchant.name}</div>
                             {!merchant.verified && (
                               <div className="eyebrow" style={{ marginTop: "0.15rem" }}>
-                                Not verified — doesn't earn points yet
+                                {t("rewards.notVerifiedNoPoints")}
                               </div>
                             )}
                           </div>
                         </div>
                         {selectedCard && (
                           <div className="eyebrow" style={{ marginTop: "0.4rem" }}>
-                            Earn {combinedRateLabel(selectedCard, Number(merchant.active_offer?.cashback_percent ?? 0))}
+                            {t("rewards.earnRate", { rate: combinedRateLabel(selectedCard, Number(merchant.active_offer?.cashback_percent ?? 0)) })}
                           </div>
                         )}
                       </button>
                       <div className="card-panel__actions">
                         <button onClick={() => openPayConfirm(merchant)} disabled={busy || !payCardId}>
-                          Pay {payAmount || 0} {effectiveWallet(selectedCard)?.currency ?? "RON"}
+                          {t("rewards.pay", { amount: payAmount || 0, currency: effectiveWallet(selectedCard)?.currency ?? "RON" })}
                         </button>
                       </div>
                     </article>
@@ -754,17 +755,20 @@ export function RewardsPage() {
                 })}
               </div>
             ) : (
-              <p className="eyebrow">No merchants in this category.</p>
+              <p className="eyebrow">{t("rewards.noMerchantsInCategory")}</p>
             )}
 
             {newlyEarned.length > 0 && (
               <div className="eyebrow" style={{ marginTop: "0.75rem" }}>
                 {newlyEarned.map((purchase) => (
                   <div key={purchase.merchant_id}>
-                    Earned {purchase.points_earned} points from a real card payment
-                    {Number(purchase.cashback_amount) > 0
-                      ? ` · ${purchase.cashback_amount} ${purchase.currency} cashback credited to your wallet`
-                      : ""}
+                    {t("rewards.earnedFromRealPayment", {
+                      points: purchase.points_earned,
+                      cashback:
+                        Number(purchase.cashback_amount) > 0
+                          ? t("rewards.cashbackCreditedToWallet", { amount: purchase.cashback_amount, currency: purchase.currency })
+                          : "",
+                    })}
                   </div>
                 ))}
               </div>
@@ -780,12 +784,12 @@ export function RewardsPage() {
             <div className="tile__header">
               <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <ShieldCheck size={14} strokeWidth={2.2} />
-                Your benefits
+                {t("rewards.yourBenefits")}
               </span>
             </div>
             {bestTier && (
               <div className="eyebrow" style={{ marginBottom: "0.5rem" }}>
-                From your best card tier: {formatCardTierLabel(bestTier)}
+                {t("rewards.fromBestCardTier", { tier: formatCardTierLabel(bestTier, t) })}
               </div>
             )}
             {cardBenefits.length > 0 ? (
@@ -797,7 +801,7 @@ export function RewardsPage() {
                 ))}
               </ul>
             ) : (
-              <p className="eyebrow">Upgrade to a Gold or Platinum card to unlock benefits.</p>
+              <p className="eyebrow">{t("rewards.upgradeToUnlock")}</p>
             )}
           </div>
 
@@ -806,7 +810,7 @@ export function RewardsPage() {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div className="eyebrow" style={{ color: "rgba(255,255,255,0.75)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
                 <Users size={14} strokeWidth={2.2} />
-                Want more points?
+                {t("rewards.wantMorePoints")}
               </div>
               {isInviteExpanded && (
                 <button
@@ -816,16 +820,16 @@ export function RewardsPage() {
                   aria-expanded={isInviteExpanded}
                   style={{ color: "#fff", borderColor: "rgba(255,255,255,0.5)" }}
                 >
-                  Retract
+                  {t("rewards.retract")}
                 </button>
               )}
             </div>
             <p style={{ margin: "0.5rem 0 0.85rem", fontSize: "0.9rem" }}>
-              Invite friends and earn 500 pts for each successful referral.
+              {t("rewards.inviteEarnPoints")}
             </p>
             {isInviteExpanded ? (
               <div>
-                <p style={{ margin: "0 0 0.4rem", fontSize: "0.8rem", opacity: 0.85 }}>Your invite link:</p>
+                <p style={{ margin: "0 0 0.4rem", fontSize: "0.8rem", opacity: 0.85 }}>{t("rewards.yourInviteLink")}</p>
                 <div
                   style={{
                     background: "rgba(255,255,255,0.16)",
@@ -845,7 +849,7 @@ export function RewardsPage() {
                   onClick={copyInviteLink}
                   style={{ background: "#fff", color: "#4548c9", border: "none" }}
                 >
-                  {inviteCopyFeedback ? "Copied!" : "Copy link"}
+                  {inviteCopyFeedback ? t("rewards.copied") : t("rewards.copyLink")}
                 </button>
               </div>
             ) : (
@@ -856,7 +860,7 @@ export function RewardsPage() {
                 aria-expanded={isInviteExpanded}
                 style={{ background: "#fff", color: "#4548c9", border: "none" }}
               >
-                Invite friends
+                {t("rewards.inviteFriends")}
               </button>
             )}
           </div>
@@ -864,13 +868,13 @@ export function RewardsPage() {
           {/* 7. Rewards points history */}
           <div className="tile">
             <div className="tile__header">
-              <span className="eyebrow">Points history</span>
+              <span className="eyebrow">{t("rewards.pointsHistory")}</span>
               <button
                 type="button"
                 className="button--ghost card-panel__icon-action"
                 onClick={refreshPointsHistory}
                 disabled={refreshingHistory}
-                aria-label="Refresh points history"
+                aria-label={t("rewards.refreshPointsHistory")}
                 style={{ marginLeft: "auto" }}
               >
                 <RefreshCw size={14} strokeWidth={2.2} className={refreshingHistory ? "spin" : undefined} />
@@ -886,7 +890,7 @@ export function RewardsPage() {
                           {tx.description ?? tx.type}
                           {tx.proof_code && (
                             <div className="eyebrow" style={{ marginTop: "0.1rem" }}>
-                              Code: {tx.proof_code}
+                              {t("rewards.code", { code: tx.proof_code })}
                             </div>
                           )}
                         </span>
@@ -910,12 +914,12 @@ export function RewardsPage() {
                     onClick={() => setShowFullHistory((current) => !current)}
                     style={{ marginTop: "0.75rem", fontSize: "0.8rem" }}
                   >
-                    {showFullHistory ? "Show less" : "View all"}
+                    {showFullHistory ? t("rewards.showLess") : t("rewards.viewAll")}
                   </button>
                 )}
               </>
             ) : (
-              <p className="eyebrow">No reward activity yet.</p>
+              <p className="eyebrow">{t("rewards.noRewardActivity")}</p>
             )}
           </div>
 
@@ -924,7 +928,7 @@ export function RewardsPage() {
               <div className="tile__header">
                 <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                   <Gift size={14} strokeWidth={2.2} />
-                  My vouchers ({rewards.redemptions.length})
+                  {t("rewards.myVouchers", { count: rewards.redemptions.length })}
                 </span>
                 <button
                   type="button"
@@ -932,7 +936,7 @@ export function RewardsPage() {
                   onClick={() => setAreVouchersExpanded((current) => !current)}
                   aria-expanded={areVouchersExpanded}
                 >
-                  {areVouchersExpanded ? "Retract" : "Expand"}
+                  {areVouchersExpanded ? t("rewards.retract") : t("rewards.expand")}
                 </button>
               </div>
               {areVouchersExpanded ? (
@@ -958,13 +962,13 @@ export function RewardsPage() {
                           </div>
                         )}
                         <div className="eyebrow" style={{ marginTop: "0.2rem" }}>
-                          {redemption.points_spent} pts · redeemed {new Date(redemption.redeemed_at).toLocaleDateString()}
+                          {t("rewards.ptsRedeemedOn", { points: redemption.points_spent, date: new Date(redemption.redeemed_at).toLocaleDateString() })}
                           {redemption.status === "VALID" && redemption.expires_at
-                            ? ` · valid until ${new Date(redemption.expires_at).toLocaleDateString()}`
+                            ? t("rewards.validUntil", { date: new Date(redemption.expires_at).toLocaleDateString() })
                             : redemption.status === "USED" && redemption.used_at
-                              ? ` · used ${new Date(redemption.used_at).toLocaleDateString()}`
+                              ? t("rewards.usedOn", { date: new Date(redemption.used_at).toLocaleDateString() })
                               : redemption.status === "EXPIRED" && redemption.expires_at
-                                ? ` · expired ${new Date(redemption.expires_at).toLocaleDateString()}`
+                                ? t("rewards.expiredOn", { date: new Date(redemption.expires_at).toLocaleDateString() })
                                 : ""}
                         </div>
                       </div>
@@ -978,7 +982,7 @@ export function RewardsPage() {
                                 : "tag tag--warning"
                           }
                         >
-                          {redemption.status === "VALID" ? "Valid" : redemption.status === "USED" ? "Used" : "Expired"}
+                          {redemption.status === "VALID" ? t("rewards.valid") : redemption.status === "USED" ? t("rewards.used") : t("rewards.expired")}
                         </span>
                         {redemption.status === "VALID" && (
                           <button
@@ -988,7 +992,7 @@ export function RewardsPage() {
                             disabled={markingUsedId === redemption.id}
                             onClick={() => markVoucherUsed(redemption.id)}
                           >
-                            {markingUsedId === redemption.id ? "Marking…" : "Mark as used"}
+                            {markingUsedId === redemption.id ? t("rewards.marking") : t("rewards.markAsUsed")}
                           </button>
                         )}
                       </div>
@@ -997,9 +1001,7 @@ export function RewardsPage() {
                 </ul>
                 </div>
               ) : (
-                <p className="eyebrow">
-                  {rewards.redemptions.length} voucher{rewards.redemptions.length === 1 ? "" : "s"} — expand to view.
-                </p>
+                <p className="eyebrow">{t("rewards.voucherCount", { count: rewards.redemptions.length })}</p>
               )}
             </div>
           )}
@@ -1008,30 +1010,30 @@ export function RewardsPage() {
 
       {confirmBenefit && rewards && (
         <ConfirmModal
-          title="Redeem reward?"
+          title={t("rewards.redeemRewardQuestion")}
           onCancel={() => setConfirmBenefit(null)}
           onConfirm={confirmRedeemBenefit}
-          confirmLabel={busy ? "Redeeming…" : `Redeem ${confirmBenefit.points_cost ?? 0} pts`}
+          confirmLabel={busy ? t("rewards.redeeming") : t("rewards.redeemPts", { points: confirmBenefit.points_cost ?? 0 })}
           busy={busy || !redeemCardId}
         >
           <p style={{ fontWeight: 700, fontSize: "1.05rem", margin: "0.5rem 0" }}>{confirmBenefit.name}</p>
-          <p className="eyebrow">Cost: {confirmBenefit.points_cost ?? 0} points</p>
-          <p className="eyebrow">Current balance: {rewards.points_balance} points</p>
+          <p className="eyebrow">{t("rewards.cost", { points: confirmBenefit.points_cost ?? 0 })}</p>
+          <p className="eyebrow">{t("rewards.currentBalance", { points: rewards.points_balance })}</p>
           <p className="eyebrow">
-            Balance after redemption: {rewards.points_balance - (confirmBenefit.points_cost ?? 0)} points
+            {t("rewards.balanceAfterRedemption", { points: rewards.points_balance - (confirmBenefit.points_cost ?? 0) })}
           </p>
         </ConfirmModal>
       )}
 
       {selectedMerchant && (
         <ConfirmModal
-          title="Confirm payment"
+          title={t("rewards.confirmPayment")}
           onCancel={() => {
             setSelectedMerchant(null);
             setCvvInput("");
           }}
           onConfirm={() => handlePay(selectedMerchant)}
-          confirmLabel={busy ? "Paying…" : `Pay ${payAmount || 0} ${effectiveWallet(selectedCard)?.currency ?? "RON"}`}
+          confirmLabel={busy ? t("rewards.paying") : t("rewards.pay", { amount: payAmount || 0, currency: effectiveWallet(selectedCard)?.currency ?? "RON" })}
           busy={busy || !payCardId || cvvInput.length !== 3}
         >
           {selectedCard && (
@@ -1041,8 +1043,8 @@ export function RewardsPage() {
                   <span className="bank-card__brand">EASYB</span>
                   <span className="bank-card__product">
                     {selectedCard.tier
-                      ? `${formatCardTierLabel(selectedCard.tier)} ${formatCardTypeLabel(selectedCard.type)}`
-                      : "One-time"}
+                      ? `${formatCardTierLabel(selectedCard.tier, t)} ${formatCardTypeLabel(selectedCard.type)}`
+                      : t("rewards.oneTime")}
                   </span>
                 </div>
               </div>
@@ -1054,13 +1056,13 @@ export function RewardsPage() {
                 <div className="bank-card__number">{selectedCard.masked_pan}</div>
               </div>
               <div className="bank-card__holder">
-                <span>Card holder</span>
+                <span>{t("rewards.cardHolder")}</span>
                 <strong>{cardholderName}</strong>
               </div>
               <div className="bank-card__footer">
                 <span>
                   {selectedCard.tier
-                    ? `${formatCardTierLabel(selectedCard.tier)} ${formatCardTypeLabel(selectedCard.type)}`
+                    ? `${formatCardTierLabel(selectedCard.tier, t)} ${formatCardTypeLabel(selectedCard.type)}`
                     : formatCardTypeLabel(selectedCard.type)}
                 </span>
                 <span className="bank-card__security">
@@ -1073,11 +1075,11 @@ export function RewardsPage() {
           )}
 
           <div style={{ display: "flex", justifyContent: "space-between", margin: "0.3rem 0" }}>
-            <span className="eyebrow">Merchant</span>
+            <span className="eyebrow">{t("rewards.merchant")}</span>
             <strong>{selectedMerchant.name}</strong>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", margin: "0.3rem 0" }}>
-            <span className="eyebrow">Amount</span>
+            <span className="eyebrow">{t("rewards.amount")}</span>
             <strong>
               {payAmount || 0} {effectiveWallet(selectedCard)?.currency ?? "RON"}
             </strong>
@@ -1085,29 +1087,31 @@ export function RewardsPage() {
 
           {selectedMerchant.active_offer ? (
             <>
-              <p style={{ margin: "0.4rem 0" }}>{selectedMerchant.active_offer.cashback_percent}% cashback</p>
+              <p style={{ margin: "0.4rem 0" }}>{t("rewards.cashbackPercent", { percent: selectedMerchant.active_offer.cashback_percent })}</p>
               {selectedMerchant.active_offer.minimum_spend && (
-                <p className="eyebrow">Minimum spend: {selectedMerchant.active_offer.minimum_spend} RON</p>
+                <p className="eyebrow">{t("rewards.minimumSpend", { amount: selectedMerchant.active_offer.minimum_spend })}</p>
               )}
               {selectedMerchant.active_offer.maximum_cashback && (
-                <p className="eyebrow">Max cashback: {selectedMerchant.active_offer.maximum_cashback} RON</p>
+                <p className="eyebrow">{t("rewards.maxCashback", { amount: selectedMerchant.active_offer.maximum_cashback })}</p>
               )}
             </>
           ) : (
-            <p className="eyebrow">No active cashback offer right now.</p>
+            <p className="eyebrow">{t("rewards.noActiveCashbackOffer")}</p>
           )}
           {selectedCard && (
             <p className="eyebrow" style={{ marginTop: "0.3rem" }}>
-              With your {formatCardLabel(selectedCard)}:{" "}
-              {combinedRateLabel(selectedCard, Number(selectedMerchant.active_offer?.cashback_percent ?? 0))}
+              {t("rewards.withYourCard", {
+                card: formatCardLabel(selectedCard, t),
+                rate: combinedRateLabel(selectedCard, Number(selectedMerchant.active_offer?.cashback_percent ?? 0)),
+              })}
             </p>
           )}
           {!selectedMerchant.verified && (
-            <p className="eyebrow">Not verified yet — purchases here don't earn points.</p>
+            <p className="eyebrow">{t("rewards.notVerifiedNoPointsPurchase")}</p>
           )}
 
           <label style={{ display: "block", marginTop: "0.75rem" }}>
-            CVV (on the back of your {selectedCard ? formatCardLabel(selectedCard) : "card"})
+            {t("rewards.cvvLabel", { card: selectedCard ? formatCardLabel(selectedCard, t) : t("rewards.cardFallback") })}
             <input
               value={cvvInput}
               onChange={(e) => setCvvInput(e.target.value.replace(/\D/g, "").slice(0, 3))}
@@ -1160,7 +1164,7 @@ export function RewardsPage() {
                 type="button"
                 className="button--ghost"
                 onClick={() => setCodeReveal(null)}
-                aria-label="Close"
+                aria-label={t("rewards.close")}
                 style={{ color: "#fff" }}
               >
                 <X size={16} strokeWidth={2.2} />
@@ -1191,7 +1195,7 @@ export function RewardsPage() {
                 onClick={() => copyCode(codeReveal.code)}
                 style={{ background: "#fff", color: "#4548c9", border: "none" }}
               >
-                {copyFeedback ? "Copied!" : "Copy code"}
+                {copyFeedback ? t("rewards.copied") : t("rewards.copyCode")}
               </button>
               <button
                 type="button"
@@ -1199,7 +1203,7 @@ export function RewardsPage() {
                 onClick={() => setCodeReveal(null)}
                 style={{ color: "#fff", border: "1px solid rgba(255,255,255,0.5)" }}
               >
-                Done
+                {t("rewards.done")}
               </button>
             </div>
           </div>

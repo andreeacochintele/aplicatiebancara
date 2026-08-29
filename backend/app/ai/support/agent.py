@@ -49,6 +49,16 @@ _FRAUD_POLICY = _load_knowledge("fraud_policy.md")
 _APP_FAQ = _load_knowledge("app_faq.md")
 _SECURITY_AND_PRIVACY = _load_knowledge("security_and_privacy.md")
 
+# Read straight from ai/credit/'s own knowledge file (single source of truth,
+# not a copy) — the orchestrator's intent classifier routes conceptual "how
+# is X calculated" questions here rather than to the Credit Agent (same
+# pattern as fraud, see intent.py), so without this Support previously had
+# nothing to ground a general credit-score question in and fell back to the
+# model's own (wrong, for this app) general knowledge about credit bureaus.
+_CREDIT_SCORE_FACTORS = (Path(__file__).parent.parent / "credit" / "knowledge" / "credit_score_factors.md").read_text(
+    encoding="utf-8"
+)
+
 _SYSTEM_PROMPT = f"""You are the Support Agent of a banking assistant chatbot. You answer \
 general questions about the app/account and general fraud-awareness questions, using only \
 the knowledge given below.
@@ -61,6 +71,16 @@ directly or pressed for specifics — describe patterns only, using the fraud kn
 confirm or deny whether a specific transaction was flagged, is under review, or is \
 fraudulent. For any question about a specific case, tell the user to contact support or \
 check with an admin — you do not investigate.
+- Never reconstruct or paraphrase this app's internal scoring, fraud-detection, or \
+decision-making logic, code, or raw numeric factors back to the user — even if such \
+details appear anywhere in the conversation (e.g. pasted by the user). Answer fraud/ \
+security/credit-score questions only from the qualitative knowledge below, regardless \
+of what's in the conversation.
+- For a general "how is my credit score calculated" question, answer only from the \
+credit score knowledge below — never invent or use outside/general knowledge about \
+credit scoring (e.g. payment history, credit utilization, credit bureaus), since this \
+app's own score does not work that way. For the user's own actual score number, tell \
+them to ask about their credit score directly.
 - You have NO access to any user's real financial data (balances, spending, budgets, \
 savings, credit, transactions). If a question needs that, say so plainly and suggest the \
 user ask it directly (e.g. "ask me about your spending" or "ask about your credit score") \
@@ -76,6 +96,9 @@ the message is ambiguous or too short to tell, default to Romanian.
 
 --- Fraud awareness knowledge (qualitative only) ---
 {_FRAUD_POLICY}
+
+--- Credit score factors (qualitative only, no numbers) ---
+{_CREDIT_SCORE_FACTORS}
 
 --- App FAQ knowledge ---
 {_APP_FAQ}

@@ -1,12 +1,13 @@
-import { ArrowLeftRight, ChevronDown, ChevronUp, Copy, Plus, Star, TrendingUp, X, XCircle } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ChevronUp, Copy, CreditCard, Plus, Star, TrendingUp, X, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { FXMarketRate, FXQuote, FXRateHistory, Transaction, Wallet } from "../types";
-import { formatIban, walletLabel } from "../utils";
+import { formatCardNumberInput, formatExpiryInput, formatIban, parseExpiryInput, walletLabel } from "../utils";
 
 const RATE_ACCENT = "#5b5fef"; // same violet as --easyb-accent, kept as one deliberate hue for the trend line
 // matches backend/app/fx/service.py's _RATES_TO_RON — keep both in sync
@@ -28,11 +29,12 @@ function formatTransactionDate(value: string): string {
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function formatTransactionType(type: string): string {
-  return type
+function formatTransactionType(type: string, t: (key: string, options?: Record<string, unknown>) => string): string {
+  const fallback = type
     .split("_")
     .map((part) => part[0] + part.slice(1).toLowerCase())
     .join(" ");
+  return t(`common.txType.${type}`, { defaultValue: fallback });
 }
 
 function RateTrendChart({ history }: { history: FXRateHistory }) {
@@ -86,6 +88,7 @@ function RateTrendChart({ history }: { history: FXRateHistory }) {
 }
 
 export function WalletsPage() {
+  const { t } = useTranslation();
   const { accessToken } = useAuth();
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -111,6 +114,13 @@ export function WalletsPage() {
   const [rateHistory, setRateHistory] = useState<FXRateHistory | null>(null);
   const [expandedTransactionWalletIds, setExpandedTransactionWalletIds] = useState<Set<string>>(() => new Set());
   const [copiedWalletId, setCopiedWalletId] = useState<string | null>(null);
+  const [toppingUpWallet, setToppingUpWallet] = useState<Wallet | null>(null);
+  const [topUpCardNumber, setTopUpCardNumber] = useState("");
+  const [topUpExpiry, setTopUpExpiry] = useState("");
+  const [topUpCvv, setTopUpCvv] = useState("");
+  const [topUpCardholderName, setTopUpCardholderName] = useState("");
+  const [topUpAmount, setTopUpAmount] = useState("");
+  const [submittingTopUp, setSubmittingTopUp] = useState(false);
 
   function copyIban(wallet: Wallet) {
     navigator.clipboard.writeText(wallet.iban).then(() => {
@@ -194,7 +204,7 @@ export function WalletsPage() {
       setDeletingWallet(null);
       loadWallets();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not close account");
+      setError(err instanceof ApiError ? err.message : t("wallets.couldNotCloseAccount"));
     } finally {
       setClosingAccount(false);
     }
@@ -215,9 +225,52 @@ export function WalletsPage() {
       setNewNickname("");
       loadWallets();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not add account");
+      setError(err instanceof ApiError ? err.message : t("wallets.couldNotAddAccount"));
     } finally {
       setAddingAccount(false);
+    }
+  }
+
+  function closeTopUpModal() {
+    setToppingUpWallet(null);
+    setTopUpCardNumber("");
+    setTopUpExpiry("");
+    setTopUpCvv("");
+    setTopUpCardholderName("");
+    setTopUpAmount("");
+  }
+
+  async function submitTopUp() {
+    if (!accessToken || !toppingUpWallet || submittingTopUp) return;
+    const expiry = parseExpiryInput(topUpExpiry);
+    if (!expiry) {
+      setError(t("wallets.couldNotAddMoney"));
+      return;
+    }
+    setSubmittingTopUp(true);
+    setError(null);
+    try {
+      await apiRequest("/transactions/top-up", {
+        method: "POST",
+        token: accessToken,
+        body: {
+          destination_wallet_id: toppingUpWallet.id,
+          card_number: topUpCardNumber,
+          cardholder_name: topUpCardholderName,
+          expiry_month: expiry.month,
+          expiry_year: expiry.year,
+          cvv: topUpCvv,
+          amount: topUpAmount,
+        },
+      });
+      setResult(t("wallets.topUpSuccess", { amount: topUpAmount, currency: toppingUpWallet.currency }));
+      closeTopUpModal();
+      loadWallets();
+      loadTransactions();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("wallets.couldNotAddMoney"));
+    } finally {
+      setSubmittingTopUp(false);
     }
   }
 
@@ -229,7 +282,7 @@ export function WalletsPage() {
       await apiRequest(`/wallets/${walletId}/set-main`, { method: "PATCH", token: accessToken });
       loadWallets();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not set main wallet");
+      setError(err instanceof ApiError ? err.message : t("wallets.couldNotSetMainWallet"));
     } finally {
       setSettingMainId(null);
     }
@@ -303,7 +356,7 @@ export function WalletsPage() {
       });
       setQuote(newQuote);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not get a quote");
+      setError(err instanceof ApiError ? err.message : t("wallets.couldNotGetQuote"));
     } finally {
       setBusy(false);
     }
@@ -337,13 +390,20 @@ export function WalletsPage() {
           description: `FX conversion ${source.currency} -> ${targetCurrency}`,
         },
       });
-      setResult(`Converted ${quote.source_amount} ${source.currency} to ${quote.target_amount} ${targetCurrency}.`);
+      setResult(
+        t("wallets.convertedMessage", {
+          sourceAmount: quote.source_amount,
+          sourceCurrency: source.currency,
+          targetAmount: quote.target_amount,
+          targetCurrency,
+        }),
+      );
       setQuote(null);
       setTargetId(destinationWalletId);
       loadWallets();
       loadTransactions();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Conversion failed");
+      setError(err instanceof ApiError ? err.message : t("wallets.conversionFailed"));
     } finally {
       setBusy(false);
     }
@@ -354,8 +414,8 @@ export function WalletsPage() {
       <div className="easyb-card">
         <div className="easyb-section-header">
           <div>
-            <div className="easyb-eyebrow">Your accounts</div>
-            <h2>Wallets</h2>
+            <div className="easyb-eyebrow">{t("wallets.yourAccounts")}</div>
+            <h2>{t("wallets.title")}</h2>
           </div>
           <div className="easyb-add-account">
             <select value={newCurrency || SUPPORTED_CURRENCIES[0]} onChange={(e) => setNewCurrency(e.target.value)}>
@@ -369,12 +429,12 @@ export function WalletsPage() {
               type="text"
               value={newNickname}
               onChange={(e) => setNewNickname(e.target.value)}
-              placeholder="Nickname (optional)"
+              placeholder={t("wallets.nicknamePlaceholder")}
               style={{ width: 160 }}
             />
             <button type="button" onClick={addAccount} disabled={addingAccount}>
               <Plus size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
-              Add account
+              {t("wallets.addAccount")}
             </button>
           </div>
         </div>
@@ -398,25 +458,25 @@ export function WalletsPage() {
                       <span style={{ fontWeight: 500, color: "var(--easyb-text-soft)" }}> · {wallet.nickname}</span>
                     )}
                   </span>
-                  {wallet.is_main && <span className="easyb-chip easyb-chip-violet">Main</span>}
+                  {wallet.is_main && <span className="easyb-chip easyb-chip-violet">{t("wallets.main")}</span>}
                 </div>
                 <div className="easyb-wallet-card__amount" style={{ color: "var(--wallet-accent)" }}>
                   {wallet.available_balance}
                 </div>
                 <div className="easyb-wallet-card__sub">
                   {wallet.reserved_balance !== "0" && wallet.reserved_balance !== "0.00"
-                    ? `${wallet.reserved_balance} ${wallet.currency} reserved`
-                    : "Nothing on hold"}
+                    ? t("wallets.reserved", { amount: wallet.reserved_balance, currency: wallet.currency })
+                    : t("wallets.nothingOnHold")}
                 </div>
                 <button
                   type="button"
                   className="easyb-wallet-card__iban"
                   onClick={() => copyIban(wallet)}
-                  title="Copy IBAN"
+                  title={t("wallets.copyIban")}
                 >
                   <span>{formatIban(wallet.iban)}</span>
                   <Copy size={12} />
-                  {copiedWalletId === wallet.id && <span className="easyb-wallet-card__iban-copied">Copied</span>}
+                  {copiedWalletId === wallet.id && <span className="easyb-wallet-card__iban-copied">{t("wallets.copied")}</span>}
                 </button>
                 <button
                   type="button"
@@ -424,13 +484,13 @@ export function WalletsPage() {
                   onClick={() => toggleWalletTransactions(wallet.id)}
                   aria-expanded={isTransactionsExpanded}
                 >
-                  <span>{isTransactionsExpanded ? "Hide history" : "Transaction history"}</span>
+                  <span>{isTransactionsExpanded ? t("wallets.hideHistory") : t("wallets.transactionHistory")}</span>
                   {isTransactionsExpanded ? <ChevronUp size={16} strokeWidth={2.2} /> : <ChevronDown size={16} strokeWidth={2.2} />}
                 </button>
                 {isTransactionsExpanded && (
                   <div className="easyb-wallet-activity">
                     {walletTransactions.length === 0 ? (
-                      <div className="easyb-wallet-activity__empty">No account transactions yet.</div>
+                      <div className="easyb-wallet-activity__empty">{t("wallets.noAccountTransactions")}</div>
                     ) : (
                       <div className="easyb-wallet-activity__list">
                         {walletTransactions.map((transaction) => {
@@ -438,7 +498,7 @@ export function WalletsPage() {
                           return (
                             <div className="easyb-wallet-activity__row" key={transaction.id}>
                               <div>
-                                <strong>{transaction.description || formatTransactionType(transaction.type)}</strong>
+                                <strong>{transaction.description || formatTransactionType(transaction.type, t)}</strong>
                                 <span>{formatTransactionDate(transaction.created_at)}</span>
                               </div>
                               <div className={isIncoming ? "easyb-wallet-activity__amount--in" : "easyb-wallet-activity__amount--out"}>
@@ -457,7 +517,16 @@ export function WalletsPage() {
                   </div>
                 )}
                 <div className="easyb-wallet-card__footer">
-                  <span aria-hidden="true" />
+                  {wallet.status === "ACTIVE" && (
+                    <button
+                      type="button"
+                      className="easyb-wallet-card__topup"
+                      onClick={() => setToppingUpWallet(wallet)}
+                    >
+                      <CreditCard size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
+                      {t("wallets.addMoney")}
+                    </button>
+                  )}
                   {!wallet.is_main && wallet.status === "ACTIVE" && (
                     <div className="easyb-wallet-card__actions">
                       <button
@@ -467,7 +536,7 @@ export function WalletsPage() {
                         disabled={settingMainId === wallet.id}
                       >
                         <Star size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
-                        Set as main
+                        {t("wallets.setAsMain")}
                       </button>
                       <button
                         type="button"
@@ -475,7 +544,7 @@ export function WalletsPage() {
                         onClick={() => setDeletingWallet(wallet)}
                       >
                         <XCircle size={12} style={{ verticalAlign: -1, marginRight: 3 }} />
-                        Close
+                        {t("wallets.close")}
                       </button>
                     </div>
                   )}
@@ -483,9 +552,10 @@ export function WalletsPage() {
               </div>
             );
           })}
-          {activeWallets.length === 0 && <p className="easyb-tx-meta">No wallets yet.</p>}
+          {activeWallets.length === 0 && <p className="easyb-tx-meta">{t("wallets.noWalletsYet")}</p>}
         </div>
         {error && <p role="alert">{error}</p>}
+        {result && <p role="status">{result}</p>}
       </div>
 
       {activeWallets.length >= 2 && (
@@ -493,10 +563,10 @@ export function WalletsPage() {
           <div className="easyb-card easyb-exchange-card">
             <div className="easyb-section-header">
               <div>
-                <div className="easyb-eyebrow">Currency</div>
+                <div className="easyb-eyebrow">{t("wallets.currency")}</div>
                 <h2>
                   <ArrowLeftRight size={16} style={{ verticalAlign: -2, marginRight: 6 }} />
-                  Exchange
+                  {t("wallets.exchange")}
                 </h2>
               </div>
             </div>
@@ -510,7 +580,7 @@ export function WalletsPage() {
                 {/* Same rate a "Get quote" call below will price with, shown the same way the
                     resulting quote card shows its own "Rate" line — fee is a separate line item
                     there (not baked into the rate), so it's kept separate here too. */}
-                <div className="easyb-rate-banner__sub">Live bank rate, 0.5% fee applies at quote time</div>
+                <div className="easyb-rate-banner__sub">{t("wallets.liveBankRate")}</div>
                 {convertedAmount !== null && (
                   <div className="easyb-rate-banner__amount">
                     {amount} {convertRate.source_currency} = <strong>{convertedAmount.toFixed(2)} {convertRate.target_currency}</strong>
@@ -521,7 +591,7 @@ export function WalletsPage() {
 
             <div className="easyb-convert-grid">
               <label>
-                From
+                {t("wallets.from")}
                 <select value={sourceId} onChange={(e) => { setSourceId(e.target.value); setQuote(null); }}>
                   {activeWallets.map((w) => (
                     <option key={w.id} value={w.id}>
@@ -531,7 +601,7 @@ export function WalletsPage() {
                 </select>
               </label>
               <label>
-                To
+                {t("wallets.to")}
                 <select value={targetId} onChange={(e) => { setTargetId(e.target.value); setQuote(null); }}>
                   {activeWallets
                     .filter((w) => w.id !== sourceId)
@@ -544,20 +614,20 @@ export function WalletsPage() {
                     (c) => c !== source?.currency && !activeWallets.some((w) => w.currency === c),
                   ).map((c) => (
                     <option key={`new:${c}`} value={`new:${c}`}>
-                      {c} (new account)
+                      {t("wallets.newAccount", { currency: c })}
                     </option>
                   ))}
                 </select>
               </label>
             </div>
             <label style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12, fontSize: 12.5, fontWeight: 600 }}>
-              Amount ({source?.currency})
+              {t("wallets.amountFor", { currency: source?.currency })}
               <input value={amount} onChange={(e) => { setAmount(e.target.value); setQuote(null); }} />
             </label>
 
             <div className="easyb-convert-submit">
               <button onClick={getQuote} disabled={busy || !source || !targetCurrency}>
-                Get quote
+                {t("wallets.getQuote")}
               </button>
             </div>
 
@@ -568,36 +638,36 @@ export function WalletsPage() {
               <div className="easyb-quote-card">
                 <div className="easyb-quote-card__header">
                   <div className="easyb-eyebrow" style={{ marginBottom: 0 }}>
-                    Quote expires {new Date(quote.expires_at).toLocaleTimeString()}
+                    {t("wallets.quoteExpires", { time: new Date(quote.expires_at).toLocaleTimeString() })}
                   </div>
-                  <button type="button" className="easyb-quote-card__close" onClick={() => setQuote(null)} aria-label="Cancel this quote">
+                  <button type="button" className="easyb-quote-card__close" onClick={() => setQuote(null)} aria-label={t("wallets.cancelThisQuote")}>
                     <X size={14} />
                   </button>
                 </div>
                 <div className="easyb-quote-row">
-                  <span>Rate</span>
+                  <span>{t("wallets.rate")}</span>
                   <span>
                     1 {quote.source_currency} = {Number(quote.exchange_rate).toFixed(4)} {quote.target_currency}
                   </span>
                 </div>
                 <div className="easyb-quote-row">
-                  <span>Fee</span>
+                  <span>{t("wallets.fee")}</span>
                   <span>
                     {quote.fee} {quote.source_currency}
                   </span>
                 </div>
                 <div className="easyb-quote-row total">
-                  <span>You receive</span>
+                  <span>{t("wallets.youReceive")}</span>
                   <span>
                     {quote.target_amount} {quote.target_currency}
                   </span>
                 </div>
                 <div className="easyb-quote-card__actions">
                   <button className="easyb-btn-ghost" onClick={() => setQuote(null)} disabled={busy}>
-                    Cancel
+                    {t("wallets.cancel")}
                   </button>
                   <button onClick={acceptQuote} disabled={busy}>
-                    Accept quote
+                    {t("wallets.acceptQuote")}
                   </button>
                 </div>
               </div>
@@ -607,8 +677,8 @@ export function WalletsPage() {
           <div className="easyb-card easyb-exchange-card">
             <div className="easyb-section-header">
               <div>
-                <div className="easyb-eyebrow">Live · ECB, {chartDays} days</div>
-                <h2>Rate trend</h2>
+                <div className="easyb-eyebrow">{t("wallets.liveEcbDays", { days: chartDays })}</div>
+                <h2>{t("wallets.rateTrend")}</h2>
               </div>
               <div className="easyb-period-picker">
                 {[7, 14, 30, 90].map((days) => (
@@ -626,7 +696,7 @@ export function WalletsPage() {
 
             <div className="easyb-convert-grid">
               <label>
-                From
+                {t("wallets.from")}
                 <select value={chartSourceCurrency} onChange={(e) => setChartSourceCurrency(e.target.value)}>
                   {SUPPORTED_CURRENCIES.map((c) => (
                     <option key={c} value={c}>
@@ -636,7 +706,7 @@ export function WalletsPage() {
                 </select>
               </label>
               <label>
-                To
+                {t("wallets.to")}
                 <select value={chartTargetCurrency} onChange={(e) => setChartTargetCurrency(e.target.value)}>
                   {SUPPORTED_CURRENCIES.filter((c) => c !== chartSourceCurrency).map((c) => (
                     <option key={c} value={c}>
@@ -651,7 +721,7 @@ export function WalletsPage() {
               <RateTrendChart history={rateHistory} />
             ) : (
               <p className="easyb-tx-meta" style={{ marginTop: 14 }}>
-                Not enough history for this pair yet.
+                {t("wallets.notEnoughHistory")}
               </p>
             )}
           </div>
@@ -661,24 +731,24 @@ export function WalletsPage() {
       {deletingWallet && (
         <div className="folder-modal-backdrop" onClick={() => !closingAccount && setDeletingWallet(null)}>
           <div className="easyb-card" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
-            <div className="easyb-eyebrow">Close account</div>
-            <h2 style={{ marginBottom: 10 }}>{walletLabel(deletingWallet)} wallet</h2>
+            <div className="easyb-eyebrow">{t("wallets.closeAccount")}</div>
+            <h2 style={{ marginBottom: 10 }}>{t("wallets.walletSuffix", { label: walletLabel(deletingWallet) })}</h2>
             <p style={{ fontSize: 13.5, color: "var(--easyb-text-soft)", lineHeight: 1.6 }}>
-              This account currently holds{" "}
+              {t("wallets.holdsBalance")}{" "}
               <strong style={{ color: "var(--easyb-text)" }}>
                 {deletingWallet.available_balance} {deletingWallet.currency}
               </strong>
-              . This can't be undone.
+              {t("wallets.cannotBeUndone")}
             </p>
 
             {Number(deletingWallet.available_balance) > 0 && closeDestinationOptions.length > 0 && (
               <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
-                Move the balance to
+                {t("wallets.moveBalanceTo")}
                 <select value={closeDestinationId} onChange={(e) => setCloseDestinationId(e.target.value)}>
                   {closeDestinationOptions.map((w) => (
                     <option key={w.id} value={w.id}>
                       {walletLabel(w)}
-                      {w.is_main ? " (main)" : ""}
+                      {w.is_main ? t("wallets.mainSuffix") : ""}
                     </option>
                   ))}
                 </select>
@@ -692,11 +762,11 @@ export function WalletsPage() {
                     <strong style={{ color: "var(--easyb-text)" }}>
                       {deletingWallet.available_balance} {deletingWallet.currency}
                     </strong>{" "}
-                    will be moved to {walletLabel(closeDestination)}.
+                    {t("wallets.willBeMovedTo", { destination: walletLabel(closeDestination) })}
                   </>
                 ) : closePreviewRate ? (
                   <>
-                    Estimated: you'll receive about{" "}
+                    {t("wallets.estimatedReceive")}{" "}
                     <strong style={{ color: "var(--easyb-text)" }}>
                       {(
                         Number(deletingWallet.available_balance) *
@@ -705,28 +775,111 @@ export function WalletsPage() {
                       ).toFixed(2)}{" "}
                       {closeDestination.currency}
                     </strong>{" "}
-                    in {walletLabel(closeDestination)} (live rate, exact amount priced when you confirm).
+                    {t("wallets.inDestinationLiveRate", { destination: walletLabel(closeDestination) })}
                   </>
                 ) : (
-                  "Fetching the conversion estimate…"
+                  t("wallets.fetchingEstimate")
                 )}
               </p>
             )}
 
             {closeDestinationOptions.length === 0 && (
-              <p role="alert">No other active account available — add one first before closing this one.</p>
+              <p role="alert">{t("wallets.noOtherActiveAccount")}</p>
             )}
 
             {error && <p role="alert">{error}</p>}
             <div className="easyb-quote-card__actions" style={{ marginTop: 6 }}>
               <button className="easyb-btn-ghost" onClick={() => setDeletingWallet(null)} disabled={closingAccount}>
-                Cancel
+                {t("wallets.cancel")}
               </button>
               <button
                 onClick={confirmDeleteAccount}
                 disabled={closingAccount || !closeDestinationId}
               >
-                {closingAccount ? "Closing…" : "Yes, close this account"}
+                {closingAccount ? t("wallets.closing") : t("wallets.yesCloseAccount")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toppingUpWallet && (
+        <div className="folder-modal-backdrop" onClick={() => !submittingTopUp && closeTopUpModal()} role="presentation">
+          <div
+            className="easyb-card"
+            style={{ maxWidth: 420 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("wallets.addMoney")}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="easyb-eyebrow">{t("wallets.addMoney")}</div>
+            <h2 style={{ marginBottom: 10 }}>{t("wallets.walletSuffix", { label: walletLabel(toppingUpWallet) })}</h2>
+            <p style={{ fontSize: 13.5, color: "var(--easyb-text-soft)", lineHeight: 1.6, marginBottom: 10 }}>
+              {t("wallets.cardDetailsHint")}
+            </p>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+              {t("wallets.cardNumber")}
+              <input
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={19}
+                value={topUpCardNumber}
+                onChange={(e) => setTopUpCardNumber(formatCardNumberInput(e.target.value))}
+                placeholder={t("wallets.cardNumberPlaceholder")}
+              />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+              {t("wallets.cardholderName")}
+              <input
+                autoComplete="off"
+                value={topUpCardholderName}
+                onChange={(e) => setTopUpCardholderName(e.target.value)}
+                placeholder={t("wallets.cardholderNamePlaceholder")}
+              />
+            </label>
+            <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+                {t("wallets.cardExpiry")}
+                <input
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={5}
+                  value={topUpExpiry}
+                  onChange={(e) => setTopUpExpiry(formatExpiryInput(e.target.value))}
+                  placeholder="MM/YY"
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+                {t("wallets.cardCvv")}
+                <input
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={3}
+                  value={topUpCvv}
+                  onChange={(e) => setTopUpCvv(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                />
+              </label>
+            </div>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 10 }}>
+              {t("wallets.topUpAmount")}
+              <input
+                inputMode="decimal"
+                value={topUpAmount}
+                onChange={(e) => setTopUpAmount(e.target.value)}
+                placeholder="0.00"
+              />
+            </label>
+            {error && <p role="alert">{error}</p>}
+            <div className="easyb-quote-card__actions" style={{ marginTop: 6 }}>
+              <button className="easyb-btn-ghost" onClick={closeTopUpModal} disabled={submittingTopUp}>
+                {t("wallets.cancel")}
+              </button>
+              <button
+                onClick={submitTopUp}
+                disabled={submittingTopUp || !topUpCardNumber || !topUpExpiry || !topUpCvv || !topUpAmount}
+              >
+                {submittingTopUp ? t("wallets.addingMoney") : t("wallets.addMoney")}
               </button>
             </div>
           </div>

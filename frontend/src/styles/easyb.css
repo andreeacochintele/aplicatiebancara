@@ -197,6 +197,18 @@
   color: var(--easyb-accent-dark);
 }
 
+.easyb-shell .easyb-header .language-toggle {
+  background: var(--easyb-surface-alt);
+  border: 1px solid var(--easyb-border);
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .easyb-header .language-toggle:hover {
+  background: var(--easyb-accent-soft);
+  border-color: var(--easyb-accent);
+  color: var(--easyb-accent-dark);
+}
+
 .easyb-shell .notification-panel {
   right: 136px;
   background: var(--easyb-surface);
@@ -593,6 +605,21 @@
 }
 
 .easyb-wallet-card__footer .easyb-wallet-card__delete:hover {
+  text-decoration: underline;
+}
+
+.easyb-wallet-card__footer .easyb-wallet-card__topup {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  color: var(--easyb-accent-dark);
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.easyb-wallet-card__footer .easyb-wallet-card__topup:hover {
   text-decoration: underline;
 }
 
@@ -2333,6 +2360,43 @@
   border-color: var(--easyb-accent);
   color: var(--easyb-accent-dark);
   background: var(--easyb-accent-soft);
+}
+
+/* Same specificity fix as .assistant-followup above: .easyb-shell button
+   (one class + one element) otherwise beats the plain .assistant-download
+   rule in index.css and repaints it with the default gradient/pill look. */
+.easyb-shell .assistant-download {
+  background: var(--easyb-accent-soft);
+  border: 1px solid var(--easyb-accent);
+  border-radius: 999px;
+  color: var(--easyb-accent-dark);
+  font-weight: 600;
+}
+
+.easyb-shell .assistant-download:hover {
+  background: var(--easyb-accent);
+  color: #fff;
+  filter: none;
+}
+
+/* .easyb-shell .tag--outline already outranks .easyb-shell button on
+   specificity (two classes beats one class + one element), so turning this
+   tag into a button for the company-switch click doesn't need a repaint fix
+   like .assistant-download above — this just adds the hover/cursor
+   affordance a passive label didn't need. */
+.easyb-shell .header__company-switch {
+  background: transparent;
+  border: 1px solid var(--easyb-border);
+  color: var(--easyb-text-soft);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.easyb-shell .header__company-switch:hover {
+  background: var(--easyb-accent-soft);
+  border-color: var(--easyb-accent);
+  color: var(--easyb-accent-dark);
+  filter: none;
 }
 
 .easyb-shell .assistant-action-card {

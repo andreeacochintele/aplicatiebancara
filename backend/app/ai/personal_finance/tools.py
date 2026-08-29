@@ -10,11 +10,12 @@ Two tools from the original contract have no backing data yet and raise
 `ToolDataUnavailableError` instead of inventing a figure — see their
 docstrings below for exactly what's missing.
 """
+import re
 from datetime import datetime, timezone
 
 from app.ai.observability import log_tool_call
 from app.ai.tools.base import ToolContext, ToolDataUnavailableError
-from app.analytics.schemas import CategorySpendingFlag, ForecastResponse, SpendingByTypeResponse
+from app.analytics.schemas import CategorySpendingFlag, ForecastResponse, NetWorthResponse, SpendingByTypeResponse
 from app.analytics.service import AnalyticsService
 from app.budgets.schemas import BudgetPublic
 from app.budgets.service import BudgetService
@@ -26,6 +27,7 @@ from app.statements.schemas import StatementPublic, StatementRequest
 from app.statements.service import StatementService
 from app.transactions.schemas import TransactionPublic
 from app.transactions.service import TransactionService
+from app.wallets.models import WalletStatus
 from app.wallets.schemas import WalletPublic
 from app.wallets.service import WalletService
 
@@ -97,8 +99,24 @@ def get_recurring_payments(ctx: ToolContext) -> None:
 
 @log_tool_call
 def get_wallet_balances(ctx: ToolContext) -> list[WalletPublic]:
+    """Excludes CLOSED wallets: a closed currency's balance is swept to 0 on
+    close but the row (and currency) stays, so without this filter a
+    currency the user no longer holds would still list as "0.0 available".
+    Same filter analytics/service.py already applies in three places."""
     wallets = WalletService(ctx.db).list_wallets(ctx.user_id)
-    return [WalletPublic.model_validate(w) for w in wallets]
+    return [WalletPublic.model_validate(w) for w in wallets if w.status != WalletStatus.CLOSED]
+
+
+@log_tool_call
+def get_net_worth(ctx: ToolContext, target_currency: str | None = None) -> NetWorthResponse:
+    """Real FX-converted total across every currency the user holds — reuses
+    AnalyticsService.net_worth() as-is (same deterministic FXService.get_rate()
+    conversion the Wallets page's net-worth widget already uses), not
+    reimplemented here. Sums available_balance only, so reserved amounts are
+    excluded from the total by construction, and CLOSED wallets are already
+    filtered out by the service. target_currency=None defaults to the user's
+    main wallet currency, same default net_worth() itself uses."""
+    return AnalyticsService(ctx.db).net_worth(ctx.user_id, target_currency)
 
 
 @log_tool_call
@@ -121,23 +139,43 @@ def get_cashback_offers(ctx: ToolContext) -> list[MerchantPublic]:
     return [merchant for merchant in merchants if merchant.active_offer is not None]
 
 
+def _select_statement_wallet(wallets: list, message: str | None):
+    """Picks which wallet a statement request means: if the message names a
+    currency the user actually holds (e.g. "extrasul cont RON"), use that
+    wallet even if it isn't main — a user asking for "the RON statement"
+    means RON, not whichever wallet happens to be marked main. Falls back
+    to the main wallet otherwise, same default every other tool here uses.
+    Word-boundary match on the raw message (case-insensitive) — no NLU,
+    same keyword-only spirit as the rest of this dispatch layer."""
+    active = [w for w in wallets if w.status != WalletStatus.CLOSED]
+    if message:
+        mentioned = set(re.findall(r"[A-Za-z]{3,}", message.upper()))
+        by_currency = next((w for w in active if w.currency.upper() in mentioned), None)
+        if by_currency is not None:
+            return by_currency
+    return next((w for w in active if w.is_main), None)
+
+
 @log_tool_call
-def get_account_statement(ctx: ToolContext) -> StatementPublic:
+def get_account_statement(ctx: ToolContext, message: str | None = None) -> StatementPublic:
     """Reuses StatementService.generate() as-is — same opening/closing
     balance and totals shown on the Statements page, not recomputed here.
-    "Which wallet, which period" isn't parsed out of the user's message
-    (this dispatch layer is keyword-only, see agent.py's module docstring),
-    so this defaults to the main wallet and the current calendar month to
-    date, same default period get_spending_by_category already uses."""
+    Period isn't parsed out of the user's message (this dispatch layer is
+    keyword-only, see agent.py's module docstring), so this always defaults
+    to the current calendar month to date, same default period
+    get_spending_by_category already uses. Which wallet IS parsed — see
+    _select_statement_wallet — since "show me the RON statement" asking for
+    the wrong currency's data outright is a worse failure than not knowing
+    the exact date range."""
     wallets = WalletService(ctx.db).list_wallets(ctx.user_id)
-    main_wallet = next((w for w in wallets if w.is_main), None)
-    if main_wallet is None:
+    wallet = _select_statement_wallet(wallets, message)
+    if wallet is None:
         raise ToolDataUnavailableError("No main wallet to generate a statement for.")
 
     today = datetime.now(timezone.utc).date()
     return StatementService(ctx.db).generate(
         ctx.user_id,
-        StatementRequest(wallet_id=main_wallet.id, date_from=today.replace(day=1), date_to=today),
+        StatementRequest(wallet_id=wallet.id, date_from=today.replace(day=1), date_to=today),
     )
 
 

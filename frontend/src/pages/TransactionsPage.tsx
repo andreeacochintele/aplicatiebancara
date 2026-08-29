@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
@@ -48,15 +49,19 @@ function formatAmount(transaction: Transaction, userWalletIds: Set<string>): str
   return `${sign}${transaction.amount} ${transaction.currency}`;
 }
 
-function formatTransactionType(transaction: Transaction, userWalletIds: Set<string>): string {
+function formatTransactionType(
+  transaction: Transaction,
+  userWalletIds: Set<string>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
   const description = transaction.description?.toLowerCase() ?? "";
   if (description.includes("loan") && description.includes("disbursement") && isIncomingOnly(transaction, userWalletIds)) {
-    return "Bank -> user";
+    return t("transactions.bankToUser");
   }
   if (transaction.type === "LOAN_PAYMENT") {
-    return "User -> bank";
+    return t("transactions.userToBank");
   }
-  return transaction.type.replaceAll("_", " ");
+  return t(`common.txType.${transaction.type}`, { defaultValue: transaction.type.replaceAll("_", " ") });
 }
 
 function toNumber(value: string): number {
@@ -98,6 +103,7 @@ function baseSplitDescription(description: string): string {
 }
 
 export function TransactionsPage() {
+  const { t } = useTranslation();
   const { accessToken, user } = useAuth();
   const navigate = useNavigate();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -196,7 +202,7 @@ export function TransactionsPage() {
       await loadTransactionFolders();
     } catch (err) {
       setTransactions([]);
-      setTransactionsError(err instanceof ApiError ? err.message : "Could not load transactions.");
+      setTransactionsError(err instanceof ApiError ? err.message : t("transactions.couldNotLoad"));
     } finally {
       setTransactionsLoading(false);
     }
@@ -231,11 +237,11 @@ export function TransactionsPage() {
   async function createFolder() {
     if (!accessToken || !folderName.trim()) return;
     if (folderName.length > FOLDER_NAME_MAX_LENGTH) {
-      setFolderError(`Folder title must be ${FOLDER_NAME_MAX_LENGTH} characters or less.`);
+      setFolderError(t("transactions.folderTitleTooLong", { max: FOLDER_NAME_MAX_LENGTH }));
       return;
     }
     if (folderDescription.length > FOLDER_DESCRIPTION_MAX_LENGTH) {
-      setFolderError(`Folder description must be ${FOLDER_DESCRIPTION_MAX_LENGTH} characters or less.`);
+      setFolderError(t("transactions.folderDescriptionTooLong", { max: FOLDER_DESCRIPTION_MAX_LENGTH }));
       return;
     }
     setFolderCreating(true);
@@ -254,9 +260,9 @@ export function TransactionsPage() {
       setTransactionFolders((current) => [folder, ...current]);
       setFolderName("");
       setFolderDescription("");
-      setFolderNotice("Folder created.");
+      setFolderNotice(t("transactions.folderCreated"));
     } catch (err) {
-      setFolderError(err instanceof ApiError ? err.message : "Could not create folder");
+      setFolderError(err instanceof ApiError ? err.message : t("transactions.couldNotCreateFolder"));
     } finally {
       setFolderCreating(false);
     }
@@ -273,10 +279,10 @@ export function TransactionsPage() {
         token: accessToken,
         body: { transaction_id: folderTransaction.id },
       });
-      setFolderNotice("Transaction added to folder.");
+      setFolderNotice(t("transactions.transactionAddedToFolder"));
       await loadTransactionFolders();
     } catch (err) {
-      setFolderError(err instanceof ApiError ? err.message : "Could not add transaction to folder");
+      setFolderError(err instanceof ApiError ? err.message : t("transactions.couldNotAddToFolder"));
     } finally {
       setFolderActionId(null);
     }
@@ -338,11 +344,11 @@ export function TransactionsPage() {
     if (!accessToken || !splitTransaction) return;
     const requestedPercent = splitParticipants.reduce((sum, participant) => sum + toNumber(participant.percent), 0);
     if (splitParticipants.length === 0) {
-      setSplitError("Choose at least one person.");
+      setSplitError(t("transactions.chooseAtLeastOnePerson"));
       return;
     }
     if (requestedPercent <= 0 || requestedPercent > 100) {
-      setSplitError("Requested shares must be more than 0% and at most 100%.");
+      setSplitError(t("transactions.sharesRange"));
       return;
     }
     if (
@@ -350,7 +356,7 @@ export function TransactionsPage() {
         (participant) => !participant.name.trim() || (!participant.participant_user_id.trim() && !participant.phone.trim()),
       )
     ) {
-      setSplitError("Each request needs the recipient name and phone number.");
+      setSplitError(t("transactions.needNameAndPhone"));
       return;
     }
 
@@ -363,12 +369,12 @@ export function TransactionsPage() {
         token: accessToken,
         body: {
           title: splitTransaction.description
-            ? `Split: ${baseSplitDescription(splitTransaction.description)}`
-            : "Split bill",
+            ? t("transactions.splitTitle", { description: baseSplitDescription(splitTransaction.description) })
+            : t("transactions.splitBillFallback"),
           total_amount: splitTransaction.amount,
           currency: splitTransaction.currency,
           source_transaction_id: splitTransaction.id,
-          description: "Created from transaction split bill",
+          description: t("transactions.createdFromSplit"),
           participants: splitParticipants.map((participant) => ({
             participant_user_id: participant.participant_user_id.trim() || null,
             name: participant.name.trim(),
@@ -377,12 +383,12 @@ export function TransactionsPage() {
           })),
         },
       });
-      setSplitNotice("Split bill requests sent.");
+      setSplitNotice(t("transactions.splitRequestsSent"));
       setSplitTransaction(null);
       setSplitParticipants([]);
       await loadBillSplits();
     } catch (err) {
-      setSplitError(err instanceof ApiError ? err.message : "Could not create split bill");
+      setSplitError(err instanceof ApiError ? err.message : t("transactions.couldNotCreateSplit"));
     } finally {
       setSplitSubmitting(false);
     }
@@ -392,7 +398,7 @@ export function TransactionsPage() {
     if (!accessToken) return;
     const sourceWallet = wallets.find((wallet) => wallet.currency === split.currency);
     if (!sourceWallet) {
-      setSplitError(`No ${split.currency} wallet available for this payment.`);
+      setSplitError(t("transactions.noWalletForPayment", { currency: split.currency }));
       return;
     }
     setSplitActionId(participantId);
@@ -403,10 +409,10 @@ export function TransactionsPage() {
         token: accessToken,
         body: { source_wallet_id: sourceWallet.id },
       });
-      setSplitNotice("Split bill paid.");
+      setSplitNotice(t("transactions.splitBillPaid"));
       await refreshTransactionsData();
     } catch (err) {
-      setSplitError(err instanceof ApiError ? err.message : "Could not pay split bill");
+      setSplitError(err instanceof ApiError ? err.message : t("transactions.couldNotPaySplit"));
     } finally {
       setSplitActionId(null);
     }
@@ -421,10 +427,10 @@ export function TransactionsPage() {
         method: "POST",
         token: accessToken,
       });
-      setSplitNotice("Split bill refused.");
+      setSplitNotice(t("transactions.splitBillRefused"));
       await loadBillSplits();
     } catch (err) {
-      setSplitError(err instanceof ApiError ? err.message : "Could not refuse split bill");
+      setSplitError(err instanceof ApiError ? err.message : t("transactions.couldNotRefuseSplit"));
     } finally {
       setSplitActionId(null);
     }
@@ -439,10 +445,10 @@ export function TransactionsPage() {
         method: "PATCH",
         token: accessToken,
       });
-      setSplitNotice("Split bill cancelled.");
+      setSplitNotice(t("transactions.splitBillCancelled"));
       await loadBillSplits();
     } catch (err) {
-      setSplitError(err instanceof ApiError ? err.message : "Could not cancel split bill");
+      setSplitError(err instanceof ApiError ? err.message : t("transactions.couldNotCancelSplit"));
     } finally {
       setSplitActionId(null);
     }
@@ -451,9 +457,9 @@ export function TransactionsPage() {
   return (
     <section>
       <div className="transactions-header">
-        <h2>Transactions</h2>
+        <h2>{t("transactions.title")}</h2>
         <button className="button--ghost button--wide" onClick={() => void refreshTransactionsData()} type="button">
-          Refresh
+          {t("transactions.refresh")}
         </button>
       </div>
       {transactionsError && <p className="status-line status-line--error">{transactionsError}</p>}
@@ -463,10 +469,10 @@ export function TransactionsPage() {
           {pendingSplitRequests.map(({ split, participant }) => (
             <div className="transaction-split-request" key={participant.id}>
               <div>
-                <span className="eyebrow">Split bill request</span>
+                <span className="eyebrow">{t("transactions.splitBillRequest")}</span>
                 <strong>{split.title}</strong>
                 <span>
-                  {participant.name} asks for {participant.amount} {split.currency}
+                  {t("transactions.asksFor", { name: participant.name, amount: participant.amount, currency: split.currency })}
                 </span>
               </div>
               <div className="transaction-split-request__actions">
@@ -476,7 +482,7 @@ export function TransactionsPage() {
                   onClick={() => paySplitRequest(split, participant.id)}
                   type="button"
                 >
-                  Pay
+                  {t("transactions.pay")}
                 </button>
                 <button
                   className="button--wide button--ghost"
@@ -484,7 +490,7 @@ export function TransactionsPage() {
                   onClick={() => refuseSplitRequest(split, participant.id)}
                   type="button"
                 >
-                  Refuse
+                  {t("transactions.refuse")}
                 </button>
               </div>
             </div>
@@ -498,10 +504,10 @@ export function TransactionsPage() {
             return (
               <div className="transaction-split-request" key={split.id}>
                 <div>
-                  <span className="eyebrow">Your split</span>
+                  <span className="eyebrow">{t("transactions.yourSplit")}</span>
                   <strong>{split.title}</strong>
                   <span>
-                    {paidCount} of {split.participants.length} paid &middot; {split.total_amount} {split.currency}
+                    {t("transactions.paidOf", { paid: paidCount, total: split.participants.length })} &middot; {split.total_amount} {split.currency}
                   </span>
                 </div>
                 <div className="transaction-split-request__actions">
@@ -511,7 +517,7 @@ export function TransactionsPage() {
                     onClick={() => cancelOwnedSplit(split)}
                     type="button"
                   >
-                    {splitActionId === split.id ? "Cancelling..." : "Cancel"}
+                    {splitActionId === split.id ? t("transactions.cancelling") : t("transactions.cancel")}
                   </button>
                 </div>
               </div>
@@ -522,15 +528,15 @@ export function TransactionsPage() {
       {splitTransaction ? (
         <div className="tile split-builder">
           <div className="tile__header">
-            <span className="eyebrow">Split bill</span>
+            <span className="eyebrow">{t("transactions.splitBill")}</span>
             <button className="button--ghost" type="button" onClick={() => setSplitTransaction(null)}>
-              Close
+              {t("transactions.close")}
             </button>
           </div>
           <div className="split-builder__summary">
             <strong>{splitTransaction.description || splitTransaction.type}</strong>
             <span>
-              {splitTransaction.amount} {splitTransaction.currency} on{" "}
+              {splitTransaction.amount} {splitTransaction.currency} {t("transactions.on")}{" "}
               {new Date(splitTransaction.created_at).toLocaleDateString()}
             </span>
           </div>
@@ -551,21 +557,21 @@ export function TransactionsPage() {
               })}
             </div>
           ) : (
-            <p className="status-line">No internal beneficiaries yet. Add one manually below.</p>
+            <p className="status-line">{t("transactions.noBeneficiariesYet")}</p>
           )}
           <div className="form-actions">
             <button className="button--ghost" onClick={splitEqually} type="button">
-              Split equally
+              {t("transactions.splitEqually")}
             </button>
             <button className="button--ghost" onClick={addManualParticipant} type="button">
-              Add person
+              {t("transactions.addPerson")}
             </button>
           </div>
           <div className="split-participant-list">
             {splitParticipants.map((participant) => (
               <div className="split-participant-row" key={participant.key}>
                 <label>
-                  Recipient name
+                  {t("transactions.recipientName")}
                   <input
                     onChange={(event) => updateSplitParticipant(participant.key, { name: event.target.value })}
                     placeholder="Maria Dinu"
@@ -573,7 +579,7 @@ export function TransactionsPage() {
                   />
                 </label>
                 <label>
-                  Phone number
+                  {t("transactions.phoneNumber")}
                   <input
                     onChange={(event) => updateSplitParticipant(participant.key, { phone: event.target.value })}
                     placeholder="+40700000101"
@@ -581,7 +587,7 @@ export function TransactionsPage() {
                   />
                 </label>
                 <label>
-                  Percent
+                  {t("transactions.percent")}
                   <input
                     min="0"
                     max="100"
@@ -598,39 +604,41 @@ export function TransactionsPage() {
                   <small>{splitTransaction.currency}</small>
                 </div>
                 <button className="button--danger" onClick={() => removeSplitParticipant(participant.key)} type="button">
-                  Remove
+                  {t("transactions.remove")}
                 </button>
               </div>
             ))}
           </div>
           {splitParticipants.length > 0 && (
             <p className="status-line">
-              Requested total: {moneyFromPercent(splitTransaction.amount, String(splitParticipants.reduce((sum, participant) => sum + toNumber(participant.percent), 0)))}{" "}
-              {splitTransaction.currency}
+              {t("transactions.requestedTotal", {
+                amount: moneyFromPercent(splitTransaction.amount, String(splitParticipants.reduce((sum, participant) => sum + toNumber(participant.percent), 0))),
+                currency: splitTransaction.currency,
+              })}
             </p>
           )}
           {splitError && <p className="status-line status-line--error">{splitError}</p>}
           <button disabled={splitSubmitting || splitParticipants.length === 0} onClick={submitSplitBill} type="button">
-            {splitSubmitting ? "Sending..." : "Send money requests"}
+            {splitSubmitting ? t("transactions.sending") : t("transactions.sendMoneyRequests")}
           </button>
         </div>
       ) : null}
       {folderTransaction ? (
         <div className="folder-modal-backdrop" role="presentation">
-          <section className="tile folder-modal" role="dialog" aria-modal="true" aria-label="Add transaction to folder">
+          <section className="tile folder-modal" role="dialog" aria-modal="true" aria-label={t("transactions.addTransactionToFolderLabel")}>
             <div className="tile__header">
               <div>
-                <span className="eyebrow">Add to folder</span>
+                <span className="eyebrow">{t("transactions.addToFolder")}</span>
                 <h2>{folderTransaction.description || folderTransaction.type}</h2>
               </div>
               <button className="button--ghost" onClick={() => setFolderTransaction(null)} type="button">
-                Close
+                {t("transactions.close")}
               </button>
             </div>
 
             <div className="folder-modal__create">
               <label>
-                Folder title
+                {t("transactions.folderTitle")}
                 <input
                   maxLength={FOLDER_NAME_MAX_LENGTH}
                   onChange={(event) => setFolderName(event.target.value)}
@@ -642,11 +650,11 @@ export function TransactionsPage() {
                 </span>
               </label>
               <label>
-                Description
+                {t("transactions.description")}
                 <input
                   maxLength={FOLDER_DESCRIPTION_MAX_LENGTH}
                   onChange={(event) => setFolderDescription(event.target.value)}
-                  placeholder="Optional"
+                  placeholder={t("transactions.optional")}
                   value={folderDescription}
                 />
                 <span className="field-hint">
@@ -654,7 +662,7 @@ export function TransactionsPage() {
                 </span>
               </label>
               <button className="button--wide" disabled={folderCreating || !folderName.trim()} onClick={createFolder} type="button">
-                {folderCreating ? "Creating..." : "Create new folder"}
+                {folderCreating ? t("transactions.creating") : t("transactions.createNewFolder")}
               </button>
             </div>
 
@@ -669,16 +677,16 @@ export function TransactionsPage() {
                     <div className="folder-choice folder-choice--active" key={folder.id}>
                       <span>
                         <strong>{folder.name}</strong>
-                        <small>{folder.description || `${folder.items.length} transaction(s)`}</small>
+                        <small>{folder.description || t("transactions.transactionCount", { count: folder.items.length })}</small>
                       </span>
                       <div className="folder-choice__actions">
-                        <span>Added</span>
+                        <span>{t("transactions.added")}</span>
                         <button
                           className="button--ghost button--wide"
                           onClick={() => navigate(`/payments?tab=folders&folder=${folder.id}`)}
                           type="button"
                         >
-                          Go to folder
+                          {t("transactions.goToFolder")}
                         </button>
                       </div>
                     </div>
@@ -694,14 +702,14 @@ export function TransactionsPage() {
                   >
                     <span>
                       <strong>{folder.name}</strong>
-                      <small>{folder.description || `${folder.items.length} transaction(s)`}</small>
+                      <small>{folder.description || t("transactions.transactionCount", { count: folder.items.length })}</small>
                     </span>
-                    <span>Add</span>
+                    <span>{t("transactions.add")}</span>
                   </button>
                 );
               })}
               {transactionFolders.length === 0 && (
-                <div className="empty-state">No folders yet. Create one above.</div>
+                <div className="empty-state">{t("transactions.noFoldersYet")}</div>
               )}
             </div>
           </section>
@@ -709,43 +717,43 @@ export function TransactionsPage() {
       ) : null}
       <section className="tile transactions-table-card">
         {transactionsLoading ? (
-          <div className="empty-state">Loading transactions...</div>
+          <div className="empty-state">{t("transactions.loadingTransactions")}</div>
         ) : transactions.length === 0 ? (
-          <div className="empty-state">No transactions found for {user?.first_name ?? "this user"}.</div>
+          <div className="empty-state">{t("transactions.noTransactionsFound", { name: user?.first_name ?? t("transactions.thisUser") })}</div>
         ) : (
           <table className="transactions-table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Type</th>
-                <th>Description</th>
-                <th>Amount</th>
-                <th>Status</th>
-                <th>Action</th>
+                <th>{t("transactions.date")}</th>
+                <th>{t("transactions.type")}</th>
+                <th>{t("transactions.description")}</th>
+                <th>{t("transactions.amount")}</th>
+                <th>{t("transactions.status")}</th>
+                <th>{t("transactions.action")}</th>
               </tr>
             </thead>
             <tbody>
               {visibleTransactions.map((tx) => (
                 <tr key={tx.id}>
                   <td>{new Date(tx.created_at).toLocaleString()}</td>
-                  <td>{formatTransactionType(tx, userWalletIds)}</td>
+                  <td>{formatTransactionType(tx, userWalletIds, t)}</td>
                   <td>{tx.description}</td>
                   <td className={isIncomingOnly(tx, userWalletIds) ? "transaction-amount--in" : "transaction-amount--out"}>
                     {formatAmount(tx, userWalletIds)}
                   </td>
-                  <td>{tx.status}</td>
+                  <td>{t(`common.status.${tx.status}`, { defaultValue: tx.status })}</td>
                   <td>
                     <div className="transaction-actions">
                       {tx.status === "COMPLETED" && isSplittable(tx) ? (
                         <button className="button--ghost button--wide" onClick={() => openSplit(tx)} type="button">
-                          Split bill
+                          {t("transactions.splitBill")}
                         </button>
                       ) : (
                         <span className="button--ghost button--wide transaction-actions__placeholder" aria-hidden="true" />
                       )}
                       {tx.status === "COMPLETED" && isFolderEligible(tx) ? (
                         <button className="button--ghost button--wide" onClick={() => openFolderModal(tx)} type="button">
-                          Add to folder
+                          {t("transactions.addToFolder")}
                         </button>
                       ) : (
                         <span className="button--ghost button--wide transaction-actions__placeholder" aria-hidden="true" />
@@ -769,13 +777,13 @@ export function TransactionsPage() {
             }}
           >
             <span className="eyebrow">
-              Showing {firstVisibleTransaction}-{lastVisibleTransaction} of {transactions.length}
+              {t("transactions.showingRange", { first: firstVisibleTransaction, last: lastVisibleTransaction, total: transactions.length })}
             </span>
             <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
               <button
                 type="button"
                 className="button--ghost"
-                aria-label="Previous transactions page"
+                aria-label={t("transactions.previousPage")}
                 disabled={currentTransactionsPage === 1}
                 onClick={() => setTransactionsPage((value) => Math.max(1, value - 1))}
                 style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}
@@ -787,7 +795,7 @@ export function TransactionsPage() {
                   key={pageNumber}
                   type="button"
                   className={pageNumber === currentTransactionsPage ? undefined : "button--ghost"}
-                  aria-label={`Go to transactions page ${pageNumber}`}
+                  aria-label={t("transactions.goToPage", { page: pageNumber })}
                   aria-current={pageNumber === currentTransactionsPage ? "page" : undefined}
                   onClick={() => setTransactionsPage(pageNumber)}
                   style={{ minWidth: 40, padding: "0.65rem 0.75rem" }}
@@ -798,7 +806,7 @@ export function TransactionsPage() {
               <button
                 type="button"
                 className="button--ghost"
-                aria-label="Next transactions page"
+                aria-label={t("transactions.nextPage")}
                 disabled={currentTransactionsPage === transactionPageCount}
                 onClick={() => setTransactionsPage((value) => Math.min(transactionPageCount, value + 1))}
                 style={{ minWidth: 44, padding: "0.65rem 0.75rem" }}

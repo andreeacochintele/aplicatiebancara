@@ -1,15 +1,17 @@
 import { Moon, Sun } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { useTheme } from "../hooks/useTheme";
 
 export function ThemeToggle() {
+  const { t } = useTranslation();
   const { theme, toggleTheme } = useTheme();
 
   return (
     <button
       type="button"
-      aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-      title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      aria-label={theme === "dark" ? t("common.switchToLight") : t("common.switchToDark")}
+      title={theme === "dark" ? t("common.switchToLight") : t("common.switchToDark")}
       onClick={toggleTheme}
       className="theme-toggle"
     >

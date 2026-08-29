@@ -3,17 +3,19 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import {
-  Area, AreaChart, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 
 import { apiRequest, ApiError } from "../api/apiClient";
-import { colorForType, monthLabel } from "../features/analytics/formatters";
+import { colorForType } from "../features/analytics/formatters";
 import { generateAnalyticsInsights, type AnalyticsInsight } from "../features/analytics/insights";
 import { useAuth } from "../hooks/useAuth";
 import type {
   AIInsight,
+  BalanceHistoryResponse,
   Budget,
   ForecastResponse,
   FXQuote,
@@ -28,12 +30,7 @@ import type {
 
 type NetWorthPeriod = "1m" | "3m" | "6m" | "1y";
 
-const PERIOD_LABEL: Record<NetWorthPeriod, string> = {
-  "1m": "This month",
-  "3m": "3 months",
-  "6m": "6 months",
-  "1y": "1 year",
-};
+const NET_WORTH_PERIODS: NetWorthPeriod[] = ["1m", "3m", "6m", "1y"];
 
 const INSIGHT_STYLE: Record<AnalyticsInsight["id"], { bg: string; fg: string; icon: LucideIcon }> = {
   trend: { bg: "var(--easyb-violet-soft)", fg: "var(--easyb-violet)", icon: TrendingUp },
@@ -46,10 +43,15 @@ function shortDate(date: string): string {
   return date.slice(5).replace("-", "/");
 }
 
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function NetWorthTrendChart({ history }: { history: NetWorthHistoryResponse }) {
+  const { t } = useTranslation();
   const data = history.history.map((point) => ({ date: point.date, value: Number(point.value) }));
   if (data.length < 2) {
-    return <p className="easyb-eyebrow light">Not enough history yet to chart this period.</p>;
+    return <p className="easyb-eyebrow light">{t("analytics.notEnoughHistory")}</p>;
   }
   const values = data.map((d) => d.value);
   const min = Math.min(...values);
@@ -77,7 +79,7 @@ function NetWorthTrendChart({ history }: { history: NetWorthHistoryResponse }) {
           />
           <YAxis domain={[min - pad, max + pad]} hide />
           <Tooltip
-            formatter={(value: number) => [`${value.toFixed(2)} ${history.base_currency}`, "Net worth"]}
+            formatter={(value: number) => [`${value.toFixed(2)} ${history.base_currency}`, t("analytics.netWorth")]}
             labelFormatter={(label: string) => label}
             contentStyle={{
               borderRadius: 10,
@@ -96,41 +98,11 @@ function NetWorthTrendChart({ history }: { history: NetWorthHistoryResponse }) {
   );
 }
 
-function MonthlyTrendChart({ trend }: { trend: MonthlyTrendResponse }) {
-  const data = trend.totals_by_month.map((item) => ({
-    label: monthLabel(item.year, item.month),
-    amount: Number(item.total_amount),
-  }));
-  if (data.length === 0) {
-    return <p className="easyb-tx-meta">No spending history yet.</p>;
-  }
-  return (
-    <ResponsiveContainer width="100%" height={180}>
-      <LineChart data={data} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
-        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--easyb-text-faint)" }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: "var(--easyb-text-faint)" }} axisLine={false} tickLine={false} width={44} />
-        <Tooltip
-          formatter={(value: number) => [`${value.toFixed(2)} ${trend.base_currency}`, "Spending"]}
-          contentStyle={{
-            borderRadius: 10,
-            border: "1px solid var(--easyb-border)",
-            fontSize: 12,
-            background: "var(--easyb-surface)",
-            color: "var(--easyb-text)",
-          }}
-          itemStyle={{ color: "var(--easyb-text)" }}
-          labelStyle={{ color: "var(--easyb-text-soft)" }}
-        />
-        <Line type="monotone" dataKey="amount" stroke="var(--easyb-accent)" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-      </LineChart>
-    </ResponsiveContainer>
-  );
-}
-
 function ForecastChart({ forecast }: { forecast: ForecastResponse }) {
+  const { t } = useTranslation();
   const data = forecast.projected_series.map((point) => ({ date: point.date, balance: Number(point.projected_balance) }));
   if (data.length < 2) {
-    return <p className="easyb-tx-meta">Not enough days left this month to project a trend.</p>;
+    return <p className="easyb-tx-meta">{t("analytics.notEnoughDaysLeft")}</p>;
   }
   const values = data.map((d) => d.balance);
   const min = Math.min(...values);
@@ -149,7 +121,7 @@ function ForecastChart({ forecast }: { forecast: ForecastResponse }) {
         <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: "var(--easyb-text-faint)" }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
         <YAxis domain={[min - pad, max + pad]} hide />
         <Tooltip
-          formatter={(value: number) => [`${value.toFixed(2)} ${forecast.currency}`, "Projected balance"]}
+          formatter={(value: number) => [`${value.toFixed(2)} ${forecast.currency}`, t("analytics.projectedBalance")]}
           contentStyle={{
             borderRadius: 10,
             border: "1px solid var(--easyb-border)",
@@ -161,6 +133,46 @@ function ForecastChart({ forecast }: { forecast: ForecastResponse }) {
           labelStyle={{ color: "var(--easyb-text-soft)" }}
         />
         <Area type="monotone" dataKey="balance" stroke="var(--easyb-accent)" strokeWidth={2} fill="url(#forecastFill)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function BalanceHistoryChart({ history }: { history: BalanceHistoryResponse }) {
+  const { t } = useTranslation();
+  const data = history.history.map((point) => ({ date: point.date, balance: Number(point.balance) }));
+  if (data.length < 2) {
+    return <p className="easyb-tx-meta">{t("analytics.notEnoughLedgerHistory")}</p>;
+  }
+  const values = data.map((d) => d.balance);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = (max - min) * 0.2 || Math.max(Math.abs(min) * 0.02, 1);
+
+  return (
+    <ResponsiveContainer width="100%" height={140}>
+      <AreaChart data={data} margin={{ top: 6, right: 8, left: 8, bottom: 0 }}>
+        <defs>
+          <linearGradient id="balanceHistoryFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--easyb-violet)" stopOpacity={0.25} />
+            <stop offset="100%" stopColor="var(--easyb-violet)" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <XAxis dataKey="date" tickFormatter={shortDate} tick={{ fontSize: 10, fill: "var(--easyb-text-faint)" }} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
+        <YAxis domain={[min - pad, max + pad]} hide />
+        <Tooltip
+          formatter={(value: number) => [`${value.toFixed(2)} ${history.currency}`, "Balance"]}
+          contentStyle={{
+            borderRadius: 10,
+            border: "1px solid var(--easyb-border)",
+            fontSize: 12,
+            background: "var(--easyb-surface)",
+            color: "var(--easyb-text)",
+          }}
+          itemStyle={{ color: "var(--easyb-text)" }}
+          labelStyle={{ color: "var(--easyb-text-soft)" }}
+        />
+        <Area type="monotone" dataKey="balance" stroke="var(--easyb-violet)" strokeWidth={2} fill="url(#balanceHistoryFill)" dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
       </AreaChart>
     </ResponsiveContainer>
   );
@@ -183,6 +195,7 @@ function SavingsMoneyModal({
   onClose: () => void;
   onSuccess: () => void;
 }) {
+  const { t } = useTranslation();
   const hasSavedMoney = Number(goal.current_amount) > 0;
   // Delete only needs a wallet when there's money to return - an
   // already-withdrawn (0 balance) goal is a plain confirm, nothing to move.
@@ -230,7 +243,7 @@ function SavingsMoneyModal({
       });
       setQuote(newQuote);
     } catch (err) {
-      setQuoteError(err instanceof ApiError ? err.message : "Could not get a conversion quote");
+      setQuoteError(err instanceof ApiError ? err.message : t("analytics.couldNotGetQuote"));
     } finally {
       setBusy(false);
     }
@@ -263,7 +276,7 @@ function SavingsMoneyModal({
       }
       onSuccess();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong");
+      setError(err instanceof ApiError ? err.message : t("analytics.somethingWentWrong"));
     } finally {
       setBusy(false);
     }
@@ -291,20 +304,24 @@ function SavingsMoneyModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={mode === "contribute" ? "Add money to goal" : mode === "withdraw" ? "Withdraw from goal" : "Delete goal"}
+        aria-label={mode === "contribute" ? t("analytics.addMoneyToGoal") : mode === "withdraw" ? t("analytics.withdrawFromGoal") : t("analytics.deleteGoal")}
         className="tile"
         onClick={(e) => e.stopPropagation()}
         style={{ maxWidth: "380px", width: "100%" }}
       >
         <div className="tile__header">
           <span className="eyebrow">
-            {mode === "contribute" ? `Add money — ${goal.name}` : mode === "withdraw" ? `Withdraw — ${goal.name}` : `Delete — ${goal.name}`}
+            {mode === "contribute"
+              ? t("analytics.addMoneyTitle", { name: goal.name })
+              : mode === "withdraw"
+                ? t("analytics.withdrawTitle", { name: goal.name })
+                : t("analytics.deleteTitle", { name: goal.name })}
           </span>
           <button
             type="button"
             className="button--ghost card-panel__icon-action"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t("analytics.close")}
             style={{ marginLeft: "auto" }}
           >
             <X size={15} strokeWidth={2.2} />
@@ -313,18 +330,18 @@ function SavingsMoneyModal({
 
         {mode === "delete" && (
           <p style={{ marginBottom: "0.75rem" }}>
-            Are you sure you want to delete the "{goal.name}" savings goal?
-            {hasSavedMoney ? " The money you've saved will be returned to a wallet." : " This can't be undone."}
+            {t("analytics.deleteConfirm", { name: goal.name })}
+            {hasSavedMoney ? t("analytics.moneyReturnedToWallet") : t("analytics.cannotBeUndone")}
           </p>
         )}
 
         {needsWallet && (
           <label style={{ display: "block", marginBottom: "0.75rem" }}>
-            {mode === "contribute" ? "From wallet" : "To wallet"}
+            {mode === "contribute" ? t("analytics.fromWallet") : t("analytics.toWallet")}
             <select value={walletId} onChange={(e) => setWalletId(e.target.value)} style={{ width: "100%", marginTop: "0.3rem" }}>
               {wallets.map((w) => (
                 <option key={w.wallet_id} value={w.wallet_id}>
-                  {w.currency} — {w.available_balance} available
+                  {t("analytics.availableSuffix", { currency: w.currency, balance: w.available_balance })}
                 </option>
               ))}
             </select>
@@ -333,7 +350,7 @@ function SavingsMoneyModal({
 
         {mode === "contribute" && (
           <label style={{ display: "block", marginBottom: "0.75rem" }}>
-            Amount {wallet ? `(${wallet.currency})` : ""}
+            {t("analytics.amount")} {wallet ? `(${wallet.currency})` : ""}
             <input
               type="number"
               min="0.01"
@@ -347,12 +364,12 @@ function SavingsMoneyModal({
         )}
         {mode === "withdraw" && (
           <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>
-            Withdraws the full {fixedAmount} {goal.currency} saved so far.
+            {t("analytics.withdrawsFull", { amount: fixedAmount, currency: goal.currency })}
           </p>
         )}
         {mode === "delete" && hasSavedMoney && (
           <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>
-            Returns the full {fixedAmount} {goal.currency} saved so far.
+            {t("analytics.returnsFull", { amount: fixedAmount, currency: goal.currency })}
           </p>
         )}
 
@@ -368,21 +385,20 @@ function SavingsMoneyModal({
             }}
           >
             {quote ? (
-              <>
-                ≈ {quote.target_amount} {mode === "contribute" ? goal.currency : wallet.currency}
-                {" · rate "}
-                {quote.exchange_rate}
-                {" · quote expires "}
-                {new Date(quote.expires_at).toLocaleTimeString()}
-              </>
+              t("analytics.quoteSummary", {
+                amount: quote.target_amount,
+                currency: mode === "contribute" ? goal.currency : wallet.currency,
+                rate: quote.exchange_rate,
+                time: new Date(quote.expires_at).toLocaleTimeString(),
+              })
             ) : (
               <>
                 {mode === "contribute"
-                  ? `Converting ${wallet.currency} to ${goal.currency} — get a quote first.`
-                  : `Converting ${goal.currency} to ${wallet.currency} — get a quote first.`}
+                  ? t("analytics.convertingContribute", { from: wallet.currency, to: goal.currency })
+                  : t("analytics.convertingWithdraw", { from: goal.currency, to: wallet.currency })}
                 <div style={{ marginTop: "0.5rem" }}>
                   <button type="button" className="button--ghost" onClick={fetchQuote} disabled={busy || !requestAmount || Number(requestAmount) <= 0}>
-                    Get quote
+                    {t("analytics.getQuote")}
                   </button>
                 </div>
               </>
@@ -399,7 +415,7 @@ function SavingsMoneyModal({
 
         <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem", justifyContent: "flex-end" }}>
           <button type="button" className="button--ghost" onClick={onClose}>
-            Cancel
+            {t("analytics.cancel")}
           </button>
           <button
             type="button"
@@ -407,7 +423,7 @@ function SavingsMoneyModal({
             onClick={confirm}
             disabled={!canConfirm}
           >
-            {busy ? "Working…" : mode === "contribute" ? "Add money" : mode === "withdraw" ? "Withdraw" : "Delete goal"}
+            {busy ? t("analytics.working") : mode === "contribute" ? t("analytics.addMoney") : mode === "withdraw" ? t("analytics.withdraw") : t("analytics.deleteGoal")}
           </button>
         </div>
       </div>
@@ -416,6 +432,7 @@ function SavingsMoneyModal({
 }
 
 export function AnalyticsPage() {
+  const { t } = useTranslation();
   const { accessToken, user } = useAuth();
   const isBusiness = user?.user_type === "BUSINESS";
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
@@ -425,6 +442,9 @@ export function AnalyticsPage() {
   const [topCounterparties, setTopCounterparties] = useState<TopCounterpartiesResponse | null>(null);
   const [monthlyTrend, setMonthlyTrend] = useState<MonthlyTrendResponse | null>(null);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
+  const [historyDateFrom, setHistoryDateFrom] = useState("");
+  const [historyDateTo, setHistoryDateTo] = useState("");
+  const [balanceHistory, setBalanceHistory] = useState<BalanceHistoryResponse | null>(null);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
   const [aiInsights, setAiInsights] = useState<AIInsight[] | null>(null);
@@ -493,6 +513,25 @@ export function AnalyticsPage() {
     };
   }, [accessToken, netWorthPeriod, reloadTick]);
 
+  const isCustomForecastRange = historyDateFrom !== "" && historyDateTo !== "" && historyDateFrom <= historyDateTo;
+
+  useEffect(() => {
+    if (!accessToken || !isCustomForecastRange) {
+      setBalanceHistory(null);
+      return;
+    }
+    let cancelled = false;
+    apiRequest<BalanceHistoryResponse>(
+      `/analytics/balance-history?date_from=${historyDateFrom}&date_to=${historyDateTo}`,
+      { token: accessToken },
+    )
+      .then((data) => !cancelled && setBalanceHistory(data))
+      .catch(() => !cancelled && setBalanceHistory(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, isCustomForecastRange, historyDateFrom, historyDateTo, reloadTick]);
+
   const spendingCurrency = netWorth?.base_currency ?? spendingByCategory?.items[0]?.currency;
   const spendingItems = spendingByCategory?.items.filter((item) => item.currency === spendingCurrency) ?? [];
   const spendingTotal = spendingItems.reduce((sum, item) => sum + Number(item.total_amount), 0);
@@ -523,7 +562,7 @@ export function AnalyticsPage() {
       const data = await apiRequest<AIInsight[]>("/analytics/insights?refresh=true", { token: accessToken });
       setAiInsights(data);
     } catch (err) {
-      window.alert(err instanceof ApiError ? err.message : "Could not refresh recommendations");
+      window.alert(err instanceof ApiError ? err.message : t("analytics.couldNotRefreshRecommendations"));
     } finally {
       setRefreshingInsights(false);
     }
@@ -536,7 +575,7 @@ export function AnalyticsPage() {
       await apiRequest<void>(`/analytics/insights/${insight.id}/dismiss`, { method: "POST", token: accessToken });
       setAiInsights((current) => current?.filter((i) => i.id !== insight.id) ?? current);
     } catch (err) {
-      window.alert(err instanceof ApiError ? err.message : "Could not dismiss this recommendation");
+      window.alert(err instanceof ApiError ? err.message : t("analytics.couldNotDismissRecommendation"));
     } finally {
       setDismissingInsightId(null);
     }
@@ -564,7 +603,7 @@ export function AnalyticsPage() {
       setGoalFormOpen(false);
       setReloadTick((tick) => tick + 1);
     } catch (err) {
-      setGoalError(err instanceof ApiError ? err.message : "Could not create savings goal");
+      setGoalError(err instanceof ApiError ? err.message : t("analytics.couldNotCreateSavingsGoal"));
     } finally {
       setGoalSubmitting(false);
     }
@@ -573,9 +612,9 @@ export function AnalyticsPage() {
   if (loadError) {
     return (
       <div className="tile" style={{ padding: "1.5rem" }}>
-        <p className="status-line status-line--error">We couldn't load your analytics.</p>
+        <p className="status-line status-line--error">{t("analytics.couldNotLoad")}</p>
         <button type="button" onClick={() => { setLoadError(false); setReloadTick((tick) => tick + 1); }}>
-          Try again
+          {t("analytics.tryAgain")}
         </button>
       </div>
     );
@@ -589,15 +628,15 @@ export function AnalyticsPage() {
           <div className="easyb-hero-blob easyb-blob-2" />
           <div className="easyb-hero-top">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-              <div className="easyb-eyebrow light">Net worth</div>
+              <div className="easyb-eyebrow light">{t("analytics.netWorth")}</div>
               <select
                 className="easyb-hero-select"
                 value={netWorthPeriod}
                 onChange={(e) => setNetWorthPeriod(e.target.value as NetWorthPeriod)}
               >
-                {(Object.keys(PERIOD_LABEL) as NetWorthPeriod[]).map((period) => (
+                {NET_WORTH_PERIODS.map((period) => (
                   <option key={period} value={period}>
-                    {PERIOD_LABEL[period]}
+                    {t(`analytics.period.${period}`)}
                   </option>
                 ))}
               </select>
@@ -607,86 +646,86 @@ export function AnalyticsPage() {
             </div>
             {netWorthChangePercent !== null && (
               <div className="easyb-hero-sub" style={{ color: netWorthChangePercent >= 0 ? "#7ee3ab" : "#ff9b9b" }}>
-                {netWorthChangePercent >= 0 ? "↑" : "↓"} {Math.abs(netWorthChangePercent).toFixed(1)}% vs {PERIOD_LABEL[netWorthPeriod].toLowerCase()} ago
+                {netWorthChangePercent >= 0 ? "↑" : "↓"} {Math.abs(netWorthChangePercent).toFixed(1)}% {t("analytics.vsAgo", { period: t(`analytics.period.${netWorthPeriod}`).toLowerCase() })}
               </div>
             )}
           </div>
           {netWorthHistory && <NetWorthTrendChart history={netWorthHistory} />}
         </div>
 
-        <div className="easyb-analytics-grid">
-          <div className="easyb-card">
-            <div className="easyb-section-header">
-              <div>
-                <div className="easyb-eyebrow">This period</div>
-                <h2>Spending overview</h2>
+        <div className="easyb-card">
+          <div className="easyb-section-header">
+            <div>
+              <div className="easyb-eyebrow">{t("analytics.thisPeriod")}</div>
+              <h2>{t("analytics.spendingOverview")}</h2>
+            </div>
+          </div>
+          {donutData.length > 0 ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 40, flexWrap: "wrap" }}>
+              <div className="easyb-donut-wrap" style={{ flex: "0 0 320px", width: 320 }}>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={90} outerRadius={130} paddingAngle={2} stroke="none">
+                      {donutData.map((item) => (
+                        <Cell key={item.key} fill={item.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]}
+                      contentStyle={{
+                        borderRadius: 10,
+                        border: "1px solid var(--easyb-border)",
+                        fontSize: 12,
+                        background: "var(--easyb-surface)",
+                        color: "var(--easyb-text)",
+                      }}
+                      itemStyle={{ color: "var(--easyb-text)" }}
+                      labelStyle={{ color: "var(--easyb-text-soft)" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="easyb-donut-center">
+                  <div className="easyb-donut-total" style={{ fontSize: 32 }}>{spendingTotal.toFixed(0)}</div>
+                  <div className="easyb-donut-label" style={{ fontSize: 13 }}>{spendingCurrency ?? ""}</div>
+                </div>
+              </div>
+              <div
+                className="easyb-legend"
+                style={{
+                  flex: "1 1 320px",
+                  marginTop: 0,
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(180px, 1fr))",
+                  columnGap: 32,
+                }}
+              >
+                {donutData.map((item) => (
+                  <Link
+                    className="easyb-legend-row"
+                    to="/transactions"
+                    key={item.key}
+                    style={{ textDecoration: "none", color: "inherit", cursor: "pointer", fontSize: 16, padding: "8px 0" }}
+                  >
+                    <span className="easyb-legend-dot" style={{ background: item.color, width: 10, height: 10 }} />
+                    <span className="easyb-legend-name">{item.name}</span>
+                    <span className="easyb-legend-pct">
+                      {spendingTotal > 0 ? Math.round((item.value / spendingTotal) * 100) : 0}%
+                    </span>
+                  </Link>
+                ))}
               </div>
             </div>
-            {donutData.length > 0 ? (
-              <>
-                <div className="easyb-donut-wrap">
-                  <ResponsiveContainer width="100%" height={150}>
-                    <PieChart>
-                      <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={48} outerRadius={68} paddingAngle={2} stroke="none">
-                        {donutData.map((item) => (
-                          <Cell key={item.key} fill={item.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]}
-                        contentStyle={{
-                          borderRadius: 10,
-                          border: "1px solid var(--easyb-border)",
-                          fontSize: 12,
-                          background: "var(--easyb-surface)",
-                          color: "var(--easyb-text)",
-                        }}
-                        itemStyle={{ color: "var(--easyb-text)" }}
-                        labelStyle={{ color: "var(--easyb-text-soft)" }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="easyb-donut-center">
-                    <div className="easyb-donut-total">{spendingTotal.toFixed(0)}</div>
-                    <div className="easyb-donut-label">{spendingCurrency ?? ""}</div>
-                  </div>
-                </div>
-                <div className="easyb-legend">
-                  {donutData.map((item) => (
-                    <Link
-                      className="easyb-legend-row"
-                      to="/transactions"
-                      key={item.key}
-                      style={{ textDecoration: "none", color: "inherit", cursor: "pointer" }}
-                    >
-                      <span className="easyb-legend-dot" style={{ background: item.color }} />
-                      <span className="easyb-legend-name">{item.name}</span>
-                      <span className="easyb-legend-pct">
-                        {spendingTotal > 0 ? Math.round((item.value / spendingTotal) * 100) : 0}%
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="easyb-tx-meta">No spending activity for this period.</p>
-            )}
-          </div>
-
-          <div className="easyb-card">
-            <div className="easyb-section-header">
-              <h2>Monthly trend · last 6 months</h2>
-            </div>
-            {monthlyTrend ? <MonthlyTrendChart trend={monthlyTrend} /> : <p className="easyb-tx-meta">We need more transaction history to show a trend.</p>}
-          </div>
+          ) : (
+            <p className="easyb-tx-meta">{t("analytics.noSpendingActivity")}</p>
+          )}
         </div>
 
         {isBusiness && (
           <div className="easyb-card">
             <div className="easyb-section-header">
               <div>
-                <div className="easyb-eyebrow">This period · business</div>
-                <h2>Top vendors</h2>
+                <div className="easyb-eyebrow">{t("analytics.thisPeriodBusiness")}</div>
+                <h2>{t("analytics.topVendors")}</h2>
               </div>
             </div>
             {topCounterparties && topCounterparties.items.length > 0 ? (
@@ -698,7 +737,7 @@ export function AnalyticsPage() {
                       {item.name}
                       <span style={{ color: "var(--easyb-text-faint)", fontWeight: 400 }}>
                         {" "}
-                        · {item.transaction_count} {item.transaction_count === 1 ? "payment" : "payments"}
+                        · {t("analytics.payment", { count: item.transaction_count })}
                       </span>
                     </span>
                     <span className="easyb-legend-pct">
@@ -708,40 +747,91 @@ export function AnalyticsPage() {
                 ))}
               </div>
             ) : (
-              <p className="easyb-tx-meta">No vendor spend for this period yet.</p>
+              <p className="easyb-tx-meta">{t("analytics.noVendorSpend")}</p>
             )}
           </div>
         )}
 
         <div className="easyb-card">
           <div className="easyb-section-header">
-            <h2>Cash-flow forecast</h2>
+            <h2>{t("analytics.cashFlowForecast")}</h2>
           </div>
-          {forecast ? (
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
+            <label style={{ flex: 1, minWidth: 120 }}>
+              {t("analytics.from")}
+              <input
+                type="date"
+                value={historyDateFrom}
+                max={historyDateTo || todayISO()}
+                onChange={(e) => setHistoryDateFrom(e.target.value)}
+              />
+            </label>
+            <label style={{ flex: 1, minWidth: 120 }}>
+              {t("analytics.to")}
+              <input
+                type="date"
+                value={historyDateTo}
+                min={historyDateFrom}
+                max={todayISO()}
+                onChange={(e) => setHistoryDateTo(e.target.value)}
+              />
+            </label>
+            {isCustomForecastRange && (
+              <button
+                type="button"
+                className="button--ghost"
+                onClick={() => {
+                  setHistoryDateFrom("");
+                  setHistoryDateTo("");
+                }}
+              >
+                {t("analytics.backToForecast")}
+              </button>
+            )}
+          </div>
+          {isCustomForecastRange ? (
+            balanceHistory ? (
+              <>
+                <div className="balance-hero__amount" style={{ fontSize: "1.75rem" }}>
+                  {balanceHistory.history.length > 0
+                    ? balanceHistory.history[balanceHistory.history.length - 1].balance
+                    : "—"}{" "}
+                  {balanceHistory.currency}
+                </div>
+                <div className="easyb-tx-meta" style={{ marginBottom: 8 }}>
+                  {t("analytics.balanceHistoryFor", { from: balanceHistory.date_from, to: balanceHistory.date_to })}
+                </div>
+                <BalanceHistoryChart history={balanceHistory} />
+                <p className="easyb-tx-meta" style={{ marginTop: 8 }}>{balanceHistory.note}</p>
+              </>
+            ) : (
+              <p className="easyb-tx-meta">{t("analytics.loadingBalanceHistory")}</p>
+            )
+          ) : forecast ? (
             <>
               <div className="balance-hero__amount" style={{ fontSize: "1.75rem" }}>
                 {forecast.projected_month_end_balance} {forecast.currency}
               </div>
               <div className="easyb-tx-meta" style={{ marginBottom: 8 }}>
-                Current balance: {forecast.current_balance} {forecast.currency} · {forecast.days_remaining} days left this month
+                {t("analytics.currentBalance", { balance: forecast.current_balance, currency: forecast.currency, days: forecast.days_remaining })}
               </div>
               <ForecastChart forecast={forecast} />
             </>
           ) : (
-            <p className="easyb-tx-meta">No forecast available yet.</p>
+            <p className="easyb-tx-meta">{t("analytics.noForecastAvailable")}</p>
           )}
         </div>
 
         <div className="easyb-card" id="analytics-savings-goals">
           <div className="easyb-section-header">
-            <h2>Savings goals</h2>
+            <h2>{t("analytics.savingsGoals")}</h2>
             <button
               type="button"
               className="easyb-link-btn"
               onClick={() => setGoalFormOpen((open) => !open)}
               style={{ background: "none", marginLeft: "auto" }}
             >
-              <Plus size={14} /> New goal
+              <Plus size={14} /> {t("analytics.newGoal")}
             </button>
           </div>
           {savingsGoals.length > 0 ? (
@@ -755,10 +845,10 @@ export function AnalyticsPage() {
                         className="easyb-chip easyb-chip-green"
                         style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}
                       >
-                        <CheckCircle2 size={12} strokeWidth={2.4} /> Completed
+                        <CheckCircle2 size={12} strokeWidth={2.4} /> {t("analytics.completed")}
                       </span>
                     )}
-                    {goal.status === "WITHDRAWN" && <span className="easyb-chip easyb-chip-neutral">Withdrawn</span>}
+                    {goal.status === "WITHDRAWN" && <span className="easyb-chip easyb-chip-neutral">{t("analytics.withdrawn")}</span>}
                   </span>
                   <span className="goal-card__amount">
                     {goal.current_amount} / {goal.target_amount} {goal.currency}
@@ -782,33 +872,33 @@ export function AnalyticsPage() {
                   <span className="goal-card__percent">{goal.percent_complete}%</span>
                   <span className="goal-card__meta">
                     {goal.status === "WITHDRAWN"
-                      ? "Withdrawn back to a wallet"
+                      ? t("analytics.withdrawnBackToWallet")
                       : goal.status === "COMPLETED"
-                        ? "Goal reached!"
+                        ? t("analytics.goalReached")
                         : goal.target_date
-                          ? `Target ${goal.target_date}${goal.monthly_amount_needed ? ` · save ${goal.monthly_amount_needed} ${goal.currency} a month to arrive on time` : ""}`
-                          : "No target date"}
+                          ? `${t("analytics.targetDate", { date: goal.target_date })}${goal.monthly_amount_needed ? t("analytics.saveMonthlyToArrive", { amount: goal.monthly_amount_needed, currency: goal.currency }) : ""}`
+                          : t("analytics.noTargetDate")}
                   </span>
                 </div>
                 <div className="goal-card__actions">
                   {goal.status === "ACTIVE" && (netWorth?.wallets.length ?? 0) > 0 && (
                     <button type="button" onClick={() => setMoneyModal({ goal, mode: "contribute" })}>
-                      Add money
+                      {t("analytics.addMoney")}
                     </button>
                   )}
                   {goal.status !== "WITHDRAWN" && Number(goal.current_amount) > 0 && (netWorth?.wallets.length ?? 0) > 0 && (
                     <button type="button" className="button--ghost" onClick={() => setMoneyModal({ goal, mode: "withdraw" })}>
-                      Withdraw
+                      {t("analytics.withdraw")}
                     </button>
                   )}
                   <button type="button" className="button--ghost" onClick={() => setMoneyModal({ goal, mode: "delete" })}>
-                    Delete
+                    {t("analytics.delete")}
                   </button>
                 </div>
               </div>
             ))
           ) : (
-            <p className="easyb-tx-meta">No savings goals yet.</p>
+            <p className="easyb-tx-meta">{t("analytics.noSavingsGoalsYet")}</p>
           )}
 
           {goalFormOpen && (
@@ -816,17 +906,17 @@ export function AnalyticsPage() {
               {goalError && <p className="status-line status-line--error">{goalError}</p>}
               <div className="easyb-inline-form-row">
                 <label>
-                  Name
-                  <input value={goalName} onChange={(e) => setGoalName(e.target.value)} placeholder="e.g. Emergency fund" required />
+                  {t("analytics.name")}
+                  <input value={goalName} onChange={(e) => setGoalName(e.target.value)} placeholder={t("analytics.namePlaceholder")} required />
                 </label>
                 <label>
-                  Target amount
+                  {t("analytics.targetAmount")}
                   <input type="number" min="1" step="0.01" value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} required />
                 </label>
               </div>
               <div className="easyb-inline-form-row">
                 <label>
-                  Currency
+                  {t("analytics.currency")}
                   <select value={goalCurrency} onChange={(e) => setGoalCurrency(e.target.value)}>
                     {walletCurrencies.map((currency) => (
                       <option key={currency} value={currency}>
@@ -836,16 +926,16 @@ export function AnalyticsPage() {
                   </select>
                 </label>
                 <label>
-                  Target date (optional)
+                  {t("analytics.targetDateOptional")}
                   <input type="date" value={goalTargetDate} onChange={(e) => setGoalTargetDate(e.target.value)} />
                 </label>
               </div>
               <div style={{ display: "flex", gap: 10 }}>
                 <button type="submit" disabled={goalSubmitting}>
-                  {goalSubmitting ? "Creating…" : "Create goal"}
+                  {goalSubmitting ? t("analytics.creating") : t("analytics.createGoal")}
                 </button>
                 <button type="button" className="button--ghost" onClick={() => setGoalFormOpen(false)}>
-                  Cancel
+                  {t("analytics.cancel")}
                 </button>
               </div>
             </form>
@@ -856,7 +946,7 @@ export function AnalyticsPage() {
       <div className="easyb-col">
         <div className="easyb-card">
           <div className="easyb-section-header">
-            <h2>Insights</h2>
+            <h2>{t("analytics.insights")}</h2>
           </div>
           {insights.length > 0 ? (
             insights.map((insight) => {
@@ -879,7 +969,7 @@ export function AnalyticsPage() {
               );
             })
           ) : (
-            <p className="easyb-tx-meta">Not enough activity yet to generate insights.</p>
+            <p className="easyb-tx-meta">{t("analytics.notEnoughActivityForInsights")}</p>
           )}
         </div>
 
@@ -887,21 +977,21 @@ export function AnalyticsPage() {
           <div className="easyb-section-header">
             <span className="easyb-eyebrow" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
               <Sparkles size={14} strokeWidth={2.2} />
-              Spending recommendations
+              {t("analytics.spendingRecommendations")}
             </span>
             <button
               type="button"
               className="button--ghost card-panel__icon-action"
               onClick={refreshInsights}
               disabled={refreshingInsights || aiInsights === null}
-              aria-label="Refresh spending recommendations"
+              aria-label={t("analytics.refreshRecommendations")}
               style={{ marginLeft: "auto" }}
             >
               <RefreshCw size={14} strokeWidth={2.2} className={refreshingInsights ? "spin" : undefined} />
             </button>
           </div>
           {aiInsights === null ? (
-            <p className="easyb-tx-meta">Checking your spending…</p>
+            <p className="easyb-tx-meta">{t("analytics.checkingSpending")}</p>
           ) : aiInsights.length > 0 ? (
             aiInsights.map((insight) => (
               <div className="easyb-insight-row" key={insight.id}>
@@ -927,19 +1017,19 @@ export function AnalyticsPage() {
                   disabled={dismissingInsightId === insight.id}
                   onClick={() => dismissInsight(insight)}
                 >
-                  {dismissingInsightId === insight.id ? "…" : "Dismiss"}
+                  {dismissingInsightId === insight.id ? t("analytics.dismissing") : t("analytics.dismiss")}
                 </button>
               </div>
             ))
           ) : (
-            <p className="easyb-tx-meta">No spending recommendations right now.</p>
+            <p className="easyb-tx-meta">{t("analytics.noRecommendationsRightNow")}</p>
           )}
         </div>
 
         <div className="easyb-card easyb-savings-cta">
           <PiggyBank size={22} style={{ marginBottom: 8 }} />
-          <h2>Set a savings goal</h2>
-          <p>Create a goal and track your progress automatically.</p>
+          <h2>{t("analytics.setSavingsGoal")}</h2>
+          <p>{t("analytics.setSavingsGoalDescription")}</p>
           <button
             type="button"
             onClick={() => {
@@ -947,7 +1037,7 @@ export function AnalyticsPage() {
               document.getElementById("analytics-savings-goals")?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
           >
-            Create goal
+            {t("analytics.createGoal")}
           </button>
         </div>
       </div>

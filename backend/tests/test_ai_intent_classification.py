@@ -78,6 +78,7 @@ def test_system_prompt_contains_the_data_vs_how_it_works_heuristic():
         ("Do I have any cashback right now?", "personal_finance", IntentCategory.PERSONAL_FINANCE),
         ("What counts as a transaction?", "support", IntentCategory.SUPPORT),
         ("Show me my recent transactions", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+        ("Can I get an account statement?", "personal_finance", IntentCategory.PERSONAL_FINANCE),
     ],
 )
 def test_classify_intent_returns_the_correct_category_when_the_model_answers_correctly(
@@ -85,6 +86,22 @@ def test_classify_intent_returns_the_correct_category_when_the_model_answers_cor
 ):
     monkeypatch.setattr(intent, "get_azure_foundry_client", lambda: _FakeClient(model_reply))
     assert classify_intent(message) == expected
+
+
+# ---- account-statement misclassification: live-observed drifting to
+# support ("Nu am acces la datele tale") on a follow-up chip click inside a
+# conversation that had already gone off into support — no example anywhere
+# taught the classifier that a statement request is personal_finance's own
+# real-data territory, unlike balance/spending/savings/cashback/transactions,
+# which all already had one. Not reliably reproduced in isolation (LLM
+# classification isn't deterministic), but this is a real, verifiable gap in
+# the few-shot examples regardless of the exact trigger. ----
+
+
+def test_system_prompt_contains_the_statement_examples():
+    assert "'Can I get an account statement?' -> personal_finance" in intent._SYSTEM_PROMPT
+    assert "'Vreau un extras de cont' -> personal_finance" in intent._SYSTEM_PROMPT
+    assert "'Arata-mi extrasul de cont pentru RON' -> personal_finance" in intent._SYSTEM_PROMPT
 
 
 # ---- Romanian support: live-found while investigating a report — messages in
@@ -113,6 +130,8 @@ def test_system_prompt_contains_the_romanian_examples():
         ("Cat am in cont?", "personal_finance", IntentCategory.PERSONAL_FINANCE),
         ("Cum functioneaza bugetele?", "support", IntentCategory.SUPPORT),
         ("Arata-mi cheltuielile din ultima luna", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+        ("Vreau un extras de cont", "personal_finance", IntentCategory.PERSONAL_FINANCE),
+        ("Arata-mi extrasul de cont pentru RON", "personal_finance", IntentCategory.PERSONAL_FINANCE),
     ],
 )
 def test_classify_intent_returns_the_correct_category_for_romanian_messages(
@@ -124,6 +143,45 @@ def test_classify_intent_returns_the_correct_category_for_romanian_messages(
 
 def test_parse_category_defaults_to_support_on_unrecognized_reply():
     assert intent._parse_category("hmm, not sure") == IntentCategory.SUPPORT
+
+
+# ---- personal_finance-vs-credit misclassification, live-confirmed via a
+# broad manual test sweep: "Tell me about my loans" and "What's my monthly
+# payment?" were landing on personal_finance (which has no keyword for loans
+# and silently falls back to its default wallet_balances tool, giving the
+# user an unrelated wallet-balance dump instead of their loan data), and
+# several other loan-shaped questions drifted to support/personal_finance
+# over a longer conversation. Same two-layer pattern as the
+# personal_finance-vs-support fix above.
+
+
+def test_system_prompt_contains_the_personal_finance_vs_credit_heuristic():
+    lowered = intent._SYSTEM_PROMPT.lower()
+    assert "personal_finance vs credit is the other common mix-up" in lowered
+    assert "does not include loans or credit score" in lowered
+
+
+def test_system_prompt_contains_the_loan_examples_corrected_to_credit():
+    assert "'Tell me about my loans' -> credit" in intent._SYSTEM_PROMPT
+    assert "'What's my monthly payment?' -> credit" in intent._SYSTEM_PROMPT
+    assert "'How much do I still owe?' -> credit" in intent._SYSTEM_PROMPT
+    assert "'Do I have any pending loan applications?' -> credit" in intent._SYSTEM_PROMPT
+    assert "'Can I pay off my loan early?' -> credit" in intent._SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize(
+    "message, model_reply, expected",
+    [
+        ("Tell me about my loans", "credit", IntentCategory.CREDIT),
+        ("What's my monthly payment?", "credit", IntentCategory.CREDIT),
+        ("How much do I still owe?", "credit", IntentCategory.CREDIT),
+        ("Do I have any pending loan applications?", "credit", IntentCategory.CREDIT),
+        ("Can I pay off my loan early?", "credit", IntentCategory.CREDIT),
+    ],
+)
+def test_classify_intent_returns_credit_for_own_loan_data_questions(monkeypatch, message, model_reply, expected):
+    monkeypatch.setattr(intent, "get_azure_foundry_client", lambda: _FakeClient(model_reply))
+    assert classify_intent(message) == expected
 
 
 # ---- latency fix: reasoning_effort="minimal" on classify_intent's own call only ----

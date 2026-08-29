@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { Statement, Wallet } from "../types";
-import { walletLabel } from "../utils";
+import { downloadBlob, walletLabel } from "../utils";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
@@ -23,19 +24,8 @@ function todayMinus(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-async function downloadBlob(response: Response, fallbackName: string) {
-  const disposition = response.headers.get("Content-Disposition") ?? "";
-  const match = /filename="([^"]+)"/.exec(disposition);
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = match?.[1] ?? fallbackName;
-  link.click();
-  URL.revokeObjectURL(objectUrl);
-}
-
 export function StatementsPage() {
+  const { t } = useTranslation();
   const { accessToken } = useAuth();
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [walletId, setWalletId] = useState("");
@@ -75,7 +65,7 @@ export function StatementsPage() {
       const data = await apiRequest<Statement>(`/statements?${params.toString()}`, { token: accessToken });
       setStatement(data);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not generate statement");
+      setError(err instanceof ApiError ? err.message : t("statements.couldNotGenerate"));
     } finally {
       setBusy(false);
     }
@@ -88,7 +78,7 @@ export function StatementsPage() {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) {
-      setError("Export failed");
+      setError(t("statements.exportFailed"));
       return;
     }
     await downloadBlob(response, `statement_${dateFrom}_${dateTo}.${format}`);
@@ -101,7 +91,7 @@ export function StatementsPage() {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) {
-      setError("Could not re-download this statement");
+      setError(t("statements.couldNotRedownload"));
       return;
     }
     await downloadBlob(response, `statement_${job.date_from}_${job.date_to}.${job.format.toLowerCase()}`);
@@ -112,26 +102,26 @@ export function StatementsPage() {
       <div className="tile" style={{ maxWidth: 560 }}>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           <label style={{ flex: 1 }}>
-            Wallet
+            {t("statements.wallet")}
             <select value={walletId} onChange={(e) => setWalletId(e.target.value)}>
               {wallets.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {walletLabel(w)} {w.is_main ? "(main)" : ""}
+                  {walletLabel(w)} {w.is_main ? t("statements.main") : ""}
                 </option>
               ))}
             </select>
           </label>
           <label style={{ flex: 1 }}>
-            From
+            {t("statements.from")}
             <input type="date" value={dateFrom} max={dateTo} onChange={(e) => setDateFrom(e.target.value)} />
           </label>
           <label style={{ flex: 1 }}>
-            To
+            {t("statements.to")}
             <input type="date" value={dateTo} min={dateFrom} onChange={(e) => setDateTo(e.target.value)} />
           </label>
         </div>
         <button onClick={generate} disabled={busy || !walletId} style={{ marginTop: "0.75rem" }}>
-          Generate
+          {t("statements.generate")}
         </button>
         {error && <p role="alert">{error}</p>}
       </div>
@@ -143,26 +133,26 @@ export function StatementsPage() {
               {statement.currency} · {statement.date_from} → {statement.date_to}
             </span>
             <div style={{ display: "flex", gap: "0.5rem", marginLeft: "auto" }}>
-              <button onClick={() => exportFile("csv")}>Export CSV</button>
-              <button onClick={() => exportFile("pdf")}>Export PDF</button>
+              <button onClick={() => exportFile("csv")}>{t("statements.exportCsv")}</button>
+              <button onClick={() => exportFile("pdf")}>{t("statements.exportPdf")}</button>
             </div>
           </div>
 
           <div className="wallet-grid" style={{ marginBottom: "1rem" }}>
             <div className="wallet-chip">
-              <div className="wallet-chip__ccy">Opening balance</div>
+              <div className="wallet-chip__ccy">{t("statements.openingBalance")}</div>
               <div className="wallet-chip__amount">{statement.opening_balance}</div>
             </div>
             <div className="wallet-chip">
-              <div className="wallet-chip__ccy">Closing balance</div>
+              <div className="wallet-chip__ccy">{t("statements.closingBalance")}</div>
               <div className="wallet-chip__amount">{statement.closing_balance}</div>
             </div>
             <div className="wallet-chip">
-              <div className="wallet-chip__ccy">Total incoming</div>
+              <div className="wallet-chip__ccy">{t("statements.totalIncoming")}</div>
               <div className="wallet-chip__amount">{statement.total_incoming}</div>
             </div>
             <div className="wallet-chip">
-              <div className="wallet-chip__ccy">Total outgoing</div>
+              <div className="wallet-chip__ccy">{t("statements.totalOutgoing")}</div>
               <div className="wallet-chip__amount">{statement.total_outgoing}</div>
             </div>
           </div>
@@ -170,11 +160,11 @@ export function StatementsPage() {
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Description</th>
-                <th>Type</th>
-                <th>Direction</th>
-                <th style={{ textAlign: "right" }}>Amount</th>
+                <th>{t("statements.date")}</th>
+                <th>{t("statements.description")}</th>
+                <th>{t("statements.type")}</th>
+                <th>{t("statements.direction")}</th>
+                <th style={{ textAlign: "right" }}>{t("statements.amount")}</th>
               </tr>
             </thead>
             <tbody>
@@ -182,7 +172,7 @@ export function StatementsPage() {
                 <tr key={tx.id}>
                   <td>{new Date(tx.created_at).toLocaleDateString()}</td>
                   <td>{tx.description ?? "—"}</td>
-                  <td>{tx.type}</td>
+                  <td>{t(`common.txType.${tx.type}`, { defaultValue: tx.type })}</td>
                   <td>
                     <span className={`tag ${tx.direction === "IN" ? "tag--accent" : "tag--neutral"}`}>
                       {tx.direction}
@@ -193,7 +183,7 @@ export function StatementsPage() {
               ))}
               {statement.transactions.length === 0 && (
                 <tr>
-                  <td colSpan={5}>No activity in this period.</td>
+                  <td colSpan={5}>{t("statements.noActivity")}</td>
                 </tr>
               )}
             </tbody>
@@ -203,15 +193,15 @@ export function StatementsPage() {
 
       <div className="tile">
         <div className="tile__header">
-          <span className="eyebrow">Statement history</span>
+          <span className="eyebrow">{t("statements.statementHistory")}</span>
         </div>
         <table>
           <thead>
             <tr>
-              <th>Generated</th>
-              <th>Period</th>
-              <th>Format</th>
-              <th>Rows</th>
+              <th>{t("statements.generated")}</th>
+              <th>{t("statements.period")}</th>
+              <th>{t("statements.format")}</th>
+              <th>{t("statements.rows")}</th>
               <th></th>
             </tr>
           </thead>
@@ -225,13 +215,13 @@ export function StatementsPage() {
                 <td>{job.format}</td>
                 <td>{job.row_count}</td>
                 <td>
-                  <button onClick={() => redownload(job)}>Download</button>
+                  <button onClick={() => redownload(job)}>{t("statements.download")}</button>
                 </td>
               </tr>
             ))}
             {history.length === 0 && (
               <tr>
-                <td colSpan={5}>No statements generated yet.</td>
+                <td colSpan={5}>{t("statements.noStatementsGenerated")}</td>
               </tr>
             )}
           </tbody>

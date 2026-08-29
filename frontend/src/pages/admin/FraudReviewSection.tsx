@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useState } from "react";
 import { Bot, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { ApiError, apiRequest } from "../../api/apiClient";
 import { useAuth } from "../../hooks/useAuth";
-import type { FraudAgentAnalysis, FraudCaseDetail, FraudCaseSummary, FraudFlag, FraudFlagCode } from "../../types";
+import type { FraudAgentAnalysis, FraudCaseDetail, FraudCaseSummary, FraudFlag } from "../../types";
 
 function formatMoney(value: string, currency: string): string {
   return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
@@ -16,8 +17,8 @@ function formatFlagCode(code: string): string {
     .join(" ");
 }
 
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "N/A";
+function formatValue(value: unknown, t: (key: string) => string): string {
+  if (value === null || value === undefined || value === "") return t("admin.notAvailable");
   if (typeof value === "number") return value.toLocaleString();
   return String(value);
 }
@@ -34,18 +35,8 @@ function velocityWindow(analysis: FraudAgentAnalysis | null, window: string): Re
   return asRecord(asRecord(asRecord(analysis?.velocity_analysis).windows)[window]);
 }
 
-function reviewFocus(flags: FraudFlag[]): string[] {
-  const messages: Record<FraudFlagCode, string> = {
-    NEW_DEVICE: "Confirm whether the active device belongs to the customer and whether it has successful prior usage.",
-    HIGH_AMOUNT: "Compare the held amount with the customer's completed card-payment baseline and recent large purchases.",
-    UNUSUAL_COUNTRY: "Check whether the device location matches the customer's known locations before relying on it.",
-    REWARD_ABUSE_PATTERN: "Review same-amount payments to this merchant and separate duplicate checkout attempts from coordinated abuse.",
-    HIGH_VELOCITY: "Inspect transactions immediately before and after this payment to understand the burst pattern.",
-    UNUSUAL_TIME: "Check whether this UTC transaction time is unusual for this customer, not just unusual in general.",
-    REPEATED_TRANSFER_PATTERN:
-      "Review the repeated transfers to this account and confirm the customer knows the recipient and intended to send each one.",
-  };
-  return flags.map((flag) => messages[flag.code]);
+function reviewFocus(flags: FraudFlag[], t: (key: string) => string): string[] {
+  return flags.map((flag) => t(`admin.reviewFocus.${flag.code}`));
 }
 
 function SignalList({
@@ -70,6 +61,7 @@ function SignalList({
 }
 
 export function FraudReviewSection() {
+  const { t } = useTranslation();
   const { accessToken, logout, user } = useAuth();
   const [cases, setCases] = useState<FraudCaseSummary[]>([]);
   const [details, setDetails] = useState<Record<string, FraudCaseDetail>>({});
@@ -90,7 +82,7 @@ export function FraudReviewSection() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not load fraud cases.");
+      setError(err instanceof ApiError ? err.message : t("admin.couldNotLoadFraudCases"));
     } finally {
       setIsLoading(false);
     }
@@ -119,7 +111,7 @@ export function FraudReviewSection() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not load fraud case details.");
+      setError(err instanceof ApiError ? err.message : t("admin.couldNotLoadFraudCaseDetails"));
     }
   }
 
@@ -145,7 +137,7 @@ export function FraudReviewSection() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not record the fraud decision.");
+      setError(err instanceof ApiError ? err.message : t("admin.couldNotRecordDecision"));
     } finally {
       setDecisionCaseId(null);
     }
@@ -166,7 +158,7 @@ export function FraudReviewSection() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not run the fraud review.");
+      setError(err instanceof ApiError ? err.message : t("admin.couldNotRunReview"));
     } finally {
       setInvestigationCaseId(null);
     }
@@ -179,21 +171,21 @@ export function FraudReviewSection() {
   return (
     <div className="tile">
       <div className="tile__header">
-        <span className="eyebrow">Fraud review</span>
-        <span className="tag tag--neutral">{cases.length} pending</span>
+        <span className="eyebrow">{t("admin.fraudReviewTitle")}</span>
+        <span className="tag tag--neutral">{t("admin.pendingCount", { count: cases.length })}</span>
       </div>
       {error && <p style={{ color: "var(--color-warning)", margin: "0 0 0.85rem" }}>{error}</p>}
-      {isLoading && <div className="card-empty">Loading fraud cases...</div>}
+      {isLoading && <div className="card-empty">{t("admin.loadingFraudCases")}</div>}
       {!isLoading && (
         <table>
           <thead>
             <tr>
-              <th>Transaction</th>
-              <th>Amount held</th>
-              <th>Risk score</th>
-              <th>Flags</th>
-              <th>Created</th>
-              <th>Actions</th>
+              <th>{t("admin.transaction")}</th>
+              <th>{t("admin.amountHeld")}</th>
+              <th>{t("admin.riskScore")}</th>
+              <th>{t("admin.flags")}</th>
+              <th>{t("admin.created")}</th>
+              <th>{t("admin.actions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -219,14 +211,14 @@ export function FraudReviewSection() {
                     <td>
                       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                         <button type="button" className="button--ghost" onClick={() => toggleExpand(fraudCase.id)}>
-                          {isExpanded ? "Hide" : "Details"}
+                          {isExpanded ? t("admin.hide") : t("admin.details")}
                         </button>
                         <button
                           type="button"
                           onClick={() => decide(fraudCase.id, "APPROVE")}
                           disabled={decisionCaseId === fraudCase.id}
                         >
-                          Approve
+                          {t("admin.approve")}
                         </button>
                         <button
                           type="button"
@@ -234,7 +226,7 @@ export function FraudReviewSection() {
                           onClick={() => decide(fraudCase.id, "REJECT")}
                           disabled={decisionCaseId === fraudCase.id}
                         >
-                          Reject
+                          {t("admin.reject")}
                         </button>
                       </div>
                     </td>
@@ -242,7 +234,7 @@ export function FraudReviewSection() {
                   {isExpanded && (
                     <tr>
                       <td colSpan={6}>
-                        {!detail && <div className="card-empty">Loading details...</div>}
+                        {!detail && <div className="card-empty">{t("admin.loadingDetails")}</div>}
                         {detail && (
                           <FraudCaseEvidence
                             detail={detail}
@@ -258,7 +250,7 @@ export function FraudReviewSection() {
             })}
             {cases.length === 0 && (
               <tr>
-                <td colSpan={6}>No fraud cases pending review.</td>
+                <td colSpan={6}>{t("admin.noFraudCasesPending")}</td>
               </tr>
             )}
           </tbody>
@@ -277,6 +269,7 @@ function FraudCaseEvidence({
   isInvestigating: boolean;
   onInvestigate: () => void;
 }) {
+  const { t } = useTranslation();
   const analysis = detail.agent_analysis;
   const baseline = amountBaseline(analysis);
   const velocity5m = velocityWindow(analysis, "5m");
@@ -298,13 +291,13 @@ function FraudCaseEvidence({
         </div>
         <button type="button" className="button--ghost fraud-review-button" onClick={onInvestigate} disabled={isInvestigating}>
           {isInvestigating ? <Loader2 size={14} /> : <Bot size={14} />}
-          {hasAnalysis ? "Refresh Review" : "Run Review"}
+          {hasAnalysis ? t("admin.refreshReview") : t("admin.runReview")}
         </button>
       </div>
 
       <div className="fraud-analysis-grid">
         <section className="fraud-analysis-block">
-          <h4>Triggered Rules</h4>
+          <h4>{t("admin.triggeredRules")}</h4>
           <ul className="fraud-rule-list">
             {detail.flags.map((flag) => (
               <li key={flag.id}>
@@ -317,8 +310,8 @@ function FraudCaseEvidence({
         </section>
 
         <section className="fraud-analysis-block">
-          <h4>Review Focus</h4>
-          <SignalList items={reviewFocus(detail.flags)} empty="No rule-specific checks available." tone="check" />
+          <h4>{t("admin.reviewFocusTitle")}</h4>
+          <SignalList items={reviewFocus(detail.flags, t)} empty={t("admin.noRuleSpecificChecks")} tone="check" />
         </section>
       </div>
 
@@ -326,7 +319,7 @@ function FraudCaseEvidence({
         <>
           <div className="fraud-agent-summary">
             <div>
-              <span className="eyebrow">Agent review</span>
+              <span className="eyebrow">{t("admin.agentReview")}</span>
               <strong>{analysis.summary ?? analysis.risk_level}</strong>
               <p>{analysis.explanation}</p>
             </div>
@@ -337,59 +330,59 @@ function FraudCaseEvidence({
 
           <div className="fraud-metric-grid">
             <div>
-              <span>Average card payment</span>
+              <span>{t("admin.averageCardPayment")}</span>
               <strong>
-                {formatValue(baseline.average_completed_card_payment)} {detail.transaction_currency}
+                {formatValue(baseline.average_completed_card_payment, t)} {detail.transaction_currency}
               </strong>
             </div>
             <div>
-              <span>Amount vs average</span>
-              <strong>{formatValue(baseline.amount_to_average_ratio)}x</strong>
+              <span>{t("admin.amountVsAverage")}</span>
+              <strong>{formatValue(baseline.amount_to_average_ratio, t)}x</strong>
             </div>
             <div>
-              <span>5 min activity</span>
+              <span>{t("admin.activity5min")}</span>
               <strong>
-                {formatValue(velocity5m.count)} tx / {formatValue(velocity5m.total_amount)} {detail.transaction_currency}
+                {formatValue(velocity5m.count, t)} {t("admin.txUnit")} / {formatValue(velocity5m.total_amount, t)} {detail.transaction_currency}
               </strong>
             </div>
             <div>
-              <span>10 min same merchant</span>
-              <strong>{formatValue(velocity10m.same_merchant_count)} tx</strong>
+              <span>{t("admin.sameMerchant10min")}</span>
+              <strong>{formatValue(velocity10m.same_merchant_count, t)} {t("admin.txUnit")}</strong>
             </div>
             <div>
-              <span>Merchant</span>
-              <strong>{formatValue(merchant.name ?? "Unknown")}</strong>
+              <span>{t("admin.merchant")}</span>
+              <strong>{formatValue(merchant.name ?? t("admin.unknown"), t)}</strong>
             </div>
             <div>
-              <span>Latest device</span>
-              <strong>{formatValue(device.device_name ?? device.device_type ?? "Unknown")}</strong>
+              <span>{t("admin.latestDevice")}</span>
+              <strong>{formatValue(device.device_name ?? device.device_type ?? t("admin.unknown"), t)}</strong>
             </div>
             <div>
-              <span>Device trusted</span>
-              <strong>{device.trusted === true ? "Yes" : device.trusted === false ? "No" : "N/A"}</strong>
+              <span>{t("admin.deviceTrusted")}</span>
+              <strong>{device.trusted === true ? t("admin.yes") : device.trusted === false ? t("admin.no") : t("admin.notAvailable")}</strong>
             </div>
             <div>
-              <span>Previous cases</span>
-              <strong>{formatValue(historical.previous_case_count)}</strong>
+              <span>{t("admin.previousCases")}</span>
+              <strong>{formatValue(historical.previous_case_count, t)}</strong>
             </div>
           </div>
 
           <div className="fraud-analysis-grid">
             <section className="fraud-analysis-block">
-              <h4>Suspicious Evidence</h4>
-              <SignalList items={analysis.suspicious_signals} empty="No suspicious evidence beyond the triggered rules." tone="risk" />
+              <h4>{t("admin.suspiciousEvidence")}</h4>
+              <SignalList items={analysis.suspicious_signals} empty={t("admin.noSuspiciousEvidence")} tone="risk" />
             </section>
             <section className="fraud-analysis-block">
-              <h4>Reassuring Evidence</h4>
-              <SignalList items={analysis.reassuring_signals} empty="No reassuring evidence found in available data." tone="good" />
+              <h4>{t("admin.reassuringEvidence")}</h4>
+              <SignalList items={analysis.reassuring_signals} empty={t("admin.noReassuringEvidence")} tone="good" />
             </section>
             <section className="fraud-analysis-block">
-              <h4>Data Gaps</h4>
-              <SignalList items={analysis.data_gaps} empty="No notable data gaps." tone="gap" />
+              <h4>{t("admin.dataGaps")}</h4>
+              <SignalList items={analysis.data_gaps} empty={t("admin.noDataGaps")} tone="gap" />
             </section>
             <section className="fraud-analysis-block">
-              <h4>Manual Checks</h4>
-              <SignalList items={analysis.recommended_checks} empty="No additional checks generated." tone="check" />
+              <h4>{t("admin.manualChecks")}</h4>
+              <SignalList items={analysis.recommended_checks} empty={t("admin.noAdditionalChecks")} tone="check" />
             </section>
           </div>
         </>

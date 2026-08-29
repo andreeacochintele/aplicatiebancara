@@ -9,8 +9,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import httpx
 import pytest
 
+import app.supabase as supabase_module
 from app.credit.models import CreditDocument, CreditDocumentPurpose, CreditDocumentStatus, LoanInstallment, LoanPayment, LoanPaymentType
 import app.credit.repository as credit_repository_module
 from app.credit.repository import CreditRepository
@@ -137,7 +139,7 @@ def test_fetching_an_added_row_reuses_the_tracked_instance(session, record_bodie
     assert body["verified"] is True
 
 
-def test_fetch_many_does_not_track_a_row_fetched_with_a_narrow_select(session, record_bodies):
+def test_fetch_many_does_not_track_a_row_fetched_with_a_narrow_select(session, monkeypatch, record_bodies):
     """Regression test: TransactionRepository.list_for_user (and
     get_for_user) fetch wallets with select=id only, to build an id filter
     set — they never intend to write those wallets back. A prior bug
@@ -149,7 +151,8 @@ def test_fetch_many_does_not_track_a_row_fetched_with_a_narrow_select(session, r
     way)."""
     wallet_id = uuid.uuid4()
     # Simulate the id-only row PostgREST returns for `select=id`.
-    hydrated = session._hydrate(Wallet, {"id": str(wallet_id)})
+    monkeypatch.setattr(session, "request", lambda method, table, **kwargs: [{"id": str(wallet_id)}])
+    [hydrated] = session.fetch_many(Wallet, {"user_id": "eq.whatever", "select": "id"})
 
     assert hydrated.id == wallet_id
     assert hydrated.user_id is None
@@ -157,6 +160,26 @@ def test_fetch_many_does_not_track_a_row_fetched_with_a_narrow_select(session, r
     session.flush()
 
     assert record_bodies == []
+
+
+def test_fetch_many_still_tracks_a_full_row_missing_a_column_the_live_schema_lacks(session, record_bodies):
+    """A model column with no matching live Supabase column yet (a
+    migration written but not applied there — a recurring situation in
+    this repo) must not be mistaken for a `select`-narrowed fetch: it's
+    still a real, writable row, just missing one column's data, exactly
+    like the rest of this codebase already tolerates (see _hydrate's
+    graceful column-skip)."""
+    row = _merchant_row(uuid.uuid4())
+    del row["logo_url"]  # e.g. a column the live table doesn't have yet
+    merchant = session._hydrate(Merchant, row)
+
+    merchant.verified = False
+    session.flush()
+
+    method, table, body = record_bodies[0]
+    assert (method, table) == ("PATCH", "merchants")
+    assert body["verified"] is False
+    assert body["logo_url"] is None
 
 
 def test_fetch_many_skips_a_row_with_a_value_unknown_to_the_current_schema(monkeypatch, session):
@@ -352,6 +375,93 @@ def test_credit_repository_skips_installment_persistence_when_supabase_table_is_
     ]
 
     assert CreditRepository(session).add_installments(installments) == installments
+
+
+# ---- pooled-client resilience: a shared, keep-alive httpx.Client can have a
+# connection closed by the server while idle, and the client only discovers
+# that on the next request sent over it. request() -> _send() retries once,
+# and only for GET — replaying a POST/PATCH/DELETE risks a duplicated
+# INSERT (a duplicated transaction or ledger entry) if the server already
+# applied it before the connection dropped. A real HTTP error (4xx/5xx) is
+# a genuine server answer and never triggers a retry either way (see
+# request()'s status_code check, which _send() doesn't touch).
+
+
+class _FakeHttpxClient:
+    """Stands in for _http_client(): .request() plays back queued results,
+    each either a fake response or a raised exception."""
+
+    def __init__(self, results: list[object]) -> None:
+        self._results = list(results)
+        self.calls: list[str] = []
+
+    def request(self, method, url, *, content=None, headers=None):
+        self.calls.append(method)
+        result = self._results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+def _fake_response(status_code: int = 200, body: bytes = b'[{"id": "abc"}]') -> httpx.Response:
+    return httpx.Response(status_code, content=body, request=httpx.Request("GET", "http://fake.local"))
+
+
+def _use_fake_client(monkeypatch, *results: object) -> _FakeHttpxClient:
+    client = _FakeHttpxClient(list(results))
+    monkeypatch.setattr(supabase_module, "_http_client", lambda: client)
+    return client
+
+
+def test_get_retries_once_after_a_stale_pooled_connection(session, monkeypatch):
+    client = _use_fake_client(
+        monkeypatch,
+        httpx.ConnectError("stale connection"),
+        _fake_response(),
+    )
+
+    result = session.request("GET", "merchants")
+
+    assert client.calls == ["GET", "GET"]
+    assert result == [{"id": "abc"}]
+
+
+def test_get_propagates_when_the_retry_also_fails(session, monkeypatch):
+    _use_fake_client(
+        monkeypatch,
+        httpx.ConnectError("stale connection"),
+        httpx.ConnectError("still stale"),
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        session.request("GET", "merchants")
+
+
+def test_write_is_not_retried_after_a_stale_pooled_connection(session, monkeypatch):
+    client = _use_fake_client(monkeypatch, httpx.ConnectError("stale connection"))
+
+    with pytest.raises(httpx.ConnectError):
+        session.request("POST", "transactions", body={})
+
+    assert client.calls == ["POST"]  # never replayed — could duplicate the write
+
+
+def test_timeout_is_never_retried_regardless_of_method(session, monkeypatch):
+    client = _use_fake_client(monkeypatch, httpx.TimeoutException("simulated timeout"))
+
+    with pytest.raises(TimeoutError):
+        session.request("GET", "merchants")
+
+    assert client.calls == ["GET"]  # a timeout doesn't prove the request never landed
+
+
+def test_request_does_not_retry_a_real_http_error(session, monkeypatch):
+    client = _use_fake_client(monkeypatch, _fake_response(status_code=400, body=b'{"message": "bad request"}'))
+
+    with pytest.raises(RuntimeError, match="HTTP 400"):
+        session.request("GET", "merchants")
+
+    assert client.calls == ["GET"]  # not retried — a real server answer, not a network blip
 
 
 def test_credit_repository_skips_loan_payment_persistence_when_supabase_table_is_missing(session, monkeypatch):

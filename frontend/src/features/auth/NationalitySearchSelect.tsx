@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FocusEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import { COUNTRIES } from "./countries";
 
@@ -14,6 +15,7 @@ interface NationalitySearchSelectProps {
 // adjective (e.g. "Romanian") rather than the country name, and with no
 // flag icon — a nationality isn't a country.
 export function NationalitySearchSelect({ label, value, onChange, required, placeholder }: NationalitySearchSelectProps) {
+  const { t } = useTranslation();
   const listId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState(value);
@@ -72,7 +74,7 @@ export function NationalitySearchSelect({ label, value, onChange, required, plac
       </label>
       {open && (
         <ul id={listId} role="listbox" className="country-select__list">
-          {matches.length === 0 && <li className="country-select__empty">No matches</li>}
+          {matches.length === 0 && <li className="country-select__empty">{t("common.noMatches")}</li>}
           {matches.map((country) => (
             <li key={country.code}>
               <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => selectNationality(country.demonym)}>

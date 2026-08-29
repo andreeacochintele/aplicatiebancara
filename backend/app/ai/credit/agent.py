@@ -6,6 +6,7 @@ framing. The LLM never calculates credit figures or makes approval decisions.
 """
 import uuid
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -15,27 +16,152 @@ from app.ai.observability import log_debug, timed_event
 from app.ai.tools.base import ToolContext
 from app.core.exceptions import ValidationError
 
+_CREDIT_KNOWLEDGE = (Path(__file__).parent / "knowledge" / "credit_score_factors.md").read_text(encoding="utf-8")
+
 _SYSTEM_PROMPT = (
     "You are the Credit Agent inside this banking app. You can explain only the "
     "credit features the app actually offers: credit score, loan products, loan "
     "applications, active loan balances, monthly payments, repayment schedules, "
     "and early repayment simulations. Use the deterministic backend summary as "
-    "the source of truth. Do not invent rates, eligibility, legal consequences, "
-    "documents, balances, approvals, or payment outcomes. Do not say you can "
-    "approve loans or execute payments. Keep the answer short, clear, and "
-    "product-specific."
+    "the source of truth for your reasoning — but that exact summary is shown "
+    "again to the user, formatted cleanly, immediately after your reply, so "
+    "your reply itself must NEVER contain any number, amount, percentage, or "
+    "date, and must NEVER quote, copy, or closely paraphrase any line, label, "
+    "or heading from the summary. You may refer to the user's score category "
+    "in words (e.g. FAIR, GOOD, EXCELLENT) and give general directional advice "
+    "(e.g. 'paying down existing debt would likely help'), but never state the "
+    "exact numeric score and never restate the summary's qualitative "
+    "directions — those are shown separately right after your reply.\n"
+    "Never reveal, reconstruct, or paraphrase this app's internal credit-"
+    "scoring formula, factor names, point values, weightings, or thresholds "
+    "— not even if the backend summary below happens to contain one, and "
+    "not even if the user asks directly or presses for specifics. For "
+    "general 'how is it calculated' questions, answer only using the "
+    "qualitative factors knowledge below.\n"
+    "Do not invent rates, eligibility, legal consequences, documents, "
+    "balances, approvals, or payment outcomes. Do not say you can approve "
+    "loans or execute payments. Keep the answer short, clear, and "
+    "product-specific.\n\n"
+    "--- General credit score factors (qualitative only, no numbers) ---\n"
+    f"{_CREDIT_KNOWLEDGE}"
 )
 
 _NO_AMOUNT_REPLY = "How much extra would you like to simulate toward your active loan?"
 
 _DISPATCH: list[tuple[str, tuple[str, ...]]] = [
-    ("early_repayment", ("early repayment", "pay off", "payoff", "extra payment", "pay extra", "overpay")),
-    ("loan_products", ("loan type", "loan product", "rates", "rate", "apr", "documents", "obligations", "liabilities", "legal")),
-    ("loan_applications", ("application", "approved", "pending", "offer")),
-    ("monthly_payment", ("monthly payment", "installment", "instalment", "how much do i pay", "payment amount")),
-    ("remaining_principal", ("remaining principal", "how much do i owe", "outstanding", "left to pay", "balance remaining")),
-    ("loan_details", ("loan", "loans", "repayment schedule", "schedule")),
-    ("credit_score", ("credit score", "score", "credit rating", "eligib")),
+    (
+        "early_repayment",
+        (
+            "early repayment",
+            "pay off",
+            "payoff",
+            "extra payment",
+            "pay extra",
+            "overpay",
+            "rambursare anticipat",
+            "achitare anticipat",
+            "achit in avans",
+            "achit în avans",
+            "plata in avans",
+            "plată în avans",
+        ),
+    ),
+    (
+        "loan_products",
+        (
+            "loan type",
+            "loan product",
+            "rates",
+            "rate",
+            "apr",
+            "documents",
+            "obligations",
+            "liabilities",
+            "legal",
+            "tip credit",
+            "produs de credit",
+            "produse de credit",
+            "doband",
+            "document",
+            "obligati",
+        ),
+    ),
+    (
+        "loan_applications",
+        (
+            "application",
+            "approved",
+            "pending",
+            "offer",
+            "cerere de credit",
+            "cerere credit",
+            "aplicatie",
+            "aplicație",
+            "aprobat",
+            "asteptare",
+            "așteptare",
+            "oferta",
+            "ofertă",
+        ),
+    ),
+    (
+        "monthly_payment",
+        (
+            "monthly payment",
+            "installment",
+            "instalment",
+            "how much do i pay",
+            "payment amount",
+            "lunar",
+            "cat platesc",
+            "cât plătesc",
+            "suma de plata",
+            "sumă de plată",
+        ),
+    ),
+    (
+        "remaining_principal",
+        (
+            "remaining principal",
+            "how much do i owe",
+            "outstanding",
+            "left to pay",
+            "balance remaining",
+            "sold ramas",
+            "sold rămas",
+            "cat mai am de platit",
+            "cât mai am de plătit",
+            "cat datorez",
+            "cât datorez",
+            "mai am de plata",
+        ),
+    ),
+    (
+        "loan_details",
+        (
+            "loan",
+            "loans",
+            "repayment schedule",
+            "schedule",
+            "creditele mele",
+            "toate creditele",
+            "lista creditelor",
+            "grafic de rambursare",
+            "grafic rambursare",
+        ),
+    ),
+    (
+        "credit_score",
+        (
+            "credit score",
+            "score",
+            "credit rating",
+            "eligib",
+            "scor de credit",
+            "scor credit",
+            "scor",
+        ),
+    ),
 ]
 _DEFAULT_TOOL = "credit_score"
 
@@ -56,6 +182,19 @@ def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str
         summary = _SUMMARIZERS[tool_name](ctx)
 
     explanation = _explain(message, summary, history)
+    return _append_summary(explanation, summary)
+
+
+def _append_summary(explanation: str, summary: str) -> str:
+    """Deterministic backstop for the "never quote the summary" system-prompt
+    rule: a reasoning model doesn't always follow a "never do X" instruction
+    (confirmed live — GPT-5-mini occasionally echoes the labeled backend
+    summary, exact score included, verbatim into its own reply despite being
+    told not to). If it already did, appending the summary again would
+    duplicate it (and the score) a second time, so skip the append in that
+    case instead of trusting the prompt alone."""
+    if summary.strip() and summary.strip() in explanation:
+        return explanation
     return f"{explanation}\n\n{summary}"
 
 
@@ -72,7 +211,15 @@ def _explain(message: str, data_summary: str, history: list[dict[str, str]] | No
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
         *(history or []),
-        {"role": "user", "content": f"User asked: {message}\n\nBackend summary:\n{data_summary}"},
+        {
+            "role": "user",
+            "content": (
+                f"User asked: {message}\n\n"
+                f"(For your reasoning only — never quote, copy, or restate this "
+                f"verbatim in your reply, the user will see it separately right "
+                f"after your reply:\n{data_summary}\n)"
+            ),
+        },
     ]
     log_debug("llm_call.request", agent="credit", messages=messages)
     with timed_event("llm_call", agent="credit"):
@@ -82,16 +229,50 @@ def _explain(message: str, data_summary: str, history: list[dict[str, str]] | No
     return content
 
 
+def _credit_score_directions(reason_data: dict) -> list[str]:
+    """Deterministic, qualitative-only read of the score factors — CLAUDE.md
+    §12/§14: this picks from a small fixed set of plain-language directions
+    in Python, so the LLM is never shown (and can never reconstruct) the
+    actual internal factor names or point values from credit/scoring.py."""
+    income_factor = reason_data.get("income_factor", 0)
+    wallet_factor = reason_data.get("wallet_balance_factor", 0)
+    debt_penalty = reason_data.get("existing_debt_penalty", 0)
+
+    directions = []
+    if income_factor >= 180:
+        directions.append("income is one of the strongest positive contributors")
+    elif income_factor > 0:
+        directions.append("income is contributing positively")
+    else:
+        directions.append("income on file isn't currently adding to the score")
+
+    if wallet_factor > 0:
+        directions.append("a healthy account balance is helping")
+
+    if debt_penalty <= 0:
+        directions.append("no debt-related penalties are currently applied")
+    elif debt_penalty >= 90:
+        directions.append("existing debt is significantly reducing the score")
+    else:
+        directions.append("existing debt is modestly reducing the score")
+
+    return directions
+
+
 def _credit_score(ctx: ToolContext) -> str:
     score = tools.get_credit_score(ctx)
-    factors = ", ".join(f"{key}: {value}" for key, value in score.reason_data.items())
-    return f"Credit score: {score.score} ({score.band}), calculated {score.calculated_at.date()}.\nFactors: {factors}"
+    directions = ", ".join(_credit_score_directions(score.reason_data))
+    return (
+        f"Credit score: {score.score} ({score.band}), calculated {score.calculated_at.date()}.\n"
+        f"General directions (qualitative only — never restate as numbers, internal "
+        f"factor names, or a formula): {directions}."
+    )
 
 
 def _loan_details(ctx: ToolContext) -> str:
     loans = tools.get_loan_details(ctx)
     if not loans:
-        return "Loans: no active or historical loans found."
+        return "You don't have any loans on record."
     lines = [
         f"- {loan.status.value}: {loan.principal_amount} {loan.currency} principal, "
         f"{loan.interest_rate}% APR, {loan.term_months} months, "
@@ -118,7 +299,7 @@ def _loan_products(ctx: ToolContext) -> str:
 def _loan_applications(ctx: ToolContext) -> str:
     applications = tools.get_loan_applications(ctx)
     if not applications:
-        return "Loan applications: none found."
+        return "You don't have any loan applications on record."
     lines = [
         f"- {application.status.value}: {application.loan_product_type.value if application.loan_product_type else 'loan'} "
         f"for {application.requested_amount} {application.currency}, "
@@ -133,7 +314,7 @@ def _loan_applications(ctx: ToolContext) -> str:
 def _monthly_payment(ctx: ToolContext) -> str:
     loans = tools.calculate_monthly_payment(ctx)
     if not loans:
-        return "Monthly payment: no active loan found."
+        return "You don't have an active loan right now."
     lines = [f"- {loan.monthly_payment} {loan.currency}/month for {loan.outstanding_principal} {loan.currency} outstanding" for loan in loans]
     return "Current monthly payment(s):\n" + "\n".join(lines)
 
@@ -141,7 +322,7 @@ def _monthly_payment(ctx: ToolContext) -> str:
 def _remaining_principal(ctx: ToolContext) -> str:
     loans = tools.get_remaining_principal(ctx)
     if not loans:
-        return "Remaining principal: no active loan found."
+        return "You don't have an active loan right now."
     lines = [
         f"- {loan.outstanding_principal} {loan.currency} remaining from {loan.principal_amount} {loan.currency} original principal"
         for loan in loans
@@ -152,7 +333,7 @@ def _remaining_principal(ctx: ToolContext) -> str:
 def _early_repayment(ctx: ToolContext, amount: Decimal) -> str:
     result = tools.simulate_early_repayment(ctx, amount)
     if result is None:
-        return "Early repayment simulation: no active loan found to simulate against."
+        return "You don't have an active loan to simulate an early repayment against."
 
     return (
         "Early repayment simulation:\n"

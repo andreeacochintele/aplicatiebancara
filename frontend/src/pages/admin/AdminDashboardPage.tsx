@@ -1,5 +1,6 @@
 import { Landmark, ShieldAlert } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
@@ -54,11 +55,12 @@ function statusBreakdown<T extends string>(items: T[], colors: Record<T, string>
 }
 
 function StatusDonut({ title, data, total }: { title: string; data: ReturnType<typeof statusBreakdown>; total: number }) {
+  const { t } = useTranslation();
   return (
     <div className="easyb-card">
       <div className="easyb-section-header">
         <div>
-          <div className="easyb-eyebrow">Status breakdown</div>
+          <div className="easyb-eyebrow">{t("admin.statusBreakdown")}</div>
           <h2>{title}</h2>
         </div>
       </div>
@@ -80,7 +82,7 @@ function StatusDonut({ title, data, total }: { title: string; data: ReturnType<t
             </ResponsiveContainer>
             <div className="easyb-donut-center">
               <div className="easyb-donut-total">{total}</div>
-              <div className="easyb-donut-label">total</div>
+              <div className="easyb-donut-label">{t("admin.total")}</div>
             </div>
           </div>
           <div className="easyb-legend">
@@ -94,13 +96,14 @@ function StatusDonut({ title, data, total }: { title: string; data: ReturnType<t
           </div>
         </>
       ) : (
-        <p className="easyb-tx-meta">No data yet.</p>
+        <p className="easyb-tx-meta">{t("admin.noDataYet")}</p>
       )}
     </div>
   );
 }
 
 export function AdminDashboardPage() {
+  const { t } = useTranslation();
   const { accessToken, logout, user } = useAuth();
   const [applications, setApplications] = useState<CreditApplication[] | null>(null);
   const [cases, setCases] = useState<FraudCaseSummary[] | null>(null);
@@ -129,7 +132,7 @@ export function AdminDashboardPage() {
           logout();
           return;
         }
-        setError(err instanceof ApiError ? err.message : "Could not load operations overview.");
+        setError(err instanceof ApiError ? err.message : t("admin.couldNotLoadOverview"));
         setCases([]);
       }
     })();
@@ -164,9 +167,9 @@ export function AdminDashboardPage() {
     return (
       <section className="tile">
         <div className="tile__header">
-          <span className="eyebrow">Admin dashboard</span>
+          <span className="eyebrow">{t("admin.adminDashboard")}</span>
         </div>
-        <div className="card-empty">Admin privileges required.</div>
+        <div className="card-empty">{t("admin.adminPrivilegesRequired")}</div>
       </section>
     );
   }
@@ -175,18 +178,18 @@ export function AdminDashboardPage() {
     {
       to: "/admin/credit",
       icon: Landmark,
-      title: "Credit & Loans",
-      description: "Review loan and credit card applications, documents and credit scores.",
+      title: t("admin.creditAndLoans"),
+      description: t("admin.creditAndLoansDescription"),
       pendingCount: pendingCredit,
-      pendingLabel: "pending applications",
+      pendingLabel: t("admin.pendingApplications"),
     },
     {
       to: "/admin/fraud",
       icon: ShieldAlert,
-      title: "Fraud Review",
-      description: "Investigate held transactions flagged by the fraud engine and decide their outcome.",
+      title: t("admin.fraudReview"),
+      description: t("admin.fraudReviewDescription"),
       pendingCount: pendingFraud,
-      pendingLabel: "pending cases",
+      pendingLabel: t("admin.pendingCases"),
     },
   ];
 
@@ -211,17 +214,17 @@ export function AdminDashboardPage() {
       </div>
       <div className="admin-applications-toolbar">
         <label>
-          <span className="eyebrow">From</span>
+          <span className="eyebrow">{t("admin.from")}</span>
           <input type="date" value={dateFrom} max={dateTo} onChange={(e) => setDateFrom(e.target.value)} />
         </label>
         <label>
-          <span className="eyebrow">To</span>
+          <span className="eyebrow">{t("admin.to")}</span>
           <input type="date" value={dateTo} min={dateFrom} onChange={(e) => setDateTo(e.target.value)} />
         </label>
       </div>
       <div className="easyb-analytics-grid">
-        <StatusDonut title="Credit applications" data={creditBreakdown} total={applicationsInRange.length} />
-        <StatusDonut title="Fraud cases" data={fraudBreakdown} total={casesInRange.length} />
+        <StatusDonut title={t("admin.creditApplications")} data={creditBreakdown} total={applicationsInRange.length} />
+        <StatusDonut title={t("admin.fraudCases")} data={fraudBreakdown} total={casesInRange.length} />
       </div>
     </section>
   );
