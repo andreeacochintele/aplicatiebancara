@@ -80,7 +80,8 @@
     "businessProfile": "Profil companie",
     "creditAndLoans": "Credit și împrumuturi",
     "fraudReview": "Verificare fraudă",
-    "auditLog": "Jurnal de audit"
+    "auditLog": "Jurnal de audit",
+    "reconciliation": "Reconciliere"
   },
   "language": {
     "english": "Engleză",
@@ -104,7 +105,8 @@
     "admin": { "title": "Panou admin", "subtitle": "Prezentare generală operațiuni" },
     "adminCredit": { "title": "Credit și împrumuturi", "subtitle": "Cereri, documente și verificare scor de credit" },
     "adminFraud": { "title": "Verificare fraudă", "subtitle": "Motor determinist · decizie umană" },
-    "adminAuditLog": { "title": "Jurnal de audit", "subtitle": "Fiecare decizie de admin, cine a luat-o și ce s-a schimbat" }
+    "adminAuditLog": { "title": "Jurnal de audit", "subtitle": "Fiecare decizie de admin, cine a luat-o și ce s-a schimbat" },
+    "adminReconciliation": { "title": "Reconciliere", "subtitle": "Sold stocat vs. ledger, portofel cu portofel" }
   },
   "auth": {
     "nameLengthError": "{{label}} trebuie să aibă între 2 și 50 de caractere",
@@ -650,6 +652,28 @@
     "previousPage": "Pagina anterioară",
     "nextPage": "Pagina următoare",
     "pageNumber": "Pagina {{page}}",
+    "reconciliation": "Reconciliere",
+    "reconciliationDescription": "Pentru fiecare portofel, soldul stocat ar trebui să fie mereu egal cu suma intrărilor lui din ledger — o neconcordanță înseamnă că undeva soldul s-a schimbat fără o intrare de ledger corespunzătoare.",
+    "runAgain": "Rulează din nou",
+    "checking": "Se verifică...",
+    "couldNotRunReconciliation": "Verificarea de reconciliere nu a putut fi rulată.",
+    "reconciliationClean": "Toate portofelele se reconciliază corect.",
+    "walletsCheckedCount": "{{count}} portofele verificate",
+    "discrepanciesFound": "{{count}} din {{total}} portofele au o neconcordanță",
+    "wallet": "Portofel",
+    "userId": "Utilizator",
+    "currency": "Monedă",
+    "storedBalance": "Sold stocat",
+    "ledgerBalance": "Sold din ledger",
+    "difference": "Diferență",
+    "admins": "Admini",
+    "loadingAdmins": "Se încarcă administratorii...",
+    "noAdminsYet": "Niciun admin încă.",
+    "promoteByEmail": "Promovează un utilizator la admin",
+    "promote": "Promovează",
+    "promoting": "Se promovează...",
+    "promoteSuccess": "{{name}} este acum admin.",
+    "couldNotPromote": "Acest utilizator nu a putut fi promovat.",
     "reviewFocus": {
       "NEW_DEVICE": "Confirmă dacă dispozitivul activ aparține clientului și dacă are utilizări anterioare reușite.",
       "HIGH_AMOUNT": "Compară suma reținută cu media plăților cu cardul finalizate de client și achizițiile recente mari.",

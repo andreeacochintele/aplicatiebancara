@@ -80,7 +80,8 @@
     "businessProfile": "Company Profile",
     "creditAndLoans": "Credit & Loans",
     "fraudReview": "Fraud Review",
-    "auditLog": "Audit Log"
+    "auditLog": "Audit Log",
+    "reconciliation": "Reconciliation"
   },
   "language": {
     "english": "English",
@@ -104,7 +105,8 @@
     "admin": { "title": "Admin Dashboard", "subtitle": "Operations overview" },
     "adminCredit": { "title": "Credit & Loans", "subtitle": "Applications, documents and credit score review" },
     "adminFraud": { "title": "Fraud Review", "subtitle": "Deterministic engine · human decision" },
-    "adminAuditLog": { "title": "Audit Log", "subtitle": "Every admin decision, who made it, and what changed" }
+    "adminAuditLog": { "title": "Audit Log", "subtitle": "Every admin decision, who made it, and what changed" },
+    "adminReconciliation": { "title": "Reconciliation", "subtitle": "Stored balance vs. ledger, wallet by wallet" }
   },
   "auth": {
     "nameLengthError": "{{label}} must be between 2 and 50 characters",
@@ -650,6 +652,28 @@
     "previousPage": "Previous page",
     "nextPage": "Next page",
     "pageNumber": "Page {{page}}",
+    "reconciliation": "Reconciliation",
+    "reconciliationDescription": "For every wallet, the stored balance should always equal what its own ledger entries add up to — a mismatch means some code path changed a balance without a matching ledger entry.",
+    "runAgain": "Run again",
+    "checking": "Checking...",
+    "couldNotRunReconciliation": "Could not run the reconciliation check.",
+    "reconciliationClean": "All wallets reconcile.",
+    "walletsCheckedCount": "{{count}} wallets checked",
+    "discrepanciesFound": "{{count}} of {{total}} wallets have a discrepancy",
+    "wallet": "Wallet",
+    "userId": "User",
+    "currency": "Currency",
+    "storedBalance": "Stored balance",
+    "ledgerBalance": "Ledger balance",
+    "difference": "Difference",
+    "admins": "Admins",
+    "loadingAdmins": "Loading admins...",
+    "noAdminsYet": "No admins yet.",
+    "promoteByEmail": "Promote a user to admin",
+    "promote": "Promote",
+    "promoting": "Promoting...",
+    "promoteSuccess": "{{name}} is now an admin.",
+    "couldNotPromote": "Could not promote this user.",
     "reviewFocus": {
       "NEW_DEVICE": "Confirm whether the active device belongs to the customer and whether it has successful prior usage.",
       "HIGH_AMOUNT": "Compare the held amount with the customer's completed card-payment baseline and recent large purchases.",
