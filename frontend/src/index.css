@@ -1497,8 +1497,7 @@ th {
 }
 
 .folder-choice small,
-.folder-readonly-card__header span,
-.folder-transaction-row span {
+.folder-readonly-card__header span {
   color: var(--color-text-muted);
 }
 
@@ -1547,6 +1546,15 @@ th {
   align-items: center;
   gap: 0.65rem;
   flex-wrap: wrap;
+}
+
+/* Inside a folder the transactions are the content; the folder's own name
+   and description are just the label on the box. Step the header back so
+   the rows below read as the primary thing (see .folder-transaction-row). */
+.folder-readonly-card__title strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 .folder-readonly-card__actions {
@@ -1599,6 +1607,16 @@ th {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+}
+
+/* Full-strength, deliberately ahead of the folder title/description above. */
+.folder-transaction-row span {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.folder-transaction-row strong {
+  font-size: 1.02rem;
 }
 
 .transaction-split-request {

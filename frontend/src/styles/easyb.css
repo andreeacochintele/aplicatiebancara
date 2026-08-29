@@ -1593,9 +1593,18 @@
 }
 
 .easyb-shell .folder-choice small,
-.easyb-shell .folder-readonly-card__header span,
-.easyb-shell .folder-transaction-row span {
+.easyb-shell .folder-readonly-card__header span {
   color: var(--easyb-text-soft);
+}
+
+/* Mirrors the hierarchy flip in index.css: the folder's own name steps back,
+   the transactions inside it come forward. */
+.easyb-shell .folder-readonly-card__title strong {
+  color: var(--easyb-text-soft);
+}
+
+.easyb-shell .folder-transaction-row span {
+  color: var(--easyb-text);
 }
 
 .easyb-shell .folder-readonly-card {
