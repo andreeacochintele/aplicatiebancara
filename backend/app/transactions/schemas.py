@@ -60,3 +60,25 @@ class TransactionPublic(BaseModel):
     description: str | None
     created_at: datetime
     completed_at: datetime | None
+    # Spending category, resolved per transactions/categories.py: the user's
+    # own choice if they re-filed this one, else the merchant's category,
+    # else "Other". Card payments only — null on everything else, since a
+    # transfer has no merchant and is counted by no category view.
+    # `category_id` is null whenever the category shown is the merchant's
+    # rather than a deliberate choice — that is what the picker uses to tell
+    # "inherited" from "overridden".
+    category: str | None = None
+    category_id: uuid.UUID | None = None
+
+
+class TransactionCategoryPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+
+
+class TransactionCategoryUpdate(BaseModel):
+    # Null clears the override, falling the transaction back to its
+    # merchant's category.
+    category_id: uuid.UUID | None = None

@@ -5,7 +5,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.supabase import is_supabase_session
-from app.transactions.models import Transaction, WalletLedgerEntry
+from app.transactions.models import Transaction, TransactionCategory, WalletLedgerEntry
 from app.wallets.models import Wallet
 
 
@@ -88,3 +88,22 @@ class TransactionRepository:
         self.db.add(entry)
         self.db.flush()
         return entry
+
+
+class TransactionCategoryRepository:
+    """The fixed, global category list (transactions/categories.py explains
+    what it is for). Read-only: the list is seeded by migration, never
+    created from the app."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def list_all(self) -> list[TransactionCategory]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(TransactionCategory, {"order": "name.asc"})
+        return list(self.db.scalars(select(TransactionCategory).order_by(TransactionCategory.name.asc())))
+
+    def get_by_id(self, category_id: uuid.UUID) -> TransactionCategory | None:
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(TransactionCategory, {"id": f"eq.{category_id}"})
+        return self.db.get(TransactionCategory, category_id)

@@ -175,6 +175,16 @@ export interface Transaction {
   description: string | null;
   created_at: string;
   completed_at: string | null;
+  // Resolved spending category: the user's own choice for this transaction
+  // if they made one, otherwise the merchant's. `category_id` is null while
+  // the category is inherited — that's how the picker tells the two apart.
+  category: string | null;
+  category_id: string | null;
+}
+
+export interface TransactionCategory {
+  id: string;
+  name: string;
 }
 
 export interface Beneficiary {

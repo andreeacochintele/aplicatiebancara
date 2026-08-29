@@ -35,8 +35,15 @@ from app.merchants.repository import MerchantRepository
 from app.merchants.service import MerchantService
 from app.notifications.service import NotificationsService
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
-from app.transactions.repository import TransactionRepository
-from app.transactions.schemas import CardPaymentCreate, CardTopUpCreate, CreditCardRepaymentCreate, InternalTransferCreate
+from app.transactions.categories import resolve_effective_category
+from app.transactions.repository import TransactionCategoryRepository, TransactionRepository
+from app.transactions.schemas import (
+    CardPaymentCreate,
+    CardTopUpCreate,
+    CreditCardRepaymentCreate,
+    InternalTransferCreate,
+    TransactionPublic,
+)
 from app.wallets.models import Wallet, WalletStatus
 from app.wallets.repository import WalletRepository
 
@@ -62,6 +69,7 @@ class TransactionService:
         self.fx = FXService(db)
         self.cards = CardRepository(db)
         self.merchants = MerchantRepository(db)
+        self.categories = TransactionCategoryRepository(db)
         self.notifications = NotificationsService(db)
 
     def create_internal_transfer(self, initiator_user_id: uuid.UUID, data: InternalTransferCreate) -> Transaction:
@@ -487,3 +495,64 @@ class TransactionService:
         if transaction is None:
             raise NotFoundError("Transaction not found")
         return transaction
+
+    def list_public_for_user(self, user_id: uuid.UUID) -> list[TransactionPublic]:
+        return self.to_public_many(self.repository.list_for_user(user_id))
+
+    def get_public_for_user(self, user_id: uuid.UUID, transaction_id: uuid.UUID) -> TransactionPublic:
+        return self.to_public(self.get_for_user(user_id, transaction_id))
+
+    def to_public(self, transaction: Transaction) -> TransactionPublic:
+        return self.to_public_many([transaction])[0]
+
+    def to_public_many(self, transactions: list[Transaction]) -> list[TransactionPublic]:
+        """Attaches the effective spending category to each card payment.
+
+        Left null on everything else, deliberately. A transfer or a loan
+        instalment has no merchant and no category, and the spending views
+        that give a category its meaning (the Analytics donut, Budgets)
+        count card payments only — labelling a transfer "Other" would put a
+        category badge on a row that no category view will ever include.
+
+        Both lookup tables are fetched whole rather than per transaction:
+        they are small fixed lists (a seeded category set, the merchant
+        directory) and the alternative is one round trip per row, which on
+        the Supabase REST backend is a real HTTP request each. Skipped
+        entirely when nothing in the batch is a card payment."""
+        categorisable = [t for t in transactions if t.type == TransactionType.CARD_PAYMENT]
+        if categorisable:
+            merchants_by_id = {m.id: m for m in self.merchants.list_active()}
+            categories_by_id = {c.id: c for c in self.categories.list_all()}
+        else:
+            merchants_by_id, categories_by_id = {}, {}
+
+        public: list[TransactionPublic] = []
+        for transaction in transactions:
+            item = TransactionPublic.model_validate(transaction)
+            if transaction.type == TransactionType.CARD_PAYMENT:
+                item.category = resolve_effective_category(transaction, merchants_by_id, categories_by_id)
+            public.append(item)
+        return public
+
+    def set_category(
+        self, user_id: uuid.UUID, transaction_id: uuid.UUID, category_id: uuid.UUID | None
+    ) -> TransactionPublic:
+        """Re-files one transaction under a category of the user's choosing.
+
+        Only the category moves — no balance, status or ledger entry is
+        touched. Because Analytics and Budgets both resolve through
+        transactions/categories.py, the payment moves between donut slices
+        and between budgets at the same time.
+        """
+        transaction = self.get_for_user(user_id, transaction_id)
+        if transaction.type != TransactionType.CARD_PAYMENT:
+            # Nothing else reaches the spending views, so accepting a
+            # category here would store a value the user can never see the
+            # effect of.
+            raise ValidationError("Only card payments can be re-categorised")
+        if category_id is not None and self.categories.get_by_id(category_id) is None:
+            raise NotFoundError("Transaction category not found")
+
+        transaction.category_id = category_id
+        self.db.flush()
+        return self.to_public(transaction)
