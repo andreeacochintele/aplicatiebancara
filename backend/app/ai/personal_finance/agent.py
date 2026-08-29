@@ -103,7 +103,7 @@ def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str
     # (for its wallet_id/date range) in addition to a summary string.
     if tool_name == "statement":
         try:
-            statement = tools.get_account_statement(ctx)
+            statement = tools.get_account_statement(ctx, message)
         except ToolDataUnavailableError as exc:
             return str(exc)
         summary = _format_statement_summary(statement)

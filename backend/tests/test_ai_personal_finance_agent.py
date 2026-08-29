@@ -273,6 +273,46 @@ def test_get_account_statement_raises_tool_data_unavailable_without_a_main_walle
         tools.get_account_statement(ToolContext(user_id=seeded_user.id, db=db_session))
 
 
+# ---- wallet selection: live-observed always returning the main wallet's
+# statement regardless of which currency the user actually asked for
+# ("arata-mi extrasul cont RON" showed USD because USD was main) ----
+
+
+def test_get_account_statement_uses_the_wallet_matching_the_message_currency(db_session, seeded_user):
+    wallets = WalletService(db_session)
+    usd_wallet = wallets.create_wallet(seeded_user.id, WalletCreate(currency="USD", is_main=True))
+    ron_wallet = wallets.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    db_session.flush()
+
+    result = tools.get_account_statement(
+        ToolContext(user_id=seeded_user.id, db=db_session), "Arata-mi extrasul cont RON"
+    )
+
+    assert result.wallet_id == ron_wallet.id
+    assert result.currency == "RON"
+    assert result.wallet_id != usd_wallet.id
+
+
+def test_get_account_statement_falls_back_to_main_when_no_currency_is_named(db_session, seeded_user):
+    wallets = WalletService(db_session)
+    usd_wallet = wallets.create_wallet(seeded_user.id, WalletCreate(currency="USD", is_main=True))
+    wallets.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    db_session.flush()
+
+    result = tools.get_account_statement(ToolContext(user_id=seeded_user.id, db=db_session), "Vreau un extras de cont")
+
+    assert result.wallet_id == usd_wallet.id
+
+
+def test_get_account_statement_ignores_a_currency_the_user_does_not_hold(db_session, seeded_user):
+    usd_wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="USD", is_main=True))
+    db_session.flush()
+
+    result = tools.get_account_statement(ToolContext(user_id=seeded_user.id, db=db_session), "extrasul cont EUR")
+
+    assert result.wallet_id == usd_wallet.id
+
+
 def test_statement_summary_includes_balances_and_a_transaction(db_session, seeded_user):
     wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))
     wallet.available_balance = Decimal("500.00")
