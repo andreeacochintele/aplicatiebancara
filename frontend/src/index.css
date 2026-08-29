@@ -1598,7 +1598,9 @@ th {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 1rem;
   align-items: center;
-  padding: 0.55rem 0;
+  /* Indented past the folder's name/description so the rows read as being
+     inside the folder rather than as siblings of its header. */
+  padding: 0.55rem 0 0.55rem 1.1rem;
   border-top: 1px solid var(--color-divider);
 }
 
