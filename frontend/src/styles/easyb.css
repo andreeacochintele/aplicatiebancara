@@ -608,6 +608,21 @@
   text-decoration: underline;
 }
 
+.easyb-wallet-card__footer .easyb-wallet-card__topup {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  color: var(--easyb-accent-dark);
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.easyb-wallet-card__footer .easyb-wallet-card__topup:hover {
+  text-decoration: underline;
+}
+
 .easyb-convert-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
