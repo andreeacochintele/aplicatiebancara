@@ -79,7 +79,8 @@
     "businessExport": "Transaction Export",
     "businessProfile": "Company Profile",
     "creditAndLoans": "Credit & Loans",
-    "fraudReview": "Fraud Review"
+    "fraudReview": "Fraud Review",
+    "auditLog": "Audit Log"
   },
   "language": {
     "english": "English",
@@ -102,7 +103,8 @@
     "businessProfile": { "title": "Company Profile", "subtitle": "Business accounts only · manage your companies" },
     "admin": { "title": "Admin Dashboard", "subtitle": "Operations overview" },
     "adminCredit": { "title": "Credit & Loans", "subtitle": "Applications, documents and credit score review" },
-    "adminFraud": { "title": "Fraud Review", "subtitle": "Deterministic engine · human decision" }
+    "adminFraud": { "title": "Fraud Review", "subtitle": "Deterministic engine · human decision" },
+    "adminAuditLog": { "title": "Audit Log", "subtitle": "Every admin decision, who made it, and what changed" }
   },
   "auth": {
     "nameLengthError": "{{label}} must be between 2 and 50 characters",
@@ -633,6 +635,21 @@
     "creditApplications": "Credit applications",
     "fraudCases": "Fraud cases",
     "notAvailable": "N/A",
+    "auditLog": "Audit Log",
+    "auditLogDescription": "Every admin decision recorded alongside the state it changed — who did what, and when.",
+    "entityType": "Entity type",
+    "allEntityTypes": "All types",
+    "when": "When",
+    "adminId": "Admin",
+    "action": "Action",
+    "entity": "Entity",
+    "change": "Change",
+    "loadingAuditLog": "Loading audit log...",
+    "noAuditLogEntries": "No audit log entries yet.",
+    "couldNotLoadAuditLog": "Could not load the audit log.",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "pageNumber": "Page {{page}}",
     "reviewFocus": {
       "NEW_DEVICE": "Confirm whether the active device belongs to the customer and whether it has successful prior usage.",
       "HIGH_AMOUNT": "Compare the held amount with the customer's completed card-payment baseline and recent large purchases.",
