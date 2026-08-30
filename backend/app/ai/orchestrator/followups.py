@@ -44,8 +44,12 @@ _SYSTEM_PROMPT = (
     "specific thing the user might want next (a specific figure, category, "
     "time period, or action) — never a vague or generic prompt like 'tell "
     "me more'.\n"
-    "Always match the language of the conversation. Return ONLY the chip "
-    "texts, one per line, no numbering."
+    "CRITICAL: write every chip in the SAME language as the Assistant's "
+    "reply above — if the reply is in English, all chips must be in "
+    "English; if the reply is in Romanian, all chips must be in Romanian. "
+    "Judge the language from the Assistant's reply, not the user's "
+    "message, in case the two differ. Return ONLY the chip texts, one per "
+    "line, no numbering."
 )
 
 _MAX_FOLLOWUPS = 3

@@ -50,10 +50,21 @@ assistant won't claim a user has a specific benefit without knowing
 their actual card/tier.
 
 ## Credit
-Users have a credit score the app maintains, and can apply for a
-personal loan. Approved loans get a monthly payment schedule
-(amortization) that can be viewed. Credit cards separately track a
-credit limit and how much of it is currently used.
+Users have a credit score the app maintains, and can apply for a loan
+from several product types:
+- **Personal loan** — unsecured, for general personal expenses.
+- **Mortgage** — secured, for buying or refinancing residential property.
+- **Auto loan** — for purchasing a vehicle.
+- **Student loan** — for tuition or study-related expenses.
+- **Home improvement loan** — for renovation, repairs, or energy-efficiency work.
+- **Debt consolidation loan** — refinances several existing debts into one instalment.
+
+Approved loans get a monthly payment schedule (amortization) that can
+be viewed. Exact rates, terms, required documents, and eligibility
+depend on the product and the user's own profile — this assistant
+doesn't guess those; it points the user to the Credit agent or the
+Loans/Credit section of the app for specifics. Credit cards separately
+track a credit limit and how much of it is currently used.
 
 ## Cards
 Users can have debit/credit/one-time-use cards tied to their wallets,
