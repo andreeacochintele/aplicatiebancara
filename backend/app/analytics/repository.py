@@ -40,12 +40,17 @@ class AnalyticsRepository:
         return set(self.db.scalars(select(Wallet.id).where(Wallet.user_id == user_id)))
 
     def _is_real_spend(self, transaction: Transaction, own_wallet_ids: set[uuid.UUID]) -> bool:
-        """CASHBACK and SAVINGS_WITHDRAWAL are incoming money, not spend. A
-        TRANSFER only counts as spend when it actually leaves the user — i.e.
-        not a same-user wallet-to-wallet move (see architecture.md §26 / the
-        analytics redesign brief). SAVINGS_CONTRIBUTION is real money leaving
-        the wallet, so it counts same as any other outflow."""
-        if transaction.type in (TransactionType.CASHBACK, TransactionType.SAVINGS_WITHDRAWAL):
+        """CASHBACK, SAVINGS_WITHDRAWAL and TOP_UP are incoming money, not
+        spend — TOP_UP in particular always credits the caller's own wallet
+        (destination_wallet_id=wallet.id, source_wallet_id=None, no
+        counterparty), same self-only-inbound shape as CASHBACK, so it
+        belongs in this exclusion rather than a per-view one like
+        LOAN_PAYMENT's below. A TRANSFER only counts as spend when it
+        actually leaves the user — i.e. not a same-user wallet-to-wallet
+        move (see architecture.md §26 / the analytics redesign brief).
+        SAVINGS_CONTRIBUTION is real money leaving the wallet, so it counts
+        same as any other outflow."""
+        if transaction.type in (TransactionType.CASHBACK, TransactionType.SAVINGS_WITHDRAWAL, TransactionType.TOP_UP):
             return False
         if transaction.type == TransactionType.TRANSFER and transaction.destination_wallet_id in own_wallet_ids:
             return False
@@ -95,6 +100,7 @@ class AnalyticsRepository:
                 Transaction.created_at >= period_start,
                 Transaction.created_at < period_end,
                 Transaction.type != TransactionType.CASHBACK,
+                Transaction.type != TransactionType.TOP_UP,
                 Transaction.type != TransactionType.LOAN_PAYMENT,
                 not_(
                     and_(
@@ -215,6 +221,7 @@ class AnalyticsRepository:
             Transaction.created_at >= period_start,
             Transaction.created_at <= period_end,
             Transaction.type != TransactionType.CASHBACK,
+            Transaction.type != TransactionType.TOP_UP,
             ~(
                 (Transaction.type == TransactionType.TRANSFER)
                 & Transaction.destination_wallet_id.in_(own_wallet_ids)
