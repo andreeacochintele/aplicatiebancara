@@ -652,6 +652,19 @@ def test_spending_by_type_excludes_loan_payment(db_session, seeded_user_with_wal
     assert by_type[TransactionType.CARD_PAYMENT].total_amount == Decimal("40.00")
 
 
+def test_spending_by_type_excludes_top_up(db_session, seeded_user_with_wallet):
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "40.00", TransactionStatus.COMPLETED, now)
+    _add_transaction(db_session, user, wallet, TransactionType.TOP_UP, "500.00", TransactionStatus.COMPLETED, now)
+
+    result = AnalyticsService(db_session).spending_by_type(user.id, year=None, month=None)
+
+    by_type = {item.type: item for item in result.items}
+    assert TransactionType.TOP_UP not in by_type
+    assert by_type[TransactionType.CARD_PAYMENT].total_amount == Decimal("40.00")
+
+
 def test_monthly_trend_converts_totals_to_base_currency(db_session, user_only):
     wallets = WalletService(db_session)
     ron = wallets.create_wallet(user_only.id, WalletCreate(currency="RON", is_main=True))
