@@ -2,7 +2,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.audit.service import AuditService
+from app.auth.dependencies import get_current_user, require_admin
 from app.database import get_db
 from app.users.models import User
 from app.users.schemas import (
@@ -10,6 +11,7 @@ from app.users.schemas import (
     OnboardingStep2Update,
     OnboardingStep4Update,
     ProfileUpdate,
+    PromoteToAdminRequest,
     UserFullProfilePublic,
     UserPublic,
 )
@@ -95,3 +97,30 @@ def skip_onboarding_step_4(
     profile = UserService(db).skip_onboarding_step_4(current_user)
     db.commit()
     return profile
+
+
+@router.get("/admin/admins", response_model=list[UserPublic])
+def list_admins(
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[User]:
+    return UserService(db).list_admins()
+
+
+@router.post("/admin/promote", response_model=UserPublic)
+def promote_to_admin(
+    payload: PromoteToAdminRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> User:
+    promoted = UserService(db).promote_to_admin(payload.email)
+    AuditService(db).log_action(
+        admin.id,
+        action="PROMOTE_TO_ADMIN",
+        entity_type="USER",
+        entity_id=promoted.id,
+        old_data={"role": "USER"},
+        new_data={"role": "ADMIN"},
+    )
+    db.commit()
+    return promoted

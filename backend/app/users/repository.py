@@ -32,6 +32,11 @@ class UserRepository:
             return self.db.fetch_many(User, {"limit": str(limit), "offset": str(offset)})
         return list(self.db.scalars(select(User).limit(limit).offset(offset)))
 
+    def list_by_role(self, role) -> list[User]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(User, {"role": f"eq.{role.value}", "order": "created_at.asc"})
+        return list(self.db.scalars(select(User).where(User.role == role).order_by(User.created_at)))
+
     def add(self, user: User) -> User:
         if is_supabase_session(self.db):
             return self.db.add(user)

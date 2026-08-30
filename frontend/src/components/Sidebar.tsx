@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Wallet, CreditCard, Send, Receipt, FileText,
-  PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldAlert, Briefcase, Building2, LayoutGrid, ScrollText, type LucideIcon,
+  PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldAlert, Briefcase, Building2, LayoutGrid, ScrollText, Scale, type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
@@ -40,6 +40,7 @@ const OPERATIONS_ITEMS: NavItem[] = [
   { to: "/admin/credit", labelKey: "nav.creditAndLoans", icon: Landmark },
   { to: "/admin/fraud", labelKey: "nav.fraudReview", icon: ShieldAlert },
   { to: "/admin/audit-log", labelKey: "nav.auditLog", icon: ScrollText },
+  { to: "/admin/reconciliation", labelKey: "nav.reconciliation", icon: Scale },
 ];
 
 function NavGroup({ label, items }: { label: string; items: NavItem[] }) {

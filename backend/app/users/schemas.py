@@ -48,6 +48,10 @@ class UserPublic(BaseModel):
     created_at: datetime
 
 
+class PromoteToAdminRequest(BaseModel):
+    email: EmailStr
+
+
 class OnboardingStatePublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
