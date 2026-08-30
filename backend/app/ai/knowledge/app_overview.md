@@ -68,8 +68,10 @@ their own exact terms.
   tracking contributions toward it.
 - **Rewards & cashback** — earning points on eligible card payments,
   redeeming them for benefits, and merchant-specific cashback offers.
-- **Credit** — a maintained credit score, personal loans, and credit
-  cards with their own limit/usage tracking.
+- **Credit** — a maintained credit score, loan products spanning
+  personal, mortgage, auto, student, home improvement, and debt
+  consolidation loans, and credit cards with their own limit/usage
+  tracking.
 - **Fraud protection** — automatic review of unusual-looking payments,
   always decided by a human, never by this assistant (see the
   fraud-awareness knowledge for details).
