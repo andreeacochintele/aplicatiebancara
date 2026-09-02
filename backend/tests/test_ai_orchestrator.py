@@ -155,10 +155,18 @@ def test_chat_routes_each_routable_intent_to_its_agent_handler(db_session, monke
     # routing test, not a live-network test; each agent's own test file
     # covers that call's behavior.
     monkeypatch.setattr(
-        personal_finance_agent, "_explain", lambda message, data_summary, history=None: "mocked explanation"
+        personal_finance_agent,
+        "_explain",
+        lambda message, data_summary, history=None, locale="ro": "mocked explanation",
     )
-    monkeypatch.setattr(credit_agent, "_explain", lambda message, data_summary, history=None: "mocked explanation")
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "mocked explanation")
+    monkeypatch.setattr(
+        credit_agent,
+        "_explain",
+        lambda message, data_summary, history=None, locale="ro": "mocked explanation",
+    )
+    monkeypatch.setattr(
+        support_agent, "_explain", lambda message, history=None, locale="ro": "mocked explanation"
+    )
     monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message, history=None: intent)
     response = OrchestratorService(db_session).chat(uuid.uuid4(), "some message")
     assert response.intent == intent
@@ -172,7 +180,7 @@ def test_chat_routes_each_routable_intent_to_its_agent_handler(db_session, monke
 
 def test_chat_scrubs_a_raw_json_reply_from_a_routed_agent(db_session, monkeypatch):
     monkeypatch.setattr(
-        support_agent, "_explain", lambda message, history=None: '{"risk_level": "HIGH"}'
+        support_agent, "_explain", lambda message, history=None, locale="ro": '{"risk_level": "HIGH"}'
     )
     monkeypatch.setattr(orchestrator_service, "classify_intent", lambda message, history=None: IntentCategory.SUPPORT)
     response = OrchestratorService(db_session).chat(uuid.uuid4(), "some message")
@@ -185,7 +193,7 @@ def test_chat_route_maps_azure_api_errors_to_a_clean_503_without_leaking_details
     # AzureFoundryNotConfiguredError (credentials missing entirely). Found via
     # a real E2E check against this env's .env, which has Azure configured
     # but pointing at a deployment that 404s.
-    def _raise_api_error(self, user_id, message, conversation_id=None):
+    def _raise_api_error(self, user_id, message, conversation_id=None, locale="ro"):
         raise APIConnectionError(request=httpx.Request("POST", "https://example.invalid"))
 
     monkeypatch.setattr(OrchestratorService, "chat", _raise_api_error)
@@ -193,6 +201,7 @@ def test_chat_route_maps_azure_api_errors_to_a_clean_503_without_leaking_details
     with pytest.raises(HTTPException) as exc_info:
         orchestrator_router.chat(
             OrchestratorChatRequest(message="hello"),
+            locale="ro",
             current_user=SimpleNamespace(id=uuid.uuid4()),
             db=db_session,
         )

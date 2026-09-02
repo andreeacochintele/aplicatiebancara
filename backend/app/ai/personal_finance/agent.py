@@ -32,13 +32,14 @@ agent's dispatch its own reward/tier route (or routing that phrasing to
 Support, which now has the same knowledge without that mismatch) is a
 follow-up, not attempted here.
 """
+import re
 import uuid
 
 from sqlalchemy.orm import Session
 
 from app.ai.actions.schemas import AgentResult, DownloadAttachment
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
-from app.ai.guardrails import INJECTION_GUARDRAILS, RESPONSE_FORMAT_RULE
+from app.ai.guardrails import INJECTION_GUARDRAILS, RESPONSE_FORMAT_RULE, language_directive
 from app.ai.knowledge import get_app_overview
 from app.ai.observability import log_debug, timed_event
 from app.ai.personal_finance import tools
@@ -47,7 +48,29 @@ from app.statements.schemas import StatementPublic
 
 _APP_OVERVIEW = get_app_overview()
 
-_SYSTEM_PROMPT = (
+_VOICE_GUIDANCE = {
+    "en": (
+        "Voice: be a friendly, upbeat financial buddy, not a corporate assistant — warm, "
+        "encouraging, a little casual. A light emoji is fine when it fits naturally, but "
+        "don't force one into every reply. When the news is less positive (no data "
+        "available, an error, overspending), stay warm and matter-of-fact rather than "
+        "clinical — e.g. prefer \"Looks like Entertainment crept up a bit this week 👀\" "
+        "over \"Your spending in this category has increased.\""
+    ),
+    "ro": (
+        "Voce: fii un prieten priceput la bani, cald și puțin jucăuș — nu un asistent "
+        "corporate. Emoji ușor, doar acolo unde se potrivește natural, nu la fiecare "
+        "răspuns. Când vestea e mai puțin bună (fără date disponibile, o eroare, cheltuieli "
+        "peste normal), rămâi cald și direct, nu rece sau birocratic — de exemplu preferă "
+        "\"Se pare că ai cam depășit bugetul la Divertisment săptămâna asta 👀\" în locul "
+        "lui \"Cheltuielile dumneavoastră la această categorie au crescut.\" Vorbește la "
+        "persoana a II-a singular (\"tu\"), niciodată \"dumneavoastră\"."
+    ),
+}
+
+
+def _build_system_prompt(locale: str) -> str:
+    return (
     "You are the Personal Finance Agent of a banking assistant. You will be "
     "shown the user's real financial data below. That exact data is shown "
     "again to the user, formatted cleanly, immediately after your reply — "
@@ -75,8 +98,8 @@ _SYSTEM_PROMPT = (
     "asked for, say plainly that you don't have that computed figure "
     "(what you do have is below) rather than asserting you performed a "
     "calculation you didn't.\n"
-    "Always respond in the same language the user's message is written in. "
-    "If the message is ambiguous or too short to tell, default to Romanian.\n\n"
+    f"{_VOICE_GUIDANCE.get(locale, _VOICE_GUIDANCE['ro'])}\n"
+    f"{language_directive(locale)}\n\n"
     f"{INJECTION_GUARDRAILS}\n\n"
     f"{RESPONSE_FORMAT_RULE}\n\n"
     "--- General app & product information (NOT this user's own data — safe to "
@@ -85,7 +108,10 @@ _SYSTEM_PROMPT = (
     "'never state a number from the data below' rule above applies only to that "
     "per-request block, never to this general reference material.) ---\n"
     f"{_APP_OVERVIEW}"
-)
+    )
+
+
+_SYSTEM_PROMPTS = {"ro": _build_system_prompt("ro"), "en": _build_system_prompt("en")}
 
 # First keyword match wins; order encodes priority for overlapping words
 # (e.g. a "budget" question naming a "category" still routes to budgets).
@@ -111,14 +137,63 @@ _DISPATCH: list[tuple[str, tuple[str, ...]]] = [
             "toate valutele",
             "sold total",
             "everything combined",
+            "converted to ron",
+            "convert to ron",
+            "converted total",
+            "total converted",
+            "excluding reserved",
+            "exclude reserved",
+            "convertit in ron",
+            "convertit în ron",
+            "convertita in ron",
+            "convertită în ron",
+            "excluzand suma rezervata",
+            "excluzând suma rezervată",
+            "fara suma rezervata",
+            "fără suma rezervată",
+            "suma totala",
+            "sumă totală",
+            "cat am in total",
+            "cât am în total",
         ),
     ),
     ("wallet_balances", ("balance", "wallet", "money", "how much", "sold", "cont", "bani", "cat am", "cât am")),
 ]
 _DEFAULT_TOOL = "wallet_balances"
 
+# wallet_balances is a raw, unconverted, per-currency listing with no
+# aggregation at all — get_net_worth is the only tool that actually sums/
+# converts across currencies (tools.py:110-119). A calculation claim on any
+# other tool's output can be legitimate (budgets/forecast/statement figures
+# really are backend-computed), so this backstop is scoped to wallet_balances
+# only, where such a claim is always false.
+_FALSE_CALCULATION_CLAIM = re.compile(
+    r"\b("
+    r"am calculat|am convertit|am totalizat|am sumat|totalul calculat"
+    r"|i(?:'ve| have)? calculated|i(?:'ve| have)? converted"
+    r"|i(?:'ve| have)? totaled|i(?:'ve| have)? totalled|i(?:'ve| have)? summed"
+    r")\b",
+    re.IGNORECASE,
+)
+_CALC_CLAIM_FALLBACK_EN = (
+    "I don't have a converted or combined total for that — what I have is "
+    "your per-currency balances below. Ask for your \"total balance\" or "
+    "\"net worth\" if you want everything converted and summed."
+)
+_CALC_CLAIM_FALLBACK_RO = (
+    "Nu am un total convertit sau combinat pentru asta — ce am sunt "
+    "soldurile tale pe fiecare valută, mai jos. Întreabă-mă de \"soldul "
+    "total\" sau \"toate conturile\" dacă vrei totul convertit și adunat."
+)
 
-def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str, str]] | None = None) -> "str | AgentResult":
+
+def handle(
+    message: str,
+    user_id: uuid.UUID,
+    db: Session,
+    history: list[dict[str, str]] | None = None,
+    locale: str = "ro",
+) -> "str | AgentResult":
     ctx = ToolContext(user_id=user_id, db=db)
     tool_name = _select_tool(message)
 
@@ -132,7 +207,7 @@ def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str
         except ToolDataUnavailableError as exc:
             return str(exc)
         summary = _format_statement_summary(statement)
-        explanation = _explain(message, summary, history)
+        explanation = _explain(message, summary, history, locale)
         reply = _append_summary(explanation, summary)
         download = DownloadAttachment(
             url=(
@@ -147,8 +222,24 @@ def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str
     except ToolDataUnavailableError as exc:
         return str(exc)
 
-    explanation = _explain(message, summary, history)
+    explanation = _explain(message, summary, history, locale)
+    explanation = _scrub_false_calculation_claim(explanation, tool_name, locale)
     return _append_summary(explanation, summary)
+
+
+def _scrub_false_calculation_claim(explanation: str, tool_name: str, locale: str) -> str:
+    """Deterministic backstop: the system prompt already forbids claiming a
+    calculation that wasn't run, but a reasoning model doesn't always comply
+    (same rationale as _append_summary's dedup check below — confirmed live,
+    GPT-5-mini has claimed 'Am calculat totalul...' while wallet_balances'
+    raw per-currency listing was the only data it actually had). Replaces
+    the whole reply rather than surgically removing the claim: a partial
+    edit risks leaving a grammatically broken sentence behind."""
+    if tool_name != "wallet_balances":
+        return explanation
+    if not _FALSE_CALCULATION_CLAIM.search(explanation):
+        return explanation
+    return _CALC_CLAIM_FALLBACK_RO if locale == "ro" else _CALC_CLAIM_FALLBACK_EN
 
 
 def _append_summary(explanation: str, summary: str) -> str:
@@ -171,10 +262,13 @@ def _select_tool(message: str) -> str:
     return _DEFAULT_TOOL
 
 
-def _explain(message: str, data_summary: str, history: list[dict[str, str]] | None = None) -> str:
+def _explain(
+    message: str, data_summary: str, history: list[dict[str, str]] | None = None, locale: str = "ro"
+) -> str:
     client = get_azure_foundry_client()
+    system_prompt = _SYSTEM_PROMPTS.get(locale, _SYSTEM_PROMPTS["ro"])
     messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         *(history or []),
         {
             "role": "user",

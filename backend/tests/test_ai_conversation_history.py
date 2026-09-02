@@ -48,7 +48,7 @@ def _mock_classify(intent: IntentCategory, capture: dict | None = None):
 
 
 def _mock_explain(reply: str, capture: dict | None = None):
-    def _explain(message, data_summary, history=None):
+    def _explain(message, data_summary, history=None, locale="ro"):
         if capture is not None:
             capture["message"] = message
             capture["history"] = history
@@ -218,7 +218,7 @@ def test_load_history_is_capped_at_history_limit(db_session, seeded_user):
 
 def test_chat_without_conversation_id_creates_a_new_conversation(db_session, seeded_user, monkeypatch):
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "A reply.")
 
     response = OrchestratorService(db_session).chat(seeded_user.id, "how do budgets work?")
 
@@ -229,7 +229,7 @@ def test_chat_without_conversation_id_creates_a_new_conversation(db_session, see
 
 def test_chat_with_conversation_id_appends_to_that_conversation(db_session, seeded_user, monkeypatch):
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "A reply.")
     conversation = _conversation(db_session, seeded_user.id)
 
     response = OrchestratorService(db_session).chat(seeded_user.id, "how do budgets work?", conversation.id)
@@ -271,7 +271,7 @@ def test_chat_rejects_a_nonexistent_conversation_id(db_session, seeded_user, mon
 
 def test_chat_persists_the_user_message_and_the_assistant_reply(db_session, seeded_user, monkeypatch):
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "A reply.")
 
     response = OrchestratorService(db_session).chat(seeded_user.id, "how do budgets work?")
 
@@ -288,7 +288,7 @@ def test_chat_persists_the_user_message_and_the_assistant_reply(db_session, seed
 
 def test_chat_touches_the_conversations_updated_at(db_session, seeded_user, monkeypatch):
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "A reply.")
     conversation = _conversation(db_session, seeded_user.id)
     original_updated_at = conversation.updated_at
 
@@ -304,7 +304,7 @@ def test_chat_touches_the_conversations_updated_at(db_session, seeded_user, monk
 
 def test_chat_generates_a_title_once_for_a_new_conversation(db_session, seeded_user, monkeypatch):
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "A reply.")
     calls = []
 
     def _fake_title(message, reply):
@@ -322,7 +322,7 @@ def test_chat_generates_a_title_once_for_a_new_conversation(db_session, seeded_u
 
 def test_chat_does_not_regenerate_a_title_on_a_second_message(db_session, seeded_user, monkeypatch):
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "A reply.")
     calls = []
     monkeypatch.setattr(
         orchestrator_service, "generate_conversation_title", lambda message, reply: (calls.append(1), "Title")[1]
@@ -338,7 +338,7 @@ def test_chat_does_not_regenerate_a_title_on_a_second_message(db_session, seeded
 
 def test_chat_falls_back_gracefully_when_title_generation_fails(db_session, seeded_user, monkeypatch):
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "A reply.")
 
     def _raise(message, reply):
         raise RuntimeError("Azure unavailable")
@@ -359,7 +359,7 @@ def test_chat_falls_back_gracefully_when_title_generation_fails(db_session, seed
 
 def test_chat_returns_suggested_followups_for_a_routed_agent_reply(db_session, seeded_user, monkeypatch):
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "A reply.")
     calls = []
 
     def _fake_followups(message, reply):
@@ -402,7 +402,7 @@ def test_chat_skips_followups_for_out_of_scope(db_session, seeded_user, monkeypa
 
 def test_chat_falls_back_to_empty_followups_when_generation_fails(db_session, seeded_user, monkeypatch):
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "A reply.")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "A reply.")
 
     def _raise(message, reply):
         raise RuntimeError("Azure unavailable")
@@ -450,7 +450,7 @@ def test_chat_passes_history_to_the_intent_classifier(db_session, seeded_user, m
     ConversationRepository(db_session).add(_message(seeded_user.id, conversation.id, content="earlier question"))
     capture: dict = {}
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT, capture))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "reply")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "reply")
 
     OrchestratorService(db_session).chat(seeded_user.id, "new question", conversation.id)
 
@@ -594,7 +594,7 @@ def test_list_conversations_endpoint_returns_most_recently_updated_first(client,
         UserCreate(email="list-conv@example.com", password="Sup3rSecret!", first_name="List", last_name="Conv")
     )
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "reply")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "reply")
     first = OrchestratorService(db_session).chat(user.id, "first conversation")
     second = OrchestratorService(db_session).chat(user.id, "second conversation")
     db_session.commit()
@@ -613,7 +613,7 @@ def test_get_conversation_messages_endpoint_returns_the_most_recent_page_by_defa
         UserCreate(email="conv-messages@example.com", password="Sup3rSecret!", first_name="Conv", last_name="Msg")
     )
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "reply")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "reply")
     conversation_id = None
     for i in range(HISTORY_LIMIT + 3):
         response = OrchestratorService(db_session).chat(user.id, f"question {i}", conversation_id)
@@ -639,7 +639,7 @@ def test_get_conversation_messages_endpoint_supports_loading_an_older_page(clien
         UserCreate(email="conv-paging@example.com", password="Sup3rSecret!", first_name="Conv", last_name="Page")
     )
     monkeypatch.setattr(orchestrator_service, "classify_intent", _mock_classify(IntentCategory.SUPPORT))
-    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None: "reply")
+    monkeypatch.setattr(support_agent, "_explain", lambda message, history=None, locale="ro": "reply")
     conversation_id = None
     for i in range(5):
         response = OrchestratorService(db_session).chat(user.id, f"question {i}", conversation_id)

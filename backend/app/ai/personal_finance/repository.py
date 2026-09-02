@@ -23,21 +23,17 @@ class AIInsightRepository:
     def get_by_id(self, insight_id: uuid.UUID) -> AIInsight | None:
         return self.db.get(AIInsight, insight_id)
 
-    def latest_created_at(self, user_id: uuid.UUID) -> datetime | None:
-        """Used to decide whether the 24h TTL has expired — not filtered by
-        `dismissed`, since a dismissed insight still counts as "we already
-        checked this user recently" (see insight_service.py)."""
+    def latest_for_user(self, user_id: uuid.UUID) -> AIInsight | None:
+        """Used to decide whether the TTL has expired (and, via
+        `.insight_type`, which TTL — see insights.get_or_generate) — not
+        filtered by `dismissed`, since a dismissed insight still counts as
+        "we already checked this user recently" (see insight_service.py)."""
         if is_supabase_session(self.db):
             rows = self.db.fetch_many(
                 AIInsight, {"user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "1"}
             )
-            return rows[0].created_at if rows else None
-        stmt = (
-            select(AIInsight.created_at)
-            .where(AIInsight.user_id == user_id)
-            .order_by(AIInsight.created_at.desc())
-            .limit(1)
-        )
+            return rows[0] if rows else None
+        stmt = select(AIInsight).where(AIInsight.user_id == user_id).order_by(AIInsight.created_at.desc()).limit(1)
         return self.db.scalar(stmt)
 
     def supersede_active_for_user(self, user_id: uuid.UUID) -> None:

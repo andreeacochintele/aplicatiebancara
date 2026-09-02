@@ -255,7 +255,6 @@ def test_spending_recommendations_does_not_flag_a_small_increase(db_session, see
 
     user, wallet = seeded_user_with_wallet
     now = datetime.now(timezone.utc)
-    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
     COMPLETED = TransactionStatus.COMPLETED
 
     zara = Merchant(name="Zara", category="Retail", verified=True)
@@ -267,17 +266,19 @@ def test_spending_recommendations_does_not_flag_a_small_increase(db_session, see
     # threshold). This test is about WEEK_OVER_WEEK_INCREASE alone, so the
     # other two rules have to be kept quiet no matter when the suite runs:
     #
-    # - a second, larger category holds Retail's share of the month under the
-    #   40% concentration threshold;
-    # - three months of Retail history give MONTH_VS_AVERAGE_INCREASE a
-    #   baseline the month-to-date figure cannot exceed. Without it the test
-    #   passed or failed depending on the calendar: the 100 sits 10 days back,
-    #   which is last month early in a month and this month later on, and a
-    #   near-empty 3-month baseline turns 105 into a ~215% "spike".
-    for months_back in (1, 2, 3):
+    # - a second, larger category holds Retail's share of the trailing 30
+    #   days under the 40% concentration threshold;
+    # - three fixed-offset points across the trailing 90-120 day window give
+    #   MONTH_VS_AVERAGE_INCREASE a baseline the trailing-30-day figure
+    #   cannot exceed. Calendar-anchored dates (e.g. the 1st of N months
+    #   ago) aren't used here on purpose — they can drift outside that
+    #   rolling window depending on which day of the month the suite runs,
+    #   the same class of flakiness the rolling-window redesign itself
+    #   exists to avoid (see spending_recommendations()'s docstring).
+    for days_back in (45, 75, 105):
         _add_transaction(
             db_session, user, wallet, TransactionType.CARD_PAYMENT, "300.00", COMPLETED,
-            _months_ago(month_start, months_back), merchant_id=zara.id,
+            now - timedelta(days=days_back), merchant_id=zara.id,
         )
     _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", COMPLETED, now - timedelta(days=10), merchant_id=zara.id)
     _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "105.00", COMPLETED, now, merchant_id=zara.id)
@@ -317,18 +318,22 @@ def test_spending_recommendations_flags_month_vs_three_month_average_increase(db
 
     user, wallet = seeded_user_with_wallet
     now = datetime.now(timezone.utc)
-    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
     COMPLETED = TransactionStatus.COMPLETED
 
     booking = Merchant(name="Booking.com", category="Travel", verified=True)
     db_session.add(booking)
     db_session.flush()
 
-    # Prior 3 months: 30 total each (avg 10/month). This month so far: 100 (+900%).
-    for months_back in (1, 2, 3):
+    # Prior 90-120 days: 30 total (avg 10 per rolling "month"). Trailing 30
+    # days: 100 (+900%). Fixed day-offsets, not calendar months back — a
+    # calendar-anchored date (e.g. the 1st of N months ago) can drift outside
+    # the [now-120, now-30) window depending on which day of the month the
+    # suite runs, the same flakiness class spending_recommendations()'s
+    # rolling-window redesign exists to avoid.
+    for days_back in (45, 75, 105):
         _add_transaction(
             db_session, user, wallet, TransactionType.CARD_PAYMENT, "10.00", COMPLETED,
-            _months_ago(month_start, months_back), merchant_id=booking.id,
+            now - timedelta(days=days_back), merchant_id=booking.id,
         )
     _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", COMPLETED, now, merchant_id=booking.id)
 

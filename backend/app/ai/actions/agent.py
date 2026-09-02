@@ -44,7 +44,16 @@ _SYSTEM_PROMPT = (
 _FENCE = re.compile(r"^```(?:json)?|```$", re.MULTILINE)
 
 
-def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str, str]] | None = None) -> AgentResult:
+def handle(
+    message: str,
+    user_id: uuid.UUID,
+    db: Session,
+    history: list[dict[str, str]] | None = None,
+    locale: str = "ro",
+) -> AgentResult:
+    """`locale` is accepted (not used) only to keep AgentHandler's call
+    signature uniform across all four registered agents — a transfer
+    confirmation card has no free-text narration to localize."""
     extracted = _extract(message, history)
     conversation_id = _current_conversation_id()
     return ActionService(db).prepare_phone_transfer(

@@ -78,10 +78,11 @@ def test_fraud_policy_knowledge_does_not_contain_any_real_fraud_engine_number():
 
 
 def test_system_prompt_includes_all_knowledge_files_verbatim():
-    assert agent._FRAUD_POLICY in agent._SYSTEM_PROMPT
-    assert agent._APP_FAQ in agent._SYSTEM_PROMPT
-    assert agent._SECURITY_AND_PRIVACY in agent._SYSTEM_PROMPT
-    assert agent._APP_OVERVIEW in agent._SYSTEM_PROMPT
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        assert agent._FRAUD_POLICY in prompt
+        assert agent._APP_FAQ in prompt
+        assert agent._SECURITY_AND_PRIVACY in prompt
+        assert agent._APP_OVERVIEW in prompt
 
 
 # ---- shared ai/knowledge/app_overview.md: same qualitative/no-leakage bar
@@ -111,21 +112,24 @@ def test_app_overview_knowledge_has_no_internal_implementation_detail():
 
 
 def test_system_prompt_includes_the_shared_injection_and_format_guardrails():
-    assert INJECTION_GUARDRAILS in agent._SYSTEM_PROMPT
-    assert RESPONSE_FORMAT_RULE in agent._SYSTEM_PROMPT
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        assert INJECTION_GUARDRAILS in prompt
+        assert RESPONSE_FORMAT_RULE in prompt
 
 
 def test_system_prompt_forbids_numeric_fraud_details_and_specific_case_confirmation():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "never state numeric thresholds" in lowered
-    assert "never" in lowered and "confirm or deny" in lowered
-    assert "contact support" in lowered or "admin" in lowered
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        lowered = prompt.lower()
+        assert "never state numeric thresholds" in lowered
+        assert "never" in lowered and "confirm or deny" in lowered
+        assert "contact support" in lowered or "admin" in lowered
 
 
 def test_system_prompt_forbids_reconstructing_internal_logic_from_conversation():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "never reconstruct or paraphrase" in lowered
-    assert "pasted by the user" in lowered
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        lowered = prompt.lower()
+        assert "never reconstruct or paraphrase" in lowered
+        assert "pasted by the user" in lowered
 
 
 # ---- routing gap fix: intent.py routes conceptual "how is X calculated"
@@ -136,7 +140,8 @@ def test_system_prompt_forbids_reconstructing_internal_logic_from_conversation()
 
 
 def test_system_prompt_includes_credit_score_factors_knowledge_verbatim():
-    assert agent._CREDIT_SCORE_FACTORS in agent._SYSTEM_PROMPT
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        assert agent._CREDIT_SCORE_FACTORS in prompt
 
 
 def test_credit_score_factors_knowledge_contains_no_digits():
@@ -144,17 +149,18 @@ def test_credit_score_factors_knowledge_contains_no_digits():
 
 
 def test_system_prompt_forbids_outside_general_knowledge_about_credit_scoring():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "never invent or use outside/general knowledge about" in lowered
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        assert "never invent or use outside/general knowledge about" in prompt.lower()
 
 
 # ---- redirect case: the prompt tells the model to defer real financial-data questions ----
 
 
 def test_system_prompt_instructs_redirecting_real_financial_data_questions():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "no access to any user's real financial data" in lowered
-    assert "ask" in lowered  # tells the model to point the user to ask directly
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        lowered = prompt.lower()
+        assert "no access to any user's real financial data" in lowered
+        assert "ask" in lowered  # tells the model to point the user to ask directly
 
 
 # ---- agent.py plumbing: mocked at the LLM boundary, never a live Azure call ----
@@ -163,7 +169,7 @@ def test_system_prompt_instructs_redirecting_real_financial_data_questions():
 def test_handle_is_a_thin_passthrough_to_explain(db_session, monkeypatch):
     captured = {}
 
-    def _fake_explain(message: str, history: list[dict[str, str]] | None = None) -> str:
+    def _fake_explain(message: str, history: list[dict[str, str]] | None = None, locale: str = "ro") -> str:
         captured["message"] = message
         return "Mocked support reply."
 
@@ -176,7 +182,7 @@ def test_handle_is_a_thin_passthrough_to_explain(db_session, monkeypatch):
 
 
 def test_handle_propagates_azure_not_configured_from_explain(db_session, monkeypatch):
-    def _raise_not_configured(message: str, history: list[dict[str, str]] | None = None) -> str:
+    def _raise_not_configured(message: str, history: list[dict[str, str]] | None = None, locale: str = "ro") -> str:
         raise AzureFoundryNotConfiguredError("Azure AI Foundry is not configured.")
 
     monkeypatch.setattr(agent, "_explain", _raise_not_configured)
@@ -194,20 +200,23 @@ def test_handle_propagates_azure_not_configured_from_explain(db_session, monkeyp
 
 
 def test_system_prompt_instructs_answering_directly_without_asking_which_topic():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "be direct" in lowered
-    assert "don't ask which topic they meant" in lowered
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        lowered = prompt.lower()
+        assert "be direct" in lowered
+        assert "don't ask which topic they meant" in lowered
 
 
 def test_system_prompt_still_allows_clarifying_questions_when_genuinely_ambiguous():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "genuinely ambiguous between multiple different topics" in lowered
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        assert "genuinely ambiguous between multiple different topics" in prompt.lower()
 
 
-def test_system_prompt_instructs_matching_the_users_language_defaulting_to_romanian():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "same language the user's message is written in" in lowered
-    assert "default to romanian" in lowered
+def test_system_prompt_instructs_a_definitive_target_language_per_locale():
+    # Locale now comes from the site's own language setting (X-Locale
+    # header, see ai/locale.py) rather than being guessed from the
+    # message text, so each locale variant gets a direct instruction.
+    assert "always respond in romanian" in agent._SYSTEM_PROMPTS["ro"].lower()
+    assert "always respond in english" in agent._SYSTEM_PROMPTS["en"].lower()
 
 
 # ---- knowledge base curated from 22 user-provided bank reference docs: about

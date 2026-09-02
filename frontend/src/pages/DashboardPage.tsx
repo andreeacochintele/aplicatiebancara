@@ -161,7 +161,10 @@ export function DashboardPage() {
   const spendingTotal = spendingItems.reduce((sum, item) => sum + Number(item.total_amount), 0);
   const donutData = spendingItems.map((item) => ({
     key: `${item.type}-${item.currency}`,
-    name: item.type,
+    // Translated label, not the raw TransactionType enum value — this feeds
+    // both the legend below and the Recharts Tooltip's `name`, which was
+    // showing "CARD_PAYMENT" verbatim instead of "Card payment".
+    name: t(`common.txType.${item.type}`, { defaultValue: item.type.toLowerCase().replaceAll("_", " ") }),
     value: Number(item.total_amount),
     color: colorForType(item.type),
   }));
@@ -343,7 +346,15 @@ export function DashboardPage() {
                         <Cell key={item.key} fill={item.color} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]} contentStyle={{ borderRadius: 10, border: "1px solid var(--easyb-border)", fontSize: 12 }} />
+                    <Tooltip
+                      formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]}
+                      // Pin the vertical position above the donut (x still
+                      // follows the cursor) so the tooltip never lands on
+                      // top of the fixed center total/currency overlay.
+                      position={{ y: 0 }}
+                      allowEscapeViewBox={{ x: true, y: true }}
+                      contentStyle={{ borderRadius: 10, border: "1px solid var(--easyb-border)", fontSize: 12 }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="easyb-donut-center">
@@ -355,9 +366,7 @@ export function DashboardPage() {
                 {donutData.map((item) => (
                   <div className="easyb-legend-row" key={item.key}>
                     <span className="easyb-legend-dot" style={{ background: item.color }} />
-                    <span className="easyb-legend-name">
-                      {t(`common.txType.${item.name}`, { defaultValue: item.name.toLowerCase().replaceAll("_", " ") })}
-                    </span>
+                    <span className="easyb-legend-name">{item.name}</span>
                     <span className="easyb-legend-pct">
                       {spendingTotal > 0 ? Math.round((item.value / spendingTotal) * 100) : 0}%
                     </span>

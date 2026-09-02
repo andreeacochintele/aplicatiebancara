@@ -18,12 +18,14 @@ regenerates once INSIGHT_TTL has passed — same "generate once, cache in
 a DB column/table, serve from cache" idea FraudCase.agent_analysis
 already uses, just time-based instead of admin-action-triggered.
 """
+import random
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
+from app.ai.guardrails import language_directive
 from app.ai.observability import log_debug, timed_event
 from app.ai.personal_finance import tools
 from app.ai.personal_finance.models import AIInsight
@@ -33,25 +35,108 @@ from app.analytics.schemas import CategorySpendingFlag
 from app.core.exceptions import NotFoundError
 
 INSIGHT_TTL = timedelta(hours=24)
+# Shorter TTL specifically for a cached ALL_CLEAR row: spending_recommendations()
+# used to go silently empty for the first few days of every calendar week/month
+# (fixed by switching to rolling windows — see analytics/service.py), and a
+# 24h-cached all-clear from that gap could otherwise mask real activity for
+# most of a day. An ALL_CLEAR is the cheap case to re-check (an empty flags
+# list, not a real Azure call — generate_and_store only calls the LLM per
+# flagged category), so re-checking hourly costs nothing when there's still
+# nothing to flag.
+ALL_CLEAR_TTL = timedelta(hours=1)
 
-_ALL_CLEAR_MESSAGE = "Nothing unusual to flag in your spending over the last 7 days — keep it up!"
+_ALL_CLEAR_MESSAGES = {
+    "en": [
+        "Nothing unusual in your spending lately — you're doing great! 🎉",
+        "All quiet on the spending front — nothing to flag right now.",
+        "No red flags here — your spending looks steady and on track.",
+        "Smooth sailing lately — nothing stood out in your spending.",
+        "Nothing to report — your spending's been nice and boring (the good kind) 👍",
+    ],
+    "ro": [
+        "Nimic ieșit din comun la cheltuieli în ultima vreme — te descurci grozav! 🎉",
+        "Liniște totală pe front financiar — nimic de semnalat acum.",
+        "Niciun semnal de alarmă — cheltuielile tale arată stabile și pe drumul cel bun.",
+        "Liniște în ultima vreme — nimic nu a ieșit în evidență la cheltuieli.",
+        "Nimic de raportat — cheltuielile tale au fost plăcut de liniștite 👍",
+    ],
+}
 
-_SYSTEM_PROMPT = (
-    "You are the Personal Finance Agent of a banking assistant, writing a single "
-    "short spending-recommendation notification for a category that a deterministic "
-    "backend check already flagged. Write ONE short message (max 2 sentences), "
-    "friendly, direct, and actionable — matching this tone exactly: "
-    "'You spent noticeably more on Entertainment in the last 7 days — consider "
-    "easing off.' The weekly figures below cover a rolling 7-day window, not a "
-    "Monday-to-Sunday week, so never call it 'this week' or 'last week'. "
-    "Use ONLY the figures given below; never invent, recalculate, "
-    "or round a number yourself. Do not repeat every figure verbatim — summarize "
-    "naturally, but ALWAYS state the currency when citing a percentage-of-total "
-    "figure (e.g. 'accounts for 53% of your EUR spending this month') — this "
-    "user has spending in more than one currency, and every figure below is "
-    "scoped to one currency only, never blended across currencies. Respond in "
-    "English. Output only the message itself, no preamble."
-)
+
+def _build_system_prompt(locale: str) -> str:
+    intro = {
+        "en": (
+            "You are the Personal Finance Agent of a banking assistant, writing a single "
+            "short spending-recommendation notification for a category that a deterministic "
+            "backend check already flagged.\n\n"
+            "Voice: you're a friendly, upbeat financial buddy talking to a friend — not a "
+            "compliance officer. Warm, encouraging, a little playful. Casual, conversational "
+            "language. Light emoji where it feels natural (not on every message). Celebrate "
+            "when things go well; when flagging overspending, be gently teasing, never "
+            "shaming or lecturing.\n\n"
+            "Write ONE short message (max 2 sentences). Use ONLY the figures given below; "
+            "never invent, recalculate, or round a number yourself. Do not repeat every "
+            "figure verbatim — summarize naturally, but ALWAYS state the currency when "
+            "citing a percentage-of-total figure (e.g. 'accounts for 53% of your EUR "
+            "spending') — this user has spending in more than one currency, and "
+            "every figure below is scoped to one currency only, never blended across "
+            "currencies. The figures below are rolling windows (the last 7 days, and the "
+            "last 30 days), NOT a Monday-to-Sunday week or a calendar month — never say "
+            "'this week', 'last week', 'this month', or any calendar-period word; say "
+            "'the last 7 days' / 'lately' / 'over the last month' (as a duration, not a "
+            "calendar month) instead.\n\n"
+            "Examples (tone reference only — never reuse these numbers):\n\n"
+            "Stiff (AVOID): \"Your Entertainment category spending has increased by 42% "
+            "compared to the previous week, exceeding the recommended threshold.\"\n"
+            "Buddy (WRITE LIKE THIS): \"Whoa, Entertainment's had a big stretch 🎬 — up 42% "
+            "over the last 7 days. Worth reining it in a little?\"\n\n"
+            "Stiff (AVOID): \"This category represents 53% of your total monthly "
+            "expenditure in EUR.\"\n"
+            "Buddy (WRITE LIKE THIS): \"Heads up — dining out is eating over half your EUR "
+            "spending lately (53%!). No judgment, just flagging it 😅\"\n\n"
+            "Output only the message itself, no preamble."
+        ),
+        "ro": (
+            "Ești Personal Finance Agent-ul unui asistent bancar, scriind o singură "
+            "notificare scurtă de recomandare de cheltuieli pentru o categorie deja "
+            "semnalată de o verificare deterministă din backend.\n\n"
+            "Voce: ești un prieten priceput la bani care vorbește cu un prieten — nu un "
+            "ofițer de conformitate. Cald, încurajator, puțin jucăuș. Limbaj casual, "
+            "conversațional, la persoana a II-a singular (\"tu\", niciodată "
+            "\"dumneavoastră\"). Emoji ușor, acolo unde se potrivește natural (nu la "
+            "fiecare mesaj). Sărbătorește când lucrurile merg bine; când semnalezi "
+            "cheltuieli în exces, tachinează ușor, fără să faci pe cineva să se simtă "
+            "vinovat și fără ton de morală. Evită construcții rigide gen \"Vă recomandăm "
+            "să...\" sau \"Este recomandat să...\".\n\n"
+            "Scrie UN singur mesaj scurt (maxim 2 propoziții). Folosește DOAR cifrele date "
+            "mai jos; nu inventa, nu recalcula și nu rotunji nicio cifră. Nu repeta fiecare "
+            "cifră mot-a-mot — rezumă natural, dar menționează ÎNTOTDEAUNA moneda când "
+            "citezi un procent din total (ex. \"reprezintă 53% din cheltuielile tale în "
+            "EUR\") — acest utilizator are cheltuieli în mai multe monede, iar "
+            "fiecare cifră de mai jos e limitată la o singură monedă, niciodată "
+            "combinată. Cifrele de mai jos sunt ferestre mobile (ultimele 7 zile, respectiv "
+            "ultimele 30 de zile), NU o săptămână luni-duminică sau o lună calendaristică — "
+            "nu spune niciodată \"săptămâna asta\", \"săptămâna trecută\", \"luna asta\" sau "
+            "orice cuvânt care sugerează o perioadă calendaristică fixă; spune \"în ultimele "
+            "7 zile\" / \"în ultima vreme\" / \"în ultima lună\" (ca durată, nu ca lună "
+            "calendaristică) în schimb.\n\n"
+            "Exemple (doar pentru ton — nu refolosi aceste cifre):\n\n"
+            "Rigid (EVITĂ): \"Cheltuielile dumneavoastră la categoria Divertisment au "
+            "crescut cu 42% față de săptămâna precedentă, depășind pragul recomandat.\"\n"
+            "Prietenos (SCRIE AȘA): \"Uau, Divertisment a avut o perioadă pe cinste 🎬 — cu "
+            "42% mai mult în ultimele 7 zile. Poate o mai lași mai domol?\"\n\n"
+            "Rigid (EVITĂ): \"Această categorie reprezintă 53% din cheltuielile "
+            "dumneavoastră lunare totale în EUR.\"\n"
+            "Prietenos (SCRIE AȘA): \"Ia uite — ieșitul în oraș îți mănâncă peste jumătate "
+            "din cheltuielile tale în EUR în ultima vreme (53%!). Fără judecăți, doar să "
+            "știi 😅\"\n\n"
+            "Răspunde doar cu mesajul propriu-zis, fără introducere."
+        ),
+    }
+    return f"{intro.get(locale, intro['ro'])}\n\n{language_directive(locale)}"
+
+
+_SYSTEM_PROMPTS = {"ro": _build_system_prompt("ro"), "en": _build_system_prompt("en")}
 
 
 def _as_aware_utc(value: datetime) -> datetime:
@@ -69,22 +154,23 @@ def _format_flag_summary(flag: CategorySpendingFlag) -> str:
     month = flag.month_vs_three_month_average
     if month is not None and month.change_percent is not None:
         lines.append(
-            f"This month so far: {month.current_amount} {flag.currency} vs this category's "
-            f"average over the prior 3 months: {month.comparison_amount} {flag.currency} "
+            f"Last 30 days: {month.current_amount} {flag.currency} vs this category's "
+            f"average over the 90 days before that: {month.comparison_amount} {flag.currency} "
             f"({month.change_percent:.0f}% change)"
         )
     if flag.share_of_total_percent is not None:
         lines.append(
-            f"This category is {flag.share_of_total_percent}% of this month's total {flag.currency} spending "
+            f"This category is {flag.share_of_total_percent}% of the last 30 days' total {flag.currency} spending "
             f"(spending in other currencies is tracked separately and is not part of this percentage)."
         )
     return "\n".join(lines)
 
 
-def _phrase_flag(flag: CategorySpendingFlag) -> str:
+def _phrase_flag(flag: CategorySpendingFlag, locale: str = "ro") -> str:
     client = get_azure_foundry_client()
+    system_prompt = _SYSTEM_PROMPTS.get(locale, _SYSTEM_PROMPTS["ro"])
     messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": _format_flag_summary(flag)},
     ]
     log_debug("llm_call.request", agent="personal_finance_insights", messages=messages)
@@ -95,7 +181,7 @@ def _phrase_flag(flag: CategorySpendingFlag) -> str:
     return content
 
 
-def generate_and_store(db: Session, user_id: uuid.UUID) -> list[AIInsight]:
+def generate_and_store(db: Session, user_id: uuid.UUID, locale: str = "ro") -> list[AIInsight]:
     """Always writes at least one row, even when nothing is flagged — a
     quiet week still needs a fresh created_at so get_or_generate() doesn't
     re-check (and re-call Azure) on every request for a user with no
@@ -107,9 +193,14 @@ def generate_and_store(db: Session, user_id: uuid.UUID) -> list[AIInsight]:
     flags = tools.get_spending_recommendations(ToolContext(user_id=user_id, db=db))
 
     if not flags:
+        variants = _ALL_CLEAR_MESSAGES.get(locale, _ALL_CLEAR_MESSAGES["ro"])
         insight = repository.add(
             AIInsight(
-                user_id=user_id, message=_ALL_CLEAR_MESSAGE, category=None, currency=None, insight_type="ALL_CLEAR"
+                user_id=user_id,
+                message=random.choice(variants),
+                category=None,
+                currency=None,
+                insight_type="ALL_CLEAR",
             )
         )
         db.flush()
@@ -119,7 +210,7 @@ def generate_and_store(db: Session, user_id: uuid.UUID) -> list[AIInsight]:
         repository.add(
             AIInsight(
                 user_id=user_id,
-                message=_phrase_flag(flag),
+                message=_phrase_flag(flag, locale),
                 category=flag.category,
                 currency=flag.currency,
                 insight_type=",".join(flag.reasons),
@@ -131,14 +222,15 @@ def generate_and_store(db: Session, user_id: uuid.UUID) -> list[AIInsight]:
     return created
 
 
-def get_or_generate(db: Session, user_id: uuid.UUID, force: bool = False) -> list[AIInsight]:
+def get_or_generate(db: Session, user_id: uuid.UUID, force: bool = False, locale: str = "ro") -> list[AIInsight]:
     """force=True (the Analytics page's refresh button) bypasses the TTL
     and always regenerates, same as a natural TTL expiry would - it does
     not skip the ledger of what changed, it just triggers early."""
     repository = AIInsightRepository(db)
-    latest = repository.latest_created_at(user_id)
-    if force or latest is None or _as_aware_utc(latest) < datetime.now(timezone.utc) - INSIGHT_TTL:
-        generate_and_store(db, user_id)
+    latest = repository.latest_for_user(user_id)
+    ttl = ALL_CLEAR_TTL if latest is not None and latest.insight_type == "ALL_CLEAR" else INSIGHT_TTL
+    if force or latest is None or _as_aware_utc(latest.created_at) < datetime.now(timezone.utc) - ttl:
+        generate_and_store(db, user_id, locale)
     return repository.list_active_for_user(user_id)
 
 

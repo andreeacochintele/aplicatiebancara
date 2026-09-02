@@ -17,6 +17,7 @@ from openai import APIError
 from sqlalchemy.orm import Session
 
 from app.ai.client.azure_foundry_client import AzureFoundryNotConfiguredError
+from app.ai.locale import get_locale
 from app.ai.orchestrator.schemas import (
     ConversationMessagePublic,
     ConversationPublic,
@@ -37,11 +38,12 @@ router = APIRouter(prefix="/ai/orchestrator", tags=["ai-orchestrator"])
 @router.post("/chat", response_model=OrchestratorChatResponse)
 def chat(
     payload: OrchestratorChatRequest,
+    locale: str = Depends(get_locale),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> OrchestratorChatResponse:
     try:
-        response = OrchestratorService(db).chat(current_user.id, payload.message, payload.conversation_id)
+        response = OrchestratorService(db).chat(current_user.id, payload.message, payload.conversation_id, locale)
         db.commit()
         return response
     except AzureFoundryNotConfiguredError as exc:

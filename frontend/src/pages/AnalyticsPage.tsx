@@ -563,14 +563,17 @@ export function AnalyticsPage() {
     color: colorForType(item.category),
   }));
 
-  const insights = generateAnalyticsInsights({
-    monthlyTrend,
-    spendingItems,
-    budgets,
-    forecast,
-    isCurrentMonth,
-    periodLabel: formatPeriodMonth(period, i18n.language),
-  });
+  const insights = generateAnalyticsInsights(
+    {
+      monthlyTrend,
+      spendingItems,
+      budgets,
+      forecast,
+      isCurrentMonth,
+      periodLabel: formatPeriodMonth(period, i18n.language),
+    },
+    t,
+  );
 
   const netWorthChangePercent = (() => {
     const history = netWorthHistory?.history ?? [];
@@ -706,6 +709,13 @@ export function AnalyticsPage() {
                     </Pie>
                     <Tooltip
                       formatter={(value: number, name: string) => [`${value.toFixed(2)} ${spendingCurrency ?? ""}`, name]}
+                      // Pin the vertical position above the donut (x still
+                      // follows the cursor) so the tooltip never lands on
+                      // top of the fixed center total/currency overlay —
+                      // Recharts' default cursor-following position was
+                      // overlapping it.
+                      position={{ y: 0 }}
+                      allowEscapeViewBox={{ x: true, y: true }}
                       contentStyle={{
                         borderRadius: 10,
                         border: "1px solid var(--easyb-border)",

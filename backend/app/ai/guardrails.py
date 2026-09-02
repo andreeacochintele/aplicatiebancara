@@ -57,6 +57,22 @@ RESPONSE_FORMAT_RULE = (
     "JSON or another structured format internally."
 )
 
+_LANGUAGE_DIRECTIVES = {
+    "ro": "Always respond in Romanian, regardless of what language the user's message is written in.",
+    "en": "Always respond in English, regardless of what language the user's message is written in.",
+}
+
+
+def language_directive(locale: str) -> str:
+    """The site's language preference (X-Locale header, see ai/locale.py) is
+    now known for certain on every routed request — this replaces each
+    agent's old "guess from the user's message, default to Romanian if
+    ambiguous" instruction with a direct directive, since a definitive
+    signal the frontend already has is strictly better than guessing from
+    message text. Shared here (not duplicated per agent) same reasoning as
+    INJECTION_GUARDRAILS/RESPONSE_FORMAT_RULE above."""
+    return _LANGUAGE_DIRECTIVES.get(locale, _LANGUAGE_DIRECTIVES["ro"])
+
 _FALLBACK_MESSAGE = (
     "I've got an answer for that, but it came out in a format I shouldn't show you "
     "directly — could you ask me again, maybe a little differently?"
