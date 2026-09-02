@@ -34,15 +34,17 @@ from app.core.exceptions import NotFoundError
 
 INSIGHT_TTL = timedelta(hours=24)
 
-_ALL_CLEAR_MESSAGE = "Nothing unusual to flag in your spending this week — keep it up!"
+_ALL_CLEAR_MESSAGE = "Nothing unusual to flag in your spending over the last 7 days — keep it up!"
 
 _SYSTEM_PROMPT = (
     "You are the Personal Finance Agent of a banking assistant, writing a single "
     "short spending-recommendation notification for a category that a deterministic "
     "backend check already flagged. Write ONE short message (max 2 sentences), "
     "friendly, direct, and actionable — matching this tone exactly: "
-    "'You spent noticeably more on Entertainment this week — consider dialing it "
-    "back next week.' Use ONLY the figures given below; never invent, recalculate, "
+    "'You spent noticeably more on Entertainment in the last 7 days — consider "
+    "easing off.' The weekly figures below cover a rolling 7-day window, not a "
+    "Monday-to-Sunday week, so never call it 'this week' or 'last week'. "
+    "Use ONLY the figures given below; never invent, recalculate, "
     "or round a number yourself. Do not repeat every figure verbatim — summarize "
     "naturally, but ALWAYS state the currency when citing a percentage-of-total "
     "figure (e.g. 'accounts for 53% of your EUR spending this month') — this "
@@ -61,7 +63,7 @@ def _format_flag_summary(flag: CategorySpendingFlag) -> str:
     week = flag.week_over_week
     if week is not None and week.change_percent is not None:
         lines.append(
-            f"This week so far: {week.current_amount} {flag.currency} vs last week: "
+            f"Last 7 days: {week.current_amount} {flag.currency} vs the 7 days before that: "
             f"{week.comparison_amount} {flag.currency} ({week.change_percent:.0f}% change)"
         )
     month = flag.month_vs_three_month_average

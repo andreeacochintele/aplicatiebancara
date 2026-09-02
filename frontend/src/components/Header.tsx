@@ -8,7 +8,6 @@ import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
 import type { BillSplit, Notification, Wallet } from "../types";
 import { LanguageToggle } from "./LanguageToggle";
-import { PeriodSelect } from "./PeriodSelect";
 import { ThemeToggle } from "./ThemeToggle";
 
 const PAGE_INFO: Record<string, { titleKey: string; subtitleKey: string }> = {
@@ -201,7 +200,6 @@ export function Header() {
       <span className="header__title">{page ? t(page.titleKey) : t("common.appName")}</span>
       {page && <span className="header__subtitle">{t(page.subtitleKey)}</span>}
       <div className="header__meta">
-        <PeriodSelect />
         <LanguageToggle />
         <ThemeToggle />
         <button

@@ -1,20 +1,16 @@
 import { useTranslation } from "react-i18next";
 
 import { usePeriod } from "../hooks/usePeriod";
-import type { PeriodMonth } from "../store/PeriodContext";
-
-function label(month: PeriodMonth, locale: string): string {
-  return new Date(month.year, month.month - 1, 1).toLocaleDateString(locale, {
-    month: "long",
-    year: "numeric",
-  });
-}
+import { formatPeriodMonth } from "../store/PeriodContext";
 
 /**
  * App-wide month selector. Only the period-scoped views follow it — spending
  * breakdowns, top counterparties and monthly budgets. Point-in-time figures
  * (wallet balances, net worth, the month-end forecast) are always "now" by
  * definition and deliberately ignore it.
+ *
+ * Rendered on the spending cards it actually drives rather than in the header,
+ * so the control sits next to the figures it changes.
  */
 export function PeriodSelect() {
   const { t, i18n } = useTranslation();
@@ -30,7 +26,7 @@ export function PeriodSelect() {
     >
       {choices.map((choice) => (
         <option key={choice.value} value={choice.value}>
-          {label(choice, i18n.language)}
+          {formatPeriodMonth(choice, i18n.language, "short")}
         </option>
       ))}
     </select>

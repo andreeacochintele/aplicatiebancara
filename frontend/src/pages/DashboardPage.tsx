@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { apiRequest } from "../api/apiClient";
+import { PeriodSelect } from "../components/PeriodSelect";
 import { useAuth } from "../hooks/useAuth";
 import { usePeriod } from "../hooks/usePeriod";
 import type { CreditScore, NetWorthResponse, SpendingByTypeResponse, Transaction } from "../types";
@@ -289,6 +290,7 @@ export function DashboardPage() {
               <div className="easyb-eyebrow">{t("dashboard.thisPeriod")}</div>
               <h2>{t("dashboard.spendingByType")}</h2>
             </div>
+            <PeriodSelect />
           </div>
           {donutData.length > 0 ? (
             <>

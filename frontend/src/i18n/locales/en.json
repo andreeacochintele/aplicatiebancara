@@ -822,7 +822,7 @@
   },
   "analytics": {
     "period": {
-      "1m": "This month",
+      "1m": "Month to date",
       "3m": "3 months",
       "6m": "6 months",
       "1y": "1 year"
@@ -911,7 +911,10 @@
     "setSavingsGoalDescription": "Create a goal and track your progress automatically.",
     "couldNotLoad": "We couldn't load your analytics.",
     "tryAgain": "Try again",
-    "vsAgo": "vs {{period}} ago"
+    "vsAgo": "vs {{period}} ago",
+    "vsMonthStart": "since the 1st",
+    "recommendationsCurrentOnly": "These always cover the current period, not the month you're viewing.",
+    "backToCurrentMonth": "Back to {{month}}"
   },
   "rewards": {
     "oneTime": "One-time",
