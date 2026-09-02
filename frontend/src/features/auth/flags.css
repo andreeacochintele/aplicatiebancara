@@ -7,6 +7,16 @@
   background-position: 50%;
   background-repeat: no-repeat;
   display: inline-block;
+  /* Upstream flag-icons gives the empty <span> its box through
+     `.fi:before { content: " " }` plus `line-height: 1em`. Generating this
+     subset kept the background properties and dropped that, so a caller
+     that set a width but no height ended up with a zero-height box and an
+     invisible flag. An explicit ratio is sturdier than restoring the
+     pseudo-element: the flag keeps its 4:3 shape from the width alone,
+     with no dependency on an inherited line-height. Callers that set both
+     width and height (see .country-select__flag) are unaffected, since two
+     definite sizes make the ratio moot. */
+  aspect-ratio: 4 / 3;
 }
 .fi-ad { background-image: url("flag-icons/flags/4x3/ad.svg"); }
 .fi-ae { background-image: url("flag-icons/flags/4x3/ae.svg"); }

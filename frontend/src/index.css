@@ -300,7 +300,9 @@ body {
 .language-toggle__flag {
   border-radius: 3px;
   width: 18px;
-  line-height: 18px;
+  /* Height comes from .fi's 4:3 ratio. The line-height that used to sit
+     here could never produce one: an inline-block with no content has no
+     line box to give height to. */
 }
 
 /* ---- Shell layout ---- */
