@@ -80,6 +80,7 @@
     "profile": "Profile",
     "businessExport": "Transaction Export",
     "businessProfile": "Company Profile",
+    "businessBulkTransfer": "Bulk Transfer",
     "creditAndLoans": "Credit & Loans",
     "fraudReview": "Fraud Review",
     "auditLog": "Audit Log",
@@ -104,6 +105,7 @@
     "profile": { "title": "Profile", "subtitle": "Account details" },
     "businessExport": { "title": "Transaction Export", "subtitle": "Business accounts only · CSV/XLSX/PDF/MT940 export" },
     "businessProfile": { "title": "Company Profile", "subtitle": "Business accounts only · manage your companies" },
+    "businessBulkTransfer": { "title": "Bulk Transfer", "subtitle": "Business accounts only · pay many beneficiaries at once" },
     "admin": { "title": "Admin Dashboard", "subtitle": "Operations overview" },
     "adminCredit": { "title": "Credit & Loans", "subtitle": "Applications, documents and credit score review" },
     "adminFraud": { "title": "Fraud Review", "subtitle": "Deterministic engine · human decision" },
@@ -211,6 +213,8 @@
     "newTransfer": "New transfer",
     "convert": "Convert",
     "exchangeFx": "Exchange FX",
+    "bulkTransfer": "Bulk transfer",
+    "payManyAtOnce": "Pay many at once",
     "review": "Review",
     "allTransactions": "All transactions",
     "ask": "Ask",
@@ -235,6 +239,12 @@
     "creditScore": "Credit score",
     "outOf850": "/ 850",
     "viewDetails": "View details",
+    "cashFlow": "Cash flow",
+    "moneyIn": "Money in",
+    "moneyOut": "Money out",
+    "netCashFlow": "Net cash flow",
+    "upcomingPayments": "Upcoming payments",
+    "noUpcomingPayments": "No upcoming scheduled payments.",
     "needsYourAttention": "Needs your attention",
     "onHoldPendingVerification": "{{description}} · {{amount}} {{currency}} is on hold pending verification.",
     "nothingNeedsAttention": "Nothing needs your attention right now."
@@ -407,6 +417,30 @@
     "previousHistoryPage": "Previous export history page",
     "nextHistoryPage": "Next export history page",
     "goToHistoryPage": "Go to export history page {{page}}"
+  },
+  "businessBulkTransfer": {
+    "onlyForBusiness": "Bulk transfer is only available to business accounts.",
+    "title": "Bulk transfer",
+    "subtitle": "Pay many beneficiaries at once from one wallet — e.g. payroll or a batch of supplier invoices.",
+    "sourceWallet": "Pay from",
+    "pasteLabel": "Paste a list (one per line)",
+    "pastePlaceholder": "Ana Ionescu, RO49AAAA1B31007593840001, 1500, Salary August",
+    "applyPaste": "Fill rows from pasted list",
+    "rowsCount_one": "{{count}} row",
+    "rowsCount_other": "{{count}} rows",
+    "beneficiaryName": "Beneficiary",
+    "iban": "IBAN",
+    "amount": "Amount",
+    "description": "Description",
+    "removeRow": "Remove",
+    "addRow": "Add row",
+    "saveBeneficiaries": "Save these beneficiaries",
+    "totalAmount": "Total: {{amount}} {{currency}}",
+    "submit": "Send transfers",
+    "submitting": "Sending...",
+    "submitFailed": "Could not send the batch",
+    "resultsTitle": "{{succeeded}} succeeded, {{failed}} failed",
+    "failed": "Failed"
   },
   "businessProfile": {
     "onlyForBusiness": "The company profile is only available to business accounts.",
@@ -798,7 +832,7 @@
   },
   "analytics": {
     "period": {
-      "1m": "This month",
+      "1m": "Month to date",
       "3m": "3 months",
       "6m": "6 months",
       "1y": "1 year"
@@ -887,7 +921,10 @@
     "setSavingsGoalDescription": "Create a goal and track your progress automatically.",
     "couldNotLoad": "We couldn't load your analytics.",
     "tryAgain": "Try again",
-    "vsAgo": "vs {{period}} ago"
+    "vsAgo": "vs {{period}} ago",
+    "vsMonthStart": "since the 1st",
+    "recommendationsCurrentOnly": "These always cover the current period, not the month you're viewing.",
+    "backToCurrentMonth": "Back to {{month}}"
   },
   "rewards": {
     "oneTime": "One-time",
@@ -1249,6 +1286,12 @@
     "resume": "Resume",
     "cancel": "Cancel",
     "noScheduledPaymentsYet": "No scheduled payments yet.",
+    "calendarTitle": "Upcoming payments calendar",
+    "calendarPrevMonth": "Previous month",
+    "calendarNextMonth": "Next month",
+    "calendarMore_one": "+{{count}} more",
+    "calendarMore_other": "+{{count}} more",
+    "calendarEmptyMonth": "No scheduled payments fall in this month.",
     "transactionFolders": "Transaction folders",
     "splitted": "Splitted",
     "splitAgain": "Split again",
@@ -1508,6 +1551,10 @@
     "good": "Good",
     "fair": "Fair",
     "risky": "Risky"
+  },
+  "period": {
+    "selectMonth": "Select month",
+    "viewingPast": "Viewing a past month. Balances and forecasts always show today."
   },
   "header": {
     "notifications": "Notifications",

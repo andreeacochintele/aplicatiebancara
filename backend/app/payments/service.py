@@ -39,6 +39,9 @@ from app.payments.schemas import (
     BillSplitParticipantCreate,
     BillSplitPay,
     BillSplitPublic,
+    BulkTransferCreate,
+    BulkTransferResult,
+    BulkTransferRowResult,
     IbanTransferCreate,
     IbanTransferQuoteCreate,
     PaymentRequestCreate,
@@ -51,6 +54,7 @@ from app.payments.schemas import (
     TransactionFolderPublic,
     TransactionFolderUpdate,
 )
+from app.supabase import is_supabase_session
 from app.transactions.models import LedgerEntryType, Transaction, TransactionStatus, TransactionType, WalletLedgerEntry
 from app.transactions.schemas import InternalTransferCreate
 from app.transactions.repository import TransactionRepository
@@ -290,6 +294,57 @@ class IbanTransferService:
 
         self.db.flush()
         return transaction
+
+    def create_bulk_transfer(self, initiator_user_id: uuid.UUID, data: BulkTransferCreate) -> BulkTransferResult:
+        """Payroll-style batch: runs each row through create_iban_transfer
+        independently, so one bad IBAN or an underfunded row doesn't sink the
+        rest of the batch. Same-currency only (no FX) — a bulk run has one
+        source wallet and one currency for every row; per-row FX quotes are
+        out of scope. Each row gets its own savepoint (skipped on the
+        Supabase REST backend, which has no local transaction to nest — same
+        reasoning as MerchantService.sync_purchases_from_transactions) so a
+        failed row's partial state can't leak into the next one."""
+        currency = data.currency.upper()
+        use_savepoint = not is_supabase_session(self.db)
+        results: list[BulkTransferRowResult] = []
+        for row in data.rows:
+            row_data = IbanTransferCreate(
+                beneficiary_name=row.beneficiary_name,
+                iban=row.iban,
+                source_wallet_id=data.source_wallet_id,
+                amount=row.amount,
+                currency=currency,
+                description=row.description,
+                save_beneficiary=data.save_beneficiaries,
+            )
+            try:
+                if use_savepoint:
+                    with self.db.begin_nested():
+                        transaction = self.create_iban_transfer(initiator_user_id, row_data)
+                else:
+                    transaction = self.create_iban_transfer(initiator_user_id, row_data)
+            except (ValidationError, ConflictError, NotFoundError) as exc:
+                results.append(
+                    BulkTransferRowResult(
+                        beneficiary_name=row.beneficiary_name,
+                        iban=row.iban,
+                        amount=row.amount,
+                        error=str(exc),
+                    )
+                )
+                continue
+            results.append(
+                BulkTransferRowResult(
+                    beneficiary_name=row.beneficiary_name,
+                    iban=row.iban,
+                    amount=row.amount,
+                    transaction_id=transaction.id,
+                    status=transaction.status.value,
+                )
+            )
+
+        succeeded = sum(1 for row in results if row.transaction_id is not None)
+        return BulkTransferResult(succeeded=succeeded, failed=len(results) - succeeded, results=results)
 
     def _get_owned_source_wallet(self, initiator_user_id: uuid.UUID, wallet_id: uuid.UUID) -> Wallet:
         source = self.wallets.get_by_id(wallet_id)

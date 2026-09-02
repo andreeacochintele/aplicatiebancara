@@ -67,6 +67,41 @@ class IbanTransferCreate(BaseModel):
         return self
 
 
+class BulkTransferRow(BaseModel):
+    beneficiary_name: str = Field(min_length=1, max_length=255)
+    iban: str = Field(min_length=1, max_length=34)
+    amount: Decimal
+    description: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_amount(self) -> "BulkTransferRow":
+        if self.amount <= 0:
+            raise ValueError("Transfer amount must be positive")
+        return self
+
+
+class BulkTransferCreate(BaseModel):
+    source_wallet_id: uuid.UUID
+    currency: str = Field(min_length=3, max_length=3)
+    rows: list[BulkTransferRow] = Field(min_length=1, max_length=200)
+    save_beneficiaries: bool = False
+
+
+class BulkTransferRowResult(BaseModel):
+    beneficiary_name: str
+    iban: str
+    amount: Decimal
+    transaction_id: uuid.UUID | None = None
+    status: str | None = None
+    error: str | None = None
+
+
+class BulkTransferResult(BaseModel):
+    succeeded: int
+    failed: int
+    results: list[BulkTransferRowResult]
+
+
 class IbanTransferQuoteCreate(BaseModel):
     source_wallet_id: uuid.UUID
     amount: Decimal

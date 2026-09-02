@@ -8,6 +8,7 @@ import "./i18n/config";
 import "./index.css";
 import "./styles/easyb.css";
 import { AuthProvider } from "./store/AuthContext";
+import { PeriodProvider } from "./store/PeriodContext";
 import { ThemeProvider } from "./store/ThemeContext";
 
 createRoot(document.getElementById("root")!).render(
@@ -15,7 +16,9 @@ createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
-          <App />
+          <PeriodProvider>
+            <App />
+          </PeriodProvider>
         </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>

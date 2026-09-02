@@ -242,6 +242,21 @@ export interface ScheduledPayment {
   updated_at: string;
 }
 
+export interface BulkTransferRowResult {
+  beneficiary_name: string;
+  iban: string;
+  amount: string;
+  transaction_id: string | null;
+  status: string | null;
+  error: string | null;
+}
+
+export interface BulkTransferResult {
+  succeeded: number;
+  failed: number;
+  results: BulkTransferRowResult[];
+}
+
 export type BillSplitStatus = "OPEN" | "SETTLED" | "CANCELLED";
 export type BillSplitParticipantStatus = "PENDING" | "PAID" | "DECLINED";
 

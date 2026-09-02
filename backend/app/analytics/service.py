@@ -173,8 +173,9 @@ class AnalyticsService:
         the LLM phrasing layer that consumes this list. A category is
         flagged when any comparison below crosses its threshold:
 
-        - week-over-week: this week's spend in a category vs last week's,
-          up more than SPENDING_INCREASE_THRESHOLD_PERCENT.
+        - week-over-week: the last 7 days' spend in a category vs the 7
+          days before that, up more than
+          SPENDING_INCREASE_THRESHOLD_PERCENT.
         - month-vs-3m-average: this month's spend (month-to-date) in a
           category vs that category's own average over the prior 3
           complete calendar months, up more than
@@ -191,8 +192,14 @@ class AnalyticsService:
         """
         now = datetime.now(timezone.utc)
 
-        week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-        last_week_start = week_start - timedelta(days=7)
+        # Rolling 7-day windows rather than Monday-to-now. A calendar week
+        # compares a partial week against a complete one, so identical
+        # spending reads as a collapse on Monday morning and only reaches
+        # parity by Sunday night — the flag would depend on which day the
+        # user happened to open the app. Both windows here are always
+        # exactly 7 days long, so the comparison is like-for-like.
+        week_start = now - timedelta(days=7)
+        last_week_start = now - timedelta(days=14)
 
         month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
         three_months_start = self._months_before(month_start, 3)

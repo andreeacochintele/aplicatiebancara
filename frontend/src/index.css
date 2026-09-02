@@ -822,6 +822,7 @@ label {
 
 input,
 select,
+textarea,
 button {
   padding: 0.5rem 0.65rem;
   font-size: 1rem;
@@ -831,7 +832,8 @@ button {
 }
 
 input,
-select {
+select,
+textarea {
   background: var(--color-surface);
   color: var(--color-text);
 }
@@ -4777,6 +4779,86 @@ th {
 
 .scheduled-list-card {
   overflow-x: auto;
+}
+
+.scheduled-calendar-card {
+  grid-column: 1 / -1;
+}
+
+.scheduled-calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.scheduled-calendar-nav button {
+  padding: 0.2rem 0.6rem;
+  line-height: 1;
+}
+
+.scheduled-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.scheduled-calendar-weekday {
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  padding-bottom: 0.35rem;
+}
+
+.scheduled-calendar-day {
+  min-height: 72px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-divider);
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.scheduled-calendar-day--empty {
+  border-color: transparent;
+}
+
+.scheduled-calendar-day--today {
+  border-color: var(--color-accent);
+}
+
+.scheduled-calendar-day--has-payments {
+  background: var(--color-accent-soft);
+}
+
+.scheduled-calendar-day__number {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.scheduled-calendar-day__items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.scheduled-calendar-day__item {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scheduled-calendar-day__more {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
 }
 
 .scheduled-table {

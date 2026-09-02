@@ -1,6 +1,6 @@
 import {
   ArrowDownRight, ArrowUpRight, ChevronRight, Eye, EyeOff,
-  Receipt, RefreshCcw, Send, Sparkles, type LucideIcon,
+  Receipt, RefreshCcw, Send, Sparkles, TrendingDown, TrendingUp, Users, type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -8,12 +8,21 @@ import { Link } from "react-router-dom";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { apiRequest } from "../api/apiClient";
+import { PeriodSelect } from "../components/PeriodSelect";
 import { useAuth } from "../hooks/useAuth";
-import type { CreditScore, NetWorthResponse, SpendingByTypeResponse, Transaction } from "../types";
+import { usePeriod } from "../hooks/usePeriod";
+import type { CreditScore, NetWorthResponse, ScheduledPayment, SpendingByTypeResponse, Transaction } from "../types";
 
 const QUICK_ACTIONS: { to: string; labelKey: string; subKey: string; icon: LucideIcon }[] = [
   { to: "/payments", labelKey: "dashboard.send", subKey: "dashboard.newTransfer", icon: Send },
   { to: "/wallets", labelKey: "dashboard.convert", subKey: "dashboard.exchangeFx", icon: RefreshCcw },
+  { to: "/transactions", labelKey: "dashboard.review", subKey: "dashboard.allTransactions", icon: Receipt },
+  { to: "/assistant", labelKey: "dashboard.ask", subKey: "dashboard.assistant", icon: Sparkles },
+];
+
+const BUSINESS_QUICK_ACTIONS: { to: string; labelKey: string; subKey: string; icon: LucideIcon }[] = [
+  { to: "/payments", labelKey: "dashboard.send", subKey: "dashboard.newTransfer", icon: Send },
+  { to: "/business/bulk-transfer", labelKey: "dashboard.bulkTransfer", subKey: "dashboard.payManyAtOnce", icon: Users },
   { to: "/transactions", labelKey: "dashboard.review", subKey: "dashboard.allTransactions", icon: Receipt },
   { to: "/assistant", labelKey: "dashboard.ask", subKey: "dashboard.assistant", icon: Sparkles },
 ];
@@ -78,13 +87,16 @@ function formatTransactionType(
 export function DashboardPage() {
   const { t } = useTranslation();
   const { user, accessToken } = useAuth();
+  const { query: periodQuery } = usePeriod();
   const [hidden, setHidden] = useState(false);
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [spending, setSpending] = useState<SpendingByTypeResponse | null>(null);
   const [creditScore, setCreditScore] = useState<CreditScore | null>(null);
+  const [scheduledPayments, setScheduledPayments] = useState<ScheduledPayment[]>([]);
   const [settingMainId, setSettingMainId] = useState<string | null>(null);
   const [showTotal, setShowTotal] = useState(false);
+  const isBusiness = user?.user_type === "BUSINESS";
 
   function reloadNetWorth() {
     if (!accessToken) return;
@@ -99,17 +111,33 @@ export function DashboardPage() {
     apiRequest<Transaction[]>("/transactions", { token: accessToken })
       .then((list) => setTransactions([...list].sort((a, b) => b.created_at.localeCompare(a.created_at))))
       .catch(() => setTransactions([]));
-    apiRequest<SpendingByTypeResponse>("/analytics/spending-by-type", { token: accessToken })
-      .then(setSpending)
-      .catch(() => setSpending(null));
     if (user?.user_type !== "BUSINESS") {
       // Credit is hidden for business accounts (personal FICO-style score,
       // personal loan products) — skip the fetch, not just the card below.
       apiRequest<CreditScore>("/credit/score", { token: accessToken })
         .then(setCreditScore)
         .catch(() => setCreditScore(null));
+    } else {
+      // Upcoming-payments widget replaces the credit-score card for business
+      // accounts — skip this fetch for personal accounts, same reasoning.
+      apiRequest<ScheduledPayment[]>("/payments/scheduled-payments", { token: accessToken })
+        .then(setScheduledPayments)
+        .catch(() => setScheduledPayments([]));
     }
   }, [accessToken, user?.user_type]);
+
+  // Follows the app-wide month selector, so the dashboard's spending card and
+  // the Analytics page never disagree about which month they are showing.
+  useEffect(() => {
+    if (!accessToken) return;
+    let cancelled = false;
+    apiRequest<SpendingByTypeResponse>(`/analytics/spending-by-type?${periodQuery}`, { token: accessToken })
+      .then((data) => !cancelled && setSpending(data))
+      .catch(() => !cancelled && setSpending(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, periodQuery]);
 
   async function setMainWallet(walletId: string) {
     if (!accessToken || settingMainId) return;
@@ -141,6 +169,32 @@ export function DashboardPage() {
   }));
 
   const scorePercent = creditScore ? Math.min(100, Math.max(0, ((creditScore.score - 300) / 550) * 100)) : 0;
+
+  const quickActions = isBusiness ? BUSINESS_QUICK_ACTIONS : QUICK_ACTIONS;
+
+  // Client-side month-to-date sum over already-fetched transactions — same
+  // single-currency scoping as the spending donut above, so incoming and
+  // outgoing are never blended across currencies.
+  const now = new Date();
+  const monthCashFlow = transactions.reduce(
+    (totals, transaction) => {
+      if (transaction.status !== "COMPLETED" || transaction.currency !== spendingCurrency) return totals;
+      const created = new Date(transaction.created_at);
+      if (created.getFullYear() !== now.getFullYear() || created.getMonth() !== now.getMonth()) return totals;
+      const isIncoming = transaction.destination_wallet_id ? userWalletIds.has(transaction.destination_wallet_id) : false;
+      const isOutgoing = transaction.source_wallet_id ? userWalletIds.has(transaction.source_wallet_id) : false;
+      if (isIncoming && !isOutgoing) totals.incoming += Number(transaction.amount);
+      else if (isOutgoing && !isIncoming) totals.outgoing += Number(transaction.amount);
+      return totals;
+    },
+    { incoming: 0, outgoing: 0 },
+  );
+  const netCashFlow = monthCashFlow.incoming - monthCashFlow.outgoing;
+
+  const upcomingScheduledPayments = scheduledPayments
+    .filter((payment) => payment.status === "ACTIVE")
+    .sort((a, b) => a.next_run_on.localeCompare(b.next_run_on))
+    .slice(0, 5);
 
   const mainWallet = netWorth?.wallets.find((wallet) => wallet.is_main);
   const heroAmount = showTotal ? netWorth?.total_available_balance : mainWallet?.available_balance;
@@ -220,7 +274,7 @@ export function DashboardPage() {
         </div>
 
         <div className="easyb-quick-actions">
-          {QUICK_ACTIONS.map((action) => (
+          {quickActions.map((action) => (
             <Link className="easyb-quick-action" to={action.to} key={action.to}>
               <span className="easyb-quick-icon">
                 <action.icon size={18} />
@@ -279,6 +333,7 @@ export function DashboardPage() {
               <div className="easyb-eyebrow">{t("dashboard.thisPeriod")}</div>
               <h2>{t("dashboard.spendingByType")}</h2>
             </div>
+            <PeriodSelect />
           </div>
           {donutData.length > 0 ? (
             <>
@@ -317,26 +372,96 @@ export function DashboardPage() {
           )}
         </div>
 
-        {creditScore && (
-          <div className="easyb-card">
-            <div className="easyb-section-header">
-              <h2>{t("dashboard.creditScore")}</h2>
-            </div>
-            <div className="easyb-score-wrap">
-              <div className="easyb-ring" style={{ background: `conic-gradient(var(--easyb-accent) ${scorePercent * 3.6}deg, var(--easyb-border) 0deg)` }}>
-                <div className="easyb-ring-hole">
-                  <div className="easyb-score-num">{creditScore.score}</div>
-                  <div className="easyb-score-tag">{formatCreditBand(creditScore.band, t)}</div>
+        {isBusiness ? (
+          <>
+            <div className="easyb-card">
+              <div className="easyb-section-header">
+                <div>
+                  <div className="easyb-eyebrow">{t("dashboard.thisPeriod")}</div>
+                  <h2>{t("dashboard.cashFlow")}</h2>
                 </div>
               </div>
-              <div className="easyb-score-side">
-                <div className="easyb-score-line">{t("dashboard.outOf850")}</div>
-                <Link className="easyb-link-btn" to="/credit">
-                  {t("dashboard.viewDetails")} <ChevronRight size={14} />
-                </Link>
+              <div className="wallet-grid">
+                <div className="wallet-chip">
+                  <div className="wallet-chip__ccy">
+                    <TrendingUp size={14} /> {t("dashboard.moneyIn")}
+                  </div>
+                  <div className="wallet-chip__amount" style={{ color: "var(--easyb-green)" }}>
+                    +{monthCashFlow.incoming.toFixed(2)} {spendingCurrency ?? ""}
+                  </div>
+                </div>
+                <div className="wallet-chip">
+                  <div className="wallet-chip__ccy">
+                    <TrendingDown size={14} /> {t("dashboard.moneyOut")}
+                  </div>
+                  <div className="wallet-chip__amount" style={{ color: "var(--easyb-red)" }}>
+                    -{monthCashFlow.outgoing.toFixed(2)} {spendingCurrency ?? ""}
+                  </div>
+                </div>
+                <div className="wallet-chip">
+                  <div className="wallet-chip__ccy">{t("dashboard.netCashFlow")}</div>
+                  <div
+                    className="wallet-chip__amount"
+                    style={{ color: netCashFlow >= 0 ? "var(--easyb-green)" : "var(--easyb-red)" }}
+                  >
+                    {netCashFlow >= 0 ? "+" : ""}
+                    {netCashFlow.toFixed(2)} {spendingCurrency ?? ""}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+
+            <div className="easyb-card">
+              <div className="easyb-section-header">
+                <h2>{t("dashboard.upcomingPayments")}</h2>
+                <Link className="easyb-link-btn" to="/payments?tab=scheduled">
+                  {t("dashboard.viewAll")} <ChevronRight size={15} />
+                </Link>
+              </div>
+              <div className="easyb-tx-list">
+                {upcomingScheduledPayments.map((payment) => (
+                  <div className="easyb-tx-row" key={payment.id}>
+                    <div className="easyb-tx-left">
+                      <div>
+                        <div className="easyb-tx-name">{payment.beneficiary_name}</div>
+                        <div className="easyb-tx-meta">
+                          {new Date(`${payment.next_run_on}T00:00:00`).toLocaleDateString()}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="easyb-tx-amount">
+                      {payment.amount} {payment.currency}
+                    </span>
+                  </div>
+                ))}
+                {upcomingScheduledPayments.length === 0 && (
+                  <p className="easyb-tx-meta">{t("dashboard.noUpcomingPayments")}</p>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          creditScore && (
+            <div className="easyb-card">
+              <div className="easyb-section-header">
+                <h2>{t("dashboard.creditScore")}</h2>
+              </div>
+              <div className="easyb-score-wrap">
+                <div className="easyb-ring" style={{ background: `conic-gradient(var(--easyb-accent) ${scorePercent * 3.6}deg, var(--easyb-border) 0deg)` }}>
+                  <div className="easyb-ring-hole">
+                    <div className="easyb-score-num">{creditScore.score}</div>
+                    <div className="easyb-score-tag">{formatCreditBand(creditScore.band, t)}</div>
+                  </div>
+                </div>
+                <div className="easyb-score-side">
+                  <div className="easyb-score-line">{t("dashboard.outOf850")}</div>
+                  <Link className="easyb-link-btn" to="/credit">
+                    {t("dashboard.viewDetails")} <ChevronRight size={14} />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )
         )}
 
         <div className="easyb-card">

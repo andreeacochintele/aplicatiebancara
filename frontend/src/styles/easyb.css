@@ -195,6 +195,15 @@
   align-items: center;
   gap: 10px;
   padding: 4px 10px 22px;
+  /* It is a link to the home page now, so the anchor defaults have to be
+     undone — the brand must keep looking like a wordmark, not like text
+     someone linked. */
+  text-decoration: none;
+  color: inherit;
+}
+
+.easyb-brand:hover .easyb-brand-name {
+  color: var(--easyb-accent-dark);
 }
 
 .easyb-brand-mark {
@@ -2384,6 +2393,36 @@
 
 .easyb-hero-select option {
   color: var(--easyb-text);
+}
+
+/* App-wide month selector, rendered in the header of each spending card.
+   Same pill shape as .easyb-hero-select, in surface colours instead of the
+   hero's light-on-dark. Scoped under .easyb-shell so it outranks the generic
+   `.easyb-shell select` rule above, which would otherwise win on specificity
+   and flatten the pill back into a square field. */
+.easyb-shell .easyb-period-select {
+  background: var(--easyb-surface-alt);
+  border: 1px solid var(--easyb-border);
+  color: var(--easyb-text);
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.easyb-shell .easyb-period-select:hover {
+  border-color: var(--easyb-accent);
+  color: var(--easyb-accent-dark);
+}
+
+/* Viewing anything other than the real current month is a deliberate,
+   temporary state — worth making visible so nobody reads a past month's
+   figures as today's. */
+.easyb-shell .easyb-period-select--past {
+  border-color: var(--easyb-violet);
+  color: var(--easyb-violet);
 }
 
 .easyb-insight-row {

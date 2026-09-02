@@ -80,6 +80,7 @@
     "profile": "Profil",
     "businessExport": "Export tranzacții",
     "businessProfile": "Profil companie",
+    "businessBulkTransfer": "Plăți în masă",
     "creditAndLoans": "Credit și împrumuturi",
     "fraudReview": "Verificare fraudă",
     "auditLog": "Jurnal de audit",
@@ -104,6 +105,7 @@
     "profile": { "title": "Profil", "subtitle": "Detalii cont" },
     "businessExport": { "title": "Export tranzacții", "subtitle": "Doar conturi business · export CSV/XLSX/PDF/MT940" },
     "businessProfile": { "title": "Profil companie", "subtitle": "Doar conturi business · gestionează companiile tale" },
+    "businessBulkTransfer": { "title": "Plăți în masă", "subtitle": "Doar conturi business · plătește mai mulți beneficiari deodată" },
     "admin": { "title": "Panou admin", "subtitle": "Prezentare generală operațiuni" },
     "adminCredit": { "title": "Credit și împrumuturi", "subtitle": "Cereri, documente și verificare scor de credit" },
     "adminFraud": { "title": "Verificare fraudă", "subtitle": "Motor determinist · decizie umană" },
@@ -211,6 +213,8 @@
     "newTransfer": "Transfer nou",
     "convert": "Convertește",
     "exchangeFx": "Schimb valutar",
+    "bulkTransfer": "Plăți în masă",
+    "payManyAtOnce": "Plătește mai mulți deodată",
     "review": "Verifică",
     "allTransactions": "Toate tranzacțiile",
     "ask": "Întreabă",
@@ -235,6 +239,12 @@
     "creditScore": "Scor de credit",
     "outOf850": "/ 850",
     "viewDetails": "Vezi detalii",
+    "cashFlow": "Flux de numerar",
+    "moneyIn": "Bani intrați",
+    "moneyOut": "Bani ieșiți",
+    "netCashFlow": "Flux net",
+    "upcomingPayments": "Plăți viitoare",
+    "noUpcomingPayments": "Nicio plată programată viitoare.",
     "needsYourAttention": "Necesită atenția ta",
     "onHoldPendingVerification": "{{description}} · {{amount}} {{currency}} este în așteptare pentru verificare.",
     "nothingNeedsAttention": "Nimic nu necesită atenția ta momentan."
@@ -407,6 +417,31 @@
     "previousHistoryPage": "Pagina anterioară din istoricul exporturilor",
     "nextHistoryPage": "Pagina următoare din istoricul exporturilor",
     "goToHistoryPage": "Mergi la pagina {{page}} din istoricul exporturilor"
+  },
+  "businessBulkTransfer": {
+    "onlyForBusiness": "Plățile în masă sunt disponibile doar pentru conturi business.",
+    "title": "Plăți în masă",
+    "subtitle": "Plătește mai mulți beneficiari deodată, dintr-un singur cont — ex. salarii sau un lot de facturi către furnizori.",
+    "sourceWallet": "Plătește din",
+    "pasteLabel": "Lipește o listă (câte una pe rând)",
+    "pastePlaceholder": "Ana Ionescu, RO49AAAA1B31007593840001, 1500, Salariu august",
+    "applyPaste": "Completează rândurile din lista lipită",
+    "rowsCount_one": "{{count}} rând",
+    "rowsCount_few": "{{count}} rânduri",
+    "rowsCount_other": "{{count}} de rânduri",
+    "beneficiaryName": "Beneficiar",
+    "iban": "IBAN",
+    "amount": "Sumă",
+    "description": "Descriere",
+    "removeRow": "Șterge",
+    "addRow": "Adaugă rând",
+    "saveBeneficiaries": "Salvează acești beneficiari",
+    "totalAmount": "Total: {{amount}} {{currency}}",
+    "submit": "Trimite transferurile",
+    "submitting": "Se trimite...",
+    "submitFailed": "Lotul nu a putut fi trimis",
+    "resultsTitle": "{{succeeded}} reușite, {{failed}} eșuate",
+    "failed": "Eșuat"
   },
   "businessProfile": {
     "onlyForBusiness": "Profilul companiei este disponibil doar pentru conturi business.",
@@ -798,7 +833,7 @@
   },
   "analytics": {
     "period": {
-      "1m": "Luna aceasta",
+      "1m": "De la 1 ale lunii",
       "3m": "3 luni",
       "6m": "6 luni",
       "1y": "1 an"
@@ -888,7 +923,10 @@
     "setSavingsGoalDescription": "Creează un obiectiv și urmărește-ți progresul automat.",
     "couldNotLoad": "Analiza ta nu a putut fi încărcată.",
     "tryAgain": "Încearcă din nou",
-    "vsAgo": "față de acum {{period}}"
+    "vsAgo": "față de acum {{period}}",
+    "vsMonthStart": "față de 1 ale lunii",
+    "recommendationsCurrentOnly": "Acestea acoperă mereu perioada curentă, nu luna pe care o vezi.",
+    "backToCurrentMonth": "Înapoi la {{month}}"
   },
   "rewards": {
     "oneTime": "O singură dată",
@@ -1252,6 +1290,13 @@
     "resume": "Reia",
     "cancel": "Anulează",
     "noScheduledPaymentsYet": "Nicio plată programată încă.",
+    "calendarTitle": "Calendar plăți viitoare",
+    "calendarPrevMonth": "Luna anterioară",
+    "calendarNextMonth": "Luna următoare",
+    "calendarMore_one": "+{{count}} încă",
+    "calendarMore_few": "+{{count}} încă",
+    "calendarMore_other": "+{{count}} încă",
+    "calendarEmptyMonth": "Nicio plată programată în această lună.",
     "transactionFolders": "Foldere de tranzacții",
     "splitted": "Împărțit",
     "splitAgain": "Împarte din nou",
@@ -1516,6 +1561,10 @@
     "good": "Bun",
     "fair": "Acceptabil",
     "risky": "Riscant"
+  },
+  "period": {
+    "selectMonth": "Alege luna",
+    "viewingPast": "Vezi o lună trecută. Soldurile și estimările arată mereu ziua curentă."
   },
   "header": {
     "notifications": "Notificări",
