@@ -8,7 +8,6 @@ import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
 import type { BillSplit, Notification, Wallet } from "../types";
 import { LanguageToggle } from "./LanguageToggle";
-import { PeriodSelect } from "./PeriodSelect";
 import { ThemeToggle } from "./ThemeToggle";
 
 const PAGE_INFO: Record<string, { titleKey: string; subtitleKey: string }> = {
@@ -25,6 +24,10 @@ const PAGE_INFO: Record<string, { titleKey: string; subtitleKey: string }> = {
   "/profile": { titleKey: "pageInfo.profile.title", subtitleKey: "pageInfo.profile.subtitle" },
   "/business/export": { titleKey: "pageInfo.businessExport.title", subtitleKey: "pageInfo.businessExport.subtitle" },
   "/business/profile": { titleKey: "pageInfo.businessProfile.title", subtitleKey: "pageInfo.businessProfile.subtitle" },
+  "/business/bulk-transfer": {
+    titleKey: "pageInfo.businessBulkTransfer.title",
+    subtitleKey: "pageInfo.businessBulkTransfer.subtitle",
+  },
   "/admin": { titleKey: "pageInfo.admin.title", subtitleKey: "pageInfo.admin.subtitle" },
   "/admin/credit": { titleKey: "pageInfo.adminCredit.title", subtitleKey: "pageInfo.adminCredit.subtitle" },
   "/admin/fraud": { titleKey: "pageInfo.adminFraud.title", subtitleKey: "pageInfo.adminFraud.subtitle" },
@@ -197,7 +200,6 @@ export function Header() {
       <span className="header__title">{page ? t(page.titleKey) : t("common.appName")}</span>
       {page && <span className="header__subtitle">{t(page.subtitleKey)}</span>}
       <div className="header__meta">
-        <PeriodSelect />
         <LanguageToggle />
         <ThemeToggle />
         <button

@@ -47,17 +47,17 @@ ALL_CLEAR_TTL = timedelta(hours=1)
 
 _ALL_CLEAR_MESSAGES = {
     "en": [
-        "Nothing unusual in your spending this week — you're doing great! 🎉",
+        "Nothing unusual in your spending lately — you're doing great! 🎉",
         "All quiet on the spending front — nothing to flag right now.",
         "No red flags here — your spending looks steady and on track.",
-        "Smooth sailing this week — nothing stood out in your spending.",
+        "Smooth sailing lately — nothing stood out in your spending.",
         "Nothing to report — your spending's been nice and boring (the good kind) 👍",
     ],
     "ro": [
-        "Nimic ieșit din comun la cheltuieli săptămâna asta — te descurci grozav! 🎉",
+        "Nimic ieșit din comun la cheltuieli în ultima vreme — te descurci grozav! 🎉",
         "Liniște totală pe front financiar — nimic de semnalat acum.",
         "Niciun semnal de alarmă — cheltuielile tale arată stabile și pe drumul cel bun.",
-        "Săptămână liniștită — nimic nu a ieșit în evidență la cheltuieli.",
+        "Liniște în ultima vreme — nimic nu a ieșit în evidență la cheltuieli.",
         "Nimic de raportat — cheltuielile tale au fost plăcut de liniștite 👍",
     ],
 }
@@ -78,18 +78,22 @@ def _build_system_prompt(locale: str) -> str:
             "never invent, recalculate, or round a number yourself. Do not repeat every "
             "figure verbatim — summarize naturally, but ALWAYS state the currency when "
             "citing a percentage-of-total figure (e.g. 'accounts for 53% of your EUR "
-            "spending this month') — this user has spending in more than one currency, and "
+            "spending') — this user has spending in more than one currency, and "
             "every figure below is scoped to one currency only, never blended across "
-            "currencies.\n\n"
+            "currencies. The figures below are rolling windows (the last 7 days, and the "
+            "last 30 days), NOT a Monday-to-Sunday week or a calendar month — never say "
+            "'this week', 'last week', 'this month', or any calendar-period word; say "
+            "'the last 7 days' / 'lately' / 'over the last month' (as a duration, not a "
+            "calendar month) instead.\n\n"
             "Examples (tone reference only — never reuse these numbers):\n\n"
             "Stiff (AVOID): \"Your Entertainment category spending has increased by 42% "
             "compared to the previous week, exceeding the recommended threshold.\"\n"
-            "Buddy (WRITE LIKE THIS): \"Whoa, Entertainment had a big week 🎬 — up 42% from "
-            "last week. Worth reining it in a little before the weekend?\"\n\n"
+            "Buddy (WRITE LIKE THIS): \"Whoa, Entertainment's had a big stretch 🎬 — up 42% "
+            "over the last 7 days. Worth reining it in a little?\"\n\n"
             "Stiff (AVOID): \"This category represents 53% of your total monthly "
             "expenditure in EUR.\"\n"
             "Buddy (WRITE LIKE THIS): \"Heads up — dining out is eating over half your EUR "
-            "budget this month (53%!). No judgment, just flagging it 😅\"\n\n"
+            "spending lately (53%!). No judgment, just flagging it 😅\"\n\n"
             "Output only the message itself, no preamble."
         ),
         "ro": (
@@ -108,19 +112,24 @@ def _build_system_prompt(locale: str) -> str:
             "mai jos; nu inventa, nu recalcula și nu rotunji nicio cifră. Nu repeta fiecare "
             "cifră mot-a-mot — rezumă natural, dar menționează ÎNTOTDEAUNA moneda când "
             "citezi un procent din total (ex. \"reprezintă 53% din cheltuielile tale în "
-            "EUR luna asta\") — acest utilizator are cheltuieli în mai multe monede, iar "
+            "EUR\") — acest utilizator are cheltuieli în mai multe monede, iar "
             "fiecare cifră de mai jos e limitată la o singură monedă, niciodată "
-            "combinată.\n\n"
+            "combinată. Cifrele de mai jos sunt ferestre mobile (ultimele 7 zile, respectiv "
+            "ultimele 30 de zile), NU o săptămână luni-duminică sau o lună calendaristică — "
+            "nu spune niciodată \"săptămâna asta\", \"săptămâna trecută\", \"luna asta\" sau "
+            "orice cuvânt care sugerează o perioadă calendaristică fixă; spune \"în ultimele "
+            "7 zile\" / \"în ultima vreme\" / \"în ultima lună\" (ca durată, nu ca lună "
+            "calendaristică) în schimb.\n\n"
             "Exemple (doar pentru ton — nu refolosi aceste cifre):\n\n"
             "Rigid (EVITĂ): \"Cheltuielile dumneavoastră la categoria Divertisment au "
             "crescut cu 42% față de săptămâna precedentă, depășind pragul recomandat.\"\n"
-            "Prietenos (SCRIE AȘA): \"Uau, Divertisment a avut o săptămână pe cinste 🎬 — cu "
-            "42% mai mult ca săptămâna trecută. Poate o mai lași mai domol până la "
-            "weekend?\"\n\n"
+            "Prietenos (SCRIE AȘA): \"Uau, Divertisment a avut o perioadă pe cinste 🎬 — cu "
+            "42% mai mult în ultimele 7 zile. Poate o mai lași mai domol?\"\n\n"
             "Rigid (EVITĂ): \"Această categorie reprezintă 53% din cheltuielile "
             "dumneavoastră lunare totale în EUR.\"\n"
             "Prietenos (SCRIE AȘA): \"Ia uite — ieșitul în oraș îți mănâncă peste jumătate "
-            "din bugetul în EUR luna asta (53%!). Fără judecăți, doar să știi 😅\"\n\n"
+            "din cheltuielile tale în EUR în ultima vreme (53%!). Fără judecăți, doar să "
+            "știi 😅\"\n\n"
             "Răspunde doar cu mesajul propriu-zis, fără introducere."
         ),
     }
@@ -139,19 +148,19 @@ def _format_flag_summary(flag: CategorySpendingFlag) -> str:
     week = flag.week_over_week
     if week is not None and week.change_percent is not None:
         lines.append(
-            f"This week so far: {week.current_amount} {flag.currency} vs last week: "
+            f"Last 7 days: {week.current_amount} {flag.currency} vs the 7 days before that: "
             f"{week.comparison_amount} {flag.currency} ({week.change_percent:.0f}% change)"
         )
     month = flag.month_vs_three_month_average
     if month is not None and month.change_percent is not None:
         lines.append(
-            f"This month so far: {month.current_amount} {flag.currency} vs this category's "
-            f"average over the prior 3 months: {month.comparison_amount} {flag.currency} "
+            f"Last 30 days: {month.current_amount} {flag.currency} vs this category's "
+            f"average over the 90 days before that: {month.comparison_amount} {flag.currency} "
             f"({month.change_percent:.0f}% change)"
         )
     if flag.share_of_total_percent is not None:
         lines.append(
-            f"This category is {flag.share_of_total_percent}% of this month's total {flag.currency} spending "
+            f"This category is {flag.share_of_total_percent}% of the last 30 days' total {flag.currency} spending "
             f"(spending in other currencies is tracked separately and is not part of this percentage)."
         )
     return "\n".join(lines)

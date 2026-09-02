@@ -200,6 +200,13 @@ class AnalyticsService:
         """
         now = datetime.now(timezone.utc)
 
+        # Rolling windows rather than calendar boundaries. A calendar week
+        # (Monday-to-now) or calendar month (1st-to-now) compares a partial
+        # period against a complete one, so identical spending reads as a
+        # collapse right after the boundary rolls over and only reaches
+        # parity by the end of the period — the flag would depend on which
+        # day the user happened to open the app. Every window here is a
+        # fixed length, so each comparison is like-for-like.
         recent_start = now - timedelta(days=7)
         prior_start = now - timedelta(days=14)
 

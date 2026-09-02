@@ -10,10 +10,12 @@ import {
 } from "recharts";
 
 import { apiRequest, ApiError } from "../api/apiClient";
+import { PeriodSelect } from "../components/PeriodSelect";
 import { colorForType } from "../features/analytics/formatters";
 import { generateAnalyticsInsights, type AnalyticsInsight } from "../features/analytics/insights";
 import { useAuth } from "../hooks/useAuth";
 import { usePeriod } from "../hooks/usePeriod";
+import { formatPeriodMonth } from "../store/PeriodContext";
 import type {
   AIInsight,
   BalanceHistoryResponse,
@@ -434,8 +436,10 @@ function SavingsMoneyModal({
 }
 
 export function AnalyticsPage() {
-  const { t } = useTranslation();
-  const { query: periodQuery } = usePeriod();
+  const { t, i18n } = useTranslation();
+  const { query: periodQuery, period, choices, setPeriod, isCurrentMonth } = usePeriod();
+  // choices is newest-first, so the head is always the real current month.
+  const currentMonth = choices[0];
   const { accessToken, user } = useAuth();
   const isBusiness = user?.user_type === "BUSINESS";
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
@@ -559,7 +563,17 @@ export function AnalyticsPage() {
     color: colorForType(item.category),
   }));
 
-  const insights = generateAnalyticsInsights({ monthlyTrend, spendingItems, budgets, forecast }, t);
+  const insights = generateAnalyticsInsights(
+    {
+      monthlyTrend,
+      spendingItems,
+      budgets,
+      forecast,
+      isCurrentMonth,
+      periodLabel: formatPeriodMonth(period, i18n.language),
+    },
+    t,
+  );
 
   const netWorthChangePercent = (() => {
     const history = netWorthHistory?.history ?? [];
@@ -663,7 +677,12 @@ export function AnalyticsPage() {
             </div>
             {netWorthChangePercent !== null && (
               <div className="easyb-hero-sub" style={{ color: netWorthChangePercent >= 0 ? "#7ee3ab" : "#ff9b9b" }}>
-                {netWorthChangePercent >= 0 ? "↑" : "↓"} {Math.abs(netWorthChangePercent).toFixed(1)}% {t("analytics.vsAgo", { period: t(`analytics.period.${netWorthPeriod}`).toLowerCase() })}
+                {netWorthChangePercent >= 0 ? "↑" : "↓"} {Math.abs(netWorthChangePercent).toFixed(1)}%{" "}
+                {/* "1m" is month-to-date, not a rolling window like the others,
+                    so "vs ... ago" does not apply to it grammatically. */}
+                {netWorthPeriod === "1m"
+                  ? t("analytics.vsMonthStart")
+                  : t("analytics.vsAgo", { period: t(`analytics.period.${netWorthPeriod}`).toLowerCase() })}
               </div>
             )}
           </div>
@@ -676,6 +695,7 @@ export function AnalyticsPage() {
               <div className="easyb-eyebrow">{t("analytics.thisPeriod")}</div>
               <h2>{t("analytics.spendingOverview")}</h2>
             </div>
+            <PeriodSelect />
           </div>
           {donutData.length > 0 ? (
             <div style={{ display: "flex", alignItems: "center", gap: 40, flexWrap: "wrap" }}>
@@ -751,6 +771,7 @@ export function AnalyticsPage() {
                 <div className="easyb-eyebrow">{t("analytics.thisPeriodBusiness")}</div>
                 <h2>{t("analytics.topVendors")}</h2>
               </div>
+              <PeriodSelect />
             </div>
             {topCounterparties && topCounterparties.items.length > 0 ? (
               <div className="easyb-legend">
@@ -1003,18 +1024,39 @@ export function AnalyticsPage() {
               <Sparkles size={14} strokeWidth={2.2} />
               {t("analytics.spendingRecommendations")}
             </span>
-            <button
-              type="button"
-              className="button--ghost card-panel__icon-action"
-              onClick={refreshInsights}
-              disabled={refreshingInsights || aiInsights === null}
-              aria-label={t("analytics.refreshRecommendations")}
-              style={{ marginLeft: "auto" }}
-            >
-              <RefreshCw size={14} strokeWidth={2.2} className={refreshingInsights ? "spin" : undefined} />
-            </button>
+            {isCurrentMonth && (
+              <button
+                type="button"
+                className="button--ghost card-panel__icon-action"
+                onClick={refreshInsights}
+                disabled={refreshingInsights || aiInsights === null}
+                aria-label={t("analytics.refreshRecommendations")}
+                style={{ marginLeft: "auto" }}
+              >
+                <RefreshCw size={14} strokeWidth={2.2} className={refreshingInsights ? "spin" : undefined} />
+              </button>
+            )}
           </div>
-          {aiInsights === null ? (
+          {/* /analytics/insights takes no year/month: every rule behind it is
+              scored against the real today, and its cache is keyed per user
+              rather than per month. Rather than narrate current-period advice
+              beside a past month's figures, the card says so and offers the
+              way back. */}
+          {!isCurrentMonth ? (
+            <>
+              <p className="easyb-tx-meta">{t("analytics.recommendationsCurrentOnly")}</p>
+              <button
+                type="button"
+                className="easyb-link-btn"
+                style={{ fontSize: 12, marginTop: 4 }}
+                onClick={() => setPeriod(currentMonth.value)}
+              >
+                {t("analytics.backToCurrentMonth", {
+                  month: formatPeriodMonth(currentMonth, i18n.language),
+                })}
+              </button>
+            </>
+          ) : aiInsights === null ? (
             <p className="easyb-tx-meta">{t("analytics.checkingSpending")}</p>
           ) : aiInsights.length > 0 ? (
             aiInsights.map((insight) => (

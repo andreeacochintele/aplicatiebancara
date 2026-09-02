@@ -228,16 +228,16 @@ def test_spending_recommendations_flags_week_over_week_increase(db_session, seed
 
     user, wallet = seeded_user_with_wallet
     now = datetime.now(timezone.utc)
-    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-    last_week_start = week_start - timedelta(days=7)
     COMPLETED = TransactionStatus.COMPLETED
 
     cinema = Merchant(name="Cinema City", category="Entertainment", verified=True)
     db_session.add(cinema)
     db_session.flush()
 
-    # Last week: 100. This week: 200 (+100%, well over the 20% threshold).
-    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", COMPLETED, last_week_start + timedelta(days=1), merchant_id=cinema.id)
+    # Previous 7-day window: 100. Last 7 days: 200 (+100%, well over the 20%
+    # threshold). Offsets are relative to now rather than to a Monday, so the
+    # fixture lands in the same window whichever day the suite runs.
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", COMPLETED, now - timedelta(days=10), merchant_id=cinema.id)
     _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "200.00", COMPLETED, now, merchant_id=cinema.id)
 
     flags = AnalyticsService(db_session).spending_recommendations(user.id)
@@ -255,8 +255,6 @@ def test_spending_recommendations_does_not_flag_a_small_increase(db_session, see
 
     user, wallet = seeded_user_with_wallet
     now = datetime.now(timezone.utc)
-    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-    last_week_start = week_start - timedelta(days=7)
     COMPLETED = TransactionStatus.COMPLETED
 
     zara = Merchant(name="Zara", category="Retail", verified=True)
@@ -264,19 +262,25 @@ def test_spending_recommendations_does_not_flag_a_small_increase(db_session, see
     db_session.add_all([zara, kfc])
     db_session.flush()
 
-    # Last week: 100. This week: 105 (+5%, under the 20% threshold). A
-    # second, larger category keeps Retail's month share under the
-    # concentration threshold too, so only WEEK_OVER_WEEK_INCREASE is
-    # actually being tested here. A steady 3-month Retail history is also
-    # seeded so MONTH_VS_AVERAGE_INCREASE can't fire as a side effect of
-    # "last week" occasionally falling in the previous calendar month
-    # (whenever this week's Monday lands in the first few days of a month).
-    for months_back in (1, 2, 3):
+    # Previous 7-day window: 100. Last 7 days: 105 (+5%, under the 20%
+    # threshold). This test is about WEEK_OVER_WEEK_INCREASE alone, so the
+    # other two rules have to be kept quiet no matter when the suite runs:
+    #
+    # - a second, larger category holds Retail's share of the trailing 30
+    #   days under the 40% concentration threshold;
+    # - three fixed-offset points across the trailing 90-120 day window give
+    #   MONTH_VS_AVERAGE_INCREASE a baseline the trailing-30-day figure
+    #   cannot exceed. Calendar-anchored dates (e.g. the 1st of N months
+    #   ago) aren't used here on purpose — they can drift outside that
+    #   rolling window depending on which day of the month the suite runs,
+    #   the same class of flakiness the rolling-window redesign itself
+    #   exists to avoid (see spending_recommendations()'s docstring).
+    for days_back in (45, 75, 105):
         _add_transaction(
-            db_session, user, wallet, TransactionType.CARD_PAYMENT, "200.00", COMPLETED,
-            _months_ago(datetime(now.year, now.month, 1, tzinfo=timezone.utc), months_back), merchant_id=zara.id,
+            db_session, user, wallet, TransactionType.CARD_PAYMENT, "300.00", COMPLETED,
+            now - timedelta(days=days_back), merchant_id=zara.id,
         )
-    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", COMPLETED, last_week_start + timedelta(days=1), merchant_id=zara.id)
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", COMPLETED, now - timedelta(days=10), merchant_id=zara.id)
     _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "105.00", COMPLETED, now, merchant_id=zara.id)
     _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "500.00", COMPLETED, now, merchant_id=kfc.id)
 
@@ -314,18 +318,22 @@ def test_spending_recommendations_flags_month_vs_three_month_average_increase(db
 
     user, wallet = seeded_user_with_wallet
     now = datetime.now(timezone.utc)
-    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
     COMPLETED = TransactionStatus.COMPLETED
 
     booking = Merchant(name="Booking.com", category="Travel", verified=True)
     db_session.add(booking)
     db_session.flush()
 
-    # Prior 3 months: 30 total each (avg 10/month). This month so far: 100 (+900%).
-    for months_back in (1, 2, 3):
+    # Prior 90-120 days: 30 total (avg 10 per rolling "month"). Trailing 30
+    # days: 100 (+900%). Fixed day-offsets, not calendar months back — a
+    # calendar-anchored date (e.g. the 1st of N months ago) can drift outside
+    # the [now-120, now-30) window depending on which day of the month the
+    # suite runs, the same flakiness class spending_recommendations()'s
+    # rolling-window redesign exists to avoid.
+    for days_back in (45, 75, 105):
         _add_transaction(
             db_session, user, wallet, TransactionType.CARD_PAYMENT, "10.00", COMPLETED,
-            _months_ago(month_start, months_back), merchant_id=booking.id,
+            now - timedelta(days=days_back), merchant_id=booking.id,
         )
     _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", COMPLETED, now, merchant_id=booking.id)
 
@@ -342,19 +350,17 @@ def test_spending_recommendations_scopes_comparisons_per_currency(db_session, se
 
     user, wallet = seeded_user_with_wallet
     now = datetime.now(timezone.utc)
-    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-    last_week_start = week_start - timedelta(days=7)
     COMPLETED = TransactionStatus.COMPLETED
 
     emirates = Merchant(name="Emirates", category="Travel", verified=True)
     db_session.add(emirates)
     db_session.flush()
 
-    # Last week: 1000 RON. This week: 10 USD - a currency change, not a
-    # same-currency spike, must never be compared against the RON figure
+    # Previous 7-day window: 1000 RON. Last 7 days: 10 USD - a currency change,
+    # not a same-currency spike, must never be compared against the RON figure
     # for the week-over-week check (the USD entry is still its own
     # 100%-of-month concentration case, which is correct and separate).
-    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "1000.00", COMPLETED, last_week_start + timedelta(days=1), merchant_id=emirates.id, currency="RON")
+    _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "1000.00", COMPLETED, now - timedelta(days=10), merchant_id=emirates.id, currency="RON")
     _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "10.00", COMPLETED, now, merchant_id=emirates.id, currency="USD")
 
     flags = AnalyticsService(db_session).spending_recommendations(user.id)

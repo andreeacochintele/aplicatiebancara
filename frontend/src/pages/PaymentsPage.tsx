@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 
@@ -1677,6 +1677,8 @@ export function PaymentsPage() {
               )}
             </div>
           </section>
+
+          <ScheduledPaymentsCalendar payments={scheduledPayments} />
         </div>
       ) : activeTab === "folders" ? (
         <div className="folder-view-grid">
@@ -1909,6 +1911,158 @@ export function PaymentsPage() {
           </form>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function daysInMonth(year: number, monthIndex: number): number {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/** True when `date` falls on a same-day-of-month cadence `intervalMonths`
+ * apart from `start` — clamped to the shorter month's length (e.g. a 31st
+ * start still lands on Feb 28/29). */
+function matchesMonthlyInterval(date: Date, start: Date, intervalMonths: number): boolean {
+  const monthDiff = (date.getFullYear() - start.getFullYear()) * 12 + (date.getMonth() - start.getMonth());
+  if (monthDiff < 0 || monthDiff % intervalMonths !== 0) return false;
+  const expectedDay = Math.min(start.getDate(), daysInMonth(date.getFullYear(), date.getMonth()));
+  return date.getDate() === expectedDay;
+}
+
+function occursOnDate(payment: ScheduledPayment, date: Date): boolean {
+  if (payment.status !== "ACTIVE") return false;
+  const start = new Date(`${payment.next_run_on}T00:00:00`);
+  if (date < start) return false;
+  switch (payment.frequency) {
+    case "ONCE":
+      return sameDay(date, start);
+    case "WEEKLY": {
+      const diffDays = Math.round((date.getTime() - start.getTime()) / 86_400_000);
+      return diffDays % 7 === 0;
+    }
+    case "MONTHLY":
+      return matchesMonthlyInterval(date, start, 1);
+    case "QUARTERLY":
+      return matchesMonthlyInterval(date, start, 3);
+    case "YEARLY":
+      return matchesMonthlyInterval(date, start, 12);
+    default:
+      return false;
+  }
+}
+
+/** Upcoming-payments calendar for the "scheduled" tab. Projects each ACTIVE
+ * scheduled payment's future occurrences from its frequency — the backend
+ * only stores next_run_on (the single next occurrence), so recurring dates
+ * beyond that are computed here, read-only, for display purposes only. */
+function ScheduledPaymentsCalendar({ payments }: { payments: ScheduledPayment[] }) {
+  const { t, i18n } = useTranslation();
+  const [viewDate, setViewDate] = useState(() => new Date());
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const today = new Date();
+
+  const occurrencesByDay = useMemo(() => {
+    const map = new Map<number, ScheduledPayment[]>();
+    const total = daysInMonth(year, month);
+    for (let day = 1; day <= total; day++) {
+      const date = new Date(year, month, day);
+      const matches = payments.filter((payment) => occursOnDate(payment, date));
+      if (matches.length > 0) map.set(day, matches);
+    }
+    return map;
+  }, [payments, year, month]);
+
+  const totalDays = daysInMonth(year, month);
+  const leadingBlanks = (new Date(year, month, 1).getDay() + 6) % 7;
+  const cells: (number | null)[] = [
+    ...Array.from({ length: leadingBlanks }, () => null),
+    ...Array.from({ length: totalDays }, (_, index) => index + 1),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const weekdayFormatter = new Intl.DateTimeFormat(i18n.language, { weekday: "short" });
+  // 2024-01-01 was a Monday — used purely as a Monday-first reference date.
+  const weekdayLabels = Array.from({ length: 7 }, (_, index) =>
+    weekdayFormatter.format(new Date(2024, 0, 1 + index)),
+  );
+  const isViewingCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+
+  return (
+    <section className="tile scheduled-calendar-card">
+      <div className="tile__header">
+        <span className="eyebrow">{t("payments.calendarTitle")}</span>
+        <div className="scheduled-calendar-nav">
+          <button
+            aria-label={t("payments.calendarPrevMonth")}
+            className="button--ghost"
+            onClick={() => setViewDate(new Date(year, month - 1, 1))}
+            type="button"
+          >
+            ‹
+          </button>
+          <strong>{viewDate.toLocaleDateString(i18n.language, { month: "long", year: "numeric" })}</strong>
+          <button
+            aria-label={t("payments.calendarNextMonth")}
+            className="button--ghost"
+            onClick={() => setViewDate(new Date(year, month + 1, 1))}
+            type="button"
+          >
+            ›
+          </button>
+        </div>
+      </div>
+
+      <div className="scheduled-calendar-grid">
+        {weekdayLabels.map((label, index) => (
+          <div className="scheduled-calendar-weekday" key={`${label}-${index}`}>
+            {label}
+          </div>
+        ))}
+        {cells.map((day, index) => {
+          const matches = day ? occurrencesByDay.get(day) ?? [] : [];
+          const isToday = isViewingCurrentMonth && day === today.getDate();
+          const classes = [
+            "scheduled-calendar-day",
+            day ? "" : "scheduled-calendar-day--empty",
+            isToday ? "scheduled-calendar-day--today" : "",
+            matches.length > 0 ? "scheduled-calendar-day--has-payments" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          return (
+            <div className={classes} key={index}>
+              {day && (
+                <>
+                  <span className="scheduled-calendar-day__number">{day}</span>
+                  <div className="scheduled-calendar-day__items">
+                    {matches.slice(0, 2).map((payment) => (
+                      <span
+                        className="scheduled-calendar-day__item"
+                        key={payment.id}
+                        title={`${payment.beneficiary_name} · ${payment.amount} ${payment.currency}`}
+                      >
+                        {payment.beneficiary_name}
+                      </span>
+                    ))}
+                    {matches.length > 2 && (
+                      <span className="scheduled-calendar-day__more">
+                        {t("payments.calendarMore", { count: matches.length - 2 })}
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {occurrencesByDay.size === 0 && <div className="empty-state">{t("payments.calendarEmptyMonth")}</div>}
     </section>
   );
 }
