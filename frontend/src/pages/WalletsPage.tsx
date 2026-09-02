@@ -9,7 +9,7 @@ import { useAuth } from "../hooks/useAuth";
 import type { FXMarketRate, FXQuote, FXRateHistory, Transaction, Wallet } from "../types";
 import { formatCardNumberInput, formatExpiryInput, formatIban, parseExpiryInput, walletLabel } from "../utils";
 
-const RATE_ACCENT = "#5b5fef"; // same violet as --easyb-accent, kept as one deliberate hue for the trend line
+const RATE_ACCENT = "var(--easyb-rate-accent, #5b5fef)";
 // matches backend/app/fx/service.py's _RATES_TO_RON — keep both in sync
 const SUPPORTED_CURRENCIES = [
   "RON", "EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD", "PLN", "TRY",
@@ -22,7 +22,9 @@ function hueFromString(value: string): number {
 }
 
 function colorForCurrency(currency: string): string {
-  return `hsl(${hueFromString(currency)} 65% 55%)`;
+  const hue = hueFromString(currency);
+  const index = (hue % 5) + 1;
+  return `var(--easyb-currency-color-${index}, hsl(${hue} 65% 55%))`;
 }
 
 function formatTransactionDate(value: string): string {

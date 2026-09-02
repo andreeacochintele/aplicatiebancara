@@ -441,7 +441,11 @@ export function RewardsPage() {
           {rewards ? rewards.points_balance : "—"} <span style={{ fontSize: "1.1rem", fontWeight: 600 }}>{t("rewards.pts")}</span>
         </div>
         <div style={{ marginTop: "1rem", display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-          <button type="button" onClick={() => scrollToId("rewards-pay")} style={{ background: "#fff", color: "#4548c9", border: "none" }}>
+          <button
+            type="button"
+            onClick={() => scrollToId("rewards-pay")}
+            style={{ background: "var(--easyb-inverse-button-bg, #fff)", color: "var(--easyb-inverse-button-text, #4548c9)", border: "none" }}
+          >
             {t("rewards.earnPoints")}
           </button>
           <button
@@ -847,7 +851,7 @@ export function RewardsPage() {
                 <button
                   type="button"
                   onClick={copyInviteLink}
-                  style={{ background: "#fff", color: "#4548c9", border: "none" }}
+                  style={{ background: "var(--easyb-inverse-button-bg, #fff)", color: "var(--easyb-inverse-button-text, #4548c9)", border: "none" }}
                 >
                   {inviteCopyFeedback ? t("rewards.copied") : t("rewards.copyLink")}
                 </button>
@@ -858,7 +862,7 @@ export function RewardsPage() {
                 onClick={() => setIsInviteExpanded(true)}
                 disabled={!rewards?.referral_code}
                 aria-expanded={isInviteExpanded}
-                style={{ background: "#fff", color: "#4548c9", border: "none" }}
+                style={{ background: "var(--easyb-inverse-button-bg, #fff)", color: "var(--easyb-inverse-button-text, #4548c9)", border: "none" }}
               >
                 {t("rewards.inviteFriends")}
               </button>

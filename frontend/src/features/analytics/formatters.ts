@@ -36,5 +36,7 @@ export function hueFromString(value: string): number {
 }
 
 export function colorForType(type: string): string {
-  return `hsl(${hueFromString(type)} 62% 55%)`;
+  const hue = hueFromString(type);
+  const index = (hue % 5) + 1;
+  return `var(--easyb-type-color-${index}, hsl(${hue} 62% 55%))`;
 }

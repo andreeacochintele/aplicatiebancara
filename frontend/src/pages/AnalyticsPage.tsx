@@ -645,7 +645,7 @@ export function AnalyticsPage() {
               {netWorth ? `${netWorth.total_available_balance} ${netWorth.base_currency}` : "—"}
             </div>
             {netWorthChangePercent !== null && (
-              <div className="easyb-hero-sub" style={{ color: netWorthChangePercent >= 0 ? "#7ee3ab" : "#ff9b9b" }}>
+              <div className="easyb-hero-sub" style={{ color: netWorthChangePercent >= 0 ? "var(--easyb-green)" : "var(--easyb-red)" }}>
                 {netWorthChangePercent >= 0 ? "↑" : "↓"} {Math.abs(netWorthChangePercent).toFixed(1)}% {t("analytics.vsAgo", { period: t(`analytics.period.${netWorthPeriod}`).toLowerCase() })}
               </div>
             )}

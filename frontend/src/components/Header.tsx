@@ -7,6 +7,7 @@ import { ApiError, apiRequest } from "../api/apiClient";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
 import type { BillSplit, Notification, Wallet } from "../types";
+import { HiveModeToggle } from "./HiveModeToggle";
 import { LanguageToggle } from "./LanguageToggle";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -198,6 +199,7 @@ export function Header() {
       <div className="header__meta">
         <LanguageToggle />
         <ThemeToggle />
+        <HiveModeToggle />
         <button
           aria-label={t("header.notifications")}
           className="easyb-bell"

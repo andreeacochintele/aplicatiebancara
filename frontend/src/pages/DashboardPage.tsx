@@ -46,7 +46,9 @@ function hueFromString(value: string): number {
 }
 
 function colorForType(type: string): string {
-  return `hsl(${hueFromString(type)} 62% 55%)`;
+  const hue = hueFromString(type);
+  const index = (hue % 5) + 1;
+  return `var(--easyb-type-color-${index}, hsl(${hue} 62% 55%))`;
 }
 
 function formatAmount(transaction: Transaction, userWalletIds: Set<string>): { sign: string; text: string } {

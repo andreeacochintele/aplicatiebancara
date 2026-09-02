@@ -18,16 +18,16 @@ interface OperationCard {
 }
 
 const CREDIT_STATUS_COLORS: Record<CreditApplicationStatus, string> = {
-  DRAFT: "#94a3b8",
-  PENDING: "#f59e0b",
-  APPROVED: "#10b981",
-  REJECTED: "#ef4444",
+  DRAFT: "var(--easyb-status-draft, #94a3b8)",
+  PENDING: "var(--easyb-status-pending, #f59e0b)",
+  APPROVED: "var(--easyb-status-approved, #10b981)",
+  REJECTED: "var(--easyb-status-rejected, #ef4444)",
 };
 
 const FRAUD_STATUS_COLORS: Record<FraudCaseStatus, string> = {
-  PENDING_REVIEW: "#f59e0b",
-  APPROVED: "#10b981",
-  REJECTED: "#ef4444",
+  PENDING_REVIEW: "var(--easyb-status-pending, #f59e0b)",
+  APPROVED: "var(--easyb-status-approved, #10b981)",
+  REJECTED: "var(--easyb-status-rejected, #ef4444)",
 };
 
 function todayMinus(days: number): string {

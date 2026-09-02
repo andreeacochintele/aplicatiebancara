@@ -1195,7 +1195,7 @@ export function CardsPage() {
                   <div className={cardToneClass(card)}>
                     <div className="bank-card__top">
                       <div className="bank-card__identity">
-                        <span className="bank-card__brand">EASYB</span>
+                        <span className="bank-card__brand">EasyB Bank</span>
                         <span className="bank-card__product">
                           {card.tier ? `${formatCardTier(card.tier, t)} ${formatCardType(card.type, t)}` : t("cards.oneTime")}
                         </span>

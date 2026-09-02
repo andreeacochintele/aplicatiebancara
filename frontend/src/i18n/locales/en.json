@@ -35,6 +35,8 @@
     "pleaseSpecify": "{{label}} (please specify)",
     "switchToLight": "Switch to light mode",
     "switchToDark": "Switch to dark mode",
+    "enableHiveMode": "Enable Hive Mode",
+    "disableHiveMode": "Disable Hive Mode",
     "idleWarning": "Auto logout in {{seconds}}s — move your mouse to stay signed in",
     "status": {
       "CREATED": "Created",
