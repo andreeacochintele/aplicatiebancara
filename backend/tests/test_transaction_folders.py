@@ -297,3 +297,95 @@ def test_transaction_folder_accepts_cashback_transaction(client, db_session):
     )
 
     assert response.status_code == 200
+
+
+def test_transaction_cannot_be_in_two_folders_at_once(client, db_session):
+    """A payment in two folders is counted by both totals and can be split
+    from each independently, so settling one leaves the other still claiming
+    money that has already been accounted for."""
+    owner = _register(client, "folder-two-folders@example.com", "+40772333333")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    transaction = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        source_wallet_id=owner_wallet.id,
+        type=TransactionType.CARD_PAYMENT,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("40.00"),
+        currency="RON",
+        description="Only filed once",
+    )
+    db_session.add(transaction)
+    db_session.flush()
+    first = client.post(
+        "/api/v1/payments/transaction-folders",
+        headers=_auth_header(owner),
+        json={"name": "Groceries"},
+    ).json()
+    second = client.post(
+        "/api/v1/payments/transaction-folders",
+        headers=_auth_header(owner),
+        json={"name": "Reimbursable"},
+    ).json()
+
+    assert (
+        client.post(
+            f"/api/v1/payments/transaction-folders/{first['id']}/transactions",
+            headers=_auth_header(owner),
+            json={"transaction_id": str(transaction.id)},
+        ).status_code
+        == 200
+    )
+
+    blocked = client.post(
+        f"/api/v1/payments/transaction-folders/{second['id']}/transactions",
+        headers=_auth_header(owner),
+        json={"transaction_id": str(transaction.id)},
+    )
+
+    assert blocked.status_code == 409
+    assert "another folder" in blocked.json()["detail"]
+    assert client.get(
+        f"/api/v1/payments/transaction-folders/{second['id']}", headers=_auth_header(owner)
+    ).json()["items"] == []
+
+
+def test_a_transaction_can_be_refiled_after_being_removed(client, db_session):
+    """The limit is "one folder at a time", not "one folder ever"."""
+    owner = _register(client, "folder-refile@example.com", "+40772444444")
+    owner_wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("500.00"))
+    transaction = Transaction(
+        initiator_user_id=UUID(owner["user"]["id"]),
+        source_wallet_id=owner_wallet.id,
+        type=TransactionType.CARD_PAYMENT,
+        status=TransactionStatus.COMPLETED,
+        amount=Decimal("30.00"),
+        currency="RON",
+        description="Moved between folders",
+    )
+    db_session.add(transaction)
+    db_session.flush()
+    first = client.post(
+        "/api/v1/payments/transaction-folders", headers=_auth_header(owner), json={"name": "Wrong one"}
+    ).json()
+    second = client.post(
+        "/api/v1/payments/transaction-folders", headers=_auth_header(owner), json={"name": "Right one"}
+    ).json()
+
+    client.post(
+        f"/api/v1/payments/transaction-folders/{first['id']}/transactions",
+        headers=_auth_header(owner),
+        json={"transaction_id": str(transaction.id)},
+    )
+    client.delete(
+        f"/api/v1/payments/transaction-folders/{first['id']}/transactions/{transaction.id}",
+        headers=_auth_header(owner),
+    )
+
+    refiled = client.post(
+        f"/api/v1/payments/transaction-folders/{second['id']}/transactions",
+        headers=_auth_header(owner),
+        json={"transaction_id": str(transaction.id)},
+    )
+
+    assert refiled.status_code == 200
+    assert refiled.json()["items"][0]["transaction_id"] == str(transaction.id)

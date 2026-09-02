@@ -6,8 +6,10 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthLayout } from "./layouts/AuthLayout";
 import { MainLayout } from "./layouts/MainLayout";
 import { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
+import { AuditLogPage } from "./pages/admin/AuditLogPage";
 import { CreditReviewPage } from "./pages/admin/CreditReviewPage";
 import { FraudReviewPage } from "./pages/admin/FraudReviewPage";
+import { ReconciliationPage } from "./pages/admin/ReconciliationPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { AssistantPage } from "./pages/AssistantPage";
 import { BusinessExportPage } from "./pages/BusinessExportPage";
@@ -95,6 +97,22 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute requireRole="ADMIN">
             <FraudReviewPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/admin/audit-log",
+        element: (
+          <ProtectedRoute requireRole="ADMIN">
+            <AuditLogPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/admin/reconciliation",
+        element: (
+          <ProtectedRoute requireRole="ADMIN">
+            <ReconciliationPage />
           </ProtectedRoute>
         ),
       },

@@ -3,11 +3,11 @@ from decimal import Decimal
 
 import pytest
 
-from app.cards.models import CardStatus, CardTier, CardType
+from app.cards.models import CardFreezeReason, CardStatus, CardTier, CardType
 from app.cards.repository import CardRepository
 from app.cards.schemas import CardCreate, CardPaymentPreferencesUpdate, CardPublic
 from app.cards.service import CardService
-from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.exceptions import AuthorizationError, ConflictError, NotFoundError, ValidationError
 from app.users.schemas import UserCreate
 from app.users.service import UserService
 from app.wallets.models import WalletStatus
@@ -415,9 +415,68 @@ def test_freeze_and_unfreeze_card(db_session, user_with_wallet):
 
     frozen = service.freeze_card(user.id, card.id)
     assert frozen.status == CardStatus.FROZEN
+    assert frozen.freeze_reason == CardFreezeReason.USER_REQUESTED
+    assert frozen.frozen_at is not None
 
     active = service.unfreeze_card(user.id, card.id)
     assert active.status == CardStatus.ACTIVE
+    assert active.freeze_reason is None
+    assert active.frozen_at is None
+
+
+# ---- fraud-hold freeze: system-triggered (FraudService), only an admin can
+# clear it — the cardholder's own unfreeze_card() must refuse outright ----
+
+
+def test_unfreeze_card_refuses_when_frozen_for_fraud_hold(db_session, user_with_wallet):
+    user, wallet = user_with_wallet
+    service = CardService(db_session)
+    card = service.create_card(user.id, CardCreate(default_wallet_id=wallet.id))
+
+    service.freeze_for_fraud_hold(card.id)
+
+    with pytest.raises(AuthorizationError, match="contact support"):
+        service.unfreeze_card(user.id, card.id)
+
+    db_session.refresh(card)
+    assert card.status == CardStatus.FROZEN
+    assert card.freeze_reason == CardFreezeReason.FRAUD_HOLD
+
+
+def test_activate_card_after_fraud_hold_reactivates_and_records_admin(db_session, user_with_wallet):
+    user, wallet = user_with_wallet
+    admin = UserService(db_session).create_user(
+        UserCreate(email="card-fraud-admin@example.com", password="Sup3rSecret!", first_name="Admin", last_name="User")
+    )
+    service = CardService(db_session)
+    card = service.create_card(user.id, CardCreate(default_wallet_id=wallet.id))
+    service.freeze_for_fraud_hold(card.id)
+
+    reactivated = service.activate_card_after_fraud_hold(card.id, admin.id)
+
+    assert reactivated.status == CardStatus.ACTIVE
+    assert reactivated.freeze_reason is None
+    assert reactivated.frozen_at is None
+    assert reactivated.frozen_by_admin_id == admin.id
+
+
+def test_activate_card_after_fraud_hold_rejects_a_card_with_no_fraud_hold(db_session, user_with_wallet):
+    """Guards against a silent no-op: an ACTIVE card, or one the cardholder
+    froze themselves (USER_REQUESTED), has nothing for this admin action to
+    clear."""
+    user, wallet = user_with_wallet
+    admin_id = uuid.uuid4()
+    service = CardService(db_session)
+    active_card = service.create_card(user.id, CardCreate(default_wallet_id=wallet.id))
+
+    with pytest.raises(ConflictError):
+        service.activate_card_after_fraud_hold(active_card.id, admin_id)
+
+    other_wallet = WalletService(db_session).create_wallet(user.id, WalletCreate(currency="EUR"))
+    self_frozen_card = service.create_card(user.id, CardCreate(default_wallet_id=other_wallet.id))
+    service.freeze_card(user.id, self_frozen_card.id)
+    with pytest.raises(ConflictError):
+        service.activate_card_after_fraud_hold(self_frozen_card.id, admin_id)
 
 
 def test_user_cannot_modify_another_users_card(db_session, user_with_wallet):

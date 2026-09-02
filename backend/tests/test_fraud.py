@@ -5,11 +5,11 @@ from decimal import Decimal
 import pytest
 
 from app.auth.models import SessionStatus, UserDevice, UserSession
-from app.cards.models import CardStatus, CardType
+from app.cards.models import CardFreezeReason, CardStatus, CardType
 from app.cards.schemas import CardCreate
 from app.cards.service import CardService
 from app.core.enums import UserRole
-from app.core.exceptions import ConflictError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.fraud.models import FraudCase, FraudCaseStatus, FraudFlagCode
 from app.fraud.schemas import FraudRiskLevel
 from app.fraud.service import FraudService
@@ -17,7 +17,7 @@ from app.merchants.schemas import CashbackOfferCreate, MerchantCreate
 from app.merchants.service import MerchantService
 from app.rewards.service import RewardsService
 from app.transactions.models import Transaction, TransactionStatus, TransactionType
-from app.transactions.schemas import CardPaymentCreate
+from app.transactions.schemas import CardPaymentCreate, InternalTransferCreate
 from app.transactions.service import TransactionService
 from app.users.schemas import UserCreate
 from app.users.service import UserService
@@ -352,7 +352,7 @@ def test_reward_abuse_pattern_ignores_same_amount_payments_in_a_different_curren
 
 
 def test_create_card_payment_holds_funds_when_score_crosses_threshold(db_session, seeded_user):
-    transaction, wallet, _card, case = _create_blocked_payment(db_session, seeded_user)
+    transaction, wallet, card, case = _create_blocked_payment(db_session, seeded_user)
 
     assert transaction.status == TransactionStatus.PENDING_REVIEW
     assert transaction.fraud_score == Decimal("109.25")
@@ -366,6 +366,14 @@ def test_create_card_payment_holds_funds_when_score_crosses_threshold(db_session
     assert case.risk_score == Decimal("109.25")
     assert case.hold_amount == Decimal("500.00")
     assert {flag.code for flag in case.flags} == {FraudFlagCode.NEW_DEVICE, FraudFlagCode.HIGH_AMOUNT}
+
+    # Deterministic, not an LLM decision (CLAUDE.md §12/§13): the card used
+    # for the flagged payment is frozen in the same rule-engine step that
+    # creates the case, not decided or triggered by the Fraud Investigation
+    # Agent.
+    assert card.status == CardStatus.FROZEN
+    assert card.freeze_reason == CardFreezeReason.FRAUD_HOLD
+    assert card.frozen_at is not None
 
 
 def test_approve_debits_reserved_funds_completes_transaction_and_consumes_one_time_card(db_session, seeded_user):
@@ -453,6 +461,76 @@ def test_deciding_an_already_decided_case_raises_conflict(db_session, seeded_use
 
     with pytest.raises(ConflictError):
         service.reject(case, admin)
+
+
+# ---- activate_card(): reverses the automatic fraud-hold freeze, always a
+# separate manual admin action, gated on the flagged transaction having
+# already been decided (CLAUDE.md §13: admin decides, never automatic) ----
+
+
+def test_activate_card_requires_the_case_to_be_decided_first(db_session, seeded_user):
+    _transaction, _wallet, card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    service = FraudService(db_session)
+
+    with pytest.raises(ConflictError):
+        service.activate_card(case, admin)
+
+    db_session.refresh(card)
+    assert card.status == CardStatus.FROZEN
+    assert card.freeze_reason == CardFreezeReason.FRAUD_HOLD
+
+
+def test_activate_card_reactivates_the_card_once_the_case_is_decided(db_session, seeded_user):
+    _transaction, _wallet, card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    service = FraudService(db_session)
+    service.reject(case, admin)
+
+    reactivated = service.activate_card(case, admin)
+
+    assert reactivated.id == card.id
+    assert reactivated.status == CardStatus.ACTIVE
+    assert reactivated.freeze_reason is None
+    assert reactivated.frozen_by_admin_id == admin.id
+
+
+def test_activate_card_raises_when_no_frozen_card_is_linked_to_the_case(db_session, seeded_user):
+    """Avoids a silent no-op: once the card's already been reactivated,
+    calling activate_card again on the same case must fail loudly, not
+    quietly succeed a second time."""
+    _transaction, _wallet, _card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    service = FraudService(db_session)
+    service.reject(case, admin)
+    service.activate_card(case, admin)
+
+    with pytest.raises(NotFoundError):
+        service.activate_card(case, admin)
+
+
+def test_to_detail_exposes_the_frozen_card_and_fixed_safety_notice(db_session, seeded_user):
+    from app.fraud.service import CARD_ACTIVATION_SAFETY_NOTICE
+
+    _transaction, _wallet, card, case = _create_blocked_payment(db_session, seeded_user)
+    service = FraudService(db_session)
+
+    detail = service.to_detail(case)
+    assert detail.frozen_card is not None
+    assert detail.frozen_card.id == card.id
+    assert detail.frozen_card.masked_pan == card.masked_pan
+    # Fixed text, not model-generated (CLAUDE.md §14/ai/fraud/agent.py rules)
+    # — present even though no investigation has ever run for this case.
+    assert detail.card_hold_notice == CARD_ACTIVATION_SAFETY_NOTICE
+    assert detail.agent_analysis is None
+
+    admin = _admin(db_session)
+    service.reject(case, admin)
+    service.activate_card(case, admin)
+
+    reactivated_detail = service.to_detail(case)
+    assert reactivated_detail.frozen_card is None
+    assert reactivated_detail.card_hold_notice is None
 
 
 def test_list_pending_and_detail_expose_flags(db_session, seeded_user):
@@ -812,3 +890,385 @@ def test_get_case_endpoint_returns_cached_agent_analysis_without_rerunning_agent
     body = response.json()
     assert body["agent_analysis"]["risk_level"] == "LOW"
     assert body["agent_analysis"]["explanation"] == "Consistent with this user's prior activity."
+
+
+# ---- POST /fraud/cases/{id}/activate-card: admin-only, reverses the
+# automatic fraud-hold freeze, gated on the case already being decided ----
+
+
+def test_activate_card_endpoint_rejects_non_admin(client, db_session, seeded_user):
+    _transaction, _wallet, _card, case = _create_blocked_payment(db_session, seeded_user)
+
+    login = client.post("/api/v1/auth/login", json={"email": "fraud-user@example.com", "password": "Sup3rSecret!"})
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.post(
+        f"/api/v1/fraud/cases/{case.id}/activate-card", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 403
+
+
+def test_activate_card_endpoint_rejects_a_still_pending_case(client, db_session, seeded_user):
+    _transaction, _wallet, card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    admin.role = UserRole.ADMIN
+
+    login = client.post("/api/v1/auth/login", json={"email": "fraud-admin@example.com", "password": "Sup3rSecret!"})
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.post(
+        f"/api/v1/fraud/cases/{case.id}/activate-card", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 409
+    db_session.refresh(card)
+    assert card.status == CardStatus.FROZEN
+
+
+def test_activate_card_endpoint_reactivates_card_and_writes_audit_log(client, db_session, seeded_user):
+    _transaction, _wallet, card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    admin.role = UserRole.ADMIN
+    FraudService(db_session).reject(case, admin)
+
+    login = client.post("/api/v1/auth/login", json={"email": "fraud-admin@example.com", "password": "Sup3rSecret!"})
+    token = login.json()["tokens"]["access_token"]
+
+    response = client.post(
+        f"/api/v1/fraud/cases/{case.id}/activate-card", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["frozen_card"] is None
+    assert body["card_hold_notice"] is None
+
+    db_session.refresh(card)
+    assert card.status == CardStatus.ACTIVE
+    assert card.freeze_reason is None
+    assert card.frozen_by_admin_id == admin.id
+
+    from app.audit.models import AdminAuditLog
+
+    log = (
+        db_session.query(AdminAuditLog)
+        .filter_by(entity_id=card.id, action="ACTIVATE_CARD", entity_type="CARD")
+        .one()
+    )
+    assert log.admin_user_id == admin.id
+    assert log.new_data["fraud_case_id"] == str(case.id)
+
+
+def test_activate_card_endpoint_returns_error_when_no_card_to_activate(client, db_session, seeded_user):
+    """Avoids a silent no-op over HTTP too: reactivating twice must surface
+    a clear error on the second call, not a quiet 200."""
+    _transaction, _wallet, _card, case = _create_blocked_payment(db_session, seeded_user)
+    admin = _admin(db_session)
+    admin.role = UserRole.ADMIN
+    FraudService(db_session).reject(case, admin)
+
+    login = client.post("/api/v1/auth/login", json={"email": "fraud-admin@example.com", "password": "Sup3rSecret!"})
+    token = login.json()["tokens"]["access_token"]
+
+    first = client.post(f"/api/v1/fraud/cases/{case.id}/activate-card", headers={"Authorization": f"Bearer {token}"})
+    assert first.status_code == 200
+
+    second = client.post(f"/api/v1/fraud/cases/{case.id}/activate-card", headers={"Authorization": f"Bearer {token}"})
+    assert second.status_code == 404
+
+
+# ---- TRANSFER screening: the engine covers TRANSFER as well as CARD_PAYMENT
+# (SCREENED_TRANSACTION_TYPES). A transfer has a second leg a HOLD never
+# touches, so approve() has to credit the destination too. ----
+
+
+@pytest.fixture()
+def recipient_user(db_session):
+    return UserService(db_session).create_user(
+        UserCreate(
+            email="fraud-recipient@example.com", password="Sup3rSecret!", first_name="Recipient", last_name="User"
+        )
+    )
+
+
+def _completed_transfer(
+    db_session,
+    user_id,
+    amount,
+    source_wallet_id=None,
+    destination_wallet_id=None,
+    created_at=None,
+    currency="RON",
+):
+    transaction = Transaction(
+        initiator_user_id=user_id,
+        source_wallet_id=source_wallet_id,
+        destination_wallet_id=destination_wallet_id,
+        type=TransactionType.TRANSFER,
+        status=TransactionStatus.COMPLETED,
+        amount=amount,
+        currency=currency,
+        created_at=created_at or datetime.now(timezone.utc),
+    )
+    db_session.add(transaction)
+    db_session.flush()
+    return transaction
+
+
+def _pending_transfer(
+    user_id,
+    source_wallet_id,
+    destination_wallet_id,
+    amount,
+    created_at=None,
+    currency="RON",
+    source_amount=None,
+    source_currency=None,
+):
+    return Transaction(
+        id=uuid.uuid4(),
+        initiator_user_id=user_id,
+        source_wallet_id=source_wallet_id,
+        destination_wallet_id=destination_wallet_id,
+        type=TransactionType.TRANSFER,
+        status=TransactionStatus.PROCESSING,
+        amount=amount,
+        currency=currency,
+        source_amount=source_amount,
+        source_currency=source_currency,
+        created_at=created_at or datetime.now(timezone.utc),
+    )
+
+
+def _held_transfer(db_session, seeded_user, recipient_user, amount=Decimal("500.00")):
+    """3 x 50 RON of the user's own transfer history + a 500 RON transfer =
+    10x their own transfer average, so HIGH_AMOUNT alone (15 base + 8*7 = 71,
+    capped at 70) crosses the 65 threshold with no second flag."""
+    source = _wallet(db_session, seeded_user.id, balance=Decimal("1000.00"))
+    destination = _wallet(db_session, recipient_user.id, balance=Decimal("0.00"))
+    for _ in range(3):
+        _completed_transfer(
+            db_session,
+            seeded_user.id,
+            Decimal("50.00"),
+            source_wallet_id=source.id,
+            destination_wallet_id=destination.id,
+        )
+
+    transaction = TransactionService(db_session).create_internal_transfer(
+        seeded_user.id,
+        InternalTransferCreate(
+            source_wallet_id=source.id, destination_wallet_id=destination.id, amount=amount
+        ),
+    )
+    case = db_session.query(FraudCase).filter(FraudCase.transaction_id == transaction.id).one()
+    return transaction, source, destination, case
+
+
+def test_transfer_over_the_users_own_transfer_baseline_is_held(db_session, seeded_user, recipient_user):
+    transaction, source, destination, case = _held_transfer(db_session, seeded_user, recipient_user)
+
+    assert transaction.status == TransactionStatus.PENDING_REVIEW
+    assert transaction.fraud_score == Decimal("70")
+    assert {flag.code for flag in case.flags} == {FraudFlagCode.HIGH_AMOUNT}
+    # Frozen mid-flight: reserved on the source, nothing delivered yet.
+    assert source.available_balance == Decimal("500.00")
+    assert source.reserved_balance == Decimal("500.00")
+    assert destination.available_balance == Decimal("0.00")
+    assert [entry.entry_type.value for entry in transaction.ledger_entries] == ["HOLD"]
+
+
+def test_approving_a_held_transfer_credits_the_destination_wallet(db_session, seeded_user, recipient_user):
+    """The gap ai/actions/fraud_screen.py documented before transfers were
+    wired in: approve() debited the held source but never credited a
+    transfer's destination, which would have made the money disappear."""
+    transaction, source, destination, case = _held_transfer(db_session, seeded_user, recipient_user)
+    admin = _admin(db_session)
+
+    FraudService(db_session).approve(case, admin)
+
+    assert transaction.status == TransactionStatus.COMPLETED
+    assert source.reserved_balance == Decimal("0.00")
+    assert source.available_balance == Decimal("500.00")  # the HOLD already moved it out
+    assert destination.available_balance == Decimal("500.00")
+
+    ledger_types = sorted(entry.entry_type.value for entry in transaction.ledger_entries)
+    assert ledger_types == ["CREDIT", "DEBIT", "HOLD"]
+
+
+def test_rejecting_a_held_transfer_releases_the_source_and_never_credits_the_destination(
+    db_session, seeded_user, recipient_user
+):
+    transaction, source, destination, case = _held_transfer(db_session, seeded_user, recipient_user)
+    admin = _admin(db_session)
+
+    FraudService(db_session).reject(case, admin)
+
+    assert transaction.status == TransactionStatus.REJECTED
+    assert source.reserved_balance == Decimal("0.00")
+    assert source.available_balance == Decimal("1000.00")
+    assert destination.available_balance == Decimal("0.00")
+
+
+def test_repeated_transfers_to_the_same_account_flag_repeated_transfer_pattern(
+    db_session, seeded_user, recipient_user
+):
+    source = _wallet(db_session, seeded_user.id, balance=Decimal("1000.00"))
+    destination = _wallet(db_session, recipient_user.id, balance=Decimal("0.00"))
+    now = datetime.now(timezone.utc)
+    for _ in range(5):
+        _completed_transfer(
+            db_session,
+            seeded_user.id,
+            Decimal("100.00"),
+            source_wallet_id=source.id,
+            destination_wallet_id=destination.id,
+            created_at=now - timedelta(minutes=1),
+        )
+    transaction = _pending_transfer(seeded_user.id, source.id, destination.id, Decimal("100.00"), created_at=now)
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, source)
+
+    # 5 prior + this one = 6 near-identical repeats, 3 over the minimum count
+    # of 3: 35 base + 10*3 = 65, exactly the threshold. The 5 matching ones
+    # are excluded from HIGH_VELOCITY's own count, so it doesn't co-fire.
+    assert decision.score == Decimal("65")
+    assert decision.blocked is True
+    assert {flag.code for flag in decision.case.flags} == {FraudFlagCode.REPEATED_TRANSFER_PATTERN}
+
+
+def test_repeated_card_payments_still_flag_reward_abuse_not_the_transfer_code(db_session, seeded_user):
+    """Regression: generalising repeat detection must not relabel the
+    existing merchant-side flag."""
+    wallet = _wallet(db_session, seeded_user.id)
+    merchant = _merchant(db_session)
+    now = datetime.now(timezone.utc)
+    for _ in range(2):
+        _completed_card_payment(
+            db_session, seeded_user.id, Decimal("25.00"), merchant_id=merchant.id, created_at=now - timedelta(minutes=2)
+        )
+    transaction = _pending_transaction(
+        seeded_user.id, wallet.id, Decimal("25.00"), merchant_id=merchant.id, created_at=now
+    )
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
+
+    assert decision.score == Decimal("35")
+
+
+def test_transfer_baseline_ignores_transfers_the_user_only_received(db_session, seeded_user, recipient_user):
+    """list_for_user also returns transfers *into* this user's wallets. Money
+    arriving says nothing about what's normal for them to send, and letting it
+    into the baseline would hide a genuine outlier."""
+    source = _wallet(db_session, seeded_user.id, balance=Decimal("10000.00"))
+    other = _wallet(db_session, recipient_user.id, balance=Decimal("0.00"))
+    now = datetime.now(timezone.utc)
+    for _ in range(3):
+        _completed_transfer(
+            db_session,
+            seeded_user.id,
+            Decimal("50.00"),
+            source_wallet_id=source.id,
+            destination_wallet_id=other.id,
+            created_at=now - timedelta(days=1),
+        )
+    for _ in range(3):
+        _completed_transfer(
+            db_session,
+            recipient_user.id,
+            Decimal("5000.00"),
+            source_wallet_id=other.id,
+            destination_wallet_id=source.id,
+            created_at=now - timedelta(days=1),
+        )
+
+    transaction = _pending_transfer(seeded_user.id, source.id, other.id, Decimal("500.00"), created_at=now)
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, source)
+
+    # Measured against this user's own 50.00 sending average (10x -> capped
+    # at 70), not a blend the 5000.00 incoming transfers would dominate.
+    assert decision.score == Decimal("70")
+
+
+def test_cross_currency_transfer_holds_the_source_side_amount(db_session, seeded_user):
+    """On an FX transfer `amount`/`currency` describe what the recipient
+    receives. The hold must reserve what actually leaves the payer's RON
+    wallet, in RON."""
+    source = _wallet(db_session, seeded_user.id, balance=Decimal("1000.00"))
+    now = datetime.now(timezone.utc)
+    for _ in range(3):
+        _completed_transfer(
+            db_session, seeded_user.id, Decimal("10.00"), source_wallet_id=source.id, created_at=now - timedelta(days=1)
+        )
+
+    transaction = _pending_transfer(
+        seeded_user.id,
+        source.id,
+        None,
+        Decimal("20.00"),
+        created_at=now,
+        currency="EUR",
+        source_amount=Decimal("100.00"),
+        source_currency="RON",
+    )
+    db_session.add(transaction)
+    db_session.flush()
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, source)
+
+    # Scored on the RON side: 100.00 against this user's 10.00 RON average.
+    assert decision.blocked is True
+    assert decision.case.hold_amount == Decimal("100.00")
+    assert source.available_balance == Decimal("900.00")
+    assert source.reserved_balance == Decimal("100.00")
+    assert FraudService(db_session).to_detail(decision.case).hold_currency == "RON"
+
+
+def test_transaction_types_outside_the_screened_set_are_never_scored(db_session, seeded_user):
+    wallet = _wallet(db_session, seeded_user.id)
+    transaction = Transaction(
+        id=uuid.uuid4(),
+        initiator_user_id=seeded_user.id,
+        source_wallet_id=wallet.id,
+        type=TransactionType.SAVINGS_CONTRIBUTION,
+        status=TransactionStatus.PROCESSING,
+        amount=Decimal("100000.00"),
+        currency="RON",
+        created_at=datetime.now(timezone.utc),
+    )
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
+
+    assert decision.blocked is False
+    # "Never screened" stays NULL rather than being recorded as a clean 0.
+    assert transaction.fraud_score is None
+    assert wallet.reserved_balance == Decimal("0.00")
+
+
+def test_settlement_flows_can_opt_out_of_screening(db_session, seeded_user, recipient_user):
+    """Bill-split and payment-request settlements pass screen_for_fraud=False
+    because they mark their own record PAID right after this returns."""
+    source = _wallet(db_session, seeded_user.id, balance=Decimal("1000.00"))
+    destination = _wallet(db_session, recipient_user.id, balance=Decimal("0.00"))
+    for _ in range(3):
+        _completed_transfer(
+            db_session,
+            seeded_user.id,
+            Decimal("50.00"),
+            source_wallet_id=source.id,
+            destination_wallet_id=destination.id,
+        )
+
+    transaction = TransactionService(db_session).create_internal_transfer(
+        seeded_user.id,
+        InternalTransferCreate(
+            source_wallet_id=source.id, destination_wallet_id=destination.id, amount=Decimal("500.00")
+        ),
+        screen_for_fraud=False,
+    )
+
+    assert transaction.status == TransactionStatus.COMPLETED
+    assert destination.available_balance == Decimal("500.00")
+    assert db_session.query(FraudCase).filter(FraudCase.transaction_id == transaction.id).count() == 0

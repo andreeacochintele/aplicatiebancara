@@ -27,6 +27,7 @@ class TransactionType(str, enum.Enum):
     BILL_SPLIT_PAYMENT = "BILL_SPLIT_PAYMENT"
     SAVINGS_CONTRIBUTION = "SAVINGS_CONTRIBUTION"
     SAVINGS_WITHDRAWAL = "SAVINGS_WITHDRAWAL"
+    TOP_UP = "TOP_UP"
 
 
 class TransactionStatus(str, enum.Enum):

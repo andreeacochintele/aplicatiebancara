@@ -4,7 +4,9 @@ from decimal import Decimal
 
 import pytest
 
+from app.ai.actions.schemas import AgentResult
 from app.ai.client.azure_foundry_client import AzureFoundryNotConfiguredError
+from app.ai.guardrails import INJECTION_GUARDRAILS, RESPONSE_FORMAT_RULE
 from app.ai.personal_finance import agent, tools
 from app.ai.tools.base import ToolContext, ToolDataUnavailableError
 from app.analytics.schemas import ForecastResponse
@@ -149,6 +151,31 @@ def test_system_prompt_forbids_claiming_a_calculation_that_wasnt_actually_run():
     assert "never claim you calculated, converted, totaled" in lowered
 
 
+# ---- shared ai/knowledge/app_overview.md + ai/guardrails.py: same static
+# knowledge and guardrails the Support Agent uses, kept clearly separate
+# from the "never state a number from the (per-request) data below" rule ----
+
+
+def test_system_prompt_includes_the_shared_app_overview_verbatim():
+    assert agent._APP_OVERVIEW in agent._SYSTEM_PROMPT
+
+
+def test_system_prompt_includes_the_shared_injection_and_format_guardrails():
+    assert INJECTION_GUARDRAILS in agent._SYSTEM_PROMPT
+    assert RESPONSE_FORMAT_RULE in agent._SYSTEM_PROMPT
+
+
+def test_system_prompt_scopes_the_never_state_a_number_rule_to_the_data_block_only():
+    # The app overview legitimately contains numbers (e.g. a tier's points
+    # multiplier) — the "never state a number" rule must read as applying
+    # only to the per-request data block, not to this general reference
+    # text, or the model would be told to contradict itself.
+    assert any(char.isdigit() for char in agent._APP_OVERVIEW)
+    lowered = agent._SYSTEM_PROMPT.lower()
+    assert "never state a number from the data below" in lowered or "the data below" in lowered
+    assert "applies only to that per-request block" in lowered
+
+
 def test_get_budgets_reuses_budgets_service(db_session, seeded_user):
     BudgetService(db_session).create_budget(
         seeded_user.id, BudgetCreate(name="Groceries", limit_amount=Decimal("500"), currency="RON")
@@ -272,13 +299,54 @@ def test_get_account_statement_raises_tool_data_unavailable_without_a_main_walle
         tools.get_account_statement(ToolContext(user_id=seeded_user.id, db=db_session))
 
 
+# ---- wallet selection: live-observed always returning the main wallet's
+# statement regardless of which currency the user actually asked for
+# ("arata-mi extrasul cont RON" showed USD because USD was main) ----
+
+
+def test_get_account_statement_uses_the_wallet_matching_the_message_currency(db_session, seeded_user):
+    wallets = WalletService(db_session)
+    usd_wallet = wallets.create_wallet(seeded_user.id, WalletCreate(currency="USD", is_main=True))
+    ron_wallet = wallets.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    db_session.flush()
+
+    result = tools.get_account_statement(
+        ToolContext(user_id=seeded_user.id, db=db_session), "Arata-mi extrasul cont RON"
+    )
+
+    assert result.wallet_id == ron_wallet.id
+    assert result.currency == "RON"
+    assert result.wallet_id != usd_wallet.id
+
+
+def test_get_account_statement_falls_back_to_main_when_no_currency_is_named(db_session, seeded_user):
+    wallets = WalletService(db_session)
+    usd_wallet = wallets.create_wallet(seeded_user.id, WalletCreate(currency="USD", is_main=True))
+    wallets.create_wallet(seeded_user.id, WalletCreate(currency="RON"))
+    db_session.flush()
+
+    result = tools.get_account_statement(ToolContext(user_id=seeded_user.id, db=db_session), "Vreau un extras de cont")
+
+    assert result.wallet_id == usd_wallet.id
+
+
+def test_get_account_statement_ignores_a_currency_the_user_does_not_hold(db_session, seeded_user):
+    usd_wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="USD", is_main=True))
+    db_session.flush()
+
+    result = tools.get_account_statement(ToolContext(user_id=seeded_user.id, db=db_session), "extrasul cont EUR")
+
+    assert result.wallet_id == usd_wallet.id
+
+
 def test_statement_summary_includes_balances_and_a_transaction(db_session, seeded_user):
     wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))
     wallet.available_balance = Decimal("500.00")
     db_session.flush()
     _card_payment_with_ledger_entry(db_session, seeded_user.id, wallet, Decimal("42.50"), "Coffee")
 
-    summary = agent._statement(ToolContext(user_id=seeded_user.id, db=db_session))
+    statement = tools.get_account_statement(ToolContext(user_id=seeded_user.id, db=db_session))
+    summary = agent._format_statement_summary(statement)
 
     assert "Account statement" in summary
     assert "Opening balance" in summary
@@ -324,6 +392,36 @@ def test_handle_returns_the_unavailable_message_without_calling_the_llm(db_sessi
         "Monthly income isn't available yet: there's no transaction type or "
         "service aggregate for incoming funds in the backend."
     )
+
+
+def test_handle_returns_a_download_attachment_for_a_statement_request(db_session, seeded_user, monkeypatch):
+    wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))
+    wallet.available_balance = Decimal("500.00")
+    db_session.flush()
+    _card_payment_with_ledger_entry(db_session, seeded_user.id, wallet, Decimal("42.50"), "Coffee")
+    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None: "Mocked explanation.")
+
+    result = agent.handle("can I get my account statement?", seeded_user.id, db_session)
+
+    assert isinstance(result, AgentResult)
+    assert result.reply.startswith("Mocked explanation.\n\n")
+    assert "Account statement" in result.reply
+    assert result.action_card is None
+    assert result.download is not None
+    assert result.download.url.startswith("/statements/export?")
+    assert f"wallet_id={wallet.id}" in result.download.url
+    assert "format=pdf" in result.download.url
+
+
+def test_handle_returns_the_unavailable_message_for_a_statement_request_with_no_main_wallet(db_session, monkeypatch):
+    def _fail_if_called(message, data_summary, history=None):
+        raise AssertionError("_explain must not be called when tool data is unavailable")
+
+    monkeypatch.setattr(agent, "_explain", _fail_if_called)
+
+    reply = agent.handle("can I get my account statement?", uuid.uuid4(), db_session)
+
+    assert reply == "No main wallet to generate a statement for."
 
 
 def test_handle_propagates_azure_not_configured_from_explain(db_session, seeded_user, monkeypatch):

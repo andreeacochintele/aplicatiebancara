@@ -5,10 +5,20 @@ Unlike ai/personal_finance/agent.py and ai/credit/agent.py, there's nothing
 here to dispatch to a tool for: this agent never touches analytics/,
 budgets/, credit/, transactions/, or fraud/ data (deliberately — see
 knowledge/fraud_policy.md's header). Every reply is a single
-azure_foundry_client call grounded in three static markdown files loaded
+azure_foundry_client call grounded in four static markdown files loaded
 into the system prompt (knowledge/fraud_policy.md, knowledge/app_faq.md,
-knowledge/security_and_privacy.md), not a tool call — so ai/tools/base.py's
-ToolContext isn't used here.
+knowledge/security_and_privacy.md, plus the shared
+ai/knowledge/app_overview.md — general product/tier knowledge also read by
+ai/personal_finance/agent.py, kept in one place outside either agent's own
+package), not a tool call — so ai/tools/base.py's ToolContext isn't used
+here.
+
+ai/guardrails.py's INJECTION_GUARDRAILS and RESPONSE_FORMAT_RULE are
+appended into the system prompt below (see that module's docstring for why
+this can't be enforced any more centrally than "every agent's own system
+prompt" for the injection rules specifically — RESPONSE_FORMAT_RULE also
+gets a code-level backstop, but that one lives in
+ai/orchestrator/service.py, not here).
 
 knowledge/app_faq.md and knowledge/security_and_privacy.md were expanded
 from a set of 22 general bank reference documents the user provided.
@@ -36,6 +46,8 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
+from app.ai.guardrails import INJECTION_GUARDRAILS, RESPONSE_FORMAT_RULE
+from app.ai.knowledge import get_app_overview
 from app.ai.observability import log_debug, timed_event
 
 _KNOWLEDGE_DIR = Path(__file__).parent / "knowledge"
@@ -48,6 +60,7 @@ def _load_knowledge(filename: str) -> str:
 _FRAUD_POLICY = _load_knowledge("fraud_policy.md")
 _APP_FAQ = _load_knowledge("app_faq.md")
 _SECURITY_AND_PRIVACY = _load_knowledge("security_and_privacy.md")
+_APP_OVERVIEW = get_app_overview()
 
 # Read straight from ai/credit/'s own knowledge file (single source of truth,
 # not a copy) — the orchestrator's intent classifier routes conceptual "how
@@ -94,6 +107,10 @@ outside the knowledge you're given.
 - Always respond in the same language the user's message is written in. If \
 the message is ambiguous or too short to tell, default to Romanian.
 
+{INJECTION_GUARDRAILS}
+
+{RESPONSE_FORMAT_RULE}
+
 --- Fraud awareness knowledge (qualitative only) ---
 {_FRAUD_POLICY}
 
@@ -102,6 +119,9 @@ the message is ambiguous or too short to tell, default to Romanian.
 
 --- App FAQ knowledge ---
 {_APP_FAQ}
+
+--- General app & product knowledge (tiers, benefits, how features work) ---
+{_APP_OVERVIEW}
 
 --- Security & privacy knowledge (identity verification, account opening, personal data) ---
 {_SECURITY_AND_PRIVACY}

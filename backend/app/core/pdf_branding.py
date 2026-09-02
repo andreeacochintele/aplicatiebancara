@@ -2,9 +2,43 @@
 business exports, ...) so they all look like they came from the same bank
 instead of each module rolling its own letterhead."""
 import os
+import unicodedata
 from datetime import datetime, timezone
 
 from fpdf import FPDF
+
+# fpdf's core "Helvetica" font only supports Latin-1 (WinAnsi) glyphs — any
+# other character raises FPDFUnicodeEncodingException and 500s the whole
+# export. Every string here can come from user input (a transaction
+# description, a business name, ...), so anything reaching pdf.cell() must
+# go through this first rather than trusting the caller to only ever type
+# plain ASCII. Romanian diacritics (ă â î ș ț) are the case that matters
+# most for this app; "smart" Unicode punctuation is the other common source
+# (curly quotes, em/en dashes, ellipsis) since those get auto-substituted by
+# a lot of phone keyboards and browsers.
+_PDF_PUNCTUATION_MAP = {
+    "—": "-",  # em dash —
+    "–": "-",  # en dash –
+    "‘": "'",  # left single quote '
+    "’": "'",  # right single quote '
+    "“": '"',  # left double quote "
+    "”": '"',  # right double quote "
+    "…": "...",  # ellipsis …
+}
+
+
+def pdf_safe_text(value: str | None) -> str:
+    """Best-effort transliteration to Latin-1: decomposes accented letters
+    (ă -> a, ș -> s, ...) and swaps common smart-punctuation for ASCII
+    equivalents, then drops anything that still can't be represented rather
+    than crashing. A cosmetic downgrade (accents lost) is an acceptable
+    trade for "the export always succeeds"."""
+    if not value:
+        return ""
+    for char, replacement in _PDF_PUNCTUATION_MAP.items():
+        value = value.replace(char, replacement)
+    normalized = unicodedata.normalize("NFKD", value)
+    return normalized.encode("latin-1", "ignore").decode("latin-1")
 
 # Brand palette (see frontend/src/styles/easyb.css --easyb-gradient):
 # violet -> purple -> pink. FPDF has no gradient fill primitive, so the

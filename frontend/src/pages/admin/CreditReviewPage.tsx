@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { ApiError, apiRequest } from "../../api/apiClient";
 import { useAuth } from "../../hooks/useAuth";
@@ -26,21 +27,21 @@ function defaultRate(application: CreditApplication): string {
   return application.loan_product_type ? PRODUCT_RATE_DEFAULTS[application.loan_product_type] : "9.50";
 }
 
-function formatProductType(type: LoanProductType | null): string {
-  if (!type) return "General loan";
+function formatProductType(type: LoanProductType | null, t: (key: string) => string): string {
+  if (!type) return t("admin.generalLoan");
   return type
     .split("_")
     .map((part) => part[0] + part.slice(1).toLowerCase())
     .join(" ");
 }
 
-function formatApplicationProduct(application: CreditApplication): string {
-  if (application.type === "CREDIT_CARD") return "Credit Card";
-  return formatProductType(application.loan_product_type);
+function formatApplicationProduct(application: CreditApplication, t: (key: string) => string): string {
+  if (application.type === "CREDIT_CARD") return t("admin.creditCard");
+  return formatProductType(application.loan_product_type, t);
 }
 
-function formatMoney(value: string | null, currency = "RON"): string {
-  if (!value) return "N/A";
+function formatMoney(value: string | null, t: (key: string) => string, currency = "RON"): string {
+  if (!value) return t("admin.notAvailable");
   return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 }
 
@@ -50,12 +51,12 @@ function statusClass(status: CreditApplicationStatus): string {
   return "tag tag--neutral";
 }
 
-function scoreBand(score: number): string {
-  if (score >= 800) return "Excellent";
-  if (score >= 740) return "Very good";
-  if (score >= 670) return "Good";
-  if (score >= 580) return "Fair";
-  return "Risky";
+function scoreBand(score: number, t: (key: string) => string): string {
+  if (score >= 800) return t("admin.excellent");
+  if (score >= 740) return t("admin.veryGood");
+  if (score >= 670) return t("admin.good");
+  if (score >= 580) return t("admin.fair");
+  return t("admin.risky");
 }
 
 function documentStatusClass(status: CreditDocumentStatus): string {
@@ -75,9 +76,13 @@ function normalizeMatchText(value: string): string {
   return value.replace(/[_-]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function documentProductMatchesApplication(document: CreditDocument, application: CreditApplication): boolean {
+function documentProductMatchesApplication(
+  document: CreditDocument,
+  application: CreditApplication,
+  t: (key: string) => string,
+): boolean {
   const documentType = normalizeMatchText(document.document_type);
-  const product = normalizeMatchText(formatProductType(application.loan_product_type));
+  const product = normalizeMatchText(formatProductType(application.loan_product_type, t));
   return documentType.includes(product) || product.includes(documentType.replace("documentation", "").trim());
 }
 
@@ -102,6 +107,7 @@ function openBase64Document(document: CreditDocumentContent, targetWindow: Windo
 }
 
 export function CreditReviewPage() {
+  const { t } = useTranslation();
   const { accessToken, logout, user } = useAuth();
   const [applications, setApplications] = useState<CreditApplication[]>([]);
   const [documents, setDocuments] = useState<CreditDocument[]>([]);
@@ -141,7 +147,7 @@ export function CreditReviewPage() {
         const candidates = sameUserApplications
           .map((application) => {
             const createdTime = new Date(application.created_at).getTime();
-            const productMatch = documentProductMatchesApplication(document, application);
+            const productMatch = documentProductMatchesApplication(document, application, t);
             const timingPenalty = Number.isFinite(uploadTime) && Number.isFinite(createdTime) ? Math.abs(uploadTime - createdTime) : 0;
             return { application, productMatch, timingPenalty };
           })
@@ -188,7 +194,7 @@ export function CreditReviewPage() {
       const fields = [
         application.user_id,
         application.user_id.slice(0, 8),
-        formatApplicationProduct(application),
+        formatApplicationProduct(application, t),
         application.status,
         application.currency,
         application.requested_amount,
@@ -230,7 +236,7 @@ export function CreditReviewPage() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not load loan applications.");
+      setError(err instanceof ApiError ? err.message : t("admin.couldNotLoadApplications"));
     } finally {
       setIsLoading(false);
     }
@@ -263,7 +269,7 @@ export function CreditReviewPage() {
         logout();
         return;
       }
-      setError(err instanceof Error ? err.message : "Could not update loan application.");
+      setError(err instanceof Error ? err.message : t("admin.couldNotUpdateApplication"));
     } finally {
       setDecisionApplicationId(null);
     }
@@ -291,13 +297,13 @@ export function CreditReviewPage() {
       setApplications((current) =>
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
-      setNotice("More information request sent to the client.");
+      setNotice(t("admin.moreInfoSent"));
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not request more information.");
+      setError(err instanceof ApiError ? err.message : t("admin.couldNotRequestMoreInfo"));
     } finally {
       setMoreInfoApplicationId(null);
     }
@@ -307,7 +313,7 @@ export function CreditReviewPage() {
     if (!accessToken || reviewingScoreDocumentId) return;
     const draftScore = Number(scoreReviewDrafts[document.id] ?? document.evaluation_score ?? "");
     if (status === "APPROVED" && (!Number.isInteger(draftScore) || draftScore < 300 || draftScore > 850)) {
-      setError("Credit score must be a whole number between 300 and 850.");
+      setError(t("admin.scoreOutOfRange"));
       return;
     }
     setReviewingScoreDocumentId(document.id);
@@ -321,8 +327,8 @@ export function CreditReviewPage() {
           evaluation_score: status === "APPROVED" ? draftScore : null,
           review_note:
             status === "APPROVED"
-              ? "Credit score set by admin after document review."
-              : "Additional income or debt documentation required.",
+              ? t("admin.scoreSetByAdmin")
+              : t("admin.additionalDocsRequired"),
         },
       });
       setDocuments((current) => current.map((item) => (item.id === updated.id ? updated : item)));
@@ -337,7 +343,7 @@ export function CreditReviewPage() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not review credit score document.");
+      setError(err instanceof ApiError ? err.message : t("admin.couldNotReviewScoreDocument"));
     } finally {
       setReviewingScoreDocumentId(null);
     }
@@ -349,7 +355,7 @@ export function CreditReviewPage() {
     setError(null);
     const targetWindow = window.open("", "_blank");
     if (targetWindow) {
-      targetWindow.document.write("<p style=\"font-family: system-ui; padding: 24px;\">Opening document...</p>");
+      targetWindow.document.write(`<p style="font-family: system-ui; padding: 24px;">${t("admin.openingDocument")}</p>`);
       targetWindow.document.close();
     }
     try {
@@ -363,7 +369,7 @@ export function CreditReviewPage() {
         logout();
         return;
       }
-      setError(err instanceof ApiError ? err.message : "Could not open uploaded document.");
+      setError(err instanceof ApiError ? err.message : t("admin.couldNotOpenDocument"));
     } finally {
       setViewingDocumentId(null);
     }
@@ -373,9 +379,9 @@ export function CreditReviewPage() {
     return (
       <section className="tile">
         <div className="tile__header">
-          <span className="eyebrow">Credit & Loans</span>
+          <span className="eyebrow">{t("admin.creditAndLoans")}</span>
         </div>
-        <div className="card-empty">Admin privileges required.</div>
+        <div className="card-empty">{t("admin.adminPrivilegesRequired")}</div>
       </section>
     );
   }
@@ -384,12 +390,12 @@ export function CreditReviewPage() {
     const linkedDocuments = documentsByApplication[application.id] ?? [];
     if (linkedDocuments.length === 0) {
       if (application.type === "CREDIT_CARD") {
-        return <span className="admin-submission-documents__empty">Not required</span>;
+        return <span className="admin-submission-documents__empty">{t("admin.notRequired")}</span>;
       }
       return (
         <div className="admin-submission-documents__missing">
-          <strong>Missing documents</strong>
-          <span>Ask client for income/debt proof</span>
+          <strong>{t("admin.missingDocuments")}</strong>
+          <span>{t("admin.askForIncomeProof")}</span>
         </div>
       );
     }
@@ -407,7 +413,7 @@ export function CreditReviewPage() {
                   </span>
                   {document.review_note && <span className="admin-submission-document__note">{document.review_note}</span>}
                 </div>
-                <span className={documentStatusClass(document.status)}>{document.status.replaceAll("_", " ")}</span>
+                <span className={documentStatusClass(document.status)}>{t(`admin.documentStatus.${document.status}`)}</span>
               </div>
               <div className="admin-submission-document__actions">
                 <button
@@ -416,7 +422,7 @@ export function CreditReviewPage() {
                   onClick={() => viewDocument(document)}
                   disabled={viewingDocumentId === document.id}
                 >
-                  {viewingDocumentId === document.id ? "Opening..." : "View"}
+                  {viewingDocumentId === document.id ? t("admin.opening") : t("admin.view")}
                 </button>
                 {document.evaluation_score !== null && (
                   <span className="admin-submission-document__score">{document.evaluation_score}/100</span>
@@ -434,11 +440,11 @@ export function CreditReviewPage() {
     return (
       <div className="admin-score-review">
         <div className="tile__header">
-          <span className="eyebrow">Credit score review</span>
-          <span className="tag tag--neutral">{pendingCreditScoreDocuments.length} pending scores</span>
+          <span className="eyebrow">{t("admin.creditScoreReview")}</span>
+          <span className="tag tag--neutral">{t("admin.pendingScores", { count: pendingCreditScoreDocuments.length })}</span>
         </div>
         {visibleDocuments.length === 0 ? (
-          <div className="card-empty">No credit score documents uploaded yet.</div>
+          <div className="card-empty">{t("admin.noCreditScoreDocsYet")}</div>
         ) : (
           <div className="admin-score-review__grid">
             {visibleDocuments.map((document) => {
@@ -447,19 +453,19 @@ export function CreditReviewPage() {
               return (
                 <article className="admin-score-review__card" key={document.id}>
                   <div>
-                    <span className="eyebrow">Client {document.user_id.slice(0, 8)}</span>
+                    <span className="eyebrow">{t("admin.client", { id: document.user_id.slice(0, 8) })}</span>
                     <strong title={document.file_name}>{document.file_name}</strong>
                     <small>
                       {document.document_type} / {formatFileSize(document.file_size)}
                     </small>
                   </div>
                   <div className="admin-score-review__meta">
-                    <span className={documentStatusClass(document.status)}>{document.status.replaceAll("_", " ")}</span>
-                    <strong>Generated {document.evaluation_score ?? "N/A"}/850</strong>
+                    <span className={documentStatusClass(document.status)}>{t(`admin.documentStatus.${document.status}`)}</span>
+                    <strong>{t("admin.generatedOutOf850", { score: document.evaluation_score ?? t("admin.notAvailable") })}</strong>
                   </div>
                   {isPending && (
                     <label className="admin-score-review__score-input">
-                      <span>Admin score</span>
+                      <span>{t("admin.adminScore")}</span>
                       <input
                         value={scoreReviewDrafts[document.id] ?? String(document.evaluation_score ?? "")}
                         onChange={(event) =>
@@ -482,7 +488,7 @@ export function CreditReviewPage() {
                       onClick={() => viewDocument(document)}
                       disabled={viewingDocumentId === document.id}
                     >
-                      {viewingDocumentId === document.id ? "Opening..." : "View document"}
+                      {viewingDocumentId === document.id ? t("admin.opening") : t("admin.viewDocument")}
                     </button>
                     {isPending && (
                       <>
@@ -491,7 +497,7 @@ export function CreditReviewPage() {
                           onClick={() => reviewCreditScoreDocument(document, "APPROVED")}
                           disabled={isBusy}
                         >
-                          Approve score
+                          {t("admin.approveScore")}
                         </button>
                         <button
                           type="button"
@@ -499,7 +505,7 @@ export function CreditReviewPage() {
                           onClick={() => reviewCreditScoreDocument(document, "NEEDS_MORE_INFO")}
                           disabled={isBusy}
                         >
-                          Need more info
+                          {t("admin.needMoreInfo")}
                         </button>
                       </>
                     )}
@@ -520,44 +526,44 @@ export function CreditReviewPage() {
       </div>
       <div className="tile">
         <div className="tile__header">
-          <span className="eyebrow">Loan submissions</span>
-          <span className="tag tag--neutral">{pendingApplications.length} pending credit</span>
+          <span className="eyebrow">{t("admin.loanSubmissions")}</span>
+          <span className="tag tag--neutral">{t("admin.pendingCredit", { count: pendingApplications.length })}</span>
         </div>
         {error && <p style={{ color: "var(--color-warning)", margin: "0 0 0.85rem" }}>{error}</p>}
         {notice && <p className="admin-dashboard-notice">{notice}</p>}
-        {isLoading && <div className="card-empty">Loading loan applications...</div>}
+        {isLoading && <div className="card-empty">{t("admin.loadingApplications")}</div>}
         {!isLoading && (
           <>
             <div className="admin-applications-toolbar">
               <label>
-                <span className="eyebrow">Search client</span>
+                <span className="eyebrow">{t("admin.searchClient")}</span>
                 <input
                   value={clientSearch}
                   onChange={(event) => {
                     setClientSearch(event.target.value);
                     setShowAllApplications(false);
                   }}
-                  placeholder="Client id, product, status..."
+                  placeholder={t("admin.searchClientPlaceholder")}
                 />
               </label>
               <span className="tag tag--outline">
-                {visibleApplications.length} of {searchedApplications.length} shown
+                {t("admin.shownOfTotal", { shown: visibleApplications.length, total: searchedApplications.length })}
               </span>
             </div>
             <div className="admin-applications-scroll">
               <table className="admin-applications-table">
                 <thead>
                   <tr>
-                    <th>Applicant</th>
-                    <th>Product</th>
-                    <th>Requested</th>
-                    <th>Offer</th>
-                    <th>Rate</th>
-                    <th>Credit score</th>
-                    <th>Status</th>
-                    <th className="admin-applications-table__documents-heading">Documents</th>
-                    <th>Created</th>
-                    <th>Actions</th>
+                    <th>{t("admin.applicant")}</th>
+                    <th>{t("admin.product")}</th>
+                    <th>{t("admin.requested")}</th>
+                    <th>{t("admin.offer")}</th>
+                    <th>{t("admin.rate")}</th>
+                    <th>{t("admin.creditScore")}</th>
+                    <th>{t("admin.status")}</th>
+                    <th className="admin-applications-table__documents-heading">{t("admin.documents")}</th>
+                    <th>{t("admin.created")}</th>
+                    <th>{t("admin.actions")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -572,21 +578,21 @@ export function CreditReviewPage() {
                     return (
                       <tr key={application.id}>
                         <td>{application.user_id.slice(0, 8)}</td>
-                        <td>{formatApplicationProduct(application)}</td>
-                        <td>{formatMoney(application.requested_amount, application.currency)}</td>
-                        <td>{formatMoney(offerAmount, application.currency)}</td>
+                        <td>{formatApplicationProduct(application, t)}</td>
+                        <td>{formatMoney(application.requested_amount, t, application.currency)}</td>
+                        <td>{formatMoney(offerAmount, t, application.currency)}</td>
                         <td>{displayRate}</td>
                         <td>
                           <div className="admin-credit-score">
                             <strong>{application.credit_score_at_application}</strong>
-                            <span>{scoreBand(application.credit_score_at_application)}</span>
+                            <span>{scoreBand(application.credit_score_at_application, t)}</span>
                           </div>
                         </td>
                         <td className="admin-applications-table__status-cell">
                           <span className={`${statusClass(application.status)} admin-status-pill`}>{application.status}</span>
                         </td>
                         <td className="admin-applications-table__documents-cell">{renderSubmissionDocuments(application)}</td>
-                        <td>{application.created_at ? new Date(application.created_at).toLocaleDateString() : "N/A"}</td>
+                        <td>{application.created_at ? new Date(application.created_at).toLocaleDateString() : t("admin.notAvailable")}</td>
                         <td>
                           {isOpen ? (
                             <div className="admin-submission-actions">
@@ -595,7 +601,7 @@ export function CreditReviewPage() {
                                 onClick={() => decideApplication(application, "APPROVED")}
                                 disabled={decisionApplicationId === application.id}
                               >
-                                Approve
+                                {t("admin.approve")}
                               </button>
                               {canRequestMoreInfo && (
                                 <button
@@ -605,10 +611,10 @@ export function CreditReviewPage() {
                                   disabled={moreInfoApplicationId === application.id || hasMoreInfoRequested}
                                 >
                                   {moreInfoApplicationId === application.id
-                                    ? "Requesting..."
+                                    ? t("admin.requesting")
                                     : hasMoreInfoRequested
-                                      ? "Info requested"
-                                      : "Need more info"}
+                                      ? t("admin.infoRequested")
+                                      : t("admin.needMoreInfo")}
                                 </button>
                               )}
                               <button
@@ -617,12 +623,12 @@ export function CreditReviewPage() {
                                 onClick={() => decideApplication(application, "REJECTED")}
                                 disabled={decisionApplicationId === application.id}
                               >
-                                Reject
+                                {t("admin.reject")}
                               </button>
                             </div>
                           ) : (
                             <span className="tag tag--neutral">
-                              {application.status === "APPROVED" ? "Reviewed" : application.status.replaceAll("_", " ")}
+                              {application.status === "APPROVED" ? t("admin.reviewed") : t(`common.status.${application.status}`, { defaultValue: application.status.replaceAll("_", " ") })}
                             </span>
                           )}
                         </td>
@@ -631,7 +637,7 @@ export function CreditReviewPage() {
                   })}
                   {searchedApplications.length === 0 && (
                     <tr>
-                      <td colSpan={10}>No loan applications found.</td>
+                      <td colSpan={10}>{t("admin.noApplicationsFound")}</td>
                     </tr>
                   )}
                 </tbody>
@@ -644,7 +650,7 @@ export function CreditReviewPage() {
                   className="button--ghost"
                   onClick={() => setShowAllApplications((current) => !current)}
                 >
-                  {showAllApplications ? "Show less" : `Show more (${hiddenApplicationCount})`}
+                  {showAllApplications ? t("admin.showLess") : t("admin.showMore", { count: hiddenApplicationCount })}
                 </button>
               </div>
             )}

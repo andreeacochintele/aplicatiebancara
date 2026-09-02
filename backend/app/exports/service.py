@@ -303,18 +303,28 @@ class ExportService:
     def to_pdf(
         preview: TransactionExportPreview, company_name: str | None = None, representative_name: str | None = None
     ) -> bytes:
-        from app.core.pdf_branding import BORDER, GREEN, RED, ROW_ALT, TEXT_DARK, TEXT_SOFT, gradient_color, new_branded_pdf
+        from app.core.pdf_branding import (
+            BORDER,
+            GREEN,
+            RED,
+            ROW_ALT,
+            TEXT_DARK,
+            TEXT_SOFT,
+            gradient_color,
+            new_branded_pdf,
+            pdf_safe_text,
+        )
 
         pdf = new_branded_pdf(subtitle="Business Transaction Export", orientation="L")
         pdf.footer_note = "sandbox export, not a legal document"
 
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(*TEXT_DARK)
-        pdf.cell(0, 8, company_name or "Transaction export", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 8, pdf_safe_text(company_name) or "Transaction export", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", "", 9.5)
         pdf.set_text_color(*TEXT_SOFT)
         if representative_name:
-            pdf.cell(0, 6, f"Representative: {representative_name}", new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 6, f"Representative: {pdf_safe_text(representative_name)}", new_x="LMARGIN", new_y="NEXT")
         pdf.cell(0, 6, f"Period: {preview.date_from} to {preview.date_to}", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(3)
 
@@ -338,8 +348,10 @@ class ExportService:
                 pdf.ln()
             pdf.ln(5)
 
-        col_widths = (22, 26, 35, 50, 24, 16, 22, 16, 22)
-        headers = ("Date", "Type", "Counterparty", "Description", "Category", "Direction", "Amount", "Currency", "Status")
+        col_widths = (20, 22, 24, 32, 44, 22, 15, 20, 15, 20)
+        headers = (
+            "Date", "Tx ID", "Type", "Counterparty", "Description", "Category", "Direction", "Amount", "Currency", "Status",
+        )
         pdf.set_font("Helvetica", "B", 8.5)
         pdf.set_fill_color(*gradient_color(0.15))
         pdf.set_text_color(255, 255, 255)
@@ -357,10 +369,11 @@ class ExportService:
             pdf.set_draw_color(*BORDER)
             row = (
                 tx.date.strftime("%Y-%m-%d"),
+                str(tx.transaction_id)[:8],
                 tx.type.value.replace("_", " ").title(),
-                tx.counterparty[:24],
-                (tx.description or "")[:36],
-                (tx.category or "")[:18],
+                pdf_safe_text(tx.counterparty)[:20],
+                pdf_safe_text(tx.description)[:30],
+                pdf_safe_text(tx.category)[:18],
                 tx.direction,
                 f"{'+' if tx.direction == 'IN' else '-'}{tx.amount}",
                 tx.currency,
@@ -368,10 +381,10 @@ class ExportService:
             )
             pdf.set_text_color(*TEXT_DARK)
             for col, (value, width) in enumerate(zip(row, col_widths)):
-                if col == 6:
+                if col == 7:
                     pdf.set_text_color(*(GREEN if tx.direction == "IN" else RED))
                 pdf.cell(width, 7, value, border="B", fill=True)
-                if col == 6:
+                if col == 7:
                     pdf.set_text_color(*TEXT_DARK)
             pdf.ln()
 
@@ -411,7 +424,8 @@ class ExportService:
             value_date = tx.created_at.strftime("%y%m%d")
             entry_date = tx.created_at.strftime("%m%d")
             dc = "C" if tx.direction == "IN" else "D"
-            lines.append(f":61:{value_date}{entry_date}{dc}{amount(tx.amount)}NTRFNONREF")
+            reference = tx.id.hex[:16].upper()
+            lines.append(f":61:{value_date}{entry_date}{dc}{amount(tx.amount)}NTRF{reference}")
             narrative = (tx.description or tx.type.value.replace("_", " ").title())[:65]
             lines.append(f":86:{narrative}")
         closing_dc = "D" if statement.closing_balance < 0 else "C"

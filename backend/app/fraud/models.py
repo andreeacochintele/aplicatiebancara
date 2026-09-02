@@ -32,6 +32,12 @@ class FraudFlagCode(str, enum.Enum):
     REWARD_ABUSE_PATTERN = "REWARD_ABUSE_PATTERN"
     HIGH_VELOCITY = "HIGH_VELOCITY"
     UNUSUAL_TIME = "UNUSUAL_TIME"
+    # The transfer-side counterpart of REWARD_ABUSE_PATTERN: repeated
+    # near-identical transfers to the same destination wallet. Kept a
+    # separate code rather than folded into REWARD_ABUSE_PATTERN because the
+    # behavior it points at is different (counterparty repetition, not
+    # cashback farming) and an admin reviewing it needs different guidance.
+    REPEATED_TRANSFER_PATTERN = "REPEATED_TRANSFER_PATTERN"
 
 
 class FraudCase(Base):

@@ -70,6 +70,34 @@ body {
   color: var(--color-accent-strong);
 }
 
+.language-toggle {
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 18px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-divider);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.language-toggle:hover {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent-strong);
+}
+
+.language-toggle__flag {
+  border-radius: 3px;
+  width: 18px;
+  line-height: 18px;
+}
+
 /* ---- Shell layout ---- */
 
 .app-shell {
@@ -1332,9 +1360,83 @@ th {
 
 .transaction-actions {
   display: grid;
-  grid-template-columns: 140px 140px;
+  /* Third slot is the round change-category button, which is icon-sized
+     rather than label-sized. */
+  grid-template-columns: 140px 140px 36px;
   gap: 1.5rem;
   justify-content: end;
+  align-items: center;
+}
+
+/* Icon-only action: a circle, sized independently of .button--wide's
+   label-driven min-width. */
+.button--round {
+  min-width: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+}
+
+.transaction-description {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.transaction-description__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keeps the glyph from being pushed out by a long description — the label
+   can ellipsis, the category marker should always stay visible. */
+.category-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.category-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  /* Every tile the same height, including the rows whose label wraps to two
+     lines ("Beauty & Personal care"). Without this each row sizes to its own
+     tallest label and the grid comes out ragged. */
+  grid-auto-rows: 1fr;
+  gap: 0.65rem;
+  margin-block: 0.35rem 0.25rem;
+}
+
+/* Separated from the grid: it's the "undo" for the choices above, not a
+   tenth choice, and it was reading as a cramped afterthought tucked under
+   the last tile. */
+.category-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--color-divider);
+}
+
+.category-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  text-align: left;
+}
+
+.category-choice--active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
 }
 
 /* Same box model as a real .button--ghost.button--wide, just invisible --
@@ -1468,10 +1570,15 @@ th {
   gap: 0.2rem;
 }
 
-.folder-choice small,
-.folder-readonly-card__header span,
-.folder-transaction-row span {
+.folder-choice small {
   color: var(--color-text-muted);
+}
+
+/* The folder's name and description carry the strong treatment; the rows
+   inside it are stepped back (see .folder-transaction-row below). */
+.folder-readonly-card__header span {
+  color: var(--color-text);
+  font-weight: 500;
 }
 
 .folder-choice--active {
@@ -1521,6 +1628,11 @@ th {
   flex-wrap: wrap;
 }
 
+.folder-readonly-card__title strong {
+  font-size: 1.02rem;
+  color: var(--color-text);
+}
+
 .folder-readonly-card__actions {
   display: flex;
   flex-direction: row;
@@ -1562,7 +1674,9 @@ th {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 1rem;
   align-items: center;
-  padding: 0.55rem 0;
+  /* Indented past the folder's name/description so the rows read as being
+     inside the folder rather than as siblings of its header. */
+  padding: 0.55rem 0 0.55rem 1.9rem;
   border-top: 1px solid var(--color-divider);
 }
 
@@ -1571,6 +1685,17 @@ th {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+}
+
+/* Stepped back behind the folder's own name and description above. */
+.folder-transaction-row span {
+  color: var(--color-text-muted);
+}
+
+.folder-transaction-row strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 .transaction-split-request {
@@ -3285,6 +3410,45 @@ th {
   border: 1px solid var(--color-accent);
   border-radius: var(--radius-sm);
   background: var(--color-accent-soft);
+}
+
+.fraud-card-hold {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+}
+
+.fraud-card-hold div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.fraud-card-hold strong {
+  color: var(--color-text);
+}
+
+.fraud-card-hold p {
+  margin: 0.15rem 0 0;
+  max-width: 46ch;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.fraud-card-hold button {
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  .fraud-card-hold {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 .fraud-agent-summary strong {
@@ -5055,6 +5219,25 @@ th {
   border-color: var(--color-accent);
   color: var(--color-accent-strong);
   background: var(--color-accent-soft);
+}
+
+.assistant-download {
+  margin-top: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--color-accent-soft);
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent-strong);
+}
+
+.assistant-download:hover {
+  background: var(--color-accent);
+  color: #fff;
 }
 
 .assistant-action-card {

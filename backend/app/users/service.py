@@ -6,7 +6,8 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import ConflictError, ValidationError, is_unique_violation
+from app.core.enums import UserRole
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError, is_unique_violation
 from app.core.security import hash_password
 from app.notifications.service import NotificationsService
 from app.rewards.service import REFERRAL_BONUS_POINTS, RewardsService
@@ -334,6 +335,19 @@ class UserService:
         if extracted.cnp is not None and profile.cnp is not None and extracted.cnp != profile.cnp:
             return False, "The CNP on the document does not match your profile"
         return True, None
+
+    def list_admins(self) -> list[User]:
+        return self.repository.list_by_role(UserRole.ADMIN)
+
+    def promote_to_admin(self, email: str) -> User:
+        user = self.repository.get_by_email(email)
+        if user is None:
+            raise NotFoundError("No user found with this email")
+        if user.role == UserRole.ADMIN:
+            raise ConflictError("This user is already an admin")
+        user.role = UserRole.ADMIN
+        self.db.flush()
+        return user
 
     def _apply_step_2(
         self, user_id: uuid.UUID, profile: UserProfile, address: UserAddress, data: OnboardingStep2Update

@@ -3,7 +3,8 @@ import uuid
 import pytest
 
 from app.auth.models import UserDevice, UserSession
-from app.core.exceptions import ConflictError
+from app.core.enums import UserRole
+from app.core.exceptions import ConflictError, NotFoundError
 from app.users.schemas import UserCreate
 from app.users.service import UserService
 
@@ -238,3 +239,104 @@ def test_register_endpoint_rejects_invalid_phone(client, invalid_phone):
         },
     )
     assert response.status_code == 422
+
+
+def _login_http(client, email: str, password: str) -> str:
+    response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert response.status_code == 200
+    return response.json()["tokens"]["access_token"]
+
+
+def _count_commits(db_session, monkeypatch, make_request):
+    calls = []
+    monkeypatch.setattr(db_session, "commit", lambda: calls.append(1))
+    response = make_request()
+    monkeypatch.undo()
+    return response, len(calls)
+
+
+def test_promote_to_admin_sets_role(db_session):
+    service = UserService(db_session)
+    user = service.create_user(_user_create(email="promote-me@example.com", phone="+40744000001"))
+    assert user.role == UserRole.USER
+
+    promoted = service.promote_to_admin("promote-me@example.com")
+
+    assert promoted.id == user.id
+    assert promoted.role == UserRole.ADMIN
+
+
+def test_promote_to_admin_rejects_unknown_email(db_session):
+    service = UserService(db_session)
+
+    with pytest.raises(NotFoundError):
+        service.promote_to_admin("nobody-here@example.com")
+
+
+def test_promote_to_admin_rejects_an_existing_admin(db_session):
+    service = UserService(db_session)
+    service.create_user(_user_create(email="already-admin@example.com", phone="+40744000002"))
+    service.promote_to_admin("already-admin@example.com")
+
+    with pytest.raises(ConflictError):
+        service.promote_to_admin("already-admin@example.com")
+
+
+def test_list_admins_returns_only_admin_role_users(db_session):
+    service = UserService(db_session)
+    service.create_user(_user_create(email="regular-user@example.com", phone="+40744000003"))
+    service.create_user(_user_create(email="soon-admin@example.com", phone="+40744000004"))
+    service.promote_to_admin("soon-admin@example.com")
+
+    admins = service.list_admins()
+
+    assert {a.email for a in admins} >= {"soon-admin@example.com"}
+    assert "regular-user@example.com" not in {a.email for a in admins}
+
+
+def test_promote_to_admin_endpoint_requires_admin(client, db_session):
+    UserService(db_session).create_user(_user_create(email="caller@example.com", phone="+40744000005"))
+    db_session.commit()
+    token = _login_http(client, "caller@example.com", "Sup3rSecret!")
+
+    response = client.post(
+        "/api/v1/users/admin/promote",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"email": "caller@example.com"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_promote_to_admin_endpoint_commits(client, db_session, monkeypatch):
+    admin = UserService(db_session).create_user(_user_create(email="promoter-admin@example.com", phone="+40744000006"))
+    admin.role = UserRole.ADMIN
+    UserService(db_session).create_user(_user_create(email="target-user@example.com", phone="+40744000007"))
+    db_session.commit()
+    token = _login_http(client, "promoter-admin@example.com", "Sup3rSecret!")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    baseline_response, baseline_commits = _count_commits(
+        db_session, monkeypatch, lambda: client.get("/api/v1/users/admin/admins", headers=headers)
+    )
+    assert baseline_response.status_code == 200
+
+    response, commits = _count_commits(
+        db_session,
+        monkeypatch,
+        lambda: client.post("/api/v1/users/admin/promote", headers=headers, json={"email": "target-user@example.com"}),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["role"] == "ADMIN"
+    assert commits > baseline_commits, "POST /users/admin/promote must call db.commit() or the promotion never persists"
+
+
+def test_list_admins_endpoint_requires_admin(client, db_session):
+    UserService(db_session).create_user(_user_create(email="not-an-admin@example.com", phone="+40744000008"))
+    db_session.commit()
+    token = _login_http(client, "not-an-admin@example.com", "Sup3rSecret!")
+
+    response = client.get("/api/v1/users/admin/admins", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 403

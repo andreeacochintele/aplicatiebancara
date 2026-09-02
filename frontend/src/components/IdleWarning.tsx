@@ -1,6 +1,9 @@
+import { useTranslation } from "react-i18next";
+
 import { useAuth } from "../hooks/useAuth";
 
 export function IdleWarning() {
+  const { t } = useTranslation();
   const { idleWarningSeconds } = useAuth();
   if (idleWarningSeconds === null) return null;
 
@@ -33,7 +36,7 @@ export function IdleWarning() {
           flexShrink: 0,
         }}
       />
-      Auto logout in {idleWarningSeconds}s — move your mouse to stay signed in
+      {t("common.idleWarning", { seconds: idleWarningSeconds })}
     </div>
   );
 }

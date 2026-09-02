@@ -7,6 +7,7 @@ import {
   type ReactNode,
   type SelectHTMLAttributes,
 } from "react";
+import { useTranslation } from "react-i18next";
 
 import { ApiError } from "../api/apiClient";
 import { getMyFullProfile, submitIdentityDocument, updateMyProfile } from "../features/auth";
@@ -33,15 +34,15 @@ function initials(firstName?: string, lastName?: string): string {
   return `${firstName?.[0] ?? ""}${lastName?.[0] ?? ""}`.toUpperCase();
 }
 
-function validatePhone(value: string): string | null {
+function validatePhone(value: string, t: (key: string) => string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (!PHONE_PATTERN.test(trimmed)) return "Enter a valid phone number in international format, e.g. +40712345678";
+  if (!PHONE_PATTERN.test(trimmed)) return t("auth.invalidPhone");
   return null;
 }
 
-function validateEmail(value: string): string | null {
-  if (!EMAIL_PATTERN.test(value.trim())) return "Enter a valid email address";
+function validateEmail(value: string, t: (key: string) => string): string | null {
+  if (!EMAIL_PATTERN.test(value.trim())) return t("auth.invalidEmail");
   return null;
 }
 
@@ -86,6 +87,7 @@ function SectionToggle({ label, open, onClick }: { label: string; open: boolean;
 }
 
 export function ProfilePage() {
+  const { t } = useTranslation();
   const { accessToken } = useAuth();
   const [profile, setProfile] = useState<UserFullProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -170,7 +172,7 @@ export function ProfilePage() {
           account_purpose: data.employment.account_purpose ?? "",
         });
       })
-      .catch((err) => setLoadError(err instanceof ApiError ? err.message : "Could not load profile"))
+      .catch((err) => setLoadError(err instanceof ApiError ? err.message : t("profile.couldNotLoad")))
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
@@ -189,7 +191,7 @@ export function ProfilePage() {
   async function submitContact(event: FormEvent) {
     event.preventDefault();
     if (!accessToken) return;
-    const validationError = validateEmail(emailDraft) ?? validatePhone(phoneDraft);
+    const validationError = validateEmail(emailDraft, t) ?? validatePhone(phoneDraft, t);
     if (validationError) {
       setContactError(validationError);
       return;
@@ -202,7 +204,7 @@ export function ProfilePage() {
       setProfile(response);
       setEditingContact(false);
     } catch (err) {
-      setContactError(err instanceof ApiError ? err.message : "Could not save contact details");
+      setContactError(err instanceof ApiError ? err.message : t("profile.couldNotSaveContact"));
     } finally {
       setContactSaving(false);
     }
@@ -247,7 +249,7 @@ export function ProfilePage() {
       setProfile(response);
       setPersonalSaved(true);
     } catch (err) {
-      setPersonalError(err instanceof ApiError ? err.message : "Could not save personal details");
+      setPersonalError(err instanceof ApiError ? err.message : t("profile.couldNotSavePersonalDetails"));
     } finally {
       setPersonalSaving(false);
     }
@@ -256,11 +258,11 @@ export function ProfilePage() {
   function validateEmploymentForm(): string | null {
     const occupationError = validateOccupation(employment.occupation ?? "");
     if (occupationError) return occupationError;
-    const employerError = validateOptionalFreeText(employment.employer ?? "", "Employer");
+    const employerError = validateOptionalFreeText(employment.employer ?? "", t("profile.employer"));
     if (employerError) return employerError;
-    const industryError = validateOptionalFreeText(employment.industry ?? "", "Industry");
+    const industryError = validateOptionalFreeText(employment.industry ?? "", t("profile.industry"));
     if (industryError) return industryError;
-    const incomeSourceError = validateOptionalFreeText(employment.income_source ?? "", "Income source");
+    const incomeSourceError = validateOptionalFreeText(employment.income_source ?? "", t("profile.incomeSource"));
     if (incomeSourceError) return incomeSourceError;
     const incomeError = validateMonthlyIncome(employment.approximate_monthly_income ?? "");
     if (incomeError) return incomeError;
@@ -294,7 +296,7 @@ export function ProfilePage() {
       setProfile(response);
       setEmploymentSaved(true);
     } catch (err) {
-      setEmploymentError(err instanceof ApiError ? err.message : "Could not save financial profile");
+      setEmploymentError(err instanceof ApiError ? err.message : t("profile.couldNotSaveFinancialProfile"));
     } finally {
       setEmploymentSaving(false);
     }
@@ -304,7 +306,7 @@ export function ProfilePage() {
     event.preventDefault();
     if (!accessToken) return;
     if (!identityFiles.front || !identityFiles.back) {
-      setIdentityError("Please select photos of both sides of your ID card");
+      setIdentityError(t("profile.selectBothIdPhotos"));
       return;
     }
 
@@ -320,7 +322,7 @@ export function ProfilePage() {
       setIdentitySaved(true);
       setIdentityFiles({ front: "", back: "" });
     } catch (err) {
-      setIdentityError(err instanceof ApiError ? err.message : "Could not verify the new identity document");
+      setIdentityError(err instanceof ApiError ? err.message : t("profile.couldNotVerifyNewIdentity"));
     } finally {
       setIdentitySaving(false);
     }
@@ -329,7 +331,7 @@ export function ProfilePage() {
   if (loading) {
     return (
       <section className="tile">
-        <p>Loading profile...</p>
+        <p>{t("profile.loadingProfile")}</p>
       </section>
     );
   }
@@ -338,7 +340,7 @@ export function ProfilePage() {
     return (
       <section className="tile">
         <p role="alert" className="status-line status-line--error">
-          {loadError ?? "Could not load profile"}
+          {loadError ?? t("profile.couldNotLoad")}
         </p>
       </section>
     );
@@ -367,10 +369,10 @@ export function ProfilePage() {
               />
               <input value={phoneDraft} onChange={(e) => setPhoneDraft(e.target.value)} placeholder="+40712345678" />
               <button type="submit" disabled={contactSaving}>
-                {contactSaving ? "Saving..." : "Save"}
+                {contactSaving ? t("profile.saving") : t("profile.save")}
               </button>
               <button type="button" className="button--ghost" onClick={cancelContactEdit}>
-                Cancel
+                {t("profile.cancel")}
               </button>
             </form>
           ) : (
@@ -379,9 +381,9 @@ export function ProfilePage() {
                 <span>{profile.user.email}</span>
               </div>
               <div className="profile-header__contact">
-                <span>{profile.user.phone ?? "No phone on file"}</span>
+                <span>{profile.user.phone ?? t("profile.noPhoneOnFile")}</span>
                 <button type="button" className="button-link" onClick={() => setEditingContact(true)}>
-                  Edit
+                  {t("profile.edit")}
                 </button>
               </div>
             </>
@@ -395,83 +397,83 @@ export function ProfilePage() {
       </div>
 
       <div className="tile profile-section">
-        <SectionToggle label="Personal & address" open={personalOpen} onClick={() => setPersonalOpen((o) => !o)} />
+        <SectionToggle label={t("profile.personalAndAddress")} open={personalOpen} onClick={() => setPersonalOpen((o) => !o)} />
         {personalOpen && (
           <form onSubmit={submitPersonal} className="onboarding-form profile-section__body">
             <div className="onboarding-form__grid">
               <Field
-                label="CNP"
+                label={t("profile.cnp")}
                 value={personal.cnp}
                 disabled
                 inputMode="numeric"
                 maxLength={13}
-                hint="This can't be changed here."
+                hint={t("profile.cantBeChangedHere")}
               />
               <Field
-                label="Date of birth"
+                label={t("profile.dateOfBirth")}
                 type="date"
                 value={personal.date_of_birth}
                 disabled
-                hint="This can't be changed here."
+                hint={t("profile.cantBeChangedHere")}
               />
               <NationalitySearchSelect
-                label="Citizenship"
+                label={t("profile.citizenship")}
                 value={personal.citizenship}
                 onChange={(demonym) => setPersonal({ ...personal, citizenship: demonym })}
                 required
-                placeholder="Start typing a nationality..."
+                placeholder={t("profile.citizenshipPlaceholder")}
               />
               <CountrySearchSelect
-                label="Country"
+                label={t("profile.country")}
                 value={personal.country}
                 onChange={(name) => setPersonal({ ...personal, country: name })}
                 required
-                placeholder="Start typing a country..."
+                placeholder={t("profile.countryPlaceholder")}
               />
               <Field
-                label="County"
+                label={t("profile.county")}
                 value={personal.county}
                 onChange={(e) => setPersonal({ ...personal, county: e.target.value })}
                 required
               />
               <Field
-                label="City"
+                label={t("profile.city")}
                 value={personal.city}
                 onChange={(e) => setPersonal({ ...personal, city: e.target.value })}
                 required
               />
               <Field
-                label="Street"
+                label={t("profile.street")}
                 value={personal.street}
                 onChange={(e) => setPersonal({ ...personal, street: e.target.value })}
                 required
               />
               <Field
-                label="Street number"
+                label={t("profile.streetNumber")}
                 value={personal.street_number}
                 onChange={(e) => setPersonal({ ...personal, street_number: e.target.value })}
                 required
               />
               <Field
-                label="Building"
+                label={t("profile.building")}
                 value={personal.building ?? ""}
                 onChange={(e) => setPersonal({ ...personal, building: e.target.value })}
                 maxLength={32}
               />
               <Field
-                label="Staircase"
+                label={t("profile.staircase")}
                 value={personal.staircase ?? ""}
                 onChange={(e) => setPersonal({ ...personal, staircase: e.target.value })}
                 maxLength={32}
               />
               <Field
-                label="Apartment"
+                label={t("profile.apartment")}
                 value={personal.apartment ?? ""}
                 onChange={(e) => setPersonal({ ...personal, apartment: e.target.value })}
                 maxLength={32}
               />
               <Field
-                label="Postal code"
+                label={t("profile.postalCode")}
                 value={personal.postal_code ?? ""}
                 onChange={(e) => setPersonal({ ...personal, postal_code: e.target.value })}
                 maxLength={12}
@@ -482,27 +484,27 @@ export function ProfilePage() {
                 {personalError}
               </p>
             )}
-            {personalSaved && <p className="status-line">Saved.</p>}
+            {personalSaved && <p className="status-line">{t("profile.saved")}</p>}
             <button type="submit" disabled={personalSaving}>
-              {personalSaving ? "Saving..." : "Save"}
+              {personalSaving ? t("profile.saving") : t("profile.save")}
             </button>
           </form>
         )}
       </div>
 
       <div className="tile profile-section">
-        <SectionToggle label="Financial profile" open={financialOpen} onClick={() => setFinancialOpen((o) => !o)} />
+        <SectionToggle label={t("profile.financialProfile")} open={financialOpen} onClick={() => setFinancialOpen((o) => !o)} />
         {financialOpen && (
           <form onSubmit={submitEmployment} className="onboarding-form profile-section__body">
             <div className="onboarding-form__grid">
               <Field
-                label="Occupation"
+                label={t("profile.occupation")}
                 value={employment.occupation ?? ""}
                 onChange={(e) => setEmployment({ ...employment, occupation: e.target.value })}
                 maxLength={100}
               />
               <SelectField
-                label="Employment status"
+                label={t("profile.employmentStatus")}
                 value={employment.employment_status ?? ""}
                 onChange={(e) => {
                   const nextStatus = e.target.value === "" ? null : (e.target.value as EmploymentStatus);
@@ -515,24 +517,24 @@ export function ProfilePage() {
                   });
                 }}
               >
-                <option value="">Select status</option>
-                <option value="EMPLOYED">Employed</option>
-                <option value="SELF_EMPLOYED">Self-employed</option>
-                <option value="STUDENT">Student</option>
-                <option value="UNEMPLOYED">Unemployed</option>
-                <option value="RETIRED">Retired</option>
-                <option value="OTHER">Other</option>
+                <option value="">{t("profile.selectStatus")}</option>
+                <option value="EMPLOYED">{t("profile.employed")}</option>
+                <option value="SELF_EMPLOYED">{t("profile.selfEmployed")}</option>
+                <option value="STUDENT">{t("profile.student")}</option>
+                <option value="UNEMPLOYED">{t("profile.unemployed")}</option>
+                <option value="RETIRED">{t("profile.retired")}</option>
+                <option value="OTHER">{t("profile.other")}</option>
               </SelectField>
               {!hidesEmployer && (
                 <>
                   <Field
-                    label="Employer"
+                    label={t("profile.employer")}
                     value={employment.employer ?? ""}
                     onChange={(e) => setEmployment({ ...employment, employer: e.target.value })}
                     maxLength={255}
                   />
                   <DropdownWithOther
-                    label="Industry"
+                    label={t("profile.industry")}
                     value={employment.industry ?? ""}
                     options={INDUSTRY_OPTIONS}
                     onChange={(value) => setEmployment({ ...employment, industry: value })}
@@ -540,13 +542,13 @@ export function ProfilePage() {
                 </>
               )}
               <DropdownWithOther
-                label="Income source"
+                label={t("profile.incomeSource")}
                 value={employment.income_source ?? ""}
                 options={INCOME_SOURCE_OPTIONS}
                 onChange={(value) => setEmployment({ ...employment, income_source: value })}
               />
               <Field
-                label="Approximate monthly income"
+                label={t("profile.approximateMonthlyIncome")}
                 type="number"
                 min="0"
                 max="10000000"
@@ -556,7 +558,7 @@ export function ProfilePage() {
               />
             </div>
             <label>
-              Account purpose
+              {t("profile.accountPurpose")}
               <input
                 value={employment.account_purpose ?? ""}
                 onChange={(e) => setEmployment({ ...employment, account_purpose: e.target.value })}
@@ -567,37 +569,37 @@ export function ProfilePage() {
                 {employmentError}
               </p>
             )}
-            {employmentSaved && <p className="status-line">Saved.</p>}
+            {employmentSaved && <p className="status-line">{t("profile.saved")}</p>}
             <button type="submit" disabled={employmentSaving}>
-              {employmentSaving ? "Saving..." : "Save"}
+              {employmentSaving ? t("profile.saving") : t("profile.save")}
             </button>
           </form>
         )}
       </div>
 
       <div className="tile profile-section">
-        <SectionToggle label="Identity document" open={identityOpen} onClick={() => setIdentityOpen((o) => !o)} />
+        <SectionToggle label={t("profile.identityDocument")} open={identityOpen} onClick={() => setIdentityOpen((o) => !o)} />
         {identityOpen && (
           <div className="profile-section__body">
             {profile?.identity_document.status === "NEEDS_REVIEW" ? (
-              <p className="status-line">Your identity document is with an admin for manual review.</p>
+              <p className="status-line">{t("profile.needsReviewNotice")}</p>
             ) : profile?.identity_document.status === "REJECTED" ? (
-              <p className="status-line">Your identity document was rejected on review. Please contact support.</p>
+              <p className="status-line">{t("profile.rejectedNotice")}</p>
             ) : (
               <form onSubmit={submitIdentityUpdate} className="onboarding-form">
                 <p className="field-hint">
                   {profile?.identity_document.status === "VERIFIED"
-                    ? "Your identity document is verified. Upload new photos here if it was renewed or replaced."
-                    : "Upload clear photos of both sides of your Romanian ID card to verify your identity."}
+                    ? t("profile.verifiedUploadHint")
+                    : t("profile.uploadHint")}
                 </p>
                 <div className="onboarding-form__grid">
                   <FileField
-                    label="Front of ID card"
+                    label={t("profile.frontOfId")}
                     disabled={identitySaving}
                     onFileSelected={(dataUrl) => setIdentityFiles((current) => ({ ...current, front: dataUrl }))}
                   />
                   <FileField
-                    label="Back of ID card"
+                    label={t("profile.backOfId")}
                     disabled={identitySaving}
                     onFileSelected={(dataUrl) => setIdentityFiles((current) => ({ ...current, back: dataUrl }))}
                   />
@@ -607,9 +609,9 @@ export function ProfilePage() {
                     {identityError}
                   </p>
                 )}
-                {identitySaved && <p className="status-line">Verified.</p>}
+                {identitySaved && <p className="status-line">{t("profile.verified")}</p>}
                 <button type="submit" disabled={identitySaving || !identityFiles.front || !identityFiles.back}>
-                  {identitySaving ? "Verifying..." : "Upload and verify"}
+                  {identitySaving ? t("profile.verifying") : t("profile.uploadAndVerify")}
                 </button>
               </form>
             )}

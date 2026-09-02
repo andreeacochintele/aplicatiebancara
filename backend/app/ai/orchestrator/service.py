@@ -17,6 +17,12 @@ Logs one line per step of this flow (request_received, agent_dispatched,
 final_response/request_failed) tagged with a per-request correlation_id —
 see ai/observability.py and ai/README.md for the format and how to watch
 it live.
+
+Every `reply` — whichever of the three sources below produced it — passes
+through ai/guardrails.py's ensure_plain_text() before being persisted or
+returned: this is the one place all of them converge, so it's also the one
+place a "never raw JSON" guarantee can be enforced in code rather than
+trusted to each agent's own system prompt alone.
 """
 import time
 import uuid
@@ -25,6 +31,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.ai.actions.schemas import AgentResult
+from app.ai.guardrails import ensure_plain_text
 from app.ai.observability import (
     bind_conversation_id,
     bind_correlation_id,
@@ -110,6 +117,7 @@ class OrchestratorService:
         history = self._load_history(conversation.id)
 
         action_card = None
+        download = None
         try:
             intent = classify_intent(message, history)
 
@@ -123,9 +131,16 @@ class OrchestratorService:
                 log_event("agent_dispatched", agent=intent.value, intent=intent.value)
                 agent_output = AGENT_REGISTRY[intent](message, user_id, self.db, history)
                 if isinstance(agent_output, AgentResult):
-                    reply, action_card = agent_output.reply, agent_output.action_card
+                    reply, action_card, download = agent_output.reply, agent_output.action_card, agent_output.download
                 else:
                     reply = agent_output
+
+            # Deterministic backstop, applied to every path (fixed greeting/
+            # out_of_scope strings included) so the guarantee holds even if
+            # one of those two ever stops being a hardcoded string later —
+            # see ai/guardrails.py's own docstring for why this can't just
+            # live in each agent's system prompt instead.
+            reply = ensure_plain_text(reply)
         except Exception as exc:
             log_event(
                 "request_failed",
@@ -163,6 +178,7 @@ class OrchestratorService:
             conversation_id=conversation.id,
             suggested_followups=suggested_followups,
             action_card=action_card,
+            download=download,
         )
 
     def create_conversation(self, user_id: uuid.UUID) -> Conversation:

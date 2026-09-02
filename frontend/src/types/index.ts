@@ -175,6 +175,16 @@ export interface Transaction {
   description: string | null;
   created_at: string;
   completed_at: string | null;
+  // Resolved spending category: the user's own choice for this transaction
+  // if they made one, otherwise the merchant's. `category_id` is null while
+  // the category is inherited — that's how the picker tells the two apart.
+  category: string | null;
+  category_id: string | null;
+}
+
+export interface TransactionCategory {
+  id: string;
+  name: string;
 }
 
 export interface Beneficiary {
@@ -283,6 +293,7 @@ export interface TransactionFolder {
 export type CardType = "DEBIT" | "CREDIT" | "ONE_TIME";
 export type CardTier = "REGULAR" | "GOLD" | "PLATINUM";
 export type CardStatus = "ACTIVE" | "FROZEN" | "EXPIRED" | "CANCELLED";
+export type CardFreezeReason = "USER_REQUESTED" | "FRAUD_HOLD";
 
 export interface Card {
   id: string;
@@ -291,6 +302,8 @@ export interface Card {
   type: CardType;
   tier: CardTier | null;
   status: CardStatus;
+  freeze_reason: CardFreezeReason | null;
+  frozen_at: string | null;
   masked_pan: string;
   last_four: string;
   has_pin: boolean;
@@ -786,7 +799,8 @@ export type FraudFlagCode =
   | "UNUSUAL_COUNTRY"
   | "REWARD_ABUSE_PATTERN"
   | "HIGH_VELOCITY"
-  | "UNUSUAL_TIME";
+  | "UNUSUAL_TIME"
+  | "REPEATED_TRANSFER_PATTERN";
 
 export interface FraudFlag {
   id: string;
@@ -826,10 +840,30 @@ export interface FraudCaseSummary {
   flag_codes: FraudFlagCode[];
 }
 
+export interface AdminAuditLog {
+  id: string;
+  admin_user_id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  old_data: Record<string, unknown> | null;
+  new_data: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface FrozenCard {
+  id: string;
+  last_four: string;
+  masked_pan: string;
+  frozen_at: string | null;
+}
+
 export interface FraudCaseDetail extends FraudCaseSummary {
   decided_by_admin_id: string | null;
   decided_at: string | null;
   flags: FraudFlag[];
+  frozen_card: FrozenCard | null;
+  card_hold_notice: string | null;
   transaction_amount: string;
   transaction_currency: string;
   transaction_description: string | null;
@@ -875,6 +909,10 @@ export interface AgentActionResult {
   card: ActionCard | null;
 }
 
+export interface DownloadAttachment {
+  url: string;
+}
+
 export interface OrchestratorChatResponse {
   intent: OrchestratorIntent;
   reply: string;
@@ -882,6 +920,7 @@ export interface OrchestratorChatResponse {
   conversation_id: string;
   suggested_followups: string[];
   action_card: ActionCard | null;
+  download: DownloadAttachment | null;
 }
 
 export interface ConversationMessagePublic {

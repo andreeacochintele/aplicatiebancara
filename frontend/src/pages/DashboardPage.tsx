@@ -3,18 +3,20 @@ import {
   Receipt, RefreshCcw, Send, Sparkles, type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { apiRequest } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
+import { usePeriod } from "../hooks/usePeriod";
 import type { CreditScore, NetWorthResponse, SpendingByTypeResponse, Transaction } from "../types";
 
-const QUICK_ACTIONS: { to: string; label: string; sub: string; icon: LucideIcon }[] = [
-  { to: "/payments", label: "Send", sub: "New transfer", icon: Send },
-  { to: "/wallets", label: "Convert", sub: "Exchange FX", icon: RefreshCcw },
-  { to: "/transactions", label: "Review", sub: "All transactions", icon: Receipt },
-  { to: "/assistant", label: "Ask", sub: "Assistant", icon: Sparkles },
+const QUICK_ACTIONS: { to: string; labelKey: string; subKey: string; icon: LucideIcon }[] = [
+  { to: "/payments", labelKey: "dashboard.send", subKey: "dashboard.newTransfer", icon: Send },
+  { to: "/wallets", labelKey: "dashboard.convert", subKey: "dashboard.exchangeFx", icon: RefreshCcw },
+  { to: "/transactions", labelKey: "dashboard.review", subKey: "dashboard.allTransactions", icon: Receipt },
+  { to: "/assistant", labelKey: "dashboard.ask", subKey: "dashboard.assistant", icon: Sparkles },
 ];
 
 const STATUS_CHIP: Record<string, string> = {
@@ -26,6 +28,19 @@ const STATUS_CHIP: Record<string, string> = {
   REJECTED: "easyb-chip-red",
   CANCELLED: "easyb-chip-red",
 };
+
+const CREDIT_BAND_LABEL_KEY: Record<string, string> = {
+  EXCELLENT: "credit.excellent",
+  VERY_GOOD: "credit.veryGood",
+  GOOD: "credit.good",
+  FAIR: "credit.fair",
+  RISKY: "credit.risky",
+};
+
+function formatCreditBand(band: string, t: (key: string) => string): string {
+  const key = CREDIT_BAND_LABEL_KEY[band];
+  return key ? t(key) : band;
+}
 
 function hueFromString(value: string): number {
   return Math.abs([...value].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % 360;
@@ -42,21 +57,27 @@ function formatAmount(transaction: Transaction, userWalletIds: Set<string>): { s
   return { sign, text: `${transaction.amount} ${transaction.currency}` };
 }
 
-function formatTransactionType(transaction: Transaction, userWalletIds: Set<string>): string {
+function formatTransactionType(
+  transaction: Transaction,
+  userWalletIds: Set<string>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
   const isIncoming = transaction.destination_wallet_id ? userWalletIds.has(transaction.destination_wallet_id) : false;
   const isOutgoing = transaction.source_wallet_id ? userWalletIds.has(transaction.source_wallet_id) : false;
   const description = transaction.description?.toLowerCase() ?? "";
   if (description.includes("loan") && description.includes("disbursement") && isIncoming && !isOutgoing) {
-    return "Bank -> user";
+    return t("dashboard.bankToUser");
   }
   if (transaction.type === "LOAN_PAYMENT") {
-    return "User -> bank";
+    return t("dashboard.userToBank");
   }
-  return transaction.type.replaceAll("_", " ");
+  return t(`common.txType.${transaction.type}`, { defaultValue: transaction.type.replaceAll("_", " ") });
 }
 
 export function DashboardPage() {
+  const { t } = useTranslation();
   const { user, accessToken } = useAuth();
+  const { query: periodQuery } = usePeriod();
   const [hidden, setHidden] = useState(false);
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -78,9 +99,6 @@ export function DashboardPage() {
     apiRequest<Transaction[]>("/transactions", { token: accessToken })
       .then((list) => setTransactions([...list].sort((a, b) => b.created_at.localeCompare(a.created_at))))
       .catch(() => setTransactions([]));
-    apiRequest<SpendingByTypeResponse>("/analytics/spending-by-type", { token: accessToken })
-      .then(setSpending)
-      .catch(() => setSpending(null));
     if (user?.user_type !== "BUSINESS") {
       // Credit is hidden for business accounts (personal FICO-style score,
       // personal loan products) — skip the fetch, not just the card below.
@@ -89,6 +107,19 @@ export function DashboardPage() {
         .catch(() => setCreditScore(null));
     }
   }, [accessToken, user?.user_type]);
+
+  // Follows the app-wide month selector, so the dashboard's spending card and
+  // the Analytics page never disagree about which month they are showing.
+  useEffect(() => {
+    if (!accessToken) return;
+    let cancelled = false;
+    apiRequest<SpendingByTypeResponse>(`/analytics/spending-by-type?${periodQuery}`, { token: accessToken })
+      .then((data) => !cancelled && setSpending(data))
+      .catch(() => !cancelled && setSpending(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, periodQuery]);
 
   async function setMainWallet(walletId: string) {
     if (!accessToken || settingMainId) return;
@@ -124,10 +155,10 @@ export function DashboardPage() {
   const mainWallet = netWorth?.wallets.find((wallet) => wallet.is_main);
   const heroAmount = showTotal ? netWorth?.total_available_balance : mainWallet?.available_balance;
   const heroLabel = !netWorth
-    ? `Welcome, ${user?.first_name}`
+    ? t("dashboard.welcome", { name: user?.first_name })
     : showTotal
-      ? `Total balance · all wallets (${netWorth.base_currency})`
-      : `${mainWallet?.currency ?? netWorth.base_currency} wallet balance`;
+      ? t("dashboard.totalBalanceAllWallets", { currency: netWorth.base_currency })
+      : t("dashboard.walletBalance", { currency: mainWallet?.currency ?? netWorth.base_currency });
 
   return (
     <div className="easyb-page">
@@ -139,7 +170,7 @@ export function DashboardPage() {
             <div className="easyb-eyebrow light">{heroLabel}</div>
             <div className="easyb-hero-amount">
               {hidden ? "••••••" : (heroAmount ?? "—")}
-              <button className="easyb-icon-btn" onClick={() => setHidden((h) => !h)} aria-label="Toggle balance visibility">
+              <button className="easyb-icon-btn" onClick={() => setHidden((h) => !h)} aria-label={t("dashboard.toggleBalanceVisibility")}>
                 {hidden ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
@@ -159,7 +190,7 @@ export function DashboardPage() {
                   cursor: "pointer",
                 }}
               >
-                {showTotal ? "Show main wallet only" : "Show total across all wallets"}
+                {showTotal ? t("dashboard.showMainWalletOnly") : t("dashboard.showTotalAcrossWallets")}
               </button>
             )}
           </div>
@@ -172,7 +203,7 @@ export function DashboardPage() {
                 key={wallet.wallet_id}
                 onClick={() => setMainWallet(wallet.wallet_id)}
                 disabled={wallet.is_main || settingMainId === wallet.wallet_id}
-                title={wallet.is_main ? "Main wallet" : "Set as main wallet"}
+                title={wallet.is_main ? t("dashboard.mainWallet") : t("dashboard.setAsMainWallet")}
                 style={{
                   background: "rgba(255, 255, 255, 0.1)",
                   border: "1px solid rgba(255, 255, 255, 0.14)",
@@ -190,7 +221,7 @@ export function DashboardPage() {
               >
                 <span className="easyb-hero-wallet-code">
                   {wallet.currency}
-                  {wallet.is_main ? " · main" : ""}
+                  {wallet.is_main ? ` · ${t("dashboard.main")}` : ""}
                 </span>
                 <span>{hidden ? "••••" : wallet.available_balance}</span>
               </button>
@@ -204,23 +235,23 @@ export function DashboardPage() {
               <span className="easyb-quick-icon">
                 <action.icon size={18} />
               </span>
-              <span className="easyb-quick-label">{action.label}</span>
-              <span className="easyb-quick-sub">{action.sub}</span>
+              <span className="easyb-quick-label">{t(action.labelKey)}</span>
+              <span className="easyb-quick-sub">{t(action.subKey)}</span>
             </Link>
           ))}
         </div>
 
         <div className="easyb-card">
           <div className="easyb-section-header">
-            <h2>Recent transactions</h2>
+            <h2>{t("dashboard.recentTransactions")}</h2>
             <Link className="easyb-link-btn" to="/transactions">
-              View all <ChevronRight size={15} />
+              {t("dashboard.viewAll")} <ChevronRight size={15} />
             </Link>
           </div>
           <div className="easyb-tx-list">
             {recentTransactions.map((transaction) => {
               const { sign, text } = formatAmount(transaction, userWalletIds);
-              const typeLabel = formatTransactionType(transaction, userWalletIds);
+              const typeLabel = formatTransactionType(transaction, userWalletIds, t);
               return (
                 <div className="easyb-tx-row" key={transaction.id}>
                   <div className="easyb-tx-left">
@@ -236,7 +267,7 @@ export function DashboardPage() {
                   </div>
                   <div className="easyb-tx-right">
                     <span className={`easyb-chip ${STATUS_CHIP[transaction.status] ?? "easyb-chip-neutral"}`}>
-                      {transaction.status}
+                      {t(`common.status.${transaction.status}`, { defaultValue: transaction.status })}
                     </span>
                     <span className={`easyb-tx-amount ${sign === "+" ? "up" : ""}`}>
                       {sign}
@@ -246,7 +277,7 @@ export function DashboardPage() {
                 </div>
               );
             })}
-            {recentTransactions.length === 0 && <p className="easyb-tx-meta">No transactions yet.</p>}
+            {recentTransactions.length === 0 && <p className="easyb-tx-meta">{t("dashboard.noTransactionsYet")}</p>}
           </div>
         </div>
       </div>
@@ -255,8 +286,8 @@ export function DashboardPage() {
         <div className="easyb-card">
           <div className="easyb-section-header">
             <div>
-              <div className="easyb-eyebrow">This period</div>
-              <h2>Spending by type</h2>
+              <div className="easyb-eyebrow">{t("dashboard.thisPeriod")}</div>
+              <h2>{t("dashboard.spendingByType")}</h2>
             </div>
           </div>
           {donutData.length > 0 ? (
@@ -281,7 +312,9 @@ export function DashboardPage() {
                 {donutData.map((item) => (
                   <div className="easyb-legend-row" key={item.key}>
                     <span className="easyb-legend-dot" style={{ background: item.color }} />
-                    <span className="easyb-legend-name">{item.name.toLowerCase().replaceAll("_", " ")}</span>
+                    <span className="easyb-legend-name">
+                      {t(`common.txType.${item.name}`, { defaultValue: item.name.toLowerCase().replaceAll("_", " ") })}
+                    </span>
                     <span className="easyb-legend-pct">
                       {spendingTotal > 0 ? Math.round((item.value / spendingTotal) * 100) : 0}%
                     </span>
@@ -290,26 +323,26 @@ export function DashboardPage() {
               </div>
             </>
           ) : (
-            <p className="easyb-tx-meta">No completed transactions this period yet.</p>
+            <p className="easyb-tx-meta">{t("dashboard.noCompletedTransactions")}</p>
           )}
         </div>
 
         {creditScore && (
           <div className="easyb-card">
             <div className="easyb-section-header">
-              <h2>Credit score</h2>
+              <h2>{t("dashboard.creditScore")}</h2>
             </div>
             <div className="easyb-score-wrap">
               <div className="easyb-ring" style={{ background: `conic-gradient(var(--easyb-accent) ${scorePercent * 3.6}deg, var(--easyb-border) 0deg)` }}>
                 <div className="easyb-ring-hole">
                   <div className="easyb-score-num">{creditScore.score}</div>
-                  <div className="easyb-score-tag">{creditScore.band.replaceAll("_", " ")}</div>
+                  <div className="easyb-score-tag">{formatCreditBand(creditScore.band, t)}</div>
                 </div>
               </div>
               <div className="easyb-score-side">
-                <div className="easyb-score-line">/ 850</div>
+                <div className="easyb-score-line">{t("dashboard.outOf850")}</div>
                 <Link className="easyb-link-btn" to="/credit">
-                  View details <ChevronRight size={14} />
+                  {t("dashboard.viewDetails")} <ChevronRight size={14} />
                 </Link>
               </div>
             </div>
@@ -318,22 +351,25 @@ export function DashboardPage() {
 
         <div className="easyb-card">
           <div className="easyb-section-header">
-            <h2>Needs your attention</h2>
+            <h2>{t("dashboard.needsYourAttention")}</h2>
           </div>
           {needsAttention.length > 0 ? (
             <div className="easyb-attn-list">
               {needsAttention.map((transaction) => (
                 <div className="easyb-attn-row" key={transaction.id}>
-                  <span className="easyb-chip easyb-chip-violet">Review</span>
+                  <span className="easyb-chip easyb-chip-violet">{t("dashboard.review")}</span>
                   <span className="easyb-attn-text">
-                    {transaction.description ?? transaction.type} · {transaction.amount} {transaction.currency} is on
-                    hold pending verification.
+                    {t("dashboard.onHoldPendingVerification", {
+                      description: transaction.description ?? transaction.type,
+                      amount: transaction.amount,
+                      currency: transaction.currency,
+                    })}
                   </span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="easyb-tx-meta">Nothing needs your attention right now.</p>
+            <p className="easyb-tx-meta">{t("dashboard.nothingNeedsAttention")}</p>
           )}
         </div>
       </div>

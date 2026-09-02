@@ -219,3 +219,37 @@ def test_iban_transfer_rejects_insufficient_balance(client, db_session):
     )
 
     assert response.status_code == 409
+
+
+def test_iban_transfer_to_an_easyb_wallet_in_another_currency_is_refused(client, db_session):
+    """The IBAN is on-us but the recipient holds a different currency.
+
+    Regression test for money loss: this used to fall through to the
+    external "money leaves the bank" branch, which debited the sender, left
+    destination_wallet_id NULL and marked the transfer COMPLETED — while the
+    recipient, a real account on this system, was never credited.
+    """
+    sender = _register(client, "iban-xcur-sender@example.com", "+40750666661")
+    recipient = _register(client, "iban-xcur-recipient@example.com", "+40750666662")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "EUR", Decimal("500.00"))
+    recipient_wallet = _create_wallet(db_session, recipient["user"]["id"], "RON", Decimal("10.00"))
+
+    response = client.post(
+        "/api/v1/payments/transfers/iban",
+        headers=_auth_header(sender),
+        json={
+            "beneficiary_name": "Recipient User",
+            "iban": recipient_wallet.iban,
+            "source_wallet_id": str(source_wallet.id),
+            "amount": "100.00",
+            "currency": "EUR",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "RON" in response.json()["detail"]
+
+    db_session.refresh(source_wallet)
+    db_session.refresh(recipient_wallet)
+    assert source_wallet.available_balance == Decimal("500.00")  # nothing left the sender
+    assert recipient_wallet.available_balance == Decimal("10.00")

@@ -50,10 +50,21 @@ assistant won't claim a user has a specific benefit without knowing
 their actual card/tier.
 
 ## Credit
-Users have a credit score the app maintains, and can apply for a
-personal loan. Approved loans get a monthly payment schedule
-(amortization) that can be viewed. Credit cards separately track a
-credit limit and how much of it is currently used.
+Users have a credit score the app maintains, and can apply for a loan
+from several product types:
+- **Personal loan** — unsecured, for general personal expenses.
+- **Mortgage** — secured, for buying or refinancing residential property.
+- **Auto loan** — for purchasing a vehicle.
+- **Student loan** — for tuition or study-related expenses.
+- **Home improvement loan** — for renovation, repairs, or energy-efficiency work.
+- **Debt consolidation loan** — refinances several existing debts into one instalment.
+
+Approved loans get a monthly payment schedule (amortization) that can
+be viewed. Exact rates, terms, required documents, and eligibility
+depend on the product and the user's own profile — this assistant
+doesn't guess those; it points the user to the Credit agent or the
+Loans/Credit section of the app for specifics. Credit cards separately
+track a credit limit and how much of it is currently used.
 
 ## Cards
 Users can have debit/credit/one-time-use cards tied to their wallets,
@@ -66,6 +77,14 @@ shouldn't be used again even if it turns up later. Card transactions can
 carry fees (e.g. foreign-currency, ATM) that depend on the card product —
 this assistant directs users to the app/tariff information for exact
 amounts rather than guessing one.
+
+A card can end up frozen two different ways: the user freezing it
+themselves (reversible any time with the app's own unfreeze option), or
+the system automatically placing it on a security hold tied to a payment
+under fraud review (see the fraud-awareness knowledge above) — that
+second kind cannot be undone with the app's own unfreeze button; only an
+admin can clear it once the review is done, which is why the app tells
+the user to contact support if they try.
 
 ## Notifications
 The app sends notifications for things like transactions, payment

@@ -6,12 +6,17 @@ regular user, and never runs automatically when a fraud case is created.
 
 ## Workflow
 
-1. A card payment is created by `TransactionService.create_card_payment()`.
+1. A card payment or a transfer is created — `create_card_payment()`,
+   `_execute_same_currency_transfer()` / `_execute_fx_transfer()`
+   (`TransactionService`), or the external leg of
+   `PaymentsService.create_iban_transfer()`. Only `CARD_PAYMENT` and
+   `TRANSFER` are screened (`SCREENED_TRANSACTION_TYPES`).
 2. `FraudService.evaluate_transaction()` computes deterministic flags and a
    deterministic `risk_score`.
 3. If the score crosses the threshold, the transaction is moved to
    `PENDING_REVIEW`, the money is put on wallet `HOLD`, and a `FraudCase` plus
-   `FraudFlag` rows are created.
+   `FraudFlag` rows are created. For a transfer the hold reserves the
+   *source-side* amount and the destination is not credited until approval.
 4. The admin dashboard lists pending cases from `GET /fraud/cases`.
 5. Expanding a case loads `GET /fraud/cases/{id}`. This returns deterministic
    case details and any cached `agent_analysis`.
@@ -37,6 +42,19 @@ regular user, and never runs automatically when a fraud case is created.
 - The agent never approves or rejects a case.
 - The agent never creates ledger entries or changes wallet balances.
 - The deterministic fraud engine and the human admin remain authoritative.
+
+## Not screened
+
+Bill-split settlements and payment-request payments opt out
+(`create_internal_transfer(..., screen_for_fraud=False)`): both mark their
+own record PAID and notify the payee immediately after the transfer returns,
+which a `PENDING_REVIEW` hold would make untrue. Wiring them in requires that
+status handling first.
+
+Repeated transfers to the same *external* IBAN are not detectable: the IBAN
+is stored only in the transaction's free-text description, so
+`REPEATED_TRANSFER_PATTERN` has no counterparty id to key on. Such bursts can
+still trip `HIGH_VELOCITY`.
 
 ## Data Boundary
 

@@ -61,10 +61,60 @@ def _print_transfer_test_users() -> None:
         print(f"  {email} / {SEED_PASSWORD} / {phone} / {first_name} {last_name}")
 
 
+def _seed_supabase_opening_ledger_entries(
+    client: SupabaseRestSession, opening_balances: list[tuple[str, str, str, Decimal]], created_at: str
+) -> None:
+    """Matching ledger entry for a wallet row whose available_balance was
+    set directly (see run_supabase_rest()) — same reasoning as the ORM
+    path's _seed_wallet_opening_entry, done as REST bulk inserts instead.
+    opening_balances is a list of (wallet_id, owner_user_id, currency, amount)."""
+    client.request(
+        "POST",
+        "transactions",
+        body=[
+            {
+                "id": _seed_uuid(f"tx-opening-{wallet_id}"),
+                "initiator_user_id": owner_id,
+                "source_wallet_id": None,
+                "destination_wallet_id": wallet_id,
+                "counterparty_user_id": None,
+                "type": TransactionType.TOP_UP.value,
+                "status": TransactionStatus.COMPLETED.value,
+                "amount": _money(amount),
+                "currency": currency,
+                "description": "Opening balance",
+                "created_at": created_at,
+                "completed_at": created_at,
+            }
+            for wallet_id, owner_id, currency, amount in opening_balances
+        ],
+        prefer="return=minimal",
+    )
+    client.request(
+        "POST",
+        "wallet_ledger_entries",
+        body=[
+            {
+                "id": _seed_uuid(f"ledger-opening-{wallet_id}"),
+                "wallet_id": wallet_id,
+                "transaction_id": _seed_uuid(f"tx-opening-{wallet_id}"),
+                "entry_type": LedgerEntryType.CREDIT.value,
+                "amount": _money(amount),
+                "currency": currency,
+                "balance_after": _money(amount),
+                "created_at": created_at,
+            }
+            for wallet_id, _owner_id, currency, amount in opening_balances
+        ],
+        prefer="return=minimal",
+    )
+
+
 def _seed_supabase_transfer_test_users(client: SupabaseRestSession) -> None:
     created_at = _now()
     user_rows = []
     wallet_rows = []
+    opening_balances = []
     for index, email, phone, first_name, last_name in TRANSFER_TEST_USERS:
         user_id = _seed_uuid(f"transfer-user-{index:02d}")
         wallet_id = _seed_uuid(f"wallet-transfer-user-{index:02d}-ron")
@@ -106,11 +156,46 @@ def _seed_supabase_transfer_test_users(client: SupabaseRestSession) -> None:
                     "updated_at": created_at,
                 }
             )
+            opening_balances.append((wallet_id, user_id, "RON", Decimal("1000.00")))
 
     if user_rows:
         client.request("POST", "users", body=user_rows, prefer="return=minimal")
     if wallet_rows:
         client.request("POST", "wallets", body=wallet_rows, prefer="return=minimal")
+    if opening_balances:
+        _seed_supabase_opening_ledger_entries(client, opening_balances, created_at)
+
+
+def _seed_wallet_opening_entry(db, wallet: Wallet, amount: Decimal) -> None:
+    """Every seeded wallet starts with a balance assigned directly on the
+    row — write the matching ledger entry too, or the wallet fails
+    reconciliation (ReconciliationService.check_all_wallets) from the
+    moment it's created. Mirrors run()'s own credit() helper minus the
+    balance bump, since available_balance is already set by construction."""
+    if amount <= 0:
+        return
+    transaction = Transaction(
+        initiator_user_id=wallet.user_id,
+        source_wallet_id=None,
+        destination_wallet_id=wallet.id,
+        type=TransactionType.TOP_UP,
+        status=TransactionStatus.COMPLETED,
+        amount=amount,
+        currency=wallet.currency,
+        description="Opening balance",
+    )
+    db.add(transaction)
+    db.flush()
+    db.add(
+        WalletLedgerEntry(
+            wallet_id=wallet.id,
+            transaction_id=transaction.id,
+            entry_type=LedgerEntryType.CREDIT,
+            amount=amount,
+            currency=wallet.currency,
+            balance_after=amount,
+        )
+    )
 
 
 def _seed_transfer_test_users(db) -> None:
@@ -132,16 +217,17 @@ def _seed_transfer_test_users(db) -> None:
 
         wallet = db.query(Wallet).filter(Wallet.user_id == user.id, Wallet.currency == "RON").first()
         if wallet is None:
-            db.add(
-                Wallet(
-                    id=uuid.UUID(_seed_uuid(f"wallet-transfer-user-{index:02d}-ron")),
-                    user_id=user.id,
-                    currency="RON",
-                    available_balance=Decimal("1000.00"),
-                    reserved_balance=Decimal("0"),
-                    is_main=True,
-                )
+            wallet = Wallet(
+                id=uuid.UUID(_seed_uuid(f"wallet-transfer-user-{index:02d}-ron")),
+                user_id=user.id,
+                currency="RON",
+                available_balance=Decimal("1000.00"),
+                reserved_balance=Decimal("0"),
+                is_main=True,
             )
+            db.add(wallet)
+            db.flush()
+            _seed_wallet_opening_entry(db, wallet, Decimal("1000.00"))
 
 
 def run_supabase_rest() -> None:
@@ -269,6 +355,16 @@ def run_supabase_rest() -> None:
         ],
         prefer="return=minimal",
     )
+    _seed_supabase_opening_ledger_entries(
+        client,
+        [
+            (ron_id, user_id, "RON", Decimal("8450.00")),
+            (eur_id, user_id, "EUR", Decimal("1240.00")),
+            (usd_id, user_id, "USD", Decimal("320.00")),
+            (business_ron_id, business_id, "RON", Decimal("64200.00")),
+        ],
+        created_at,
+    )
 
     transactions = [
         ("tx-groceries", user_id, ron_id, None, None, TransactionType.CARD_PAYMENT.value, Decimal("120.50"), "Groceries - Mega Image"),
@@ -346,12 +442,12 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
     # First 5 are architecture.md §11's example line-up; the rest round out
     # the catalog with more categories (e.g. a first Entertainment merchant).
     merchants = [
-        ("merchant-nike", "Nike", "Retail"),
+        ("merchant-nike", "Nike", "Shopping"),
         ("merchant-starbucks", "Starbucks", "Food"),
-        ("merchant-emag", "eMAG", "Retail"),
+        ("merchant-emag", "eMAG", "Shopping"),
         ("merchant-omv", "OMV", "Fuel"),
         ("merchant-booking", "Booking.com", "Travel"),
-        ("merchant-zara", "Zara", "Retail"),
+        ("merchant-zara", "Zara", "Shopping"),
         ("merchant-kfc", "KFC", "Food"),
         ("merchant-petrom", "Petrom", "Fuel"),
         ("merchant-emirates", "Emirates", "Travel"),
@@ -385,12 +481,12 @@ def _seed_supabase_rewards_and_merchants(client: SupabaseRestSession) -> None:
                     "status": "ACTIVE",
                 }
                 for key, _name, _category, percent in [
-                    ("merchant-nike", "Nike", "Retail", "7.00"),
+                    ("merchant-nike", "Nike", "Shopping", "7.00"),
                     ("merchant-starbucks", "Starbucks", "Food", "10.00"),
-                    ("merchant-emag", "eMAG", "Retail", "5.00"),
+                    ("merchant-emag", "eMAG", "Shopping", "5.00"),
                     ("merchant-omv", "OMV", "Fuel", "3.00"),
                     ("merchant-booking", "Booking.com", "Travel", "4.00"),
-                    ("merchant-zara", "Zara", "Retail", "6.00"),
+                    ("merchant-zara", "Zara", "Shopping", "6.00"),
                     ("merchant-kfc", "KFC", "Food", "8.00"),
                     ("merchant-petrom", "Petrom", "Fuel", "4.00"),
                     ("merchant-emirates", "Emirates", "Travel", "5.00"),
@@ -558,6 +654,10 @@ def run() -> None:
         business_ron = Wallet(user_id=business.id, currency="RON", available_balance=Decimal("64200.00"), is_main=True)
         db.add_all([ron, eur, usd, business_ron])
         db.flush()
+        _seed_wallet_opening_entry(db, ron, Decimal("8450.00"))
+        _seed_wallet_opening_entry(db, eur, Decimal("1240.00"))
+        _seed_wallet_opening_entry(db, usd, Decimal("320.00"))
+        _seed_wallet_opening_entry(db, business_ron, Decimal("64200.00"))
 
         def debit(wallet: Wallet, tx_type: TransactionType, amount: Decimal, description: str) -> Transaction:
             transaction = Transaction(
@@ -659,12 +759,12 @@ def run() -> None:
         # line-up; the rest just round out the catalog with more categories
         # (e.g. a first Entertainment merchant) for the Rewards demo.
         offer_window = {"start_date": date.today() - timedelta(days=30), "end_date": date.today() + timedelta(days=335)}
-        nike = Merchant(name="Nike", category="Retail", verified=True)
+        nike = Merchant(name="Nike", category="Shopping", verified=True)
         starbucks = Merchant(name="Starbucks", category="Food", verified=True)
-        emag = Merchant(name="eMAG", category="Retail", verified=True)
+        emag = Merchant(name="eMAG", category="Shopping", verified=True)
         omv = Merchant(name="OMV", category="Fuel", verified=True)
         booking = Merchant(name="Booking.com", category="Travel", verified=True)
-        zara = Merchant(name="Zara", category="Retail", verified=True)
+        zara = Merchant(name="Zara", category="Shopping", verified=True)
         kfc = Merchant(name="KFC", category="Food", verified=True)
         petrom = Merchant(name="Petrom", category="Fuel", verified=True)
         emirates = Merchant(name="Emirates", category="Travel", verified=True)
