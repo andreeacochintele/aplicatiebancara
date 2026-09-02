@@ -823,7 +823,7 @@
   },
   "analytics": {
     "period": {
-      "1m": "Luna aceasta",
+      "1m": "De la 1 ale lunii",
       "3m": "3 luni",
       "6m": "6 luni",
       "1y": "1 an"
@@ -913,7 +913,8 @@
     "setSavingsGoalDescription": "Creează un obiectiv și urmărește-ți progresul automat.",
     "couldNotLoad": "Analiza ta nu a putut fi încărcată.",
     "tryAgain": "Încearcă din nou",
-    "vsAgo": "față de acum {{period}}"
+    "vsAgo": "față de acum {{period}}",
+    "vsMonthStart": "față de 1 ale lunii"
   },
   "rewards": {
     "oneTime": "O singură dată",

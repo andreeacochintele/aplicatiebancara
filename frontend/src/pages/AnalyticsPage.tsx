@@ -672,7 +672,12 @@ export function AnalyticsPage() {
             </div>
             {netWorthChangePercent !== null && (
               <div className="easyb-hero-sub" style={{ color: netWorthChangePercent >= 0 ? "#7ee3ab" : "#ff9b9b" }}>
-                {netWorthChangePercent >= 0 ? "↑" : "↓"} {Math.abs(netWorthChangePercent).toFixed(1)}% {t("analytics.vsAgo", { period: t(`analytics.period.${netWorthPeriod}`).toLowerCase() })}
+                {netWorthChangePercent >= 0 ? "↑" : "↓"} {Math.abs(netWorthChangePercent).toFixed(1)}%{" "}
+                {/* "1m" is month-to-date, not a rolling window like the others,
+                    so "vs ... ago" does not apply to it grammatically. */}
+                {netWorthPeriod === "1m"
+                  ? t("analytics.vsMonthStart")
+                  : t("analytics.vsAgo", { period: t(`analytics.period.${netWorthPeriod}`).toLowerCase() })}
               </div>
             )}
           </div>
