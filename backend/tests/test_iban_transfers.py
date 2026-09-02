@@ -69,6 +69,90 @@ def test_iban_transfer_debits_sender_and_writes_outbound_transaction(client, db_
     assert ledger_entry.amount == Decimal("125.00")
 
 
+def test_bulk_transfer_debits_sender_once_per_row(client, db_session):
+    sender = _register(client, "bulk-sender@example.com", "+40750444444")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("1000.00"))
+
+    response = client.post(
+        "/api/v1/payments/transfers/bulk",
+        headers=_auth_header(sender),
+        json={
+            "source_wallet_id": str(source_wallet.id),
+            "currency": "RON",
+            "rows": [
+                {"beneficiary_name": "Ana Ionescu", "iban": "RO49AAAA1B31007593840001", "amount": "200.00"},
+                {"beneficiary_name": "Bogdan Radu", "iban": "RO49AAAA1B31007593840002", "amount": "150.50"},
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["succeeded"] == 2
+    assert body["failed"] == 0
+    assert [row["status"] for row in body["results"]] == [TransactionStatus.COMPLETED, TransactionStatus.COMPLETED]
+    assert all(row["error"] is None for row in body["results"])
+
+    db_session.refresh(source_wallet)
+    assert source_wallet.available_balance == Decimal("649.50")
+
+
+def test_bulk_transfer_reports_a_failed_row_without_sinking_the_rest(client, db_session):
+    sender = _register(client, "bulk-partial@example.com", "+40750555555")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("300.00"))
+
+    response = client.post(
+        "/api/v1/payments/transfers/bulk",
+        headers=_auth_header(sender),
+        json={
+            "source_wallet_id": str(source_wallet.id),
+            "currency": "RON",
+            "rows": [
+                {"beneficiary_name": "Ana Ionescu", "iban": "RO49AAAA1B31007593840001", "amount": "200.00"},
+                # Exceeds what's left after the first row (100.00) — must fail
+                # on its own without undoing the first row's transfer.
+                {"beneficiary_name": "Costel Enache", "iban": "RO49AAAA1B31007593840003", "amount": "150.00"},
+                {"beneficiary_name": "Bogdan Radu", "iban": "RO49AAAA1B31007593840002", "amount": "50.00"},
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["succeeded"] == 2
+    assert body["failed"] == 1
+    statuses = [row["status"] for row in body["results"]]
+    assert statuses == [TransactionStatus.COMPLETED, None, TransactionStatus.COMPLETED]
+    assert body["results"][1]["error"] is not None
+    assert body["results"][1]["transaction_id"] is None
+
+    db_session.refresh(source_wallet)
+    assert source_wallet.available_balance == Decimal("50.00")
+
+
+def test_bulk_transfer_can_save_beneficiaries(client, db_session):
+    sender = _register(client, "bulk-save@example.com", "+40750666666")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("500.00"))
+
+    response = client.post(
+        "/api/v1/payments/transfers/bulk",
+        headers=_auth_header(sender),
+        json={
+            "source_wallet_id": str(source_wallet.id),
+            "currency": "RON",
+            "save_beneficiaries": True,
+            "rows": [
+                {"beneficiary_name": "Diana Marin", "iban": "RO49AAAA1B31007593840009", "amount": "20.00"},
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    saved = db_session.query(Beneficiary).filter_by(owner_user_id=UUID(sender["user"]["id"])).one()
+    assert saved.name == "Diana Marin"
+    assert saved.iban == "RO49AAAA1B31007593840009"
+
+
 def test_iban_transfer_can_save_beneficiary(client, db_session):
     sender = _register(client, "iban-save@example.com", "+40750222222")
     source_wallet = _create_wallet(db_session, sender["user"]["id"], "EUR", Decimal("300.00"))

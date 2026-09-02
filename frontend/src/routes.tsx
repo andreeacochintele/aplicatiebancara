@@ -12,6 +12,7 @@ import { FraudReviewPage } from "./pages/admin/FraudReviewPage";
 import { ReconciliationPage } from "./pages/admin/ReconciliationPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { AssistantPage } from "./pages/AssistantPage";
+import { BusinessBulkTransferPage } from "./pages/BusinessBulkTransferPage";
 import { BusinessExportPage } from "./pages/BusinessExportPage";
 import { BusinessProfilePage } from "./pages/BusinessProfilePage";
 import { CardsPage } from "./pages/CardsPage";
@@ -76,6 +77,7 @@ export const routes: RouteObject[] = [
       { path: "/profile", element: <ProfilePage /> },
       { path: "/business/export", element: <BusinessExportPage /> },
       { path: "/business/profile", element: <BusinessProfilePage /> },
+      { path: "/business/bulk-transfer", element: <BusinessBulkTransferPage /> },
       {
         path: "/admin",
         element: (
