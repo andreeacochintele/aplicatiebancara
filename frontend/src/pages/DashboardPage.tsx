@@ -85,7 +85,7 @@ function formatTransactionType(
 export function DashboardPage() {
   const { t } = useTranslation();
   const { user, accessToken } = useAuth();
-  const { query: periodQuery } = usePeriod();
+  const { period, query: periodQuery } = usePeriod();
   const [hidden, setHidden] = useState(false);
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -170,15 +170,16 @@ export function DashboardPage() {
 
   const quickActions = isBusiness ? BUSINESS_QUICK_ACTIONS : QUICK_ACTIONS;
 
-  // Client-side month-to-date sum over already-fetched transactions — same
-  // single-currency scoping as the spending donut above, so incoming and
-  // outgoing are never blended across currencies.
-  const now = new Date();
+  // Client-side sum over already-fetched transactions for the selected
+  // period — same single-currency scoping as the spending donut above, so
+  // incoming and outgoing are never blended across currencies. Follows the
+  // same app-wide month selector as the donut, so the two cards never
+  // disagree about which month they're showing.
   const monthCashFlow = transactions.reduce(
     (totals, transaction) => {
       if (transaction.status !== "COMPLETED" || transaction.currency !== spendingCurrency) return totals;
       const created = new Date(transaction.created_at);
-      if (created.getFullYear() !== now.getFullYear() || created.getMonth() !== now.getMonth()) return totals;
+      if (created.getFullYear() !== period.year || created.getMonth() + 1 !== period.month) return totals;
       const isIncoming = transaction.destination_wallet_id ? userWalletIds.has(transaction.destination_wallet_id) : false;
       const isOutgoing = transaction.source_wallet_id ? userWalletIds.has(transaction.source_wallet_id) : false;
       if (isIncoming && !isOutgoing) totals.incoming += Number(transaction.amount);
@@ -378,6 +379,7 @@ export function DashboardPage() {
                   <div className="easyb-eyebrow">{t("dashboard.thisPeriod")}</div>
                   <h2>{t("dashboard.cashFlow")}</h2>
                 </div>
+                <PeriodSelect />
               </div>
               <div className="wallet-grid">
                 <div className="wallet-chip">
