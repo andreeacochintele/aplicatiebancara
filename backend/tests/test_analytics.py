@@ -267,7 +267,15 @@ def test_spending_recommendations_does_not_flag_a_small_increase(db_session, see
     # Last week: 100. This week: 105 (+5%, under the 20% threshold). A
     # second, larger category keeps Retail's month share under the
     # concentration threshold too, so only WEEK_OVER_WEEK_INCREASE is
-    # actually being tested here.
+    # actually being tested here. A steady 3-month Retail history is also
+    # seeded so MONTH_VS_AVERAGE_INCREASE can't fire as a side effect of
+    # "last week" occasionally falling in the previous calendar month
+    # (whenever this week's Monday lands in the first few days of a month).
+    for months_back in (1, 2, 3):
+        _add_transaction(
+            db_session, user, wallet, TransactionType.CARD_PAYMENT, "200.00", COMPLETED,
+            _months_ago(datetime(now.year, now.month, 1, tzinfo=timezone.utc), months_back), merchant_id=zara.id,
+        )
     _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", COMPLETED, last_week_start + timedelta(days=1), merchant_id=zara.id)
     _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "105.00", COMPLETED, now, merchant_id=zara.id)
     _add_transaction(db_session, user, wallet, TransactionType.CARD_PAYMENT, "500.00", COMPLETED, now, merchant_id=kfc.id)
