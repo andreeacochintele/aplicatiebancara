@@ -147,8 +147,8 @@ def test_net_worth_summary_states_a_real_converted_total_and_excludes_reserved(d
 
 
 def test_system_prompt_forbids_claiming_a_calculation_that_wasnt_actually_run():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "never claim you calculated, converted, totaled" in lowered
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        assert "never claim you calculated, converted, totaled" in prompt.lower()
 
 
 # ---- shared ai/knowledge/app_overview.md + ai/guardrails.py: same static
@@ -157,12 +157,14 @@ def test_system_prompt_forbids_claiming_a_calculation_that_wasnt_actually_run():
 
 
 def test_system_prompt_includes_the_shared_app_overview_verbatim():
-    assert agent._APP_OVERVIEW in agent._SYSTEM_PROMPT
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        assert agent._APP_OVERVIEW in prompt
 
 
 def test_system_prompt_includes_the_shared_injection_and_format_guardrails():
-    assert INJECTION_GUARDRAILS in agent._SYSTEM_PROMPT
-    assert RESPONSE_FORMAT_RULE in agent._SYSTEM_PROMPT
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        assert INJECTION_GUARDRAILS in prompt
+        assert RESPONSE_FORMAT_RULE in prompt
 
 
 def test_system_prompt_scopes_the_never_state_a_number_rule_to_the_data_block_only():
@@ -171,9 +173,10 @@ def test_system_prompt_scopes_the_never_state_a_number_rule_to_the_data_block_on
     # only to the per-request data block, not to this general reference
     # text, or the model would be told to contradict itself.
     assert any(char.isdigit() for char in agent._APP_OVERVIEW)
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "never state a number from the data below" in lowered or "the data below" in lowered
-    assert "applies only to that per-request block" in lowered
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        lowered = prompt.lower()
+        assert "never state a number from the data below" in lowered or "the data below" in lowered
+        assert "applies only to that per-request block" in lowered
 
 
 def test_get_budgets_reuses_budgets_service(db_session, seeded_user):
@@ -371,7 +374,7 @@ def test_handle_combines_llm_explanation_with_exact_deterministic_figures(db_ses
     wallet = WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))
     wallet.available_balance = Decimal("777.10")
     db_session.flush()
-    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None: "Mocked explanation.")
+    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None, locale="ro": "Mocked explanation.")
 
     reply = agent.handle("what's my balance?", seeded_user.id, db_session)
 
@@ -381,7 +384,7 @@ def test_handle_combines_llm_explanation_with_exact_deterministic_figures(db_ses
 
 
 def test_handle_returns_the_unavailable_message_without_calling_the_llm(db_session, monkeypatch):
-    def _fail_if_called(message, data_summary):
+    def _fail_if_called(message, data_summary, history=None, locale="ro"):
         raise AssertionError("_explain must not be called when tool data is unavailable")
 
     monkeypatch.setattr(agent, "_explain", _fail_if_called)
@@ -399,7 +402,7 @@ def test_handle_returns_a_download_attachment_for_a_statement_request(db_session
     wallet.available_balance = Decimal("500.00")
     db_session.flush()
     _card_payment_with_ledger_entry(db_session, seeded_user.id, wallet, Decimal("42.50"), "Coffee")
-    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None: "Mocked explanation.")
+    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None, locale="ro": "Mocked explanation.")
 
     result = agent.handle("can I get my account statement?", seeded_user.id, db_session)
 
@@ -414,7 +417,7 @@ def test_handle_returns_a_download_attachment_for_a_statement_request(db_session
 
 
 def test_handle_returns_the_unavailable_message_for_a_statement_request_with_no_main_wallet(db_session, monkeypatch):
-    def _fail_if_called(message, data_summary, history=None):
+    def _fail_if_called(message, data_summary, history=None, locale="ro"):
         raise AssertionError("_explain must not be called when tool data is unavailable")
 
     monkeypatch.setattr(agent, "_explain", _fail_if_called)
@@ -425,7 +428,7 @@ def test_handle_returns_the_unavailable_message_for_a_statement_request_with_no_
 
 
 def test_handle_propagates_azure_not_configured_from_explain(db_session, seeded_user, monkeypatch):
-    def _raise_not_configured(message, data_summary, history=None):
+    def _raise_not_configured(message, data_summary, history=None, locale="ro"):
         raise AzureFoundryNotConfiguredError("Azure AI Foundry is not configured.")
 
     WalletService(db_session).create_wallet(seeded_user.id, WalletCreate(currency="RON", is_main=True))
@@ -450,20 +453,23 @@ def test_select_tool_dispatches_a_clearly_scoped_spending_question_to_spending_b
 
 
 def test_system_prompt_instructs_answering_directly_without_asking_for_confirmation():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "do not ask for confirmation first" in lowered
-    assert "treat it as answered" in lowered
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        lowered = prompt.lower()
+        assert "do not ask for confirmation first" in lowered
+        assert "treat it as answered" in lowered
 
 
 def test_system_prompt_still_allows_clarifying_questions_when_genuinely_ambiguous():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "genuinely ambiguous" in lowered
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        assert "genuinely ambiguous" in prompt.lower()
 
 
-def test_system_prompt_instructs_matching_the_users_language_defaulting_to_romanian():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "same language the user's message is written in" in lowered
-    assert "default to romanian" in lowered
+def test_system_prompt_instructs_a_definitive_target_language_per_locale():
+    # Locale now comes from the site's own language setting (X-Locale
+    # header, see ai/locale.py) rather than being guessed from the
+    # message text, so each locale variant gets a direct instruction.
+    assert "always respond in romanian" in agent._SYSTEM_PROMPTS["ro"].lower()
+    assert "always respond in english" in agent._SYSTEM_PROMPTS["en"].lower()
 
 
 # ---- no-duplicate-dump fix: the deterministic data block is still shown to
@@ -472,9 +478,10 @@ def test_system_prompt_instructs_matching_the_users_language_defaulting_to_roman
 
 
 def test_system_prompt_instructs_not_repeating_the_data_as_a_second_list():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "must never contain any number" in lowered
-    assert "never quote, copy, or closely" in lowered
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        lowered = prompt.lower()
+        assert "must never contain any number" in lowered
+        assert "never quote, copy, or closely" in lowered
 
 
 def test_append_summary_skips_the_append_when_the_llm_already_quoted_it_verbatim():
@@ -489,6 +496,43 @@ def test_append_summary_appends_once_when_the_llm_did_not_quote_it():
     explanation = "You don't have any funds right now."
 
     assert agent._append_summary(explanation, summary) == f"{explanation}\n\n{summary}"
+
+
+# ---- false-calculation-claim guard: wallet_balances is the one tool with no
+# aggregation at all, so a claim of having calculated/converted/totaled
+# anything there is always false and must be replaced, not shown to the user.
+
+
+@pytest.mark.parametrize(
+    "explanation",
+    [
+        "Am calculat totalul soldurilor tale.",
+        "I calculated the total for you.",
+        "I've converted everything to RON.",
+        "I have totaled everything up for you.",
+    ],
+)
+def test_scrub_false_calculation_claim_replaces_a_false_claim_on_wallet_balances(explanation):
+    scrubbed = agent._scrub_false_calculation_claim(explanation, "wallet_balances", "en")
+    assert scrubbed == agent._CALC_CLAIM_FALLBACK_EN
+
+
+def test_scrub_false_calculation_claim_picks_the_romanian_fallback_for_ro_locale():
+    scrubbed = agent._scrub_false_calculation_claim("Am calculat totalul.", "wallet_balances", "ro")
+    assert scrubbed == agent._CALC_CLAIM_FALLBACK_RO
+
+
+def test_scrub_false_calculation_claim_leaves_a_normal_reply_alone():
+    explanation = "You still have some money left in your main wallet."
+    assert agent._scrub_false_calculation_claim(explanation, "wallet_balances", "en") == explanation
+
+
+def test_scrub_false_calculation_claim_never_touches_other_tools():
+    # net_worth (and every other tool) legitimately returns computed figures
+    # — only wallet_balances is a raw, unconverted, per-item listing where a
+    # calculation claim is always false.
+    explanation = "I calculated your total balance across all currencies."
+    assert agent._scrub_false_calculation_claim(explanation, "net_worth", "en") == explanation
 
 
 def test_empty_state_messages_read_as_full_sentences_not_debug_labels(db_session, seeded_user):

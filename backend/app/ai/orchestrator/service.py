@@ -107,7 +107,13 @@ class OrchestratorService:
         self.db = db
         self.conversations = ConversationRepository(db)
 
-    def chat(self, user_id: uuid.UUID, message: str, conversation_id: uuid.UUID | None = None) -> OrchestratorChatResponse:
+    def chat(
+        self,
+        user_id: uuid.UUID,
+        message: str,
+        conversation_id: uuid.UUID | None = None,
+        locale: str = "ro",
+    ) -> OrchestratorChatResponse:
         bind_correlation_id(new_correlation_id())
         start = time.perf_counter()
         log_event("request_received", user_id=_mask_user_id(user_id), message_length=len(message))
@@ -129,7 +135,7 @@ class OrchestratorService:
                 reply = _OUT_OF_SCOPE_REPLY_RO if _reply_in_romanian(message) else _OUT_OF_SCOPE_REPLY_EN
             else:
                 log_event("agent_dispatched", agent=intent.value, intent=intent.value)
-                agent_output = AGENT_REGISTRY[intent](message, user_id, self.db, history)
+                agent_output = AGENT_REGISTRY[intent](message, user_id, self.db, history, locale)
                 if isinstance(agent_output, AgentResult):
                     reply, action_card, download = agent_output.reply, agent_output.action_card, agent_output.download
                 else:

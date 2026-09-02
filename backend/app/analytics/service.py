@@ -173,34 +173,43 @@ class AnalyticsService:
         the LLM phrasing layer that consumes this list. A category is
         flagged when any comparison below crosses its threshold:
 
-        - week-over-week: this week's spend in a category vs last week's,
-          up more than SPENDING_INCREASE_THRESHOLD_PERCENT.
-        - month-vs-3m-average: this month's spend (month-to-date) in a
-          category vs that category's own average over the prior 3
-          complete calendar months, up more than
+        - week-over-week: spend in the trailing 7 days vs the 7 days before
+          that, up more than SPENDING_INCREASE_THRESHOLD_PERCENT.
+        - month-vs-3m-average: spend in the trailing 30 days vs that
+          category's own average over the 90 days before that (a rolling
+          stand-in for "the prior 3 months"), up more than
           SPENDING_INCREASE_THRESHOLD_PERCENT.
         - concentration: one category is more than
-          CATEGORY_CONCENTRATION_THRESHOLD_PERCENT of this month's total
-          spend across all categories (same currency).
+          CATEGORY_CONCENTRATION_THRESHOLD_PERCENT of the trailing 30 days'
+          total spend across all categories (same currency).
+
+        Rolling windows, not calendar week/month boundaries: a calendar-
+        anchored window (Monday 00:00 UTC / the 1st 00:00 UTC) goes empty
+        for every user right when it rolls over, which used to make
+        recommendations silently fall back to the all-clear message for the
+        first few days of every week and month regardless of actual
+        spending. A trailing window never resets to empty on its own.
 
         All three are scoped per currency — a category's RON spend is
         never compared against or blended with its USD spend, same
         convention spending_by_category()'s donut view already uses.
         Only flagged categories are returned; a quiet category (nothing
-        crossed a threshold) doesn't appear in the result at all.
+        crossed a threshold) doesn't appear in the result at all. By
+        design, only increases/concentration are flagged — a category
+        dropping to zero spend is never surfaced as a recommendation.
         """
         now = datetime.now(timezone.utc)
 
-        week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-        last_week_start = week_start - timedelta(days=7)
+        recent_start = now - timedelta(days=7)
+        prior_start = now - timedelta(days=14)
 
-        month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-        three_months_start = self._months_before(month_start, 3)
+        recent_30_start = now - timedelta(days=30)
+        prior_90_start = now - timedelta(days=120)
 
-        this_week = self._category_totals(user_id, week_start, now)
-        last_week = self._category_totals(user_id, last_week_start, week_start)
-        this_month = self._category_totals(user_id, month_start, now)
-        prior_three_months = self._category_totals(user_id, three_months_start, month_start)
+        this_week = self._category_totals(user_id, recent_start, now)
+        last_week = self._category_totals(user_id, prior_start, recent_start)
+        this_month = self._category_totals(user_id, recent_30_start, now)
+        prior_three_months = self._category_totals(user_id, prior_90_start, recent_30_start)
 
         this_month_total_by_currency: dict[str, Decimal] = {}
         for (_category, currency), amount in this_month.items():
@@ -265,13 +274,6 @@ class AnalyticsService:
         if before <= 0:
             return None
         return float(((after - before) / before) * 100)
-
-    @staticmethod
-    def _months_before(dt: datetime, months: int) -> datetime:
-        month_index = dt.month - 1 - months
-        year = dt.year + month_index // 12
-        month = month_index % 12 + 1
-        return dt.replace(year=year, month=month)
 
     def monthly_trend(
         self, user_id: uuid.UUID, months: int, base_currency: str | None = None

@@ -46,7 +46,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
-from app.ai.guardrails import INJECTION_GUARDRAILS, RESPONSE_FORMAT_RULE
+from app.ai.guardrails import INJECTION_GUARDRAILS, RESPONSE_FORMAT_RULE, language_directive
 from app.ai.knowledge import get_app_overview
 from app.ai.observability import log_debug, timed_event
 
@@ -72,7 +72,8 @@ _CREDIT_SCORE_FACTORS = (Path(__file__).parent.parent / "credit" / "knowledge" /
     encoding="utf-8"
 )
 
-_SYSTEM_PROMPT = f"""You are the Support Agent of a banking assistant chatbot. You answer \
+def _build_system_prompt(locale: str) -> str:
+    return f"""You are the Support Agent of a banking assistant chatbot. You answer \
 general questions about the app/account and general fraud-awareness questions, using only \
 the knowledge given below.
 
@@ -104,8 +105,7 @@ knowledge below, answer it right away — don't ask which topic they meant or \
 offer to explain something else first. Only ask a clarifying question if the \
 request is genuinely ambiguous between multiple different topics, or falls \
 outside the knowledge you're given.
-- Always respond in the same language the user's message is written in. If \
-the message is ambiguous or too short to tell, default to Romanian.
+{language_directive(locale)}
 
 {INJECTION_GUARDRAILS}
 
@@ -128,13 +128,23 @@ the message is ambiguous or too short to tell, default to Romanian.
 """
 
 
-def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str, str]] | None = None) -> str:
-    return _explain(message, history)
+_SYSTEM_PROMPTS = {"ro": _build_system_prompt("ro"), "en": _build_system_prompt("en")}
 
 
-def _explain(message: str, history: list[dict[str, str]] | None = None) -> str:
+def handle(
+    message: str,
+    user_id: uuid.UUID,
+    db: Session,
+    history: list[dict[str, str]] | None = None,
+    locale: str = "ro",
+) -> str:
+    return _explain(message, history, locale)
+
+
+def _explain(message: str, history: list[dict[str, str]] | None = None, locale: str = "ro") -> str:
     client = get_azure_foundry_client()
-    messages = [{"role": "system", "content": _SYSTEM_PROMPT}, *(history or []), {"role": "user", "content": message}]
+    system_prompt = _SYSTEM_PROMPTS.get(locale, _SYSTEM_PROMPTS["ro"])
+    messages = [{"role": "system", "content": system_prompt}, *(history or []), {"role": "user", "content": message}]
     log_debug("llm_call.request", agent="support", messages=messages)
     with timed_event("llm_call", agent="support"):
         response = client.chat_completion(messages=messages)

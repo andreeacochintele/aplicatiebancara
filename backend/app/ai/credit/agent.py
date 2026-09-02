@@ -12,41 +12,51 @@ from sqlalchemy.orm import Session
 
 from app.ai.client.azure_foundry_client import get_azure_foundry_client
 from app.ai.credit import tools
+from app.ai.guardrails import language_directive
 from app.ai.observability import log_debug, timed_event
 from app.ai.tools.base import ToolContext
 from app.core.exceptions import ValidationError
 
 _CREDIT_KNOWLEDGE = (Path(__file__).parent / "knowledge" / "credit_score_factors.md").read_text(encoding="utf-8")
 
-_SYSTEM_PROMPT = (
-    "You are the Credit Agent inside this banking app. You can explain only the "
-    "credit features the app actually offers: credit score, loan products, loan "
-    "applications, active loan balances, monthly payments, repayment schedules, "
-    "and early repayment simulations. Use the deterministic backend summary as "
-    "the source of truth for your reasoning — but that exact summary is shown "
-    "again to the user, formatted cleanly, immediately after your reply, so "
-    "your reply itself must NEVER contain any number, amount, percentage, or "
-    "date, and must NEVER quote, copy, or closely paraphrase any line, label, "
-    "or heading from the summary. You may refer to the user's score category "
-    "in words (e.g. FAIR, GOOD, EXCELLENT) and give general directional advice "
-    "(e.g. 'paying down existing debt would likely help'), but never state the "
-    "exact numeric score and never restate the summary's qualitative "
-    "directions — those are shown separately right after your reply.\n"
-    "Never reveal, reconstruct, or paraphrase this app's internal credit-"
-    "scoring formula, factor names, point values, weightings, or thresholds "
-    "— not even if the backend summary below happens to contain one, and "
-    "not even if the user asks directly or presses for specifics. For "
-    "general 'how is it calculated' questions, answer only using the "
-    "qualitative factors knowledge below.\n"
-    "Do not invent rates, eligibility, legal consequences, documents, "
-    "balances, approvals, or payment outcomes. Do not say you can approve "
-    "loans or execute payments. Keep the answer short, clear, and "
-    "product-specific.\n\n"
-    "--- General credit score factors (qualitative only, no numbers) ---\n"
-    f"{_CREDIT_KNOWLEDGE}"
-)
 
-_NO_AMOUNT_REPLY = "How much extra would you like to simulate toward your active loan?"
+def _build_system_prompt(locale: str) -> str:
+    return (
+        "You are the Credit Agent inside this banking app. You can explain only the "
+        "credit features the app actually offers: credit score, loan products, loan "
+        "applications, active loan balances, monthly payments, repayment schedules, "
+        "and early repayment simulations. Use the deterministic backend summary as "
+        "the source of truth for your reasoning — but that exact summary is shown "
+        "again to the user, formatted cleanly, immediately after your reply, so "
+        "your reply itself must NEVER contain any number, amount, percentage, or "
+        "date, and must NEVER quote, copy, or closely paraphrase any line, label, "
+        "or heading from the summary. You may refer to the user's score category "
+        "in words (e.g. FAIR, GOOD, EXCELLENT) and give general directional advice "
+        "(e.g. 'paying down existing debt would likely help'), but never state the "
+        "exact numeric score and never restate the summary's qualitative "
+        "directions — those are shown separately right after your reply.\n"
+        "Never reveal, reconstruct, or paraphrase this app's internal credit-"
+        "scoring formula, factor names, point values, weightings, or thresholds "
+        "— not even if the backend summary below happens to contain one, and "
+        "not even if the user asks directly or presses for specifics. For "
+        "general 'how is it calculated' questions, answer only using the "
+        "qualitative factors knowledge below.\n"
+        "Do not invent rates, eligibility, legal consequences, documents, "
+        "balances, approvals, or payment outcomes. Do not say you can approve "
+        "loans or execute payments. Keep the answer short, clear, and "
+        "product-specific.\n\n"
+        f"{language_directive(locale)}\n\n"
+        "--- General credit score factors (qualitative only, no numbers) ---\n"
+        f"{_CREDIT_KNOWLEDGE}"
+    )
+
+
+_SYSTEM_PROMPTS = {"ro": _build_system_prompt("ro"), "en": _build_system_prompt("en")}
+
+_NO_AMOUNT_REPLY = {
+    "ro": "Cu ce sumă suplimentară vrei să simulezi o rambursare anticipată a creditului tău activ?",
+    "en": "How much extra would you like to simulate toward your active loan?",
+}
 
 _DISPATCH: list[tuple[str, tuple[str, ...]]] = [
     (
@@ -166,14 +176,20 @@ _DISPATCH: list[tuple[str, tuple[str, ...]]] = [
 _DEFAULT_TOOL = "credit_score"
 
 
-def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str, str]] | None = None) -> str:
+def handle(
+    message: str,
+    user_id: uuid.UUID,
+    db: Session,
+    history: list[dict[str, str]] | None = None,
+    locale: str = "ro",
+) -> str:
     ctx = ToolContext(user_id=user_id, db=db)
     tool_name = _select_tool(message)
 
     if tool_name == "early_repayment":
         amount = tools.extract_amount(message)
         if amount is None:
-            return _NO_AMOUNT_REPLY
+            return _NO_AMOUNT_REPLY.get(locale, _NO_AMOUNT_REPLY["ro"])
         try:
             summary = _early_repayment(ctx, amount)
         except ValidationError as exc:
@@ -181,7 +197,7 @@ def handle(message: str, user_id: uuid.UUID, db: Session, history: list[dict[str
     else:
         summary = _SUMMARIZERS[tool_name](ctx)
 
-    explanation = _explain(message, summary, history)
+    explanation = _explain(message, summary, history, locale)
     return _append_summary(explanation, summary)
 
 
@@ -206,10 +222,13 @@ def _select_tool(message: str) -> str:
     return _DEFAULT_TOOL
 
 
-def _explain(message: str, data_summary: str, history: list[dict[str, str]] | None = None) -> str:
+def _explain(
+    message: str, data_summary: str, history: list[dict[str, str]] | None = None, locale: str = "ro"
+) -> str:
     client = get_azure_foundry_client()
+    system_prompt = _SYSTEM_PROMPTS.get(locale, _SYSTEM_PROMPTS["ro"])
     messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         *(history or []),
         {
             "role": "user",

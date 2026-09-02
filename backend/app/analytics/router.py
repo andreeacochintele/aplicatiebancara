@@ -5,6 +5,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.ai.locale import get_locale
 from app.ai.personal_finance import insights as ai_insights
 from app.ai.personal_finance.schemas import AIInsightPublic
 from app.analytics.schemas import (
@@ -108,14 +109,18 @@ def get_balance_history(
 @router.get("/insights", response_model=list[AIInsightPublic])
 def get_insights(
     refresh: bool = Query(default=False),
+    locale: str = Depends(get_locale),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[AIInsightPublic]:
     """Lazily regenerates (Azure call + AnalyticsService.spending_recommendations())
     only when this user's cached insights are missing or older than
     ai.personal_finance.insights.INSIGHT_TTL - see that module's docstring.
-    refresh=True (the dashboard's refresh button) bypasses the TTL."""
-    result = ai_insights.get_or_generate(db, current_user.id, force=refresh)
+    refresh=True (the dashboard's refresh button) bypasses the TTL. A
+    regeneration narrates in the site's current language (X-Locale header,
+    see ai/locale.py) — a cached row keeps whatever language it was
+    generated in until it's regenerated."""
+    result = ai_insights.get_or_generate(db, current_user.id, force=refresh, locale=locale)
     db.commit()
     return result
 

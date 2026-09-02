@@ -205,7 +205,7 @@ def test_simulate_early_repayment_caps_payment_at_outstanding_principal(db_sessi
 
 
 def test_handle_combines_llm_explanation_with_exact_deterministic_figures(db_session, seeded_user, seeded_loan, monkeypatch):
-    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None: "Mocked explanation.")
+    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None, locale="ro": "Mocked explanation.")
 
     reply = agent.handle("what's my remaining principal?", seeded_user.id, db_session)
 
@@ -215,18 +215,18 @@ def test_handle_combines_llm_explanation_with_exact_deterministic_figures(db_ses
 
 
 def test_handle_asks_for_an_amount_without_calling_the_llm_when_none_is_given(db_session, seeded_user, seeded_loan, monkeypatch):
-    def _fail_if_called(message, data_summary):
+    def _fail_if_called(message, data_summary, history=None, locale="ro"):
         raise AssertionError("_explain must not be called before an amount is known")
 
     monkeypatch.setattr(agent, "_explain", _fail_if_called)
 
     reply = agent.handle("can I pay off my loan early?", seeded_user.id, db_session)
 
-    assert reply == agent._NO_AMOUNT_REPLY
+    assert reply == agent._NO_AMOUNT_REPLY["ro"]
 
 
 def test_handle_simulates_early_repayment_when_an_amount_is_given(db_session, seeded_user, seeded_loan, monkeypatch):
-    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None: "Mocked explanation.")
+    monkeypatch.setattr(agent, "_explain", lambda message, data_summary, history=None, locale="ro": "Mocked explanation.")
 
     reply = agent.handle("can I pay off my loan early with an extra 500 RON?", seeded_user.id, db_session)
 
@@ -236,7 +236,7 @@ def test_handle_simulates_early_repayment_when_an_amount_is_given(db_session, se
 
 
 def test_handle_propagates_azure_not_configured_from_explain(db_session, seeded_user, seeded_loan, monkeypatch):
-    def _raise_not_configured(message, data_summary, history=None):
+    def _raise_not_configured(message, data_summary, history=None, locale="ro"):
         raise AzureFoundryNotConfiguredError("Azure AI Foundry is not configured.")
 
     monkeypatch.setattr(agent, "_explain", _raise_not_configured)
@@ -276,9 +276,24 @@ def test_credit_score_summary_never_contains_raw_reason_data_keys(db_session, se
 
 
 def test_system_prompt_forbids_reconstructing_internal_scoring_logic():
-    lowered = agent._SYSTEM_PROMPT.lower()
-    assert "never reveal, reconstruct, or paraphrase" in lowered
-    assert "factor names, point values, weightings, or thresholds" in lowered
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        lowered = prompt.lower()
+        assert "never reveal, reconstruct, or paraphrase" in lowered
+        assert "factor names, point values, weightings, or thresholds" in lowered
+
+
+def test_system_prompt_instructs_a_definitive_target_language_per_locale():
+    # Previously Credit had no language instruction at all (documented gap
+    # in dev4-context.md §6: "Credit și Fraud nu sunt incluse în acest fix")
+    # — now driven by the site's own X-Locale header, same as the other
+    # two conversational agents.
+    assert "always respond in romanian" in agent._SYSTEM_PROMPTS["ro"].lower()
+    assert "always respond in english" in agent._SYSTEM_PROMPTS["en"].lower()
+
+
+def test_no_amount_reply_is_available_in_both_locales():
+    assert agent._NO_AMOUNT_REPLY["en"] != agent._NO_AMOUNT_REPLY["ro"]
+    assert "ramburs" in agent._NO_AMOUNT_REPLY["ro"].lower()
 
 
 def test_append_summary_skips_the_append_when_the_llm_already_quoted_it_verbatim():
@@ -296,5 +311,6 @@ def test_append_summary_appends_once_when_the_llm_did_not_quote_it():
 
 
 def test_system_prompt_includes_qualitative_credit_knowledge_verbatim():
-    assert agent._CREDIT_KNOWLEDGE in agent._SYSTEM_PROMPT
+    for prompt in agent._SYSTEM_PROMPTS.values():
+        assert agent._CREDIT_KNOWLEDGE in prompt
     assert not any(char.isdigit() for char in agent._CREDIT_KNOWLEDGE)

@@ -26,7 +26,7 @@ def seeded_user(db_session):
 def _mock_phrase(monkeypatch):
     calls: list[str] = []
 
-    def _fake(flag):
+    def _fake(flag, locale="ro"):
         calls.append(flag.category)
         return f"Mocked message about {flag.category}."
 
@@ -36,14 +36,18 @@ def _mock_phrase(monkeypatch):
 
 def _add_flagged_category(db_session, user, wallet):
     """A category with a clear week-over-week spike, guaranteed to be
-    flagged by AnalyticsService.spending_recommendations()."""
+    flagged by AnalyticsService.spending_recommendations(). Uses a fixed
+    day-offset (10 days ago, comfortably inside the rolling "prior 7-14
+    days" window regardless of what day of the week the suite runs) rather
+    than calendar Monday-based arithmetic — the same class of boundary
+    flakiness this rolling-window design was built to avoid in the first
+    place (see analytics/service.py's spending_recommendations())."""
     now = datetime.now(timezone.utc)
-    week_start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
-    last_week_start = week_start - timedelta(days=7)
+    ten_days_ago = now - timedelta(days=10)
     cinema = Merchant(name="Cinema City", category="Entertainment", verified=True)
     db_session.add(cinema)
     db_session.flush()
-    for amount, when in (("50.00", last_week_start + timedelta(days=1)), ("500.00", now)):
+    for amount, when in (("50.00", ten_days_ago), ("500.00", now)):
         db_session.add(
             Transaction(
                 initiator_user_id=user.id,
@@ -91,6 +95,46 @@ def test_generate_and_store_writes_all_clear_when_nothing_flagged(db_session, se
     assert created[0].insight_type == "ALL_CLEAR"
     assert created[0].category is None
     assert created[0].currency is None
+    assert created[0].message in insights._ALL_CLEAR_MESSAGES["ro"]  # default locale
+
+
+def test_generate_and_store_writes_all_clear_in_the_requested_locale(db_session, seeded_user):
+    created = insights.generate_and_store(db_session, seeded_user.id, locale="en")
+
+    assert created[0].message in insights._ALL_CLEAR_MESSAGES["en"]
+    assert created[0].message not in insights._ALL_CLEAR_MESSAGES["ro"]
+
+
+def test_all_clear_message_pools_have_multiple_distinct_variants_per_locale():
+    for locale, variants in insights._ALL_CLEAR_MESSAGES.items():
+        assert 3 <= len(variants) <= 5
+        assert len(set(variants)) == len(variants)  # no duplicates
+
+
+def test_phrase_flag_uses_the_requested_locales_system_prompt(db_session, seeded_user, seeded_wallet, monkeypatch):
+    _add_flagged_category(db_session, seeded_user, seeded_wallet)
+    captured = {}
+
+    class _FakeMessage:
+        content = "Mocked reply."
+
+    class _FakeChoice:
+        message = _FakeMessage()
+
+    class _FakeResponse:
+        choices = [_FakeChoice()]
+
+    class _FakeClient:
+        def chat_completion(self, messages):
+            captured["system_prompt"] = messages[0]["content"]
+            return _FakeResponse()
+
+    monkeypatch.setattr(insights, "get_azure_foundry_client", lambda: _FakeClient())
+
+    insights.generate_and_store(db_session, seeded_user.id, locale="en")
+
+    assert captured["system_prompt"] == insights._SYSTEM_PROMPTS["en"]
+    assert "friendly, upbeat financial buddy" in captured["system_prompt"]
 
 
 def test_generate_and_store_keeps_same_category_separate_per_currency(db_session, seeded_user, monkeypatch):
