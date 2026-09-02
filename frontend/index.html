@@ -8,7 +8,9 @@
     <script>
       (function () {
         var stored = localStorage.getItem("banking_app_theme");
+        var hiveMode = localStorage.getItem("banking_app_hive_mode");
         document.documentElement.dataset.theme = stored === "light" || stored === "dark" ? stored : "dark";
+        document.documentElement.dataset.hiveMode = hiveMode === "on" ? "on" : "off";
       })();
     </script>
   </head>

@@ -35,6 +35,8 @@
     "pleaseSpecify": "{{label}} (te rugăm specifică)",
     "switchToLight": "Comută la mod luminos",
     "switchToDark": "Comută la mod întunecat",
+    "enableHiveMode": "Activeaza Hive Mode",
+    "disableHiveMode": "Dezactiveaza Hive Mode",
     "idleWarning": "Deconectare automată în {{seconds}}s — mișcă mouse-ul pentru a rămâne conectat",
     "status": {
       "CREATED": "Creat",

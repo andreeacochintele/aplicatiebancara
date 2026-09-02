@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 
 import { BrandMark } from "../components/BrandMark";
+import { HiveModeToggle } from "../components/HiveModeToggle";
 import { LanguageToggle } from "../components/LanguageToggle";
 import { ThemeToggle } from "../components/ThemeToggle";
 
@@ -11,6 +12,7 @@ export function AuthLayout() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <LanguageToggle />
           <ThemeToggle />
+          <HiveModeToggle />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
           <BrandMark className="easyb-brand-mark" size={72} />
