@@ -1975,9 +1975,11 @@
   background: var(--easyb-surface-alt);
 }
 
+/* Not themed: a QR symbol has to stay dark-on-light to be readable, so the
+   frame keeps the symbol's own white ground rather than following the theme. */
 .easyb-shell .qr-code {
-  border-color: var(--easyb-surface);
-  background-color: var(--easyb-text);
+  border-color: #ffffff;
+  background-color: #ffffff;
 }
 
 .easyb-shell .scheduled-row {

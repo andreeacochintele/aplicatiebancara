@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
+import { QrCode } from "../components/QrCode";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { useAuth } from "../hooks/useAuth";
 import type {
@@ -1348,7 +1349,7 @@ export function PaymentsPage() {
 
             {qrRequest && (
               <div className="qr-result">
-                <div className="qr-code" aria-label={t("payments.generatedQrPreview")} />
+                <QrCode className="qr-code" value={qrRequest.id} label={t("payments.generatedQrPreview")} />
                 <div className="qr-result__details">
                   <span className="eyebrow">{t("payments.requestId")}</span>
                   <code>{qrRequest.id}</code>
