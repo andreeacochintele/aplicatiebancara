@@ -1515,6 +1515,10 @@
     "fair": "Acceptabil",
     "risky": "Riscant"
   },
+  "period": {
+    "selectMonth": "Alege luna",
+    "viewingPast": "Vezi o lună trecută. Soldurile și estimările arată mereu ziua curentă."
+  },
   "header": {
     "notifications": "Notificări",
     "refresh": "Reîmprospătează",

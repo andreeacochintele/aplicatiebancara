@@ -13,6 +13,7 @@ import { apiRequest, ApiError } from "../api/apiClient";
 import { colorForType } from "../features/analytics/formatters";
 import { generateAnalyticsInsights, type AnalyticsInsight } from "../features/analytics/insights";
 import { useAuth } from "../hooks/useAuth";
+import { usePeriod } from "../hooks/usePeriod";
 import type {
   AIInsight,
   BalanceHistoryResponse,
@@ -31,6 +32,7 @@ import type {
 type NetWorthPeriod = "1m" | "3m" | "6m" | "1y";
 
 const NET_WORTH_PERIODS: NetWorthPeriod[] = ["1m", "3m", "6m", "1y"];
+
 
 const INSIGHT_STYLE: Record<AnalyticsInsight["id"], { bg: string; fg: string; icon: LucideIcon }> = {
   trend: { bg: "var(--easyb-violet-soft)", fg: "var(--easyb-violet)", icon: TrendingUp },
@@ -433,6 +435,7 @@ function SavingsMoneyModal({
 
 export function AnalyticsPage() {
   const { t } = useTranslation();
+  const { query: periodQuery } = usePeriod();
   const { accessToken, user } = useAuth();
   const isBusiness = user?.user_type === "BUSINESS";
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
@@ -470,23 +473,12 @@ export function AnalyticsPage() {
     apiRequest<NetWorthResponse>("/analytics/net-worth", { token: accessToken })
       .then((data) => !cancelled && setNetWorth(data))
       .catch(() => !cancelled && setLoadError(true));
-    apiRequest<SpendingByCategoryResponse>("/analytics/spending-by-category", { token: accessToken })
-      .then((data) => !cancelled && setSpendingByCategory(data))
-      .catch(() => !cancelled && setSpendingByCategory(null));
-    if (isBusiness) {
-      apiRequest<TopCounterpartiesResponse>("/analytics/top-counterparties", { token: accessToken })
-        .then((data) => !cancelled && setTopCounterparties(data))
-        .catch(() => !cancelled && setTopCounterparties(null));
-    }
     apiRequest<MonthlyTrendResponse>("/analytics/monthly-trend?months=6", { token: accessToken })
       .then((data) => !cancelled && setMonthlyTrend(data))
       .catch(() => !cancelled && setMonthlyTrend(null));
     apiRequest<ForecastResponse>("/analytics/forecast", { token: accessToken })
       .then((data) => !cancelled && setForecast(data))
       .catch(() => !cancelled && setForecast(null));
-    apiRequest<Budget[]>("/budgets", { token: accessToken })
-      .then((data) => !cancelled && setBudgets(data))
-      .catch(() => !cancelled && setBudgets([]));
     apiRequest<SavingsGoal[]>("/savings", { token: accessToken })
       .then((data) => !cancelled && setSavingsGoals(data))
       .catch(() => !cancelled && setSavingsGoals([]));
@@ -501,6 +493,31 @@ export function AnalyticsPage() {
       cancelled = true;
     };
   }, [accessToken, reloadTick, isBusiness]);
+
+  // Everything the app-wide month selector actually moves, kept in its own
+  // effect rather than merged into the load above: re-running that block on
+  // every month change would also re-request /analytics/insights, which on a
+  // cache miss is a real Azure call per flagged category.
+  useEffect(() => {
+    if (!accessToken) return;
+    let cancelled = false;
+
+    apiRequest<SpendingByCategoryResponse>(`/analytics/spending-by-category?${periodQuery}`, { token: accessToken })
+      .then((data) => !cancelled && setSpendingByCategory(data))
+      .catch(() => !cancelled && setSpendingByCategory(null));
+    if (isBusiness) {
+      apiRequest<TopCounterpartiesResponse>(`/analytics/top-counterparties?${periodQuery}`, { token: accessToken })
+        .then((data) => !cancelled && setTopCounterparties(data))
+        .catch(() => !cancelled && setTopCounterparties(null));
+    }
+    apiRequest<Budget[]>(`/budgets?${periodQuery}`, { token: accessToken })
+      .then((data) => !cancelled && setBudgets(data))
+      .catch(() => !cancelled && setBudgets([]));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, reloadTick, isBusiness, periodQuery]);
 
   useEffect(() => {
     if (!accessToken) return;

@@ -9,6 +9,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import { apiRequest } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
+import { usePeriod } from "../hooks/usePeriod";
 import type { CreditScore, NetWorthResponse, SpendingByTypeResponse, Transaction } from "../types";
 
 const QUICK_ACTIONS: { to: string; labelKey: string; subKey: string; icon: LucideIcon }[] = [
@@ -76,6 +77,7 @@ function formatTransactionType(
 export function DashboardPage() {
   const { t } = useTranslation();
   const { user, accessToken } = useAuth();
+  const { query: periodQuery } = usePeriod();
   const [hidden, setHidden] = useState(false);
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -97,9 +99,6 @@ export function DashboardPage() {
     apiRequest<Transaction[]>("/transactions", { token: accessToken })
       .then((list) => setTransactions([...list].sort((a, b) => b.created_at.localeCompare(a.created_at))))
       .catch(() => setTransactions([]));
-    apiRequest<SpendingByTypeResponse>("/analytics/spending-by-type", { token: accessToken })
-      .then(setSpending)
-      .catch(() => setSpending(null));
     if (user?.user_type !== "BUSINESS") {
       // Credit is hidden for business accounts (personal FICO-style score,
       // personal loan products) — skip the fetch, not just the card below.
@@ -108,6 +107,19 @@ export function DashboardPage() {
         .catch(() => setCreditScore(null));
     }
   }, [accessToken, user?.user_type]);
+
+  // Follows the app-wide month selector, so the dashboard's spending card and
+  // the Analytics page never disagree about which month they are showing.
+  useEffect(() => {
+    if (!accessToken) return;
+    let cancelled = false;
+    apiRequest<SpendingByTypeResponse>(`/analytics/spending-by-type?${periodQuery}`, { token: accessToken })
+      .then((data) => !cancelled && setSpending(data))
+      .catch(() => !cancelled && setSpending(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, periodQuery]);
 
   async function setMainWallet(walletId: string) {
     if (!accessToken || settingMainId) return;

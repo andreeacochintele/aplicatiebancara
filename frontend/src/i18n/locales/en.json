@@ -1507,6 +1507,10 @@
     "fair": "Fair",
     "risky": "Risky"
   },
+  "period": {
+    "selectMonth": "Select month",
+    "viewingPast": "Viewing a past month. Balances and forecasts always show today."
+  },
   "header": {
     "notifications": "Notifications",
     "refresh": "Refresh",
