@@ -76,6 +76,11 @@ function StatusDonut({ title, data, total }: { title: string; data: ReturnType<t
                 </Pie>
                 <Tooltip
                   formatter={(value: number, name: string) => [value, name]}
+                  // Pin the vertical position above the donut (x still
+                  // follows the cursor) so the tooltip never lands on top
+                  // of the fixed center total overlay.
+                  position={{ y: 0 }}
+                  allowEscapeViewBox={{ x: true, y: true }}
                   contentStyle={{ borderRadius: 10, border: "1px solid var(--easyb-border)", fontSize: 12 }}
                 />
               </PieChart>

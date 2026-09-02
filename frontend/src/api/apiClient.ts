@@ -1,3 +1,5 @@
+import i18n from "../i18n/config";
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
 export class ApiError extends Error {
@@ -38,7 +40,13 @@ function formatErrorDetail(detail: unknown): string {
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, token } = options;
 
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    // Site-wide language preference (LanguageToggle / i18n/config.ts), sent
+    // on every request so the AI agents narrate in the same language the
+    // rest of the UI is already showing, instead of guessing from message text.
+    "X-Locale": i18n.language === "ro" ? "ro" : "en",
+  };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }

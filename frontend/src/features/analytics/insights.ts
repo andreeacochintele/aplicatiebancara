@@ -2,6 +2,14 @@
 // No LLM involved — every rule here is a plain comparison over data the page
 // already fetched (architecture.md: keep financial/derived-metric logic out
 // of the model, see CLAUDE.md §12).
+//
+// Locale: `t` is passed in from the caller's own useTranslation() (see
+// AnalyticsPage.tsx) rather than this module calling useTranslation() itself
+// — it's a plain function, not a component/hook, so it can't use hooks
+// directly. Message strings live in i18n/locales/{en,ro}.json under
+// "analytics.insight*", not hardcoded here.
+import type { TFunction } from "i18next";
+
 import type { Budget, ForecastResponse, MonthlyTrendResponse, SpendingByCategoryItem } from "../../types";
 
 export type InsightKind = "trend" | "category" | "budget" | "forecast";
@@ -24,12 +32,10 @@ interface InsightInputs {
   forecast: ForecastResponse | null;
 }
 
-export function generateAnalyticsInsights({
-  monthlyTrend,
-  spendingItems,
-  budgets,
-  forecast,
-}: InsightInputs): AnalyticsInsight[] {
+export function generateAnalyticsInsights(
+  { monthlyTrend, spendingItems, budgets, forecast }: InsightInputs,
+  t: TFunction,
+): AnalyticsInsight[] {
   const insights: AnalyticsInsight[] = [];
 
   const totals = monthlyTrend?.totals_by_month ?? [];
@@ -41,8 +47,10 @@ export function generateAnalyticsInsights({
       if (Math.abs(pct) >= 5) {
         insights.push({
           id: "trend",
-          message: `Your spending is ${Math.abs(pct)}% ${pct > 0 ? "higher" : "lower"} than last month.`,
-          ctaLabel: "View transactions",
+          message: t(pct > 0 ? "analytics.insightTrendHigher" : "analytics.insightTrendLower", {
+            pct: Math.abs(pct),
+          }),
+          ctaLabel: t("analytics.insightViewTransactions"),
           ctaTo: "/transactions",
         });
       }
@@ -56,8 +64,8 @@ export function generateAnalyticsInsights({
     if (pct >= 40) {
       insights.push({
         id: "category",
-        message: `${top.category} purchases represent ${pct}% of your spending this month.`,
-        ctaLabel: "View breakdown",
+        message: t("analytics.insightCategoryShare", { category: top.category, pct }),
+        ctaLabel: t("analytics.insightViewBreakdown"),
         ctaTo: "/transactions",
       });
     }
@@ -67,8 +75,8 @@ export function generateAnalyticsInsights({
     const overBudget = budgets.find((budget) => budget.percent_used >= 100);
     insights.push(
       overBudget
-        ? { id: "budget", message: `${overBudget.name} is over budget.` }
-        : { id: "budget", message: "You're on track to stay within budget." },
+        ? { id: "budget", message: t("analytics.insightBudgetOver", { name: overBudget.name }) }
+        : { id: "budget", message: t("analytics.insightBudgetOnTrack") },
     );
   }
 
@@ -76,9 +84,7 @@ export function generateAnalyticsInsights({
     const positive = Number(forecast.projected_month_end_balance) >= Number(forecast.current_balance);
     insights.push({
       id: "forecast",
-      message: positive
-        ? "Your cash-flow forecast is positive this month."
-        : "Your projected balance is trending down this month.",
+      message: t(positive ? "analytics.insightForecastPositive" : "analytics.insightForecastNegative"),
     });
   }
 
