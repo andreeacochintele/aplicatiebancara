@@ -3,7 +3,7 @@ import {
   PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldAlert, Briefcase, Building2, LayoutGrid, ScrollText, Scale, Users, type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { NavLink } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 
 import { BrandMark } from "./BrandMark";
 import { useAuth } from "../hooks/useAuth";
@@ -82,10 +82,13 @@ export function Sidebar() {
 
   return (
     <nav className="sidebar easyb-sidebar">
-      <div className="easyb-brand">
+      {/* Same destination HomeRedirect picks for "/": an admin has no
+          Dashboard nav entry at all, so sending them to /dashboard would
+          strand them on a page their own sidebar cannot navigate back from. */}
+      <Link className="easyb-brand" to={isAdmin ? "/admin" : "/dashboard"}>
         <BrandMark className="easyb-brand-mark" size={56} />
         <span className="easyb-brand-name">{t("common.appName")}</span>
-      </div>
+      </Link>
       {isAdmin ? (
         <NavGroup label={t("nav.operations")} items={OPERATIONS_ITEMS} />
       ) : (

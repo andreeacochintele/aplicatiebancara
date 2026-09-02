@@ -87,6 +87,15 @@
   align-items: center;
   gap: 10px;
   padding: 4px 10px 22px;
+  /* It is a link to the home page now, so the anchor defaults have to be
+     undone — the brand must keep looking like a wordmark, not like text
+     someone linked. */
+  text-decoration: none;
+  color: inherit;
+}
+
+.easyb-brand:hover .easyb-brand-name {
+  color: var(--easyb-accent-dark);
 }
 
 .easyb-brand-mark {
