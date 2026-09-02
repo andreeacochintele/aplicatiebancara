@@ -2158,6 +2158,28 @@
   color: var(--easyb-text);
 }
 
+/* App-wide month selector in the header. Same pill shape as
+   .easyb-hero-select, in surface colours instead of the hero's
+   light-on-dark. */
+.easyb-period-select {
+  background: var(--easyb-surface);
+  border: 1px solid var(--easyb-border);
+  color: var(--easyb-text);
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+/* Viewing anything other than the real current month is a deliberate,
+   temporary state — worth making visible so nobody reads a past month's
+   figures as today's. */
+.easyb-period-select--past {
+  border-color: var(--easyb-violet);
+  color: var(--easyb-violet);
+}
+
 .easyb-insight-row {
   display: flex;
   gap: 10px;

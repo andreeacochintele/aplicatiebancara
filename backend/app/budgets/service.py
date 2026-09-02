@@ -38,8 +38,18 @@ class BudgetService:
         self.repository.add(budget)
         return self._to_public(budget)
 
-    def list_budgets(self, user_id: uuid.UUID) -> list[BudgetPublic]:
-        return [self._to_public(budget) for budget in self.repository.list_for_user(user_id)]
+    def list_budgets(
+        self, user_id: uuid.UUID, year: int | None = None, month: int | None = None
+    ) -> list[BudgetPublic]:
+        """`year`/`month` re-point monthly budgets at a month other than the
+        current one, so the app-wide period selector can show what a budget
+        looked like in, say, August while it is already September. Same
+        validation shape as AnalyticsService._month_period_bounds()."""
+        if (year is None) != (month is None):
+            raise ValidationError("year and month must be provided together")
+        if month is not None and not 1 <= month <= 12:
+            raise ValidationError("month must be between 1 and 12")
+        return [self._to_public(budget, year, month) for budget in self.repository.list_for_user(user_id)]
 
     def delete_budget(self, user_id: uuid.UUID, budget_id: uuid.UUID) -> None:
         budget = self.repository.get_by_id(budget_id)
@@ -47,9 +57,9 @@ class BudgetService:
             raise NotFoundError("Budget not found")
         self.repository.delete(budget)
 
-    def _to_public(self, budget: Budget) -> BudgetPublic:
+    def _to_public(self, budget: Budget, year: int | None = None, month: int | None = None) -> BudgetPublic:
         now = datetime.now(timezone.utc)
-        period_start, period_end = self._period_bounds(budget.period, now)
+        period_start, period_end = self._period_bounds(budget.period, now, year, month)
 
         spent = (
             self.repository.spent_amount(budget.user_id, budget.category, budget.currency, period_start, period_end)
@@ -74,12 +84,24 @@ class BudgetService:
             created_at=budget.created_at,
         )
 
-    def _period_bounds(self, period: BudgetPeriod, now: datetime) -> tuple[datetime, datetime]:
+    def _period_bounds(
+        self,
+        period: BudgetPeriod,
+        now: datetime,
+        year: int | None = None,
+        month: int | None = None,
+    ) -> tuple[datetime, datetime]:
         if period == BudgetPeriod.MONTHLY:
-            start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
-            days_in_month = calendar.monthrange(now.year, now.month)[1]
-            end = datetime(now.year, now.month, days_in_month, 23, 59, 59, tzinfo=timezone.utc)
+            # An explicit year/month stands in for "which month is now".
+            target_year = year if year is not None else now.year
+            target_month = month if month is not None else now.month
+            start = datetime(target_year, target_month, 1, tzinfo=timezone.utc)
+            days_in_month = calendar.monthrange(target_year, target_month)[1]
+            end = datetime(target_year, target_month, days_in_month, 23, 59, 59, tzinfo=timezone.utc)
         else:
+            # Weekly budgets deliberately ignore the override: "which week of
+            # August" has no answer, so they stay on the real current week
+            # rather than being given an arbitrary one.
             start = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
             end = start + timedelta(days=6, hours=23, minutes=59, seconds=59)
         return start, end

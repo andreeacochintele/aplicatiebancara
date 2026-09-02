@@ -1,7 +1,7 @@
 """Budget endpoints, scoped to the authenticated user."""
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -15,10 +15,12 @@ router = APIRouter(prefix="/budgets", tags=["budgets"])
 
 @router.get("", response_model=list[BudgetPublic])
 def list_my_budgets(
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[BudgetPublic]:
-    return BudgetService(db).list_budgets(current_user.id)
+    return BudgetService(db).list_budgets(current_user.id, year, month)
 
 
 @router.post("", response_model=BudgetPublic, status_code=201)
