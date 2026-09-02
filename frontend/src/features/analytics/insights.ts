@@ -22,6 +22,15 @@ interface InsightInputs {
   spendingItems: SpendingByCategoryItem[];
   budgets: Budget[];
   forecast: ForecastResponse | null;
+  // Not every input here covers the same span. spendingItems and budgets follow
+  // the selected month, but monthly-trend always ends at the real current month
+  // and the forecast only ever projects the real one — neither endpoint takes a
+  // year/month. Narrating all four as "this month" was therefore wrong as soon
+  // as a past month was selected, so the two that cannot follow the selection
+  // are dropped while it points at the past.
+  isCurrentMonth: boolean;
+  // Names the month spendingItems and budgets actually cover, e.g. "August 2026".
+  periodLabel: string;
 }
 
 export function generateAnalyticsInsights({
@@ -29,11 +38,13 @@ export function generateAnalyticsInsights({
   spendingItems,
   budgets,
   forecast,
+  isCurrentMonth,
+  periodLabel,
 }: InsightInputs): AnalyticsInsight[] {
   const insights: AnalyticsInsight[] = [];
 
   const totals = monthlyTrend?.totals_by_month ?? [];
-  if (totals.length >= 2) {
+  if (isCurrentMonth && totals.length >= 2) {
     const current = Number(totals[totals.length - 1].total_amount);
     const previous = Number(totals[totals.length - 2].total_amount);
     if (previous > 0) {
@@ -56,23 +67,37 @@ export function generateAnalyticsInsights({
     if (pct >= 40) {
       insights.push({
         id: "category",
-        message: `${top.category} purchases represent ${pct}% of your spending this month.`,
+        message: `${top.category} purchases represent ${pct}% of your spending in ${periodLabel}.`,
         ctaLabel: "View breakdown",
         ctaTo: "/transactions",
       });
     }
   }
 
-  if (budgets.length > 0) {
-    const overBudget = budgets.find((budget) => budget.percent_used >= 100);
-    insights.push(
-      overBudget
-        ? { id: "budget", message: `${overBudget.name} is over budget.` }
-        : { id: "budget", message: "You're on track to stay within budget." },
-    );
+  // Weekly budgets stay on the real current week whatever month is selected
+  // ("which week of August" has no answer, see BudgetService._period_bounds),
+  // so only the monthly ones can be spoken about alongside a past month.
+  const scopedBudgets = isCurrentMonth ? budgets : budgets.filter((budget) => budget.period === "MONTHLY");
+  if (scopedBudgets.length > 0) {
+    const overBudget = scopedBudgets.find((budget) => budget.percent_used >= 100);
+    if (overBudget) {
+      insights.push({
+        id: "budget",
+        message: isCurrentMonth
+          ? `${overBudget.name} is over budget.`
+          : `${overBudget.name} went over budget in ${periodLabel}.`,
+      });
+    } else {
+      insights.push({
+        id: "budget",
+        message: isCurrentMonth
+          ? "You're on track to stay within budget."
+          : `Every budget stayed within its limit in ${periodLabel}.`,
+      });
+    }
   }
 
-  if (forecast) {
+  if (isCurrentMonth && forecast) {
     const positive = Number(forecast.projected_month_end_balance) >= Number(forecast.current_balance);
     insights.push({
       id: "forecast",

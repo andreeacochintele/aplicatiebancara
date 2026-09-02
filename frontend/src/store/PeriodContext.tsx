@@ -22,6 +22,21 @@ interface PeriodContextValue {
 
 export const PeriodContext = createContext<PeriodContextValue | undefined>(undefined);
 
+/** "August 2026" / "august 2026", in the caller's locale. Lives here rather
+ *  than in PeriodSelect because anything narrating the selected month needs
+ *  to name it the same way the selector does. `style` trades width for
+ *  readability: the pill on a card header uses "short", prose uses "long". */
+export function formatPeriodMonth(
+  month: PeriodMonth,
+  locale: string,
+  style: "long" | "short" = "long",
+): string {
+  return new Date(month.year, month.month - 1, 1).toLocaleDateString(locale, {
+    month: style,
+    year: "numeric",
+  });
+}
+
 function toMonth(date: Date): PeriodMonth {
   const year = date.getFullYear();
   const month = date.getMonth() + 1;

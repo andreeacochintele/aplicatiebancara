@@ -10,10 +10,12 @@ import {
 } from "recharts";
 
 import { apiRequest, ApiError } from "../api/apiClient";
+import { PeriodSelect } from "../components/PeriodSelect";
 import { colorForType } from "../features/analytics/formatters";
 import { generateAnalyticsInsights, type AnalyticsInsight } from "../features/analytics/insights";
 import { useAuth } from "../hooks/useAuth";
 import { usePeriod } from "../hooks/usePeriod";
+import { formatPeriodMonth } from "../store/PeriodContext";
 import type {
   AIInsight,
   BalanceHistoryResponse,
@@ -434,8 +436,8 @@ function SavingsMoneyModal({
 }
 
 export function AnalyticsPage() {
-  const { t } = useTranslation();
-  const { query: periodQuery } = usePeriod();
+  const { t, i18n } = useTranslation();
+  const { query: periodQuery, period, isCurrentMonth } = usePeriod();
   const { accessToken, user } = useAuth();
   const isBusiness = user?.user_type === "BUSINESS";
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
@@ -559,7 +561,14 @@ export function AnalyticsPage() {
     color: colorForType(item.category),
   }));
 
-  const insights = generateAnalyticsInsights({ monthlyTrend, spendingItems, budgets, forecast });
+  const insights = generateAnalyticsInsights({
+    monthlyTrend,
+    spendingItems,
+    budgets,
+    forecast,
+    isCurrentMonth,
+    periodLabel: formatPeriodMonth(period, i18n.language),
+  });
 
   const netWorthChangePercent = (() => {
     const history = netWorthHistory?.history ?? [];
@@ -676,6 +685,7 @@ export function AnalyticsPage() {
               <div className="easyb-eyebrow">{t("analytics.thisPeriod")}</div>
               <h2>{t("analytics.spendingOverview")}</h2>
             </div>
+            <PeriodSelect />
           </div>
           {donutData.length > 0 ? (
             <div style={{ display: "flex", alignItems: "center", gap: 40, flexWrap: "wrap" }}>
