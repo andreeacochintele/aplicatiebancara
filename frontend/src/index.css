@@ -1599,6 +1599,70 @@ th {
   margin: 0;
 }
 
+.transactions-header__tools {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  /* Wraps to its own line before the search box gets squeezed to nothing. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.transactions-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.transactions-search input {
+  width: 260px;
+  max-width: 100%;
+  /* Room for the magnifier on the left and the clear button on the right. */
+  padding: 0.5rem 2rem 0.5rem 2.1rem;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-family: inherit;
+}
+
+.transactions-search input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+/* type="search" draws its own clear button in WebKit, which would sit next
+   to ours. */
+.transactions-search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.transactions-search__icon {
+  position: absolute;
+  left: 0.6rem;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.transactions-search__clear {
+  position: absolute;
+  right: 0.4rem;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--color-text-muted);
+}
+
+.transactions-search__clear:hover {
+  background: var(--color-surface-raised);
+  border-color: transparent;
+  color: var(--color-text);
+}
+
 .transactions-table-card {
   overflow-x: auto;
 }
@@ -1645,6 +1709,47 @@ th {
    text span therefore never shrank, so scrollWidth always equalled
    clientWidth and the "is this truncated?" check below could never fire.
    As a block, the container fills the cell and the text shrinks for real. */
+/* Instant tooltip for icon-only buttons. Replaces the native `title`, which
+   only surfaces after the browser's ~1s delay and in an OS-styled box that
+   ignores the app's theme — on a row of four unlabelled icons that reads as
+   nothing happening at all. aria-label carries the same text, so this is
+   purely visual and screen readers are unaffected. */
+.tooltip-host {
+  position: relative;
+}
+
+.tooltip-host::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 0.28rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  /* The bubble must never eat the hover it was triggered by, or the button
+     would flicker as the pointer crosses it. */
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.tooltip-host:hover::after,
+.tooltip-host:focus-visible::after {
+  opacity: 1;
+}
+
+/* Nothing to explain while the action is running. */
+.tooltip-host:disabled::after {
+  content: none;
+}
+
 .transaction-description {
   display: flex;
   align-items: center;

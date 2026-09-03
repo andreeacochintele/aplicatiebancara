@@ -1,5 +1,5 @@
-import { ChevronDown, ChevronLeft, ChevronRight, Folder, Plus, Receipt, Users } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Folder, Plus, Receipt, Search, Users, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -27,6 +27,18 @@ interface SplitParticipantDraft {
   participant_user_id: string;
   phone: string;
   percent: string;
+}
+
+/** Folds a string down to what a search should actually compare: lowercase,
+ *  and with diacritics stripped so "catre" finds "Transfer către Bogdan".
+ *  Romanian descriptions are written both ways depending on whose keyboard
+ *  produced them, so matching the raw text would miss half of them. */
+function searchKey(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
 }
 
 // Money coming in only (not a self-transfer between the user's own
@@ -190,6 +202,7 @@ export function TransactionsPage() {
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
   const [transactionsPage, setTransactionsPage] = useState(1);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (!accessToken) return;
@@ -209,6 +222,10 @@ export function TransactionsPage() {
   }, [accessToken]);
 
   useEffect(() => {
+    setTransactionsPage(1);
+  }, [search]);
+
+  useEffect(() => {
     setTransactionsPage((currentPage) => {
       const maxPage = Math.max(1, Math.ceil(transactions.length / TRANSACTIONS_PER_PAGE));
       return Math.min(currentPage, maxPage);
@@ -223,12 +240,22 @@ export function TransactionsPage() {
       .map((participant) => ({ split, participant })),
   );
   const ownedOpenSplits = billSplits.filter((split) => split.owner_user_id === user?.id && split.status === "OPEN");
-  const transactionPageCount = Math.max(1, Math.ceil(transactions.length / TRANSACTIONS_PER_PAGE));
+  // Everything below counts and pages over the *filtered* list, so the range
+  // readout and the page buttons describe what is actually on screen.
+  const filteredTransactions = useMemo(() => {
+    const needle = searchKey(search);
+    if (needle === "") return transactions;
+    return transactions.filter((tx) => searchKey(tx.description ?? "").includes(needle));
+  }, [transactions, search]);
+  const transactionPageCount = Math.max(1, Math.ceil(filteredTransactions.length / TRANSACTIONS_PER_PAGE));
   const currentTransactionsPage = Math.min(transactionsPage, transactionPageCount);
   const transactionsPageStart = (currentTransactionsPage - 1) * TRANSACTIONS_PER_PAGE;
-  const visibleTransactions = transactions.slice(transactionsPageStart, transactionsPageStart + TRANSACTIONS_PER_PAGE);
-  const firstVisibleTransaction = transactions.length === 0 ? 0 : transactionsPageStart + 1;
-  const lastVisibleTransaction = Math.min(transactionsPageStart + TRANSACTIONS_PER_PAGE, transactions.length);
+  const visibleTransactions = filteredTransactions.slice(
+    transactionsPageStart,
+    transactionsPageStart + TRANSACTIONS_PER_PAGE,
+  );
+  const firstVisibleTransaction = filteredTransactions.length === 0 ? 0 : transactionsPageStart + 1;
+  const lastVisibleTransaction = Math.min(transactionsPageStart + TRANSACTIONS_PER_PAGE, filteredTransactions.length);
   const transactionPageButtonCount = Math.min(5, transactionPageCount);
   const firstTransactionPageButton = Math.min(
     Math.max(1, currentTransactionsPage - 2),
@@ -571,9 +598,31 @@ export function TransactionsPage() {
     <section>
       <div className="transactions-header">
         <h2>{t("transactions.title")}</h2>
-        <button className="button--ghost button--wide" onClick={() => void refreshTransactionsData()} type="button">
-          {t("transactions.refresh")}
-        </button>
+        <div className="transactions-header__tools">
+          <div className="transactions-search">
+            <Search aria-hidden="true" className="transactions-search__icon" size={16} />
+            <input
+              aria-label={t("transactions.searchLabel")}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t("transactions.searchPlaceholder")}
+              type="search"
+              value={search}
+            />
+            {search !== "" && (
+              <button
+                aria-label={t("transactions.clearSearch")}
+                className="transactions-search__clear"
+                onClick={() => setSearch("")}
+                type="button"
+              >
+                <X aria-hidden="true" size={14} />
+              </button>
+            )}
+          </div>
+          <button className="button--ghost button--wide" onClick={() => void refreshTransactionsData()} type="button">
+            {t("transactions.refresh")}
+          </button>
+        </div>
       </div>
       {transactionsError && <p className="status-line status-line--error">{transactionsError}</p>}
       {proofError && <p className="status-line status-line--error">{proofError}</p>}
@@ -887,6 +936,13 @@ export function TransactionsPage() {
           <div className="empty-state">{t("transactions.loadingTransactions")}</div>
         ) : transactions.length === 0 ? (
           <div className="empty-state">{t("transactions.noTransactionsFound", { name: user?.first_name ?? t("transactions.thisUser") })}</div>
+        ) : filteredTransactions.length === 0 ? (
+          <div className="empty-state">
+            <p>{t("transactions.noSearchMatches", { search: search.trim() })}</p>
+            <button className="easyb-link-btn" onClick={() => setSearch("")} type="button">
+              {t("transactions.clearSearch")}
+            </button>
+          </div>
         ) : (
           <table className="transactions-table">
             <thead>
@@ -922,10 +978,10 @@ export function TransactionsPage() {
                       {tx.status === "COMPLETED" ? (
                         <button
                           aria-label={t("transactions.downloadPaymentProof")}
-                          className="button--ghost button--round"
+                          className="button--ghost button--round tooltip-host"
+                          data-tooltip={t("transactions.downloadPaymentProof")}
                           disabled={proofActionId === tx.id}
                           onClick={() => void downloadPaymentProof(tx)}
-                          title={t("transactions.downloadPaymentProof")}
                           type="button"
                         >
                           <Receipt size={16} />
@@ -936,9 +992,9 @@ export function TransactionsPage() {
                       {tx.status === "COMPLETED" && isFolderEligible(tx) ? (
                         <button
                           aria-label={t("transactions.addToFolder")}
-                          className="button--ghost button--round"
+                          className="button--ghost button--round tooltip-host"
+                          data-tooltip={t("transactions.addToFolder")}
                           onClick={() => openFolderModal(tx)}
-                          title={t("transactions.addToFolder")}
                           type="button"
                         >
                           <Folder size={16} />
@@ -949,9 +1005,9 @@ export function TransactionsPage() {
                       {tx.status === "COMPLETED" && isSplittable(tx) ? (
                         <button
                           aria-label={t("transactions.splitBill")}
-                          className="button--ghost button--round"
+                          className="button--ghost button--round tooltip-host"
+                          data-tooltip={t("transactions.splitBill")}
                           onClick={() => openSplit(tx)}
-                          title={t("transactions.splitBill")}
                           type="button"
                         >
                           <Users size={16} />
@@ -965,9 +1021,9 @@ export function TransactionsPage() {
                       {tx.status === "COMPLETED" && tx.type === "CARD_PAYMENT" ? (
                         <button
                           aria-label={t("transactions.changeCategory")}
-                          className="button--ghost button--round"
+                          className="button--ghost button--round tooltip-host"
+                          data-tooltip={t("transactions.changeCategory")}
                           onClick={() => openCategoryModal(tx)}
-                          title={t("transactions.changeCategory")}
                           type="button"
                         >
                           <Plus size={16} />
