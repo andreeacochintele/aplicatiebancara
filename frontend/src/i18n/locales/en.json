@@ -491,7 +491,7 @@
     "cuiLookupBusy": "Looking up…",
     "cuiLookupFailed": "Could not find that CUI, or ANAF is unavailable. Enter the details manually.",
     "cuiLookupInactive": "Warning: this CUI shows as inactive/deregistered in the ANAF registry.",
-    "cuiVerifiedNote": "Name, CUI and registration number are locked because they were verified via ANAF. Look up the CUI again if they need correcting.",
+    "cuiVerifiedNote": "Name, CUI and registration number can no longer be edited once a company has been added (or verified via ANAF). Add the company again if these need correcting.",
     "companyName": "Company name *",
     "representative": "Representative",
     "representativePlaceholder": "Who represents the company on this account",
