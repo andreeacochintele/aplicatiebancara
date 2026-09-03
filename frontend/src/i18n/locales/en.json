@@ -454,6 +454,7 @@
     "failed": "Failed",
     "historyTitle": "Batch history",
     "loading": "Loading...",
+    "batchId": "Batch ID",
     "date": "Date",
     "rows": "Rows",
     "batchAllCompleted": "All completed",
