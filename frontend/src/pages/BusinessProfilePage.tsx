@@ -69,6 +69,10 @@ export function BusinessProfilePage() {
 
   const isBusiness = user?.user_type === "BUSINESS";
   const isNew = selectedId === null;
+  // Identity fields lock the moment a profile is saved, not just for the
+  // browser session that ran the CUI lookup - editing a previously-added
+  // company must never let its verified identity drift out from under it.
+  const identityLocked = cuiVerified || !isNew;
 
   useEffect(() => {
     if (!isBusiness || !accessToken) return;
@@ -245,30 +249,36 @@ export function BusinessProfilePage() {
         <p style={{ color: "var(--color-text-muted)", fontSize: "0.9rem" }}>
           {t("businessProfile.activeCompanyNote")}
         </p>
-        <div
-          style={{
-            display: "flex",
-            gap: "0.5rem",
-            alignItems: "flex-end",
-            marginTop: "0.5rem",
-            padding: "0.75rem",
-            borderRadius: 8,
-            border: "1px solid var(--color-divider)",
-          }}
-        >
-          <label style={{ flex: 1 }}>
-            {t("businessProfile.cuiLookupLabel")}
-            <input
-              type="text"
-              value={cuiQuery}
-              onChange={(e) => setCuiQuery(e.target.value)}
-              placeholder="RO12345678"
-            />
-          </label>
-          <button type="button" onClick={lookupCui} disabled={cuiLookupBusy || !cuiQuery.trim()}>
-            {cuiLookupBusy ? t("businessProfile.cuiLookupBusy") : t("businessProfile.cuiLookupButton")}
-          </button>
-        </div>
+        {identityLocked ? (
+          <p style={{ color: "var(--color-text-muted)", fontSize: "0.85rem", marginTop: "0.5rem" }}>
+            {t("businessProfile.cuiVerifiedNote")}
+          </p>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              alignItems: "flex-end",
+              marginTop: "0.5rem",
+              padding: "0.75rem",
+              borderRadius: 8,
+              border: "1px solid var(--color-divider)",
+            }}
+          >
+            <label style={{ flex: 1 }}>
+              {t("businessProfile.cuiLookupLabel")}
+              <input
+                type="text"
+                value={cuiQuery}
+                onChange={(e) => setCuiQuery(e.target.value)}
+                placeholder="RO12345678"
+              />
+            </label>
+            <button type="button" onClick={lookupCui} disabled={cuiLookupBusy || !cuiQuery.trim()}>
+              {cuiLookupBusy ? t("businessProfile.cuiLookupBusy") : t("businessProfile.cuiLookupButton")}
+            </button>
+          </div>
+        )}
         {cuiLookupError && (
           <p role="alert" style={{ color: "var(--color-negative)", fontSize: "0.9rem" }}>
             {cuiLookupError}
@@ -276,11 +286,6 @@ export function BusinessProfilePage() {
         )}
         {cuiLookupInactive && (
           <p style={{ color: "var(--color-warning)", fontSize: "0.9rem" }}>{t("businessProfile.cuiLookupInactive")}</p>
-        )}
-        {cuiVerified && (
-          <p style={{ color: "var(--color-text-muted)", fontSize: "0.85rem", marginTop: "0.5rem" }}>
-            {t("businessProfile.cuiVerifiedNote")}
-          </p>
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
           <label>
@@ -290,7 +295,7 @@ export function BusinessProfilePage() {
               value={form.company_name}
               onChange={(e) => setForm({ ...form, company_name: e.target.value })}
               placeholder="Acme SRL"
-              disabled={cuiVerified}
+              disabled={identityLocked}
             />
           </label>
           <label>
@@ -309,7 +314,7 @@ export function BusinessProfilePage() {
               value={form.tax_id}
               onChange={(e) => setForm({ ...form, tax_id: e.target.value })}
               placeholder="RO12345678"
-              disabled={cuiVerified}
+              disabled={identityLocked}
             />
           </label>
           <label>
@@ -319,7 +324,7 @@ export function BusinessProfilePage() {
               value={form.registration_number}
               onChange={(e) => setForm({ ...form, registration_number: e.target.value })}
               placeholder="J40/1234/2024"
-              disabled={cuiVerified}
+              disabled={identityLocked}
             />
           </label>
           <label>
