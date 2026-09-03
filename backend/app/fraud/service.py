@@ -1339,6 +1339,9 @@ class FraudService:
     def list_pending(self) -> list[FraudCaseSummary]:
         return [self._to_summary(case) for case in self.repository.list_pending()]
 
+    def list_decided(self) -> list[FraudCaseSummary]:
+        return [self._to_summary(case) for case in self.repository.list_decided()]
+
     def to_detail(self, case: FraudCase) -> FraudCaseDetail:
         transaction = self.transactions.get_by_id(case.transaction_id)
         flags = self.repository.list_flags_for_case(case.id)
@@ -1394,4 +1397,6 @@ class FraudService:
             created_at=case.created_at,
             flag_codes=[flag.code for flag in flags],
             batch_reference=case.batch_reference,
+            decided_at=case.decided_at,
+            decided_by_admin_id=case.decided_by_admin_id,
         )
