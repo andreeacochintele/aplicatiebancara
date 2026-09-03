@@ -21,6 +21,7 @@ import type {
   LoanProductType,
   Wallet,
 } from "../types";
+import { formatDecimalAmount } from "../utils";
 
 const CREDIT_CURRENCIES = ["RON", "EUR", "USD", "GBP"];
 const DOWN_PAYMENT_LOAN_TYPES = new Set<LoanProductType>(["MORTGAGE", "AUTO_LOAN", "HOME_IMPROVEMENT"]);
@@ -100,7 +101,7 @@ function formatProductType(type: LoanProductType | null, t: (key: string) => str
 }
 
 function formatMoney(value: string, currency = "RON"): string {
-  return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+  return `${formatDecimalAmount(Number(value))} ${currency}`;
 }
 
 function escapeExcelCell(value: string): string {
@@ -1795,10 +1796,7 @@ export function CreditPage() {
                                     <p className="early-repayment-card__source-balance">
                                       {t("credit.available", {
                                         amount: selectedRepaymentSourceDetails
-                                          ? `${Number(selectedRepaymentSourceDetails.availableBalance).toLocaleString(undefined, {
-                                              minimumFractionDigits: 2,
-                                              maximumFractionDigits: 2,
-                                            })} ${activeLoan.currency}`
+                                          ? `${formatDecimalAmount(Number(selectedRepaymentSourceDetails.availableBalance))} ${activeLoan.currency}`
                                           : `0.00 ${activeLoan.currency}`,
                                       })}
                                     </p>

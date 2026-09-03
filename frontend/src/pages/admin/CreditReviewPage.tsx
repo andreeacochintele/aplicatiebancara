@@ -11,6 +11,7 @@ import type {
   CreditDocumentStatus,
   LoanProductType,
 } from "../../types";
+import { formatDecimalAmount } from "../../utils";
 
 const PRODUCT_RATE_DEFAULTS: Record<LoanProductType, string> = {
   PERSONAL_LOAN: "9.90",
@@ -42,7 +43,7 @@ function formatApplicationProduct(application: CreditApplication, t: (key: strin
 
 function formatMoney(value: string | null, t: (key: string) => string, currency = "RON"): string {
   if (!value) return t("admin.notAvailable");
-  return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+  return `${formatDecimalAmount(Number(value))} ${currency}`;
 }
 
 function statusClass(status: CreditApplicationStatus): string {

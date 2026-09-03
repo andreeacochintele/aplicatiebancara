@@ -5,9 +5,10 @@ import { useTranslation } from "react-i18next";
 import { ApiError, apiRequest } from "../../api/apiClient";
 import { useAuth } from "../../hooks/useAuth";
 import type { FraudAgentAnalysis, FraudCaseDetail, FraudCaseSummary, FraudFlag } from "../../types";
+import { formatDecimalAmount } from "../../utils";
 
 function formatMoney(value: string, currency: string): string {
-  return `${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+  return `${formatDecimalAmount(Number(value))} ${currency}`;
 }
 
 function formatFlagCode(code: string): string {
