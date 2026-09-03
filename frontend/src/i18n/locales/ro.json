@@ -493,6 +493,7 @@
     "cuiLookupBusy": "Se caută…",
     "cuiLookupFailed": "CUI-ul nu a putut fi găsit sau ANAF este indisponibil. Introdu datele manual.",
     "cuiLookupInactive": "Atenție: acest CUI apare ca inactiv/radiat în registrul ANAF.",
+    "cuiVerifiedNote": "Nume, CUI și nr. de înregistrare sunt blocate deoarece au fost verificate prin ANAF. Caută din nou după CUI dacă trebuie corectate.",
     "companyName": "Nume companie *",
     "representative": "Reprezentant",
     "representativePlaceholder": "Cine reprezintă compania pe acest cont",

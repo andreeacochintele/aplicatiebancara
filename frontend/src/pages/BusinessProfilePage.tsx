@@ -65,6 +65,7 @@ export function BusinessProfilePage() {
   const [cuiLookupBusy, setCuiLookupBusy] = useState(false);
   const [cuiLookupError, setCuiLookupError] = useState<string | null>(null);
   const [cuiLookupInactive, setCuiLookupInactive] = useState(false);
+  const [cuiVerified, setCuiVerified] = useState(false);
 
   const isBusiness = user?.user_type === "BUSINESS";
   const isNew = selectedId === null;
@@ -103,6 +104,7 @@ export function BusinessProfilePage() {
     setForm(toFormState(profile));
     setSaved(false);
     setError(null);
+    setCuiVerified(false);
   }
 
   function startNewCompany() {
@@ -110,6 +112,7 @@ export function BusinessProfilePage() {
     setForm(EMPTY_FORM);
     setSaved(false);
     setError(null);
+    setCuiVerified(false);
   }
 
   async function activate(profile: BusinessProfile) {
@@ -140,6 +143,7 @@ export function BusinessProfilePage() {
         tax_id: result.cui,
       }));
       setCuiLookupInactive(!result.is_active);
+      setCuiVerified(true);
       setSaved(false);
     } catch (err) {
       setCuiLookupError(err instanceof ApiError ? err.message : t("businessProfile.cuiLookupFailed"));
@@ -273,6 +277,11 @@ export function BusinessProfilePage() {
         {cuiLookupInactive && (
           <p style={{ color: "var(--color-warning)", fontSize: "0.9rem" }}>{t("businessProfile.cuiLookupInactive")}</p>
         )}
+        {cuiVerified && (
+          <p style={{ color: "var(--color-text-muted)", fontSize: "0.85rem", marginTop: "0.5rem" }}>
+            {t("businessProfile.cuiVerifiedNote")}
+          </p>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
           <label>
             {t("businessProfile.companyName")}
@@ -281,6 +290,7 @@ export function BusinessProfilePage() {
               value={form.company_name}
               onChange={(e) => setForm({ ...form, company_name: e.target.value })}
               placeholder="Acme SRL"
+              disabled={cuiVerified}
             />
           </label>
           <label>
@@ -299,6 +309,7 @@ export function BusinessProfilePage() {
               value={form.tax_id}
               onChange={(e) => setForm({ ...form, tax_id: e.target.value })}
               placeholder="RO12345678"
+              disabled={cuiVerified}
             />
           </label>
           <label>
@@ -308,6 +319,7 @@ export function BusinessProfilePage() {
               value={form.registration_number}
               onChange={(e) => setForm({ ...form, registration_number: e.target.value })}
               placeholder="J40/1234/2024"
+              disabled={cuiVerified}
             />
           </label>
           <label>
