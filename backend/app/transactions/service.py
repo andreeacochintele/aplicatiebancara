@@ -78,6 +78,8 @@ class TransactionService:
         data: InternalTransferCreate,
         *,
         screen_for_fraud: bool = True,
+        batch_reference: str | None = None,
+        batch_sibling_ids: frozenset[uuid.UUID] | None = None,
     ) -> Transaction:
         """`screen_for_fraud` defaults to True so any new caller is covered by
         default. It's turned off only for settlement flows that immediately
@@ -86,7 +88,13 @@ class TransactionService:
         PAID and notifies the payee right away (app/payments/service.py),
         which would be wrong if the money were sitting on a fraud HOLD. Those
         flows are user-to-user settlements of an amount both sides already
-        agreed on, so screening them is also the weaker case."""
+        agreed on, so screening them is also the weaker case.
+
+        `batch_reference`/`batch_sibling_ids` are passed straight through to
+        FraudService (see its docstrings) — tagging any case this transfer's
+        screening creates as belonging to a multi-row bulk submit, and
+        excluding the batch's own earlier rows from this one's velocity
+        count. Neither affects screening decisions beyond that."""
         if data.amount <= 0:
             raise ValidationError("Transfer amount must be positive")
 
@@ -98,9 +106,23 @@ class TransactionService:
 
         if source.currency == destination.currency:
             return self._execute_same_currency_transfer(
-                initiator_user_id, source, destination, data, screen_for_fraud
+                initiator_user_id,
+                source,
+                destination,
+                data,
+                screen_for_fraud,
+                batch_reference=batch_reference,
+                batch_sibling_ids=batch_sibling_ids,
             )
-        return self._execute_fx_transfer(initiator_user_id, source, destination, data, screen_for_fraud)
+        return self._execute_fx_transfer(
+            initiator_user_id,
+            source,
+            destination,
+            data,
+            screen_for_fraud,
+            batch_reference=batch_reference,
+            batch_sibling_ids=batch_sibling_ids,
+        )
 
     def _lock_wallet_pair(
         self, id_a: uuid.UUID, id_b: uuid.UUID
@@ -124,6 +146,9 @@ class TransactionService:
         destination: Wallet,
         data: InternalTransferCreate,
         screen_for_fraud: bool = True,
+        *,
+        batch_reference: str | None = None,
+        batch_sibling_ids: frozenset[uuid.UUID] | None = None,
     ) -> Transaction:
         if source.available_balance < data.amount:
             raise ConflictError("Insufficient available balance")
@@ -146,7 +171,14 @@ class TransactionService:
         # moves, and a blocked transfer is HOLD'd + set to PENDING_REVIEW by
         # FraudService, so neither leg of _settle() ever runs. The
         # destination is credited later, by FraudService.approve().
-        if screen_for_fraud and FraudService(self.db).evaluate_transaction(transaction, source).blocked:
+        if (
+            screen_for_fraud
+            and FraudService(self.db)
+            .evaluate_transaction(
+                transaction, source, batch_reference=batch_reference, batch_sibling_ids=batch_sibling_ids
+            )
+            .blocked
+        ):
             return transaction
 
         self._settle(transaction, source, data.amount, destination, data.amount)
@@ -159,6 +191,9 @@ class TransactionService:
         destination: Wallet,
         data: InternalTransferCreate,
         screen_for_fraud: bool = True,
+        *,
+        batch_reference: str | None = None,
+        batch_sibling_ids: frozenset[uuid.UUID] | None = None,
     ) -> Transaction:
         if data.fx_quote_id is None:
             raise ValidationError("Cross-currency transfers require an fx_quote_id — request one via POST /fx/quote")
@@ -193,7 +228,14 @@ class TransactionService:
         # and exchange_rate that FraudService.approve() will settle with, and
         # leaving the quote OPEN would let the same pricing fund a second
         # transfer while this one sits under review.
-        if screen_for_fraud and FraudService(self.db).evaluate_transaction(transaction, source).blocked:
+        if (
+            screen_for_fraud
+            and FraudService(self.db)
+            .evaluate_transaction(
+                transaction, source, batch_reference=batch_reference, batch_sibling_ids=batch_sibling_ids
+            )
+            .blocked
+        ):
             self.fx.mark_accepted(quote)
             return transaction
 

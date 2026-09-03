@@ -853,6 +853,7 @@ export interface FraudCaseSummary {
   hold_currency: string;
   created_at: string;
   flag_codes: FraudFlagCode[];
+  batch_reference: string | null;
 }
 
 export interface AdminAuditLog {

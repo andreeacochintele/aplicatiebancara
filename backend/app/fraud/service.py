@@ -340,7 +340,14 @@ class FraudService:
         self.cards = CardRepository(db)
         self.merchants = MerchantRepository(db)
 
-    def evaluate_transaction(self, transaction: Transaction, wallet: Wallet) -> FraudDecision:
+    def evaluate_transaction(
+        self,
+        transaction: Transaction,
+        wallet: Wallet,
+        *,
+        batch_reference: str | None = None,
+        batch_sibling_ids: frozenset[uuid.UUID] | None = None,
+    ) -> FraudDecision:
         if transaction.type not in SCREENED_TRANSACTION_TYPES:
             # Deliberately leaves fraud_score NULL rather than writing 0:
             # "never screened" and "screened and came back clean" are
@@ -361,7 +368,7 @@ class FraudService:
         high_amount = self._high_amount_flag(transaction, history)
         if high_amount is not None:
             flags.append(high_amount)
-        flags.extend(self._velocity_and_repeat_flags(transaction, history))
+        flags.extend(self._velocity_and_repeat_flags(transaction, history, batch_sibling_ids=batch_sibling_ids))
         unusual_time = self._unusual_time_flag(transaction, history)
         if unusual_time is not None:
             flags.append(unusual_time)
@@ -372,7 +379,7 @@ class FraudService:
         if not flags or score < FRAUD_SCORE_THRESHOLD:
             return FraudDecision(blocked=False, score=score, case=None)
 
-        case = self._hold_and_create_case(transaction, wallet, score, flags)
+        case = self._hold_and_create_case(transaction, wallet, score, flags, batch_reference=batch_reference)
         return FraudDecision(blocked=True, score=score, case=case)
 
     def get_recent_activity(
@@ -987,13 +994,26 @@ class FraudService:
             f"{_type_label(transaction)} ({average.quantize(Decimal('0.01'))})",
         )
 
-    def _velocity_and_repeat_flags(self, transaction: Transaction, history: list[Transaction]) -> list[FlagHit]:
+    def _velocity_and_repeat_flags(
+        self,
+        transaction: Transaction,
+        history: list[Transaction],
+        *,
+        batch_sibling_ids: frozenset[uuid.UUID] | None = None,
+    ) -> list[FlagHit]:
         """HIGH_VELOCITY plus whichever repeat-pattern flag fits this
         transaction's type — REWARD_ABUSE_PATTERN for card payments (repeats
         to one merchant), REPEATED_TRANSFER_PATTERN for transfers (repeats to
         one destination wallet). Both are the same underlying shape and share
         the REWARD_ABUSE_* calibration below; only the counterparty they key
-        on and the wording differ."""
+        on and the wording differ.
+
+        `batch_sibling_ids` are the other transactions IbanTransferService.
+        create_bulk_transfer already created earlier in the same bulk submit
+        — excluded from velocity_count only (matching/repeat-pattern
+        detection still sees them) so one deliberate multi-row batch doesn't
+        rack up HIGH_VELOCITY against itself. A real burst of *other*
+        activity around it still counts and can still cross the threshold."""
         flags: list[FlagHit] = []
         now = _as_aware_utc(transaction.created_at or datetime.now(timezone.utc))
         lookback = max(HIGH_VELOCITY_WINDOW, REWARD_ABUSE_WINDOW)
@@ -1033,7 +1053,9 @@ class FraudService:
         velocity_count = sum(
             1
             for t in recent
-            if t.id not in matching_ids and _as_aware_utc(t.created_at) >= now - HIGH_VELOCITY_WINDOW
+            if t.id not in matching_ids
+            and _as_aware_utc(t.created_at) >= now - HIGH_VELOCITY_WINDOW
+            and (batch_sibling_ids is None or t.id not in batch_sibling_ids)
         )
         total_velocity = velocity_count + 1
         if total_velocity >= HIGH_VELOCITY_MIN_COUNT:
@@ -1109,7 +1131,13 @@ class FraudService:
         )
 
     def _hold_and_create_case(
-        self, transaction: Transaction, wallet: Wallet, score: Decimal, flags: list[FlagHit]
+        self,
+        transaction: Transaction,
+        wallet: Wallet,
+        score: Decimal,
+        flags: list[FlagHit],
+        *,
+        batch_reference: str | None = None,
     ) -> FraudCase:
         # The hold is always the SOURCE side: on a cross-currency transfer
         # `transaction.amount` is what the recipient would receive in their
@@ -1137,6 +1165,7 @@ class FraudService:
                 user_id=transaction.initiator_user_id,
                 risk_score=score,
                 hold_amount=hold_amount,
+                batch_reference=batch_reference,
             )
         )
         for code, points, description in flags:
@@ -1329,6 +1358,7 @@ class FraudService:
             hold_currency=_screened_currency(transaction),
             created_at=case.created_at,
             flag_codes=[flag.code for flag in flags],
+            batch_reference=case.batch_reference,
             decided_by_admin_id=case.decided_by_admin_id,
             decided_at=case.decided_at,
             flags=[FraudFlagPublic(id=f.id, code=f.code, points=f.points, description=f.description) for f in flags],
@@ -1363,4 +1393,5 @@ class FraudService:
             hold_currency=_screened_currency(transaction) if transaction is not None else "RON",
             created_at=case.created_at,
             flag_codes=[flag.code for flag in flags],
+            batch_reference=case.batch_reference,
         )

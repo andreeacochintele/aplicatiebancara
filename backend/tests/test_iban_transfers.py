@@ -1,6 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
+from app.fraud.models import FraudCase
 from app.fx.models import FXQuote, FXQuoteStatus
 from app.payments.models import Beneficiary
 from app.transactions.models import LedgerEntryType, TransactionStatus, WalletLedgerEntry
@@ -151,6 +152,40 @@ def test_bulk_transfer_can_save_beneficiaries(client, db_session):
     saved = db_session.query(Beneficiary).filter_by(owner_user_id=UUID(sender["user"]["id"])).one()
     assert saved.name == "Diana Marin"
     assert saved.iban == "RO49AAAA1B31007593840009"
+
+
+def test_bulk_transfer_does_not_flag_itself_via_velocity_alone(client, db_session):
+    """15 external transfers in one submit, same amount, same shape that
+    used to trip HIGH_VELOCITY on the 15th row on its own (14 prior + this
+    one, same trigger as
+    test_extreme_velocity_burst_alone_crosses_threshold_without_a_second_flag)
+    — but a bulk batch's own rows are now excluded from each other's
+    velocity count (FraudService._velocity_and_repeat_flags's
+    batch_sibling_ids), so an ordinary-sized payroll run doesn't flag itself
+    just for having several rows."""
+    sender = _register(client, "bulk-no-self-flag@example.com", "+40750888888")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("10000.00"))
+
+    response = client.post(
+        "/api/v1/payments/transfers/bulk",
+        headers=_auth_header(sender),
+        json={
+            "source_wallet_id": str(source_wallet.id),
+            "currency": "RON",
+            "rows": [
+                {"beneficiary_name": f"Payee {i}", "iban": f"RO49AAAA1B310075938400{i:02d}", "amount": "10.00"}
+                for i in range(15)
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["succeeded"] == 15
+    assert body["failed"] == 0
+    assert all(row["status"] == TransactionStatus.COMPLETED for row in body["results"])
+
+    assert db_session.query(FraudCase).filter_by(user_id=UUID(sender["user"]["id"])).count() == 0
 
 
 def test_iban_transfer_can_save_beneficiary(client, db_session):
