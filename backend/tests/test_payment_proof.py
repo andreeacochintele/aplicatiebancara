@@ -115,3 +115,18 @@ def test_an_unknown_counterparty_is_not_passed_off_as_the_bank():
 
     assert PaymentProofService._fallback_party(cashback).name == "EasyB"
     assert PaymentProofService._fallback_party(transfer).name == "Not recorded"
+
+
+def test_a_bic_suffix_does_not_hide_the_beneficiary():
+    # payments/service.py appends " (BIC: ...)" for non-IBAN accounts; the
+    # payee must still be recovered rather than falling back to "Not recorded".
+    transaction = Transaction(
+        type=TransactionType.TRANSFER,
+        description="Transfer to Maria Dinu - US1234567890 (BIC: CHASUS33)",
+    )
+
+    party = PaymentProofService._described_party(transaction)
+
+    assert party is not None
+    assert party.name == "Maria Dinu"
+    assert party.account == "US1234567890"

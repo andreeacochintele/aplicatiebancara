@@ -60,13 +60,17 @@ _BANK_COUNTERPARTY_TYPES = frozenset(
     }
 )
 
-# An off-us IBAN transfer stores no destination wallet and no counterparty
-# user — payments/service.py records the beneficiary only inside the generated
-# description, as "Transfer to <name> - <IBAN>". Parsing it back is the only
-# way to name the payee on the confirmation. Best-effort by design: a transfer
-# the user gave their own description to will not match, and then the payee is
+# An off-us transfer stores no destination wallet and no counterparty user —
+# payments/service.py records the beneficiary only inside the generated
+# description, as "Transfer to <name> - <account>", with " (BIC: <bic>)"
+# appended when the account is not an IBAN. Parsing it back is the only way to
+# name the payee on the confirmation. Best-effort by design: a transfer the
+# user gave their own description to will not match, and then the payee is
 # reported as unknown rather than guessed at.
-_TRANSFER_DESCRIPTION = re.compile(r"^Transfer to (?P<name>.+?) - (?P<iban>[A-Z]{2}[A-Z0-9]{6,32})$")
+_TRANSFER_DESCRIPTION = re.compile(
+    r"^Transfer to (?P<name>.+?) - (?P<account>[A-Z0-9]{6,34})"
+    r"(?: \(BIC: (?P<bic>[A-Z0-9]{8,11})\))?$"
+)
 
 
 @dataclass(frozen=True)
@@ -141,7 +145,7 @@ class PaymentProofService:
         match = _TRANSFER_DESCRIPTION.match(transaction.description or "")
         if match is None:
             return None
-        return _Party(name=match.group("name"), account=match.group("iban"))
+        return _Party(name=match.group("name"), account=match.group("account"))
 
     @staticmethod
     def _fallback_party(transaction: Transaction) -> _Party:

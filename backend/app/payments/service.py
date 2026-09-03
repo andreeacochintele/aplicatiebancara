@@ -231,6 +231,10 @@ class IbanTransferService:
             raise ConflictError("Insufficient available balance")
 
         description = data.description or f"Transfer to {data.beneficiary_name} - {data.iban}"
+        # Composed here rather than in the caller so the BIC is recorded
+        # whether or not the user wrote their own description.
+        if data.bic:
+            description = f"{description} (BIC: {data.bic.strip().upper()})"
 
         # On-us: the IBAN belongs to another EasyB wallet, so route through the
         # normal internal-transfer path (source debit + destination credit)
