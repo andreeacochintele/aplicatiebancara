@@ -1,11 +1,11 @@
-import { Bot, Check, Copy, CreditCard, Download, LifeBuoy, MessageCircle, Plus, Send, Sparkles, Trash2, Wallet } from "lucide-react";
+import { Bot, Check, Copy, CreditCard, Download, LifeBuoy, MessageCircle, Plus, Send, Trash2, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { ASSISTANT_NAME, ASSISTANT_QUICK_ACTIONS } from "../config/assistant";
-import { FinancialActionConfirmCard } from "../features/assistant";
+import { BeeIcon, FinancialActionConfirmCard } from "../features/assistant";
 import { useAuth } from "../hooks/useAuth";
 import type {
   ActionCard,
@@ -352,7 +352,7 @@ export function AssistantPage() {
         <div className="tile assistant-hero">
           <div className="assistant-hero__top">
             <div className="assistant-hero__avatar">
-              <Sparkles size={20} />
+              <BeeIcon size={22} />
             </div>
             <div>
               <p className="assistant-hero__title">

@@ -444,6 +444,96 @@ def test_prepare_and_confirm_credit_card_repayment(db_session, sender):
     assert card.credit_account.used_amount == Decimal("175.00")
 
 
+def test_prepare_and_confirm_credit_card_generation(db_session, sender):
+    user, wallet = sender
+    wallet.available_balance = Decimal("6000.00")
+    debit = CardService(db_session).create_card(user.id, CardCreate(type=CardType.DEBIT, default_wallet_id=wallet.id))
+    db_session.flush()
+
+    draft = ActionService(db_session).prepare_credit_card_generation(user.id, None, "REGULAR", "RON", debit.last_four)
+
+    assert draft.action_card is not None
+    assert draft.action_card.kind == "credit_card_generation_confirm"
+    assert draft.action_card.credit_limit == "5000.00"
+    result = ActionService(db_session).confirm(user.id, draft.action_card.action_id)
+
+    assert result.status == AgentActionStatus.EXECUTED
+    credit_cards = [
+        card for card in CardService(db_session).list_cards(user.id) if card.type == CardType.CREDIT
+    ]
+    assert len(credit_cards) == 1
+    assert credit_cards[0].credit_account is not None
+    assert credit_cards[0].credit_account.credit_limit == Decimal("5000.00")
+    db_session.refresh(wallet)
+    assert wallet.available_balance == Decimal("1000.00")
+    assert wallet.reserved_balance == Decimal("5000.00")
+
+
+def test_credit_card_generation_asks_for_collateral_choice(db_session, sender):
+    user, wallet = sender
+    wallet.available_balance = Decimal("6000.00")
+    debit = CardService(db_session).create_card(user.id, CardCreate(type=CardType.DEBIT, default_wallet_id=wallet.id))
+    db_session.flush()
+
+    draft = ActionService(db_session).prepare_credit_card_generation(user.id, None, "REGULAR", "RON")
+
+    assert draft.action_card is not None
+    assert draft.action_card.collateral_wallet_id is None
+    assert draft.action_card.collateral_wallet_label is None
+    assert any(option.kind == "current_account" for option in draft.action_card.collateral_options)
+    assert any(option.kind == "debit_card" and debit.last_four in option.label for option in draft.action_card.collateral_options)
+
+    selected = ActionService(db_session).select_credit_card_collateral(user.id, draft.action_card.action_id, wallet.id)
+
+    assert selected.card is not None
+    assert selected.card.kind == "credit_card_generation_confirm"
+    assert str(selected.card.collateral_wallet_id) == str(wallet.id)
+
+
+def test_credit_card_generation_can_use_named_current_account(db_session, sender):
+    user, _wallet = sender
+    collateral_wallet = WalletService(db_session).create_wallet(
+        user.id,
+        WalletCreate(currency="RON", nickname="Salary"),
+    )
+    collateral_wallet.available_balance = Decimal("6000.00")
+    db_session.flush()
+
+    draft = ActionService(db_session).prepare_credit_card_generation(user.id, None, "REGULAR", "RON", "Salary")
+
+    assert draft.action_card is not None
+    assert "Salary" in draft.action_card.collateral_wallet_label
+    result = ActionService(db_session).confirm(user.id, draft.action_card.action_id)
+
+    assert result.status == AgentActionStatus.EXECUTED
+    db_session.refresh(collateral_wallet)
+    assert collateral_wallet.available_balance == Decimal("1000.00")
+    assert collateral_wallet.reserved_balance == Decimal("5000.00")
+
+
+def test_prepare_select_and_confirm_wallet_generation(db_session, sender):
+    user, _wallet = sender
+
+    draft = ActionService(db_session).prepare_wallet_generation(user.id, None, None)
+
+    assert draft.action_card is not None
+    assert draft.action_card.kind == "wallet_generation_confirm"
+    assert draft.action_card.currency is None
+    assert any(option.currency == "EUR" for option in draft.action_card.currency_options)
+
+    selected = ActionService(db_session).select_wallet_currency(user.id, draft.action_card.action_id, "EUR")
+
+    assert selected.card is not None
+    assert selected.card.kind == "wallet_generation_confirm"
+    assert selected.card.currency == "EUR"
+
+    result = ActionService(db_session).confirm(user.id, draft.action_card.action_id)
+
+    assert result.status == AgentActionStatus.EXECUTED
+    wallets = WalletService(db_session).list_wallets(user.id)
+    assert any(wallet.currency == "EUR" for wallet in wallets)
+
+
 # ---- HTTP: confirm / cancel endpoints ----
 
 
@@ -515,38 +605,44 @@ def test_cancel_endpoint_then_confirm_conflicts(client, db_session, monkeypatch)
     [
         (
             '{"amount": 150, "currency": "RON", "recipient_name": "Alex"}',
-            {
-                "action_type": None,
-                "amount": "150",
-                "currency": "RON",
-                "recipient_name": "Alex",
-                "loan_payment_mode": None,
-                "card_last_four": None,
-            },
-        ),
+                {
+                    "action_type": None,
+                    "amount": "150",
+                    "currency": "RON",
+                    "recipient_name": "Alex",
+                    "loan_payment_mode": None,
+                    "card_last_four": None,
+                    "card_tier": None,
+                    "collateral_reference": None,
+                },
+            ),
         (
             '```json\n{"amount": 50, "currency": "RON", "recipient_name": "Maria"}\n```',
-            {
-                "action_type": None,
-                "amount": "50",
-                "currency": "RON",
-                "recipient_name": "Maria",
-                "loan_payment_mode": None,
-                "card_last_four": None,
-            },
-        ),
+                {
+                    "action_type": None,
+                    "amount": "50",
+                    "currency": "RON",
+                    "recipient_name": "Maria",
+                    "loan_payment_mode": None,
+                    "card_last_four": None,
+                    "card_tier": None,
+                    "collateral_reference": None,
+                },
+            ),
         ("not json at all", {}),
         (
             '{"amount": null, "currency": "RON", "recipient_name": null}',
-            {
-                "action_type": None,
-                "amount": None,
-                "currency": "RON",
-                "recipient_name": None,
-                "loan_payment_mode": None,
-                "card_last_four": None,
-            },
-        ),
+                {
+                    "action_type": None,
+                    "amount": None,
+                    "currency": "RON",
+                    "recipient_name": None,
+                    "loan_payment_mode": None,
+                    "card_last_four": None,
+                    "card_tier": None,
+                    "collateral_reference": None,
+                },
+            ),
     ],
 )
 def test_agent_parse_handles_fences_nulls_and_garbage(raw, expected):

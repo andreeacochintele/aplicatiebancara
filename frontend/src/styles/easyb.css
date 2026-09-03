@@ -2714,3 +2714,17 @@
 .easyb-shell .assistant-action-card__timer {
   color: var(--easyb-text-soft);
 }
+
+.easyb-shell .assistant-collateral-option,
+.easyb-shell .assistant-currency-option {
+  border-color: var(--easyb-border);
+  color: var(--easyb-text);
+}
+
+.easyb-shell .assistant-collateral-option:hover,
+.easyb-shell .assistant-collateral-option--selected,
+.easyb-shell .assistant-currency-option:hover,
+.easyb-shell .assistant-currency-option--selected {
+  border-color: var(--easyb-violet);
+  background: color-mix(in srgb, var(--easyb-violet) 12%, var(--easyb-surface));
+}

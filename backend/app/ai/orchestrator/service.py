@@ -53,8 +53,8 @@ HISTORY_LIMIT = 8  # messages fed to the LLM as context — see _load_history()
 # Default page size for the paginated messages-by-conversation endpoint.
 MESSAGES_PAGE_LIMIT = 50
 
-_GREETING_REPLY_EN = "Hi! I'm your banking assistant — ask me about your spending, budgets, savings, or credit."
-_GREETING_REPLY_RO = "Salut! Sunt asistentul tău bancar — întreabă-mă despre cheltuieli, bugete, economii sau credit."
+_GREETING_REPLY_EN = "Hi! I'm Bumble-B, your banking assistant — ask me about your spending, budgets, savings, or credit."
+_GREETING_REPLY_RO = "Salut! Sunt Bumble-B, asistentul tău bancar — întreabă-mă despre cheltuieli, bugete, economii sau credit."
 _OUT_OF_SCOPE_REPLY_EN = (
     "I'm a banking assistant and can only help with your accounts, spending, budgets, "
     "savings, and credit — I can't help with that request."

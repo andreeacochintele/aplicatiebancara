@@ -979,7 +979,41 @@ export interface CreditCardRepaymentConfirmCard {
   expires_at: string;
 }
 
-export type ActionCard = PhoneTransferConfirmCard | LoanPaymentConfirmCard | CreditCardRepaymentConfirmCard;
+export interface CreditCardGenerationConfirmCard {
+  kind: "credit_card_generation_confirm";
+  action_id: string;
+  card_label: string;
+  tier: string;
+  currency: string;
+  credit_limit: string;
+  collateral_wallet_id: string | null;
+  collateral_wallet_label: string | null;
+  collateral_options: Array<{
+    wallet_id: string;
+    kind: "current_account" | "debit_card";
+    label: string;
+  }>;
+  expires_at: string;
+}
+
+export interface WalletGenerationConfirmCard {
+  kind: "wallet_generation_confirm";
+  action_id: string;
+  wallet_label: string;
+  currency: string | null;
+  currency_options: Array<{
+    currency: string;
+    label: string;
+  }>;
+  expires_at: string;
+}
+
+export type ActionCard =
+  | PhoneTransferConfirmCard
+  | LoanPaymentConfirmCard
+  | CreditCardRepaymentConfirmCard
+  | CreditCardGenerationConfirmCard
+  | WalletGenerationConfirmCard;
 
 // Outcome of POST /ai/actions/{id}/confirm|cancel and the GET poll.
 export interface AgentActionResult {

@@ -52,8 +52,45 @@ class CreditCardRepaymentConfirmCard(BaseModel):
     expires_at: datetime
 
 
+class CreditCardCollateralOption(BaseModel):
+    wallet_id: uuid.UUID
+    kind: Literal["current_account", "debit_card"]
+    label: str
+
+
+class CreditCardGenerationConfirmCard(BaseModel):
+    kind: Literal["credit_card_generation_confirm"] = "credit_card_generation_confirm"
+    action_id: uuid.UUID
+    card_label: str
+    tier: str
+    currency: str
+    credit_limit: str
+    collateral_wallet_id: uuid.UUID | None = None
+    collateral_wallet_label: str | None = None
+    collateral_options: list[CreditCardCollateralOption] = []
+    expires_at: datetime
+
+
+class WalletCurrencyOption(BaseModel):
+    currency: str
+    label: str
+
+
+class WalletGenerationConfirmCard(BaseModel):
+    kind: Literal["wallet_generation_confirm"] = "wallet_generation_confirm"
+    action_id: uuid.UUID
+    wallet_label: str
+    currency: str | None = None
+    currency_options: list[WalletCurrencyOption] = []
+    expires_at: datetime
+
+
 ActionCard = Annotated[
-    PhoneTransferConfirmCard | LoanPaymentConfirmCard | CreditCardRepaymentConfirmCard,
+    PhoneTransferConfirmCard
+    | LoanPaymentConfirmCard
+    | CreditCardRepaymentConfirmCard
+    | CreditCardGenerationConfirmCard
+    | WalletGenerationConfirmCard,
     Field(discriminator="kind"),
 ]
 
@@ -92,3 +129,11 @@ class AgentActionResultPublic(BaseModel):
     error_code: str | None = None
     error_detail: str | None = None
     card: ActionCard | None = None
+
+
+class CreditCardCollateralSelection(BaseModel):
+    wallet_id: uuid.UUID
+
+
+class WalletCurrencySelection(BaseModel):
+    currency: str

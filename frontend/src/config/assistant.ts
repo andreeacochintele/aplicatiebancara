@@ -2,7 +2,7 @@ import type { OrchestratorIntent } from "../types";
 
 /** The assistant's display name — the single place this is defined, so
  * AssistantPage.tsx (hero copy) never hardcodes it inline. */
-export const ASSISTANT_NAME = "Nova";
+export const ASSISTANT_NAME = "Bumble-B";
 
 export interface AssistantQuickAction {
   intent: OrchestratorIntent;

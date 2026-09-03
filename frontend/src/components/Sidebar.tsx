@@ -1,17 +1,18 @@
 import {
   LayoutDashboard, Wallet, CreditCard, Send, Receipt, FileText,
-  PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldAlert, Briefcase, Building2, LayoutGrid, ScrollText, Scale, Users, History, Repeat, ShieldCheck, type LucideIcon,
+  PieChart, Gift, Landmark, Bell, UserRound, ShieldAlert, Briefcase, Building2, LayoutGrid, ScrollText, Scale, Users, History, Repeat, ShieldCheck, type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink } from "react-router-dom";
 
 import { BrandMark } from "./BrandMark";
+import { BeeIcon } from "../features/assistant";
 import { useAuth } from "../hooks/useAuth";
 
 interface NavItem {
   to: string;
   labelKey: string;
-  icon: LucideIcon;
+  icon: LucideIcon | typeof BeeIcon;
 }
 
 const BANKING_ITEMS: NavItem[] = [
@@ -27,7 +28,7 @@ const INTELLIGENCE_ITEMS: NavItem[] = [
   { to: "/analytics", labelKey: "nav.analytics", icon: PieChart },
   { to: "/rewards", labelKey: "nav.rewards", icon: Gift },
   { to: "/credit", labelKey: "nav.credit", icon: Landmark },
-  { to: "/assistant", labelKey: "nav.assistant", icon: Sparkles },
+  { to: "/assistant", labelKey: "nav.assistant", icon: BeeIcon },
 ];
 
 const ACCOUNT_ITEMS: NavItem[] = [
