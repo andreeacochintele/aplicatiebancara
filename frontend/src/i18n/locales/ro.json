@@ -1281,6 +1281,8 @@
     "destinationWallet": "Portofel destinație",
     "optional": "Opțional",
     "expiresInMinutes": "Expiră în minute",
+    "invoiceReference": "Număr factură / referință (opțional)",
+    "invoiceNote": "Notă (opțional)",
     "creating": "Se creează...",
     "generateRequest": "Generează cererea",
     "generatedQrPreview": "Previzualizare cerere de plată QR generată",

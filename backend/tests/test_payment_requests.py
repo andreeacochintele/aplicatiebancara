@@ -60,6 +60,30 @@ def test_create_payment_request(client, db_session):
     assert body["destination_wallet_id"] == str(wallet.id)
     assert body["amount"] == "80.00"
     assert body["status"] == PaymentRequestStatus.ACTIVE
+    assert body["reference"] is None
+    assert body["note"] is None
+
+
+def test_payment_request_can_include_an_invoice_reference_and_note(client, db_session):
+    creator = _register(client, "invoice-creator@example.com", "+40740111112")
+    wallet = _create_wallet(db_session, creator["user"]["id"], "RON")
+
+    response = client.post(
+        "/api/v1/payments/payment-requests",
+        headers=_auth_header(creator),
+        json={
+            "destination_wallet_id": str(wallet.id),
+            "amount": "500.00",
+            "currency": "RON",
+            "reference": "INV-0042",
+            "note": "Consultanță august 2026",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["reference"] == "INV-0042"
+    assert body["note"] == "Consultanță august 2026"
 
 
 def test_list_payment_requests_returns_only_creators_own_requests(client, db_session):

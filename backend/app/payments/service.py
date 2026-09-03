@@ -566,6 +566,8 @@ class PaymentRequestService:
             currency=currency,
             status=PaymentRequestStatus.ACTIVE,
             expires_at=datetime.now(timezone.utc) + timedelta(minutes=data.expires_in_minutes),
+            reference=data.reference,
+            note=data.note,
         )
         return self.repository.add(payment_request)
 

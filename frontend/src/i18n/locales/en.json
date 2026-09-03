@@ -1276,6 +1276,8 @@
     "destinationWallet": "Destination wallet",
     "optional": "Optional",
     "expiresInMinutes": "Expires in minutes",
+    "invoiceReference": "Invoice / reference number (optional)",
+    "invoiceNote": "Note (optional)",
     "creating": "Creating...",
     "generateRequest": "Generate request",
     "generatedQrPreview": "Generated QR payment request preview",
