@@ -55,6 +55,8 @@ interface QrRequestFormState {
   destination_wallet_id: string;
   amount: string;
   expires_in_minutes: string;
+  reference: string;
+  note: string;
 }
 
 interface QrPayFormState {
@@ -110,6 +112,8 @@ const EMPTY_QR_FORM: QrRequestFormState = {
   destination_wallet_id: "",
   amount: "",
   expires_in_minutes: "15",
+  reference: "",
+  note: "",
 };
 
 const EMPTY_QR_PAY_FORM: QrPayFormState = {
@@ -558,6 +562,8 @@ export function PaymentsPage() {
           amount: compact(qrForm.amount),
           currency: walletCurrency(wallets, qrForm.destination_wallet_id),
           expires_in_minutes: Number(qrForm.expires_in_minutes),
+          reference: qrForm.reference.trim() || null,
+          note: qrForm.note.trim() || null,
         },
       });
       setQrRequest(paymentRequest);
@@ -1345,6 +1351,24 @@ export function PaymentsPage() {
               />
             </label>
 
+            <label>
+              {t("payments.invoiceReference")}
+              <input
+                onChange={(event) => setQrForm((current) => ({ ...current, reference: event.target.value }))}
+                placeholder="INV-0042"
+                value={qrForm.reference}
+              />
+            </label>
+
+            <label>
+              {t("payments.invoiceNote")}
+              <input
+                onChange={(event) => setQrForm((current) => ({ ...current, note: event.target.value }))}
+                placeholder={t("payments.optional")}
+                value={qrForm.note}
+              />
+            </label>
+
             <button disabled={qrCreating || !qrForm.destination_wallet_id} type="submit">
               {qrCreating ? t("payments.creating") : t("payments.generateRequest")}
             </button>
@@ -1362,6 +1386,8 @@ export function PaymentsPage() {
                       time: new Date(qrRequest.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
                     })}
                   </span>
+                  {qrRequest.reference && <span>{qrRequest.reference}</span>}
+                  {qrRequest.note && <span>{qrRequest.note}</span>}
                 </div>
                 <button
                   type="button"

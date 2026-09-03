@@ -150,6 +150,11 @@ class PaymentRequestCreate(BaseModel):
     amount: Decimal | None = None
     currency: str = Field(min_length=3, max_length=3)
     expires_in_minutes: int = Field(default=15, ge=1, le=1440)
+    # Purely descriptive, shown back to the payer — see PaymentRequest model
+    # docstring. Optional for everyone; a business "invoice" is this same
+    # request with these two filled in, not a separate flow.
+    reference: str | None = Field(default=None, max_length=50)
+    note: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
     def validate_amount(self) -> "PaymentRequestCreate":
@@ -181,6 +186,8 @@ class PaymentRequestPublic(BaseModel):
     status: PaymentRequestStatus
     expires_at: datetime
     created_at: datetime
+    reference: str | None
+    note: str | None
 
 
 class ScheduledPaymentCreate(BaseModel):

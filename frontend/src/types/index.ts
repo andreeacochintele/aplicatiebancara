@@ -220,6 +220,8 @@ export interface PaymentRequest {
   status: "ACTIVE" | "PAID" | "CANCELLED" | "EXPIRED";
   expires_at: string;
   created_at: string;
+  reference: string | null;
+  note: string | null;
 }
 
 export type ScheduledPaymentFrequency = "ONCE" | "WEEKLY" | "MONTHLY" | "QUARTERLY" | "YEARLY";

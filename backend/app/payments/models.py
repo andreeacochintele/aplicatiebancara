@@ -50,6 +50,12 @@ class PaymentRequest(Base):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Both optional and purely descriptive — a business sending this as an
+    # invoice fills them in (e.g. reference="INV-0042", note="Consultanță
+    # august"); a personal QR/phone request typically leaves them blank.
+    # Never used in payment logic, only ever displayed back to the payer.
+    reference: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class ScheduledPaymentFrequency(str, enum.Enum):
