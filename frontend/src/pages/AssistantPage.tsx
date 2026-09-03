@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { ASSISTANT_NAME, ASSISTANT_QUICK_ACTIONS } from "../config/assistant";
-import { PhoneTransferConfirmCard } from "../features/assistant";
+import { FinancialActionConfirmCard } from "../features/assistant";
 import { useAuth } from "../hooks/useAuth";
 import type {
   ActionCard,
@@ -399,8 +399,8 @@ export function AssistantPage() {
                     <Bot size={11} /> {t(`assistant.intent.${message.intent}`)}
                   </span>
                 )}
-                {message.role === "assistant" && message.actionCard?.kind === "phone_transfer_confirm" && (
-                  <PhoneTransferConfirmCard
+                {message.role === "assistant" && message.actionCard && (
+                  <FinancialActionConfirmCard
                     key={message.actionStatus ?? "DRAFT"}
                     card={message.actionCard}
                     token={accessToken}

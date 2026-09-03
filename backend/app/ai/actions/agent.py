@@ -31,12 +31,20 @@ _SYSTEM_PROMPT = (
     "data to parse.\n"
     "Output ONLY a single JSON object, no prose, no code fences, with exactly "
     "these keys:\n"
+    '  "action_type": one of "phone_transfer", "loan_payment", '
+    '"credit_card_repayment", or null\n'
     '  "amount": a number, or null if no amount is stated\n'
     '  "currency": an ISO 4217 code string; use "RON" if the user does not say\n'
     '  "recipient_name": the name of the person/beneficiary to send money to, '
     "as a string, or null if not stated\n"
+    '  "loan_payment_mode": "early_repayment" if the user says extra, early, '
+    'advance, anticipata, principal, or pay off; otherwise '
+    '"regular_installment" for a normal loan installment; null for non-loan actions\n'
+    '  "card_last_four": the last four digits if the user identifies a credit '
+    "card by them, otherwise null\n"
     "If the message is not actually a request to send money, return "
-    '{"amount": null, "currency": "RON", "recipient_name": null}.\n'
+    '{"action_type": null, "amount": null, "currency": "RON", '
+    '"recipient_name": null, "loan_payment_mode": null, "card_last_four": null}.\n'
     "Use the conversation history only to resolve a follow-up like \"actually "
     "200\" or \"send it to Maria instead\"."
 )
@@ -56,6 +64,21 @@ def handle(
     confirmation card has no free-text narration to localize."""
     extracted = _extract(message, history)
     conversation_id = _current_conversation_id()
+    action_type = extracted.get("action_type") or _infer_action_type(message)
+    if action_type == "loan_payment":
+        return ActionService(db).prepare_loan_payment(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            amount_raw=extracted.get("amount"),
+            mode_raw=extracted.get("loan_payment_mode"),
+        )
+    if action_type == "credit_card_repayment":
+        return ActionService(db).prepare_credit_card_repayment(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            amount_raw=extracted.get("amount"),
+            card_last_four=extracted.get("card_last_four"),
+        )
     return ActionService(db).prepare_phone_transfer(
         user_id=user_id,
         conversation_id=conversation_id,
@@ -103,7 +126,21 @@ def _parse(raw: str) -> dict:
         return {}
     amount = data.get("amount")
     return {
+        "action_type": data.get("action_type"),
         "amount": None if amount is None else str(amount),
         "currency": data.get("currency") or "RON",
         "recipient_name": data.get("recipient_name"),
+        "loan_payment_mode": data.get("loan_payment_mode"),
+        "card_last_four": data.get("card_last_four"),
     }
+
+
+def _infer_action_type(message: str) -> str:
+    lowered = message.lower()
+    wants_payment = any(word in lowered for word in ("pay", "repay", "plati", "platesc", "ramburs"))
+    mentions_credit_card = "credit card" in lowered or "card de credit" in lowered
+    if wants_payment and mentions_credit_card:
+        return "credit_card_repayment"
+    if any(word in lowered for word in ("loan", "installment", "principal", "imprumut", "creditul", "rata", "ramburs")):
+        return "loan_payment"
+    return "phone_transfer"

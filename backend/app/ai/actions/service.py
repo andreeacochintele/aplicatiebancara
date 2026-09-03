@@ -13,14 +13,30 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from sqlalchemy.orm import Session
 
 from app.ai.actions.fraud_screen import screen_transfer
-from app.ai.actions.models import ACTION_TYPE_PHONE_TRANSFER, AgentAction, AgentActionStatus
+from app.ai.actions.models import (
+    ACTION_TYPE_CREDIT_CARD_REPAYMENT,
+    ACTION_TYPE_LOAN_PAYMENT,
+    ACTION_TYPE_PHONE_TRANSFER,
+    AgentAction,
+    AgentActionStatus,
+)
 from app.ai.actions.recipient_resolver import match_beneficiaries
 from app.ai.actions.repository import AgentActionRepository
-from app.ai.actions.schemas import AgentActionResultPublic, AgentResult, PhoneTransferConfirmCard
+from app.ai.actions.schemas import (
+    AgentActionResultPublic,
+    AgentResult,
+    CreditCardRepaymentConfirmCard,
+    LoanPaymentConfirmCard,
+    PhoneTransferConfirmCard,
+)
 from app.ai.observability import log_event
+from app.cards.models import CardStatus, CardType
+from app.cards.repository import CardRepository
 from app.core.exceptions import ConflictError, DomainError, NotFoundError
+from app.credit.models import LoanInstallmentStatus, LoanStatus
+from app.credit.service import CreditService
 from app.payments.repository import BeneficiaryRepository
-from app.transactions.schemas import InternalTransferCreate
+from app.transactions.schemas import CreditCardRepaymentCreate, InternalTransferCreate
 from app.transactions.service import TransactionService
 from app.users.repository import UserRepository
 from app.wallets.models import WalletStatus
@@ -61,6 +77,7 @@ class ActionService:
         self.beneficiaries = BeneficiaryRepository(db)
         self.wallets = WalletRepository(db)
         self.users = UserRepository(db)
+        self.cards = CardRepository(db)
 
     # ---- draft ----
 
@@ -163,6 +180,142 @@ class ActionService:
             action_card=self._card(action),
         )
 
+    def prepare_loan_payment(
+        self,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID | None,
+        amount_raw: str | None,
+        mode_raw: str | None,
+    ) -> AgentResult:
+        credit = CreditService(self.db)
+        loans = [loan for loan in credit.list_loans(user_id) if loan.status == LoanStatus.ACTIVE]
+        if not loans:
+            return AgentResult(reply="Nu ai niciun imprumut activ de platit.")
+        if len(loans) > 1:
+            return AgentResult(
+                reply="Ai mai multe imprumuturi active. Deschide Credit si alege imprumutul pe care vrei sa-l platesti."
+            )
+
+        loan = loans[0]
+        mode = "early_repayment" if mode_raw == "early_repayment" or amount_raw is not None else "regular_installment"
+        amount = self._parse_amount(amount_raw)
+        next_payment_date = None
+        if mode == "regular_installment":
+            pending = [
+                item
+                for item in credit.repository.list_installments_for_loan(loan.id)
+                if item.status == LoanInstallmentStatus.PENDING
+            ]
+            if not pending:
+                return AgentResult(reply="Imprumutul nu are rate ramase de platit.")
+            amount = pending[0].payment_amount
+            next_payment_date = pending[0].due_date.isoformat()
+            title = "Rata lunara pentru imprumut"
+        else:
+            if amount is None:
+                return AgentResult(reply="Ce suma vrei sa rambursezi anticipat?")
+            if amount <= 0:
+                return AgentResult(reply="Suma trebuie sa fie mai mare ca zero.")
+            simulation = credit.simulate_early_repayment(user_id, loan.id, amount)
+            amount = simulation.applied_extra_payment_amount
+            title = "Rambursare anticipata imprumut"
+
+        source = self._select_source_wallet(user_id, loan.currency, amount)
+        if isinstance(source, str):
+            return AgentResult(reply=source)
+
+        self._supersede_open_drafts(conversation_id)
+        action = self.repository.add(
+            AgentAction(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                type=ACTION_TYPE_LOAN_PAYMENT,
+                status=AgentActionStatus.DRAFT,
+                payload={
+                    "loan_id": str(loan.id),
+                    "mode": mode,
+                    "title": title,
+                    "amount": f"{amount:.2f}",
+                    "currency": loan.currency,
+                    "source_wallet_id": str(source.id),
+                    "source_wallet_label": self._wallet_label(source),
+                    "outstanding_principal": f"{loan.outstanding_principal:.2f}",
+                    "next_payment_date": next_payment_date,
+                },
+                idempotency_key=uuid.uuid4().hex,
+                expires_at=_now() + DRAFT_TTL,
+            )
+        )
+        self.repository.flush()
+        return AgentResult(
+            reply="Am pregatit plata pentru imprumut. Verifica detaliile si apasa Accept ca sa o execut.",
+            action_card=self._card(action),
+        )
+
+    def prepare_credit_card_repayment(
+        self,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID | None,
+        amount_raw: str | None,
+        card_last_four: str | None,
+    ) -> AgentResult:
+        cards = [
+            card
+            for card in self.cards.list_for_user(user_id)
+            if card.type == CardType.CREDIT and card.status == CardStatus.ACTIVE
+        ]
+        if card_last_four:
+            digits = "".join(ch for ch in card_last_four if ch.isdigit())
+            cards = [card for card in cards if card.last_four == digits[-4:]]
+
+        owing = []
+        for card in cards:
+            account = self.cards.get_credit_account(card.id)
+            if account is not None and account.used_amount > 0:
+                owing.append((card, account))
+        if not owing:
+            return AgentResult(reply="Nu am gasit un card de credit activ cu sold de plata.")
+        if len(owing) > 1:
+            labels = ", ".join(f"**** {card.last_four}" for card, _account in owing)
+            return AgentResult(reply=f"Ai mai multe carduri de credit cu sold: {labels}. Spune ultimele 4 cifre.")
+
+        card, account = owing[0]
+        amount = self._parse_amount(amount_raw) or account.used_amount
+        if amount <= 0:
+            return AgentResult(reply="Suma trebuie sa fie mai mare ca zero.")
+        if amount > account.used_amount:
+            return AgentResult(reply=f"Suma este mai mare decat soldul cardului: {account.used_amount} {account.currency}.")
+
+        source = self._select_source_wallet(user_id, account.currency, amount)
+        if isinstance(source, str):
+            return AgentResult(reply=source)
+
+        self._supersede_open_drafts(conversation_id)
+        action = self.repository.add(
+            AgentAction(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                type=ACTION_TYPE_CREDIT_CARD_REPAYMENT,
+                status=AgentActionStatus.DRAFT,
+                payload={
+                    "card_id": str(card.id),
+                    "card_label": f"Credit **** {card.last_four}",
+                    "amount": f"{amount:.2f}",
+                    "currency": account.currency,
+                    "source_wallet_id": str(source.id),
+                    "source_wallet_label": self._wallet_label(source),
+                    "balance_due": f"{account.used_amount:.2f}",
+                },
+                idempotency_key=uuid.uuid4().hex,
+                expires_at=_now() + DRAFT_TTL,
+            )
+        )
+        self.repository.flush()
+        return AgentResult(
+            reply="Am pregatit plata pentru cardul de credit. Verifica detaliile si apasa Accept ca sa o execut.",
+            action_card=self._card(action),
+        )
+
     # ---- confirm / cancel / read ----
 
     def confirm(self, user_id: uuid.UUID, action_id: uuid.UUID) -> AgentActionResultPublic:
@@ -180,18 +333,27 @@ class ActionService:
             self.db.commit()  # persist despite the 409 below — same pattern as PaymentRequestService
             raise ConflictError("Draftul a expirat. Cere transferul din nou.")
 
+        if action.type == ACTION_TYPE_PHONE_TRANSFER:
+            return self._confirm_phone_transfer(action)
+        if action.type == ACTION_TYPE_LOAN_PAYMENT:
+            return self._confirm_loan_payment(action)
+        if action.type == ACTION_TYPE_CREDIT_CARD_REPAYMENT:
+            return self._confirm_credit_card_repayment(action)
+        return self._fail(action, "UNSUPPORTED_ACTION", "Tipul actiunii nu mai este disponibil.")
+
+    def _confirm_phone_transfer(self, action: AgentAction) -> AgentActionResultPublic:
         payload = action.payload
         amount = Decimal(payload["amount"])
         if amount > MAX_TRANSFER_AMOUNT:
             return self._fail(action, "LIMIT_EXCEEDED", "Suma depășește limita de 500 RON.")
 
         recipient = self.users.get_by_id(uuid.UUID(payload["recipient_user_id"]))
-        beneficiary = self.beneficiaries.get_owned_by_id(user_id, uuid.UUID(payload["recipient_beneficiary_id"]))
+        beneficiary = self.beneficiaries.get_owned_by_id(action.user_id, uuid.UUID(payload["recipient_beneficiary_id"]))
         if recipient is None or beneficiary is None:
             return self._fail(action, "RECIPIENT_GONE", "Beneficiarul nu mai există.")
 
         source = self.wallets.get_by_id(uuid.UUID(payload["source_wallet_id"]))
-        if source is None or source.user_id != user_id or source.status != WalletStatus.ACTIVE:
+        if source is None or source.user_id != action.user_id or source.status != WalletStatus.ACTIVE:
             return self._fail(action, "SOURCE_UNAVAILABLE", "Portofelul sursă nu mai este disponibil.")
 
         destination = self.wallets.get_by_id(uuid.UUID(payload["destination_wallet_id"]))
@@ -201,8 +363,8 @@ class ActionService:
         if source.available_balance < amount:
             return self._fail(action, "INSUFFICIENT_FUNDS", "Sold insuficient pentru acest transfer.")
 
-        recent_executed = self.repository.count_recent_executed(user_id)
-        screen = screen_transfer(self.db, user_id, recent_executed)
+        recent_executed = self.repository.count_recent_executed(action.user_id)
+        screen = screen_transfer(self.db, action.user_id, recent_executed)
         if screen.blocked:
             action.status = AgentActionStatus.NEEDS_REVIEW
             action.error_code = "FRAUD_REVIEW"
@@ -216,7 +378,7 @@ class ActionService:
 
         try:
             transaction = TransactionService(self.db).create_internal_transfer(
-                user_id,
+                action.user_id,
                 InternalTransferCreate(
                     source_wallet_id=source.id,
                     destination_wallet_id=destination.id,
@@ -236,6 +398,61 @@ class ActionService:
             action_id=str(action.id),
             transaction_id=str(transaction.id),
         )
+        return self._public(action)
+
+    def _confirm_loan_payment(self, action: AgentAction) -> AgentActionResultPublic:
+        action.status = AgentActionStatus.CONFIRMED
+        action.confirmed_at = _now()
+        self.repository.flush()
+        payload = action.payload
+        try:
+            if payload["mode"] == "regular_installment":
+                result = CreditService(self.db).make_regular_installment_payment(
+                    action.user_id,
+                    uuid.UUID(payload["loan_id"]),
+                    uuid.UUID(payload["source_wallet_id"]),
+                )
+                transaction_id = result.transaction_id
+            else:
+                result = CreditService(self.db).make_early_repayment(
+                    action.user_id,
+                    uuid.UUID(payload["loan_id"]),
+                    uuid.UUID(payload["source_wallet_id"]),
+                    Decimal(payload["amount"]),
+                )
+                transaction_id = result.transaction_id
+        except DomainError as exc:
+            return self._fail(action, "LOAN_PAYMENT_FAILED", str(exc))
+
+        action.status = AgentActionStatus.EXECUTED
+        action.result_transaction_id = transaction_id
+        action.executed_at = _now()
+        self.repository.flush()
+        log_event("agent_action_executed", action_id=str(action.id), transaction_id=str(transaction_id))
+        return self._public(action)
+
+    def _confirm_credit_card_repayment(self, action: AgentAction) -> AgentActionResultPublic:
+        action.status = AgentActionStatus.CONFIRMED
+        action.confirmed_at = _now()
+        self.repository.flush()
+        payload = action.payload
+        try:
+            transaction = TransactionService(self.db).create_credit_card_repayment(
+                action.user_id,
+                CreditCardRepaymentCreate(
+                    card_id=uuid.UUID(payload["card_id"]),
+                    source_wallet_id=uuid.UUID(payload["source_wallet_id"]),
+                    amount=Decimal(payload["amount"]),
+                ),
+            )
+        except DomainError as exc:
+            return self._fail(action, "CREDIT_CARD_REPAYMENT_FAILED", str(exc))
+
+        action.status = AgentActionStatus.EXECUTED
+        action.result_transaction_id = transaction.id
+        action.executed_at = _now()
+        self.repository.flush()
+        log_event("agent_action_executed", action_id=str(action.id), transaction_id=str(transaction.id))
         return self._public(action)
 
     def cancel(self, user_id: uuid.UUID, action_id: uuid.UUID) -> AgentActionResultPublic:
@@ -322,6 +539,19 @@ class ActionService:
         except (InvalidOperation, ValueError):
             return None
 
+    def _select_source_wallet(self, user_id: uuid.UUID, currency: str, amount: Decimal):
+        wallet = self.wallets.get_by_user_and_currency(user_id, currency)
+        if wallet is None:
+            return f"Nu ai un cont {currency} din care sa fac plata."
+        if wallet.status != WalletStatus.ACTIVE:
+            return f"Contul tau {currency} este {wallet.status.value.lower()}."
+        if wallet.available_balance < amount:
+            return f"Sold insuficient: ai {wallet.available_balance} {currency}, iar plata este de {amount} {currency}."
+        return wallet
+
+    def _wallet_label(self, wallet) -> str:
+        return f"{wallet.currency} - sold {wallet.available_balance}"
+
     def _fail(self, action: AgentAction, code: str, detail: str) -> AgentActionResultPublic:
         action.status = AgentActionStatus.FAILED
         action.error_code = code
@@ -330,8 +560,29 @@ class ActionService:
         log_event("agent_action_failed", action_id=str(action.id), error_code=code)
         return self._public(action)
 
-    def _card(self, action: AgentAction) -> PhoneTransferConfirmCard:
+    def _card(self, action: AgentAction):
         p = action.payload
+        if action.type == ACTION_TYPE_LOAN_PAYMENT:
+            return LoanPaymentConfirmCard(
+                action_id=action.id,
+                title=p["title"],
+                amount=p["amount"],
+                currency=p["currency"],
+                source_wallet_label=p["source_wallet_label"],
+                outstanding_principal=p["outstanding_principal"],
+                next_payment_date=p.get("next_payment_date"),
+                expires_at=action.expires_at,
+            )
+        if action.type == ACTION_TYPE_CREDIT_CARD_REPAYMENT:
+            return CreditCardRepaymentConfirmCard(
+                action_id=action.id,
+                card_label=p["card_label"],
+                amount=p["amount"],
+                currency=p["currency"],
+                source_wallet_label=p["source_wallet_label"],
+                balance_due=p["balance_due"],
+                expires_at=action.expires_at,
+            )
         return PhoneTransferConfirmCard(
             action_id=action.id,
             recipient_name=p["recipient_display_name"],

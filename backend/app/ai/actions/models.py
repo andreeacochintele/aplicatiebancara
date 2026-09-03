@@ -41,6 +41,8 @@ class AgentActionStatus(str, enum.Enum):
 
 
 ACTION_TYPE_PHONE_TRANSFER = "phone_transfer"
+ACTION_TYPE_LOAN_PAYMENT = "loan_payment"
+ACTION_TYPE_CREDIT_CARD_REPAYMENT = "credit_card_repayment"
 
 
 class AgentAction(Base):
