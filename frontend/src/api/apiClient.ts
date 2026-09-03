@@ -1,6 +1,8 @@
 import i18n from "../i18n/config";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
+// Exported for the few callers that need a raw fetch rather than apiRequest —
+// file downloads, which want the Response itself, not parsed JSON.
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
 
 export class ApiError extends Error {
   constructor(
