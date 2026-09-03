@@ -197,6 +197,62 @@ def test_bulk_transfer_history_groups_rows_by_batch(client, db_session):
     assert batches[0]["batch_reference"] != batches[1]["batch_reference"]
 
 
+def test_bulk_transfer_batch_rows_returns_individual_transactions(client, db_session):
+    sender = _register(client, "bulk-batch-rows@example.com", "+40750999997")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("1000.00"))
+
+    client.post(
+        "/api/v1/payments/transfers/bulk",
+        headers=_auth_header(sender),
+        json={
+            "source_wallet_id": str(source_wallet.id),
+            "currency": "RON",
+            "rows": [
+                {"beneficiary_name": "Ana", "iban": "RO49AAAA1B31007593840001", "amount": "100.00"},
+                {"beneficiary_name": "Bogdan", "iban": "RO49AAAA1B31007593840002", "amount": "50.00"},
+            ],
+        },
+    )
+
+    history = client.get("/api/v1/payments/transfers/bulk/history", headers=_auth_header(sender))
+    batch_reference = history.json()[0]["batch_reference"]
+
+    response = client.get(
+        f"/api/v1/payments/transfers/bulk/history/{batch_reference}", headers=_auth_header(sender)
+    )
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 2
+    assert {row["amount"] for row in rows} == {"100.00", "50.00"}
+    assert all("Ana" in row["description"] or "Bogdan" in row["description"] for row in rows)
+
+
+def test_bulk_transfer_batch_rows_rejects_other_users_batch(client, db_session):
+    sender = _register(client, "bulk-batch-rows-owner@example.com", "+40750999996")
+    other = _register(client, "bulk-batch-rows-other@example.com", "+40750999995")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("1000.00"))
+
+    client.post(
+        "/api/v1/payments/transfers/bulk",
+        headers=_auth_header(sender),
+        json={
+            "source_wallet_id": str(source_wallet.id),
+            "currency": "RON",
+            "rows": [{"beneficiary_name": "Ana", "iban": "RO49AAAA1B31007593840001", "amount": "100.00"}],
+        },
+    )
+    history = client.get("/api/v1/payments/transfers/bulk/history", headers=_auth_header(sender))
+    batch_reference = history.json()[0]["batch_reference"]
+
+    response = client.get(
+        f"/api/v1/payments/transfers/bulk/history/{batch_reference}", headers=_auth_header(other)
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_bulk_transfer_history_excludes_single_iban_transfers(client, db_session):
     sender = _register(client, "single-not-batch@example.com", "+40750999998")
     source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("500.00"))
