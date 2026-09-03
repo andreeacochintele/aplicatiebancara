@@ -1274,6 +1274,7 @@
     "creating": "Se creează...",
     "generateRequest": "Generează cererea",
     "generatedQrPreview": "Previzualizare cerere de plată QR generată",
+    "downloadQr": "Descarcă",
     "requestId": "ID cerere",
     "openAmount": "Sumă deschisă",
     "expiresAt": "{{amount}} {{currency}} - expiră la {{time}}",
