@@ -12,9 +12,11 @@ import { FraudReviewPage } from "./pages/admin/FraudReviewPage";
 import { ReconciliationPage } from "./pages/admin/ReconciliationPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { AssistantPage } from "./pages/AssistantPage";
+import { BusinessBatchHistoryPage } from "./pages/BusinessBatchHistoryPage";
 import { BusinessBulkTransferPage } from "./pages/BusinessBulkTransferPage";
 import { BusinessExportPage } from "./pages/BusinessExportPage";
 import { BusinessProfilePage } from "./pages/BusinessProfilePage";
+import { BusinessRecurringTemplatesPage } from "./pages/BusinessRecurringTemplatesPage";
 import { CardsPage } from "./pages/CardsPage";
 import { CreditPage } from "./pages/CreditPage";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -78,6 +80,8 @@ export const routes: RouteObject[] = [
       { path: "/business/export", element: <BusinessExportPage /> },
       { path: "/business/profile", element: <BusinessProfilePage /> },
       { path: "/business/bulk-transfer", element: <BusinessBulkTransferPage /> },
+      { path: "/business/bulk-transfer/history", element: <BusinessBatchHistoryPage /> },
+      { path: "/business/bulk-transfer/recurring", element: <BusinessRecurringTemplatesPage /> },
       {
         path: "/admin",
         element: (

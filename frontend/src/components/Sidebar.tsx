@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Wallet, CreditCard, Send, Receipt, FileText,
-  PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldAlert, Briefcase, Building2, LayoutGrid, ScrollText, Scale, Users, type LucideIcon,
+  PieChart, Gift, Landmark, Sparkles, Bell, UserRound, ShieldAlert, Briefcase, Building2, LayoutGrid, ScrollText, Scale, Users, History, Repeat, type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, NavLink } from "react-router-dom";
@@ -103,6 +103,8 @@ export function Sidebar() {
                 { to: "/business/export", labelKey: "nav.businessExport", icon: Briefcase },
                 { to: "/business/profile", labelKey: "nav.businessProfile", icon: Building2 },
                 { to: "/business/bulk-transfer", labelKey: "nav.businessBulkTransfer", icon: Users },
+                { to: "/business/bulk-transfer/history", labelKey: "nav.businessBatchHistory", icon: History },
+                { to: "/business/bulk-transfer/recurring", labelKey: "nav.businessRecurringTemplates", icon: Repeat },
               ]}
             />
           )}

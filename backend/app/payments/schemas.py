@@ -113,6 +113,58 @@ class BulkTransferBatchSummary(BaseModel):
     other_count: int
 
 
+class BulkTransferTemplateRowCreate(BaseModel):
+    beneficiary_name: str = Field(min_length=1, max_length=255)
+    iban: str = Field(min_length=1, max_length=34)
+    amount: Decimal
+    description: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_amount(self) -> "BulkTransferTemplateRowCreate":
+        if self.amount <= 0:
+            raise ValueError("Row amount must be positive")
+        return self
+
+
+class BulkTransferTemplateCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    source_wallet_id: uuid.UUID
+    currency: str = Field(min_length=3, max_length=3)
+    frequency: ScheduledPaymentFrequency
+    next_run_on: date
+    rows: list[BulkTransferTemplateRowCreate] = Field(min_length=1, max_length=200)
+
+
+class BulkTransferTemplateStatusUpdate(BaseModel):
+    status: ScheduledPaymentStatus
+
+
+class BulkTransferTemplateRowPublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    beneficiary_name: str
+    iban: str
+    amount: Decimal
+    description: str | None
+
+
+class BulkTransferTemplatePublic(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    owner_user_id: uuid.UUID
+    source_wallet_id: uuid.UUID
+    name: str
+    currency: str
+    frequency: ScheduledPaymentFrequency
+    next_run_on: date
+    status: ScheduledPaymentStatus
+    created_at: datetime
+    updated_at: datetime
+    rows: list[BulkTransferTemplateRowPublic]
+
+
 class IbanTransferQuoteCreate(BaseModel):
     source_wallet_id: uuid.UUID
     amount: Decimal

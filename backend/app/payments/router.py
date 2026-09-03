@@ -17,6 +17,9 @@ from app.payments.schemas import (
     BulkTransferBatchSummary,
     BulkTransferCreate,
     BulkTransferResult,
+    BulkTransferTemplateCreate,
+    BulkTransferTemplatePublic,
+    BulkTransferTemplateStatusUpdate,
     IbanTransferCreate,
     IbanTransferQuoteCreate,
     PaymentRequestCreate,
@@ -36,6 +39,7 @@ from app.payments.schemas import (
 from app.payments.service import (
     BeneficiaryService,
     BillSplitService,
+    BulkTransferTemplateService,
     IbanTransferService,
     PaymentRequestService,
     PhonePaymentService,
@@ -87,6 +91,53 @@ def list_bulk_transfer_history(
     db: Session = Depends(get_db),
 ) -> list[BulkTransferBatchSummary]:
     return IbanTransferService(db).list_bulk_transfer_batches(current_user.id)
+
+
+@router.post(
+    "/transfers/bulk/templates", response_model=BulkTransferTemplatePublic, status_code=status.HTTP_201_CREATED
+)
+def create_bulk_transfer_template(
+    payload: BulkTransferTemplateCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BulkTransferTemplatePublic:
+    service = BulkTransferTemplateService(db)
+    template = service.create_template(current_user.id, payload)
+    db.commit()
+    return service.to_public(template)
+
+
+@router.get("/transfers/bulk/templates", response_model=list[BulkTransferTemplatePublic])
+def list_bulk_transfer_templates(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[BulkTransferTemplatePublic]:
+    service = BulkTransferTemplateService(db)
+    return [service.to_public(template) for template in service.list_templates(current_user.id)]
+
+
+@router.patch("/transfers/bulk/templates/{template_id}/status", response_model=BulkTransferTemplatePublic)
+def update_bulk_transfer_template_status(
+    template_id: uuid.UUID,
+    payload: BulkTransferTemplateStatusUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BulkTransferTemplatePublic:
+    service = BulkTransferTemplateService(db)
+    template = service.update_status(current_user.id, template_id, payload.status)
+    db.commit()
+    return service.to_public(template)
+
+
+@router.post("/transfers/bulk/templates/{template_id}/run", response_model=BulkTransferResult)
+def run_bulk_transfer_template(
+    template_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BulkTransferResult:
+    result = BulkTransferTemplateService(db).run_now(current_user.id, template_id)
+    db.commit()
+    return result
 
 
 @router.post("/phone/lookup", response_model=PhoneRecipientPreview)

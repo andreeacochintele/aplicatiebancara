@@ -10,6 +10,8 @@ from app.payments.models import (
     Beneficiary,
     BillSplit,
     BillSplitParticipant,
+    BulkTransferTemplate,
+    BulkTransferTemplateRow,
     PaymentRequest,
     ScheduledPayment,
     ScheduledPaymentStatus,
@@ -438,3 +440,62 @@ class TransactionFolderRepository:
             return
         self.db.delete(item)
         self.db.flush()
+
+
+class BulkTransferTemplateRepository:
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def get_owned_by_id(self, owner_user_id: uuid.UUID, template_id: uuid.UUID) -> BulkTransferTemplate | None:
+        if is_supabase_session(self.db):
+            return self.db.fetch_one(
+                BulkTransferTemplate,
+                {"id": f"eq.{template_id}", "owner_user_id": f"eq.{owner_user_id}"},
+            )
+        return self.db.scalar(
+            select(BulkTransferTemplate).where(
+                BulkTransferTemplate.id == template_id,
+                BulkTransferTemplate.owner_user_id == owner_user_id,
+            )
+        )
+
+    def list_for_owner(self, owner_user_id: uuid.UUID, limit: int = 100) -> list[BulkTransferTemplate]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(
+                BulkTransferTemplate,
+                {"owner_user_id": f"eq.{owner_user_id}", "order": "created_at.desc", "limit": str(limit)},
+            )
+        stmt = (
+            select(BulkTransferTemplate)
+            .where(BulkTransferTemplate.owner_user_id == owner_user_id)
+            .order_by(BulkTransferTemplate.created_at.desc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt))
+
+    def add(self, template: BulkTransferTemplate) -> BulkTransferTemplate:
+        if is_supabase_session(self.db):
+            return self.db.add(template)
+        self.db.add(template)
+        self.db.flush()
+        return template
+
+    def add_row(self, row: BulkTransferTemplateRow) -> BulkTransferTemplateRow:
+        if is_supabase_session(self.db):
+            return self.db.add(row)
+        self.db.add(row)
+        self.db.flush()
+        return row
+
+    def list_rows_for_template(self, template_id: uuid.UUID) -> list[BulkTransferTemplateRow]:
+        if is_supabase_session(self.db):
+            return self.db.fetch_many(
+                BulkTransferTemplateRow,
+                {"template_id": f"eq.{template_id}", "order": "created_at.asc", "limit": "200"},
+            )
+        stmt = (
+            select(BulkTransferTemplateRow)
+            .where(BulkTransferTemplateRow.template_id == template_id)
+            .order_by(BulkTransferTemplateRow.created_at.asc())
+        )
+        return list(self.db.scalars(stmt))

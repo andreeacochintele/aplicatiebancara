@@ -270,6 +270,28 @@ export interface BulkTransferBatchSummary {
   other_count: number;
 }
 
+export interface BulkTransferTemplateRow {
+  id: string;
+  beneficiary_name: string;
+  iban: string;
+  amount: string;
+  description: string | null;
+}
+
+export interface BulkTransferTemplate {
+  id: string;
+  owner_user_id: string;
+  source_wallet_id: string;
+  name: string;
+  currency: string;
+  frequency: ScheduledPaymentFrequency;
+  next_run_on: string;
+  status: ScheduledPaymentStatus;
+  created_at: string;
+  updated_at: string;
+  rows: BulkTransferTemplateRow[];
+}
+
 export type BillSplitStatus = "OPEN" | "SETTLED" | "CANCELLED";
 export type BillSplitParticipantStatus = "PENDING" | "PAID" | "DECLINED";
 

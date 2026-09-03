@@ -3,8 +3,10 @@ import { useTranslation } from "react-i18next";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
-import type { BulkTransferBatchSummary, BulkTransferResult, Wallet } from "../types";
+import type { BulkTransferResult, BulkTransferTemplate, ScheduledPaymentFrequency, Wallet } from "../types";
 import { walletLabel } from "../utils";
+
+const TEMPLATE_FREQUENCIES: ScheduledPaymentFrequency[] = ["ONCE", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"];
 
 interface BulkRowForm {
   beneficiary_name: string;
@@ -49,22 +51,13 @@ export function BusinessBulkTransferPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<BulkTransferResult | null>(null);
-  const [history, setHistory] = useState<BulkTransferBatchSummary[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-
-  async function loadHistory(token: string) {
-    setHistoryLoading(true);
-    try {
-      const batches = await apiRequest<BulkTransferBatchSummary[]>("/payments/transfers/bulk/history", {
-        token,
-      });
-      setHistory(batches);
-    } catch {
-      setHistory([]);
-    } finally {
-      setHistoryLoading(false);
-    }
-  }
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [templateNotice, setTemplateNotice] = useState<string | null>(null);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateFrequency, setTemplateFrequency] = useState<ScheduledPaymentFrequency>("MONTHLY");
+  const [templateNextRunOn, setTemplateNextRunOn] = useState(() => new Date().toISOString().slice(0, 10));
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   useEffect(() => {
     if (!isBusiness || !accessToken) return;
@@ -74,7 +67,6 @@ export function BusinessBulkTransferPage() {
         setSourceWalletId((current) => current || list[0]?.id || "");
       })
       .catch(() => setWallets([]));
-    void loadHistory(accessToken);
   }, [isBusiness, accessToken]);
 
   if (!isBusiness) {
@@ -133,11 +125,43 @@ export function BusinessBulkTransferPage() {
       if (response.failed === 0) {
         setRows([{ ...EMPTY_ROW }]);
       }
-      void loadHistory(accessToken);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("businessBulkTransfer.submitFailed"));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function saveAsTemplate() {
+    if (!accessToken || !sourceWallet || validRows.length === 0 || !templateName.trim()) return;
+    setTemplateError(null);
+    setTemplateNotice(null);
+    setSavingTemplate(true);
+    try {
+      await apiRequest<BulkTransferTemplate>("/payments/transfers/bulk/templates", {
+        method: "POST",
+        token: accessToken,
+        body: {
+          name: templateName.trim(),
+          source_wallet_id: sourceWallet.id,
+          currency: sourceWallet.currency,
+          frequency: templateFrequency,
+          next_run_on: templateNextRunOn,
+          rows: validRows.map((row) => ({
+            beneficiary_name: row.beneficiary_name.trim(),
+            iban: row.iban.trim(),
+            amount: row.amount,
+            description: row.description.trim() || null,
+          })),
+        },
+      });
+      setTemplateName("");
+      setShowSaveTemplate(false);
+      setTemplateNotice(t("businessBulkTransfer.templateSaved"));
+    } catch (err) {
+      setTemplateError(err instanceof ApiError ? err.message : t("businessBulkTransfer.templateSaveFailed"));
+    } finally {
+      setSavingTemplate(false);
     }
   }
 
@@ -263,12 +287,72 @@ export function BusinessBulkTransferPage() {
               currency: sourceWallet?.currency ?? "",
             })}
           </span>
-          <button type="button" onClick={submit} disabled={submitting || validRows.length === 0 || !sourceWallet}>
-            {submitting ? t("businessBulkTransfer.submitting") : t("businessBulkTransfer.submit")}
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button
+              type="button"
+              className="button--ghost"
+              onClick={() => setShowSaveTemplate((current) => !current)}
+              disabled={validRows.length === 0 || !sourceWallet}
+            >
+              {t("businessBulkTransfer.saveAsTemplate")}
+            </button>
+            <button type="button" onClick={submit} disabled={submitting || validRows.length === 0 || !sourceWallet}>
+              {submitting ? t("businessBulkTransfer.submitting") : t("businessBulkTransfer.submit")}
+            </button>
+          </div>
         </div>
 
+        {showSaveTemplate && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr) auto",
+              gap: "0.5rem",
+              alignItems: "end",
+              marginTop: "0.75rem",
+              paddingTop: "0.75rem",
+              borderTop: "1px solid var(--color-divider)",
+            }}
+          >
+            <label>
+              {t("businessBulkTransfer.templateName")}
+              <input
+                value={templateName}
+                onChange={(event) => setTemplateName(event.target.value)}
+                placeholder={t("businessBulkTransfer.templateNamePlaceholder")}
+              />
+            </label>
+            <label>
+              {t("payments.frequency")}
+              <select
+                value={templateFrequency}
+                onChange={(event) => setTemplateFrequency(event.target.value as ScheduledPaymentFrequency)}
+              >
+                {TEMPLATE_FREQUENCIES.map((frequency) => (
+                  <option key={frequency} value={frequency}>
+                    {t(`payments.frequencyOption.${frequency}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {t("payments.nextRun")}
+              <input
+                type="date"
+                min={new Date().toISOString().slice(0, 10)}
+                value={templateNextRunOn}
+                onChange={(event) => setTemplateNextRunOn(event.target.value)}
+              />
+            </label>
+            <button type="button" onClick={saveAsTemplate} disabled={savingTemplate || !templateName.trim()}>
+              {savingTemplate ? t("businessBulkTransfer.submitting") : t("businessBulkTransfer.saveTemplate")}
+            </button>
+          </div>
+        )}
+
         {error && <p className="status-line status-line--error">{error}</p>}
+        {templateError && <p className="status-line status-line--error">{templateError}</p>}
+        {templateNotice && <p className="status-line">{templateNotice}</p>}
       </div>
 
       {result && (
@@ -310,50 +394,6 @@ export function BusinessBulkTransferPage() {
           </table>
         </div>
       )}
-
-      <div className="tile">
-        <div className="tile__header">
-          <span className="eyebrow">{t("businessBulkTransfer.historyTitle")}</span>
-          {historyLoading && <span className="tag tag--neutral">{t("businessBulkTransfer.loading")}</span>}
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>{t("businessBulkTransfer.date")}</th>
-              <th>{t("businessBulkTransfer.rows")}</th>
-              <th style={{ textAlign: "right" }}>{t("businessBulkTransfer.amount")}</th>
-              <th>{t("common.statusLabel")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((batch) => (
-              <tr key={batch.batch_reference}>
-                <td>{new Date(batch.created_at).toLocaleString()}</td>
-                <td>{batch.row_count}</td>
-                <td style={{ textAlign: "right" }}>
-                  {batch.total_amount} {batch.currency}
-                </td>
-                <td>
-                  {batch.pending_review_count > 0 ? (
-                    <span className="tag tag--warning">
-                      {t("businessBulkTransfer.batchPendingReview", { count: batch.pending_review_count })}
-                    </span>
-                  ) : batch.other_count > 0 ? (
-                    <span className="tag tag--warning">{t("businessBulkTransfer.batchNeedsAttention")}</span>
-                  ) : (
-                    <span className="tag tag--accent">{t("businessBulkTransfer.batchAllCompleted")}</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {!historyLoading && history.length === 0 && (
-              <tr>
-                <td colSpan={4}>{t("businessBulkTransfer.noHistoryYet")}</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
     </section>
   );
 }
