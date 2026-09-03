@@ -354,7 +354,16 @@ export function BusinessBulkTransferPage() {
           </button>
         </div>
 
-        <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.75rem" }}>
+        <label
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: "0.4rem",
+            marginTop: "0.75rem",
+            width: "fit-content",
+          }}
+        >
           <input
             type="checkbox"
             checked={saveBeneficiaries}
