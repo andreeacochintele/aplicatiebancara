@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { apiRequest, ApiError } from "../api/apiClient";
@@ -15,6 +15,7 @@ export function BusinessRecurringTemplatesPage() {
   const [templateActionId, setTemplateActionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BulkTransferResult | null>(null);
+  const [expandedTemplateId, setExpandedTemplateId] = useState<string | null>(null);
 
   async function loadTemplates(token: string) {
     setTemplatesLoading(true);
@@ -97,64 +98,106 @@ export function BusinessRecurringTemplatesPage() {
             </tr>
           </thead>
           <tbody>
-            {templates.map((template) => (
-              <tr key={template.id}>
-                <td>{template.name}</td>
-                <td>{t(`payments.frequencyOption.${template.frequency}`)}</td>
-                <td>{new Date(`${template.next_run_on}T00:00:00`).toLocaleDateString()}</td>
-                <td>{template.rows.length}</td>
-                <td>
-                  <span className={`tag ${template.status === "ACTIVE" ? "tag--accent" : "tag--neutral"}`}>
-                    {t(`payments.scheduledStatusBadge.${template.status.toLowerCase()}`, {
-                      defaultValue: template.status,
-                    })}
-                  </span>
-                </td>
-                <td>
-                  <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                    {template.status === "ACTIVE" && (
-                      <button
-                        type="button"
-                        onClick={() => runTemplate(template)}
-                        disabled={templateActionId === template.id}
-                      >
-                        {t("businessBulkTransfer.runNow")}
-                      </button>
-                    )}
-                    {template.status === "ACTIVE" && (
+            {templates.map((template) => {
+              const isExpanded = expandedTemplateId === template.id;
+              return (
+                <Fragment key={template.id}>
+                  <tr>
+                    <td>{template.name}</td>
+                    <td>{t(`payments.frequencyOption.${template.frequency}`)}</td>
+                    <td>{new Date(`${template.next_run_on}T00:00:00`).toLocaleDateString()}</td>
+                    <td>
                       <button
                         type="button"
                         className="button--ghost"
-                        onClick={() => updateTemplateStatus(template, "PAUSED")}
-                        disabled={templateActionId === template.id}
+                        onClick={() => setExpandedTemplateId(isExpanded ? null : template.id)}
                       >
-                        {t("payments.pause")}
+                        {t("businessBulkTransfer.rowsCount", { count: template.rows.length })}
+                        {isExpanded ? " ▴" : " ▾"}
                       </button>
-                    )}
-                    {template.status === "PAUSED" && (
-                      <button
-                        type="button"
-                        className="button--ghost"
-                        onClick={() => updateTemplateStatus(template, "ACTIVE")}
-                        disabled={templateActionId === template.id}
-                      >
-                        {t("payments.resume")}
-                      </button>
-                    )}
-                    {template.status !== "CANCELLED" && (
-                      <button
-                        type="button"
-                        className="button--danger"
-                        onClick={() => updateTemplateStatus(template, "CANCELLED")}
-                        disabled={templateActionId === template.id}
-                      >
-                        {t("payments.cancel")}
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                    </td>
+                    <td>
+                      <span className={`tag ${template.status === "ACTIVE" ? "tag--accent" : "tag--neutral"}`}>
+                        {t(`payments.scheduledStatusBadge.${template.status.toLowerCase()}`, {
+                          defaultValue: template.status,
+                        })}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                        {template.status === "ACTIVE" && (
+                          <button
+                            type="button"
+                            onClick={() => runTemplate(template)}
+                            disabled={templateActionId === template.id}
+                          >
+                            {t("businessBulkTransfer.runNow")}
+                          </button>
+                        )}
+                        {template.status === "ACTIVE" && (
+                          <button
+                            type="button"
+                            className="button--ghost"
+                            onClick={() => updateTemplateStatus(template, "PAUSED")}
+                            disabled={templateActionId === template.id}
+                          >
+                            {t("payments.pause")}
+                          </button>
+                        )}
+                        {template.status === "PAUSED" && (
+                          <button
+                            type="button"
+                            className="button--ghost"
+                            onClick={() => updateTemplateStatus(template, "ACTIVE")}
+                            disabled={templateActionId === template.id}
+                          >
+                            {t("payments.resume")}
+                          </button>
+                        )}
+                        {template.status !== "CANCELLED" && (
+                          <button
+                            type="button"
+                            className="button--danger"
+                            onClick={() => updateTemplateStatus(template, "CANCELLED")}
+                            disabled={templateActionId === template.id}
+                          >
+                            {t("payments.cancel")}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={6}>
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>{t("businessBulkTransfer.beneficiaryName")}</th>
+                              <th>{t("businessBulkTransfer.iban")}</th>
+                              <th style={{ textAlign: "right" }}>{t("businessBulkTransfer.amount")}</th>
+                              <th>{t("businessBulkTransfer.description")}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {template.rows.map((row) => (
+                              <tr key={row.id}>
+                                <td>{row.beneficiary_name}</td>
+                                <td>{row.iban}</td>
+                                <td style={{ textAlign: "right" }}>
+                                  {row.amount} {template.currency}
+                                </td>
+                                <td>{row.description ?? "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
             {!templatesLoading && templates.length === 0 && (
               <tr>
                 <td colSpan={6}>{t("businessBulkTransfer.noTemplatesYet")}</td>
