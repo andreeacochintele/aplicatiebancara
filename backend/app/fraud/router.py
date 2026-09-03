@@ -39,6 +39,14 @@ def list_fraud_cases(
     return FraudService(db).list_pending()
 
 
+@router.get("/cases/history", response_model=list[FraudCaseSummary])
+def list_decided_fraud_cases(
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[FraudCaseSummary]:
+    return FraudService(db).list_decided()
+
+
 @router.get("/cases/{case_id}", response_model=FraudCaseDetail)
 def get_fraud_case(
     case_id: uuid.UUID,

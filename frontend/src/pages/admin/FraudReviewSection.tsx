@@ -73,6 +73,33 @@ export function FraudReviewSection() {
   const [activationCaseId, setActivationCaseId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [historyCases, setHistoryCases] = useState<FraudCaseSummary[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  async function loadHistory(token: string) {
+    setHistoryLoading(true);
+    try {
+      const response = await apiRequest<FraudCaseSummary[]>("/fraud/cases/history", { token });
+      setHistoryCases(response);
+      setHistoryLoaded(true);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : t("admin.couldNotLoadFraudCases"));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function toggleHistory() {
+    const next = !showHistory;
+    setShowHistory(next);
+    if (next && !historyLoaded && accessToken) void loadHistory(accessToken);
+  }
 
   async function loadCases(token: string) {
     setIsLoading(true);
@@ -225,6 +252,7 @@ export function FraudReviewSection() {
   }
 
   return (
+    <>
     <div className="tile">
       <div className="tile__header">
         <span className="eyebrow">{t("admin.fraudReviewTitle")}</span>
@@ -298,6 +326,54 @@ export function FraudReviewSection() {
         </table>
       )}
     </div>
+
+    <div className="tile" style={{ marginTop: "1.25rem" }}>
+      <div className="tile__header">
+        <span className="eyebrow">{t("admin.fraudHistoryTitle")}</span>
+        <button type="button" className="button--ghost" onClick={toggleHistory}>
+          {showHistory ? t("admin.hide") : t("admin.showHistory")}
+        </button>
+      </div>
+      {showHistory && (
+        <>
+          {historyLoading && <div className="card-empty">{t("admin.loadingFraudCases")}</div>}
+          {!historyLoading && (
+            <table>
+              <thead>
+                <tr>
+                  <th>{t("admin.transaction")}</th>
+                  <th>{t("admin.amountHeld")}</th>
+                  <th>{t("admin.riskScore")}</th>
+                  <th>{t("common.statusLabel")}</th>
+                  <th>{t("admin.decidedAt")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historyCases.map((fraudCase) => (
+                  <tr key={fraudCase.id}>
+                    <td>{fraudCase.transaction_id.slice(0, 8)}</td>
+                    <td>{formatMoney(fraudCase.hold_amount, fraudCase.hold_currency)}</td>
+                    <td>{fraudCase.risk_score}</td>
+                    <td>
+                      <span className={fraudCase.status === "APPROVED" ? "tag tag--accent" : "tag tag--warning"}>
+                        {t(`common.status.${fraudCase.status}`, { defaultValue: fraudCase.status })}
+                      </span>
+                    </td>
+                    <td>{fraudCase.decided_at ? new Date(fraudCase.decided_at).toLocaleString() : t("admin.notAvailable")}</td>
+                  </tr>
+                ))}
+                {historyCases.length === 0 && (
+                  <tr>
+                    <td colSpan={5}>{t("admin.noFraudHistoryYet")}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </div>
+    </>
   );
 }
 

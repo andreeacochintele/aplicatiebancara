@@ -55,6 +55,25 @@ class FraudRepository:
         )
         return list(self.db.scalars(stmt))
 
+    def list_decided(self, limit: int = 50) -> list[FraudCase]:
+        if is_supabase_session(self.db):
+            try:
+                cases = self.db.fetch_many(
+                    FraudCase, {"status": f"neq.{FraudCaseStatus.PENDING_REVIEW.value}", "order": "decided_at.desc"}
+                )
+            except RuntimeError as exc:
+                if self._is_missing_supabase_table(exc, FraudCase):
+                    return []
+                raise
+            return cases[:limit]
+        stmt = (
+            select(FraudCase)
+            .where(FraudCase.status != FraudCaseStatus.PENDING_REVIEW)
+            .order_by(FraudCase.decided_at.desc())
+            .limit(limit)
+        )
+        return list(self.db.scalars(stmt))
+
     def list_for_user(self, user_id: uuid.UUID) -> list[FraudCase]:
         if is_supabase_session(self.db):
             return self.db.fetch_many(FraudCase, {"user_id": f"eq.{user_id}", "order": "created_at.desc"})

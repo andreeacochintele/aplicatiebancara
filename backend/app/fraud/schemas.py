@@ -28,6 +28,8 @@ class FraudCaseSummary(BaseModel):
     created_at: datetime
     flag_codes: list[FraudFlagCode]
     batch_reference: str | None = None
+    decided_at: datetime | None = None
+    decided_by_admin_id: uuid.UUID | None = None
 
 
 class FraudRiskLevel(str, enum.Enum):
