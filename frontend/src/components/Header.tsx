@@ -29,6 +29,14 @@ const PAGE_INFO: Record<string, { titleKey: string; subtitleKey: string }> = {
     titleKey: "pageInfo.businessBulkTransfer.title",
     subtitleKey: "pageInfo.businessBulkTransfer.subtitle",
   },
+  "/business/bulk-transfer/history": {
+    titleKey: "pageInfo.businessBatchHistory.title",
+    subtitleKey: "pageInfo.businessBatchHistory.subtitle",
+  },
+  "/business/bulk-transfer/recurring": {
+    titleKey: "pageInfo.businessRecurringTemplates.title",
+    subtitleKey: "pageInfo.businessRecurringTemplates.subtitle",
+  },
   "/admin": { titleKey: "pageInfo.admin.title", subtitleKey: "pageInfo.admin.subtitle" },
   "/admin/credit": { titleKey: "pageInfo.adminCredit.title", subtitleKey: "pageInfo.adminCredit.subtitle" },
   "/admin/fraud": { titleKey: "pageInfo.adminFraud.title", subtitleKey: "pageInfo.adminFraud.subtitle" },

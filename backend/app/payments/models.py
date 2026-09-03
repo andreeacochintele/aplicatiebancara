@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, utcnow
 
@@ -167,3 +167,52 @@ class TransactionFolderItem(Base):
     folder_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("transaction_folders.id"), nullable=False)
     transaction_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("transactions.id"), nullable=False)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BulkTransferTemplate(Base):
+    """A saved payroll-style batch (see IbanTransferService.create_bulk_transfer)
+    the owner can re-run on demand and advance on a schedule — same "advisory
+    record, not a real background cron" shape as ScheduledPayment: nothing in
+    this codebase executes these automatically, `run_now` (payments/service.py)
+    is the only thing that ever fires one, and it's always a user action.
+    Reuses ScheduledPaymentFrequency/ScheduledPaymentStatus rather than
+    introducing parallel enums for the same concepts."""
+
+    __tablename__ = "bulk_transfer_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    source_wallet_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("wallets.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    frequency: Mapped[ScheduledPaymentFrequency] = mapped_column(
+        Enum(ScheduledPaymentFrequency, name="scheduled_payment_frequency"), nullable=False
+    )
+    next_run_on: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[ScheduledPaymentStatus] = mapped_column(
+        Enum(ScheduledPaymentStatus, name="scheduled_payment_status"),
+        default=ScheduledPaymentStatus.ACTIVE,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    rows = relationship(
+        "BulkTransferTemplateRow", back_populates="template", cascade="all, delete-orphan", order_by="BulkTransferTemplateRow.created_at"
+    )
+
+
+class BulkTransferTemplateRow(Base):
+    __tablename__ = "bulk_transfer_template_rows"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    template_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bulk_transfer_templates.id"), nullable=False
+    )
+    beneficiary_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    iban: Mapped[str] = mapped_column(String(34), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    template = relationship("BulkTransferTemplate", back_populates="rows")

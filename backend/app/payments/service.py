@@ -1,7 +1,8 @@
 """Beneficiary business rules for the payments module."""
+import calendar
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_UP, Decimal
 
 from sqlalchemy.orm import Session
@@ -18,9 +19,12 @@ from app.payments.models import (
     BillSplitParticipant,
     BillSplitParticipantStatus,
     BillSplitStatus,
+    BulkTransferTemplate,
+    BulkTransferTemplateRow,
     PaymentRequest,
     PaymentRequestStatus,
     ScheduledPayment,
+    ScheduledPaymentFrequency,
     ScheduledPaymentStatus,
     TransactionFolder,
     TransactionFolderItem,
@@ -28,6 +32,7 @@ from app.payments.models import (
 from app.payments.repository import (
     BeneficiaryRepository,
     BillSplitRepository,
+    BulkTransferTemplateRepository,
     PaymentRequestRepository,
     ScheduledPaymentRepository,
     TransactionFolderRepository,
@@ -42,7 +47,11 @@ from app.payments.schemas import (
     BulkTransferBatchSummary,
     BulkTransferCreate,
     BulkTransferResult,
+    BulkTransferRow,
     BulkTransferRowResult,
+    BulkTransferTemplateCreate,
+    BulkTransferTemplatePublic,
+    BulkTransferTemplateRowPublic,
     IbanTransferCreate,
     IbanTransferQuoteCreate,
     PaymentRequestCreate,
@@ -72,6 +81,25 @@ _SCHEDULED_STATUS_TRANSITIONS: dict[ScheduledPaymentStatus, set[ScheduledPayment
     ScheduledPaymentStatus.PAUSED: {ScheduledPaymentStatus.ACTIVE, ScheduledPaymentStatus.CANCELLED},
     ScheduledPaymentStatus.CANCELLED: set(),
 }
+
+
+def _advance_by_frequency(current: date, frequency: ScheduledPaymentFrequency) -> date:
+    """Same day-of-month clamping as the frontend calendar's own projection
+    (PaymentsPage.tsx's matchesMonthlyInterval) — a 31st start still lands on
+    Feb 28/29 rather than raising. ONCE is never passed here: run_now cancels
+    a ONCE template instead of advancing it."""
+    if frequency == ScheduledPaymentFrequency.WEEKLY:
+        return current + timedelta(days=7)
+    months = {
+        ScheduledPaymentFrequency.MONTHLY: 1,
+        ScheduledPaymentFrequency.QUARTERLY: 3,
+        ScheduledPaymentFrequency.YEARLY: 12,
+    }[frequency]
+    total_month_index = current.month - 1 + months
+    year = current.year + total_month_index // 12
+    month = total_month_index % 12 + 1
+    day = min(current.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
 
 # Transfers, FX conversions, loan installments, and bill-split settlements
 # aren't "a payment" in the sense either feature means it -- only an actual
@@ -1008,3 +1036,137 @@ class TransactionFolderService:
             updated_at=folder.updated_at,
             items=items if items is not None else self.repository.list_items(folder.id),
         )
+
+
+class BulkTransferTemplateService:
+    """Saved payroll-style batches (IbanTransferService.create_bulk_transfer)
+    the owner re-runs on demand. Same "advisory record" shape as
+    ScheduledPayment — nothing in this codebase runs these on a timer; the
+    only thing that ever calls create_bulk_transfer here is run_now(), always
+    in response to a user action, same as every other write in this
+    service."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+        self.repository = BulkTransferTemplateRepository(db)
+        self.wallets = WalletRepository(db)
+        self.iban_transfers = IbanTransferService(db)
+
+    def create_template(
+        self, owner_user_id: uuid.UUID, data: BulkTransferTemplateCreate
+    ) -> BulkTransferTemplate:
+        wallet = self.wallets.get_by_id(data.source_wallet_id)
+        if wallet is None:
+            raise NotFoundError("Source wallet not found")
+        if wallet.user_id != owner_user_id:
+            raise ValidationError("Source wallet does not belong to the current user")
+        currency = data.currency.upper()
+        if wallet.currency != currency:
+            raise ValidationError("Template currency must match the source wallet")
+
+        template = self.repository.add(
+            BulkTransferTemplate(
+                owner_user_id=owner_user_id,
+                source_wallet_id=wallet.id,
+                name=data.name,
+                currency=currency,
+                frequency=data.frequency,
+                next_run_on=data.next_run_on,
+                status=ScheduledPaymentStatus.ACTIVE,
+            )
+        )
+        for row in data.rows:
+            self.repository.add_row(
+                BulkTransferTemplateRow(
+                    template_id=template.id,
+                    beneficiary_name=row.beneficiary_name,
+                    iban=row.iban,
+                    amount=row.amount,
+                    description=row.description,
+                )
+            )
+        self.db.flush()
+        return template
+
+    def list_templates(self, owner_user_id: uuid.UUID) -> list[BulkTransferTemplate]:
+        return self.repository.list_for_owner(owner_user_id)
+
+    def to_public(self, template: BulkTransferTemplate) -> BulkTransferTemplatePublic:
+        # Rows are fetched explicitly rather than read off template.rows —
+        # the Supabase REST session doesn't populate SQLAlchemy relationships,
+        # same reasoning as TransactionFolderService._to_public.
+        rows = self.repository.list_rows_for_template(template.id)
+        return BulkTransferTemplatePublic(
+            id=template.id,
+            owner_user_id=template.owner_user_id,
+            source_wallet_id=template.source_wallet_id,
+            name=template.name,
+            currency=template.currency,
+            frequency=template.frequency,
+            next_run_on=template.next_run_on,
+            status=template.status,
+            created_at=template.created_at,
+            updated_at=template.updated_at,
+            rows=[
+                BulkTransferTemplateRowPublic(
+                    id=row.id,
+                    beneficiary_name=row.beneficiary_name,
+                    iban=row.iban,
+                    amount=row.amount,
+                    description=row.description,
+                )
+                for row in rows
+            ],
+        )
+
+    def _get_owned_template(self, owner_user_id: uuid.UUID, template_id: uuid.UUID) -> BulkTransferTemplate:
+        template = self.repository.get_owned_by_id(owner_user_id, template_id)
+        if template is None:
+            raise NotFoundError("Template not found")
+        return template
+
+    def update_status(
+        self, owner_user_id: uuid.UUID, template_id: uuid.UUID, status: ScheduledPaymentStatus
+    ) -> BulkTransferTemplate:
+        template = self._get_owned_template(owner_user_id, template_id)
+        allowed = _SCHEDULED_STATUS_TRANSITIONS[template.status]
+        if status not in allowed:
+            raise ConflictError(f"Cannot move a {template.status.value} template to {status.value}")
+        template.status = status
+        template.updated_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return template
+
+    def run_now(self, owner_user_id: uuid.UUID, template_id: uuid.UUID) -> BulkTransferResult:
+        """Runs the template's rows through create_bulk_transfer right now —
+        a user action, not a scheduled trigger (see class docstring) — then
+        advances next_run_on, or cancels a ONCE template instead."""
+        template = self._get_owned_template(owner_user_id, template_id)
+        if template.status != ScheduledPaymentStatus.ACTIVE:
+            raise ConflictError(f"Template is {template.status.value}, not ACTIVE")
+
+        rows = self.repository.list_rows_for_template(template.id)
+        result = self.iban_transfers.create_bulk_transfer(
+            owner_user_id,
+            BulkTransferCreate(
+                source_wallet_id=template.source_wallet_id,
+                currency=template.currency,
+                rows=[
+                    BulkTransferRow(
+                        beneficiary_name=row.beneficiary_name,
+                        iban=row.iban,
+                        amount=row.amount,
+                        description=row.description,
+                    )
+                    for row in rows
+                ],
+            ),
+        )
+
+        if template.frequency == ScheduledPaymentFrequency.ONCE:
+            template.status = ScheduledPaymentStatus.CANCELLED
+        else:
+            template.next_run_on = _advance_by_frequency(template.next_run_on, template.frequency)
+        template.updated_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return result
