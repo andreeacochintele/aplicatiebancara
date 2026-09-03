@@ -1,15 +1,22 @@
 """AIInsight — cached, LLM-phrased spending recommendations for the
 Analytics dashboard's "Spending recommendations" panel (see
-insights.py). Generated lazily with a 24h TTL per user
-(insight_service.py) rather than live on every page load, and not via a
-background scheduler — this project has no job runner yet (checked: no
-APScheduler/Celery/cron anywhere in the repo).
+insights.py). Generated lazily rather than live on every page load, and
+not via a background scheduler — this project has no job runner yet
+(checked: no APScheduler/Celery/cron anywhere in the repo).
 
 insight_type is a plain string, not a Postgres enum, same reasoning as
 ai/orchestrator/models.py's `role`/`agent_used`: it holds
 AnalyticsService.spending_recommendations()'s `reasons` values (or
 "ALL_CLEAR" when nothing was flagged) — a future new reason type
 shouldn't require a migration to add.
+
+period_key ("YYYY-MM") scopes caching per calendar month the app-wide
+month selector can view, not just per user — added so a past month's
+recommendations can be cached forever (its figures never change once the
+month is closed) while the real current month keeps its short TTL and
+keeps refreshing live (insights.py's get_or_generate()). Every
+pre-existing row was implicitly "as of its own created_at" before this
+column existed, which is exactly how the migration backfills it.
 """
 import uuid
 from datetime import datetime
@@ -23,10 +30,12 @@ from app.database import Base, utcnow
 
 class AIInsight(Base):
     __tablename__ = "ai_insights"
-    __table_args__ = (Index("ix_ai_insights_user_created", "user_id", "created_at"),)
+    __table_args__ = (Index("ix_ai_insights_user_period_created", "user_id", "period_key", "created_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    # "YYYY-MM" — see module docstring.
+    period_key: Mapped[str] = mapped_column(String(7), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     # The merchant category this insight is about (Retail/Food/Travel/...),
     # or None for a category-less "all clear" row (see insights.py).
