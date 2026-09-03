@@ -30,6 +30,7 @@ import type {
   TopCounterpartiesResponse,
   WalletBalanceItem,
 } from "../types";
+import { groupDigits } from "../utils";
 
 type NetWorthPeriod = "1m" | "3m" | "6m" | "1y";
 
@@ -674,7 +675,7 @@ export function AnalyticsPage() {
               </select>
             </div>
             <div className="easyb-hero-amount">
-              {netWorth ? `${netWorth.total_available_balance} ${netWorth.base_currency}` : "—"}
+              {netWorth ? `${groupDigits(netWorth.total_available_balance)} ${netWorth.base_currency}` : "—"}
             </div>
             {netWorthChangePercent !== null && (
               <div className="easyb-hero-sub" style={{ color: netWorthChangePercent >= 0 ? "var(--easyb-green)" : "var(--easyb-red)" }}>
@@ -856,10 +857,10 @@ export function AnalyticsPage() {
           ) : forecast ? (
             <>
               <div className="balance-hero__amount" style={{ fontSize: "1.75rem" }}>
-                {forecast.projected_month_end_balance} {forecast.currency}
+                {groupDigits(forecast.projected_month_end_balance)} {forecast.currency}
               </div>
               <div className="easyb-tx-meta" style={{ marginBottom: 8 }}>
-                {t("analytics.currentBalance", { balance: forecast.current_balance, currency: forecast.currency, days: forecast.days_remaining })}
+                {t("analytics.currentBalance", { balance: groupDigits(forecast.current_balance), currency: forecast.currency, days: forecast.days_remaining })}
               </div>
               <ForecastChart forecast={forecast} />
             </>

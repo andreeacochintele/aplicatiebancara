@@ -114,6 +114,15 @@ def list_bulk_transfer_history(
     return IbanTransferService(db).list_bulk_transfer_batches(current_user.id)
 
 
+@router.get("/transfers/bulk/history/{batch_reference}", response_model=list[TransactionPublic])
+def list_bulk_transfer_batch_rows(
+    batch_reference: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[TransactionPublic]:
+    return IbanTransferService(db).list_bulk_transfer_batch_rows(current_user.id, batch_reference)
+
+
 @router.post(
     "/transfers/bulk/templates", response_model=BulkTransferTemplatePublic, status_code=status.HTTP_201_CREATED
 )

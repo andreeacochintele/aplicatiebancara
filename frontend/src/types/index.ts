@@ -896,6 +896,8 @@ export interface FraudCaseSummary {
   created_at: string;
   flag_codes: FraudFlagCode[];
   batch_reference: string | null;
+  decided_at: string | null;
+  decided_by_admin_id: string | null;
 }
 
 export interface AdminAuditLog {

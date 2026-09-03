@@ -231,6 +231,10 @@ class IbanTransferService:
             raise ConflictError("Insufficient available balance")
 
         description = data.description or f"Transfer to {data.beneficiary_name} - {data.iban}"
+        # Composed here rather than in the caller so the BIC is recorded
+        # whether or not the user wrote their own description.
+        if data.bic:
+            description = f"{description} (BIC: {data.bic.strip().upper()})"
 
         # On-us: the IBAN belongs to another EasyB wallet, so route through the
         # normal internal-transfer path (source debit + destination credit)
@@ -448,6 +452,19 @@ class IbanTransferService:
             )
         summaries.sort(key=lambda summary: summary.created_at, reverse=True)
         return summaries
+
+    def list_bulk_transfer_batch_rows(self, initiator_user_id: uuid.UUID, batch_reference: str) -> list[Transaction]:
+        """Individual transactions of one bulk-transfer batch, for the
+        expand/collapse detail view on the batch history page. Same
+        ownership + lookup window as list_bulk_transfer_batches, just
+        filtered down to a single batch_reference instead of grouped."""
+        rows = [
+            transaction
+            for transaction in self.transactions.repository.list_for_user(initiator_user_id, limit=300)
+            if transaction.batch_reference == batch_reference and transaction.initiator_user_id == initiator_user_id
+        ]
+        rows.sort(key=lambda transaction: transaction.created_at)
+        return rows
 
     def _get_owned_source_wallet(self, initiator_user_id: uuid.UUID, wallet_id: uuid.UUID) -> Wallet:
         source = self.wallets.get_by_id(wallet_id)

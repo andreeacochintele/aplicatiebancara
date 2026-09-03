@@ -52,6 +52,11 @@ class BeneficiaryPublic(BaseModel):
 class IbanTransferCreate(BaseModel):
     beneficiary_name: str = Field(min_length=1, max_length=255)
     iban: str = Field(min_length=1, max_length=34)
+    # Only sent for accounts that are not IBANs (countries outside the ISO
+    # 13616 registry), where a BIC is what makes the payment routable. There
+    # is no column for it — the service folds it into the description, so it
+    # still shows up on the statement and the payment confirmation.
+    bic: str | None = Field(default=None, min_length=8, max_length=11)
     source_wallet_id: uuid.UUID
     amount: Decimal
     currency: str = Field(min_length=3, max_length=3)

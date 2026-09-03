@@ -6,6 +6,7 @@ import { ApiError, apiRequest } from "../api/apiClient";
 import { cardTierRewardBullets } from "../config/rewardPolicy";
 import { useAuth } from "../hooks/useAuth";
 import type { Card, CardSensitiveDetails, CardTier, CardType, CreditApplication, Transaction, Wallet } from "../types";
+import { formatDecimalAmount } from "../utils";
 
 const CARD_TYPES: CardType[] = ["DEBIT", "CREDIT", "ONE_TIME"];
 const CREDIT_CARD_CURRENCIES = ["RON", "EUR", "USD", "GBP"];
@@ -103,14 +104,11 @@ function cardToneClass(card: Card): string {
 }
 
 function formatCurrencyAmount(value: number, currency = "RON"): string {
-  return `${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+  return `${formatDecimalAmount(value)} ${currency}`;
 }
 
 function formatWalletBalance(wallet: Wallet): string {
-  return `${Number(wallet.available_balance).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} ${wallet.currency}`;
+  return `${formatDecimalAmount(Number(wallet.available_balance))} ${wallet.currency}`;
 }
 
 function creditStatementBalance(card: Card): number {
@@ -128,10 +126,7 @@ function walletDisplayName(wallet: Wallet): string {
 }
 
 function walletOptionLabel(wallet: Wallet, debitAlreadyExists: boolean, t: (key: string, options?: Record<string, unknown>) => string): string {
-  const balance = Number(wallet.available_balance).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  const balance = formatDecimalAmount(Number(wallet.available_balance));
   return debitAlreadyExists
     ? t("cards.debitAlreadyExists", { label: walletDisplayName(wallet) })
     : `${walletDisplayName(wallet)} - ${balance}`;
@@ -432,10 +427,7 @@ export function CardsPage() {
       setCards((current) => [card, ...current]);
       setNotice(
         selectedType === "CREDIT"
-          ? `Secured credit card created with ${parsedCreditAmount.toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })} ${card.credit_account?.currency ?? selectedCreditCurrency} collateral.`
+          ? `Secured credit card created with ${formatDecimalAmount(parsedCreditAmount)} ${card.credit_account?.currency ?? selectedCreditCurrency} collateral.`
           : selectedType === "DEBIT" && debitIssueMode === "NEW_ACCOUNT"
             ? `${selectedDebitCurrency} current account created and linked to the debit card.`
           : null,
@@ -1533,10 +1525,7 @@ export function CardsPage() {
                             <div className={`card-transaction-row__amount card-transaction-row__amount--${transaction.direction}`}>
                               <strong>
                                 {transaction.direction === "in" ? "+" : "-"}
-                                {Number(transaction.amount).toLocaleString(undefined, {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}{" "}
+                                {formatDecimalAmount(Number(transaction.amount))}{" "}
                                 {transaction.currency}
                               </strong>
                               <span>{t(`common.status.${transaction.status}`, { defaultValue: transaction.status })}</span>

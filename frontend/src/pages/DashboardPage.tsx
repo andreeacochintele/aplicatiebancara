@@ -12,6 +12,7 @@ import { PeriodSelect } from "../components/PeriodSelect";
 import { useAuth } from "../hooks/useAuth";
 import { usePeriod } from "../hooks/usePeriod";
 import type { CreditScore, NetWorthResponse, ScheduledPayment, SpendingByTypeResponse, Transaction } from "../types";
+import { groupDigits } from "../utils";
 
 const QUICK_ACTIONS: { to: string; labelKey: string; subKey: string; icon: LucideIcon }[] = [
   { to: "/payments", labelKey: "dashboard.send", subKey: "dashboard.newTransfer", icon: Send },
@@ -64,7 +65,7 @@ function formatAmount(transaction: Transaction, userWalletIds: Set<string>): { s
   const isIncoming = transaction.destination_wallet_id ? userWalletIds.has(transaction.destination_wallet_id) : false;
   const isOutgoing = transaction.source_wallet_id ? userWalletIds.has(transaction.source_wallet_id) : false;
   const sign = isIncoming && !isOutgoing ? "+" : "-";
-  return { sign, text: `${transaction.amount} ${transaction.currency}` };
+  return { sign, text: `${groupDigits(transaction.amount)} ${transaction.currency}` };
 }
 
 function formatTransactionType(
@@ -217,7 +218,7 @@ export function DashboardPage() {
           <div className="easyb-hero-top">
             <div className="easyb-eyebrow light">{heroLabel}</div>
             <div className="easyb-hero-amount">
-              {hidden ? "••••••" : (heroAmount ?? "—")}
+              {hidden ? "••••••" : (heroAmount === undefined ? "—" : groupDigits(heroAmount))}
               <button className="easyb-icon-btn" onClick={() => setHidden((h) => !h)} aria-label={t("dashboard.toggleBalanceVisibility")}>
                 {hidden ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
@@ -271,7 +272,7 @@ export function DashboardPage() {
                   {wallet.currency}
                   {wallet.is_main ? ` · ${t("dashboard.main")}` : ""}
                 </span>
-                <span>{hidden ? "••••" : wallet.available_balance}</span>
+                <span>{hidden ? "••••" : groupDigits(wallet.available_balance)}</span>
               </button>
             ))}
           </div>

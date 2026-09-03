@@ -7,7 +7,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
 import type { FXMarketRate, FXQuote, FXRateHistory, Transaction, Wallet } from "../types";
-import { formatCardNumberInput, formatExpiryInput, formatIban, parseExpiryInput, walletLabel } from "../utils";
+import { formatCardNumberInput, formatDecimalAmount, formatExpiryInput, formatIban, groupDigits, parseExpiryInput, walletLabel } from "../utils";
 
 const RATE_ACCENT = "var(--easyb-rate-accent, #5b5fef)";
 // matches backend/app/fx/service.py's _RATES_TO_RON — keep both in sync
@@ -462,11 +462,11 @@ export function WalletsPage() {
                   {wallet.is_main && <span className="easyb-chip easyb-chip-violet">{t("wallets.main")}</span>}
                 </div>
                 <div className="easyb-wallet-card__amount" style={{ color: "var(--wallet-accent)" }}>
-                  {wallet.available_balance}
+                  {groupDigits(wallet.available_balance)}
                 </div>
                 <div className="easyb-wallet-card__sub">
                   {wallet.reserved_balance !== "0" && wallet.reserved_balance !== "0.00"
-                    ? t("wallets.reserved", { amount: wallet.reserved_balance, currency: wallet.currency })
+                    ? t("wallets.reserved", { amount: groupDigits(wallet.reserved_balance), currency: wallet.currency })
                     : t("wallets.nothingOnHold")}
                 </div>
                 <button
@@ -504,10 +504,7 @@ export function WalletsPage() {
                               </div>
                               <div className={isIncoming ? "easyb-wallet-activity__amount--in" : "easyb-wallet-activity__amount--out"}>
                                 {isIncoming ? "+" : "-"}
-                                {Number(transaction.amount).toLocaleString(undefined, {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}{" "}
+                                {formatDecimalAmount(Number(transaction.amount))}{" "}
                                 {transaction.currency}
                               </div>
                             </div>

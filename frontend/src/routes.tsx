@@ -5,6 +5,7 @@ import { InviteRedirect } from "./components/InviteRedirect";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuthLayout } from "./layouts/AuthLayout";
 import { MainLayout } from "./layouts/MainLayout";
+import { AdminBusinessVerificationPage } from "./pages/admin/AdminBusinessVerificationPage";
 import { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
 import { AuditLogPage } from "./pages/admin/AuditLogPage";
 import { CreditReviewPage } from "./pages/admin/CreditReviewPage";
@@ -95,6 +96,14 @@ export const routes: RouteObject[] = [
         element: (
           <ProtectedRoute requireRole="ADMIN">
             <CreditReviewPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "/admin/business-verification",
+        element: (
+          <ProtectedRoute requireRole="ADMIN">
+            <AdminBusinessVerificationPage />
           </ProtectedRoute>
         ),
       },

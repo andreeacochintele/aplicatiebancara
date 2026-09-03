@@ -1,9 +1,9 @@
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, Folder, Plus, Receipt, Users } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
-import { ApiError, apiRequest } from "../api/apiClient";
+import { API_BASE_URL, ApiError, apiRequest } from "../api/apiClient";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
 import { CategoryIcon } from "../features/transactions";
 import { useAuth } from "../hooks/useAuth";
@@ -15,6 +15,7 @@ import type {
   TransactionFolder,
   Wallet,
 } from "../types";
+import { downloadBlob, groupDigits } from "../utils";
 
 const FOLDER_NAME_MAX_LENGTH = 40;
 const FOLDER_DESCRIPTION_MAX_LENGTH = 120;
@@ -54,7 +55,7 @@ function isFolderEligible(transaction: Transaction): boolean {
 
 function formatAmount(transaction: Transaction, userWalletIds: Set<string>): string {
   const sign = isIncomingOnly(transaction, userWalletIds) ? "+" : "-";
-  return `${sign}${transaction.amount} ${transaction.currency}`;
+  return `${sign}${groupDigits(transaction.amount)} ${transaction.currency}`;
 }
 
 function formatTransactionType(
@@ -110,6 +111,54 @@ function baseSplitDescription(description: string): string {
   return base;
 }
 
+// Descriptions run long ("Early repayment for loan 65ffa7ee-8ca3-…"), so the
+// column is deliberately narrow and the text is ellipsised onto one line.
+// The toggle wraps it downward instead of widening the column, which keeps
+// the table's other columns where they are and only grows this one row.
+function TransactionDescription({ description, category }: { description: string | null; category: string | null }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const [truncated, setTruncated] = useState(false);
+  const textRef = useRef<HTMLSpanElement>(null);
+
+  // Whether the text is actually cut off depends on the rendered width, not
+  // on how many characters it has, so it has to be measured — and remeasured
+  // when the column resizes. Only while collapsed: expanded text wraps, so
+  // scrollWidth would equal clientWidth and the collapse button would vanish
+  // the moment the user opened a row.
+  useEffect(() => {
+    const node = textRef.current;
+    if (!node || expanded) return;
+    const measure = () => setTruncated(node.scrollWidth > node.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [description, expanded]);
+
+  const toggleLabel = expanded ? t("transactions.hideFullDescription") : t("transactions.showFullDescription");
+  return (
+    <span className={expanded ? "transaction-description transaction-description--expanded" : "transaction-description"}>
+      <span className="transaction-description__text" ref={textRef}>
+        {description}
+      </span>
+      {category && <CategoryIcon category={category} />}
+      {truncated && (
+        <button
+          aria-expanded={expanded}
+          aria-label={toggleLabel}
+          className="transaction-description__toggle"
+          onClick={() => setExpanded((value) => !value)}
+          title={toggleLabel}
+          type="button"
+        >
+          <ChevronDown size={14} aria-hidden="true" />
+        </button>
+      )}
+    </span>
+  );
+}
+
 export function TransactionsPage() {
   const { t } = useTranslation();
   const { accessToken, user } = useAuth();
@@ -136,6 +185,8 @@ export function TransactionsPage() {
   const [categoryTransaction, setCategoryTransaction] = useState<Transaction | null>(null);
   const [categorySaving, setCategorySaving] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [proofActionId, setProofActionId] = useState<string | null>(null);
+  const [proofError, setProofError] = useState<string | null>(null);
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
   const [transactionsPage, setTransactionsPage] = useState(1);
@@ -236,6 +287,28 @@ export function TransactionsPage() {
       setTransactionFolders(list);
     } catch {
       setTransactionFolders([]);
+    }
+  }
+
+  // Raw fetch rather than apiRequest: the endpoint answers with a PDF, and
+  // apiRequest parses every response as JSON.
+  async function downloadPaymentProof(transaction: Transaction) {
+    if (!accessToken) return;
+    setProofActionId(transaction.id);
+    setProofError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/transactions/${transaction.id}/payment-proof`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) {
+        setProofError(t("transactions.couldNotDownloadProof"));
+        return;
+      }
+      await downloadBlob(response, `payment_proof_${transaction.id.slice(0, 8)}.pdf`);
+    } catch {
+      setProofError(t("transactions.couldNotDownloadProof"));
+    } finally {
+      setProofActionId(null);
     }
   }
 
@@ -503,6 +576,7 @@ export function TransactionsPage() {
         </button>
       </div>
       {transactionsError && <p className="status-line status-line--error">{transactionsError}</p>}
+      {proofError && <p className="status-line status-line--error">{proofError}</p>}
       {splitNotice && <p className="status-line">{splitNotice}</p>}
       {pendingSplitRequests.length > 0 && (
         <div className="transaction-split-requests">
@@ -822,7 +896,9 @@ export function TransactionsPage() {
                 <th>{t("transactions.description")}</th>
                 <th>{t("transactions.amount")}</th>
                 <th>{t("transactions.status")}</th>
-                <th>{t("transactions.action")}</th>
+                <th>
+                  <span className="transactions-table__action-label">{t("transactions.action")}</span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -831,10 +907,7 @@ export function TransactionsPage() {
                   <td>{new Date(tx.created_at).toLocaleString()}</td>
                   <td>{formatTransactionType(tx, userWalletIds, t)}</td>
                   <td>
-                    <span className="transaction-description">
-                      <span className="transaction-description__text">{tx.description}</span>
-                      {tx.category && <CategoryIcon category={tx.category} />}
-                    </span>
+                    <TransactionDescription category={tx.category} description={tx.description} />
                   </td>
                   <td className={isIncomingOnly(tx, userWalletIds) ? "transaction-amount--in" : "transaction-amount--out"}>
                     {formatAmount(tx, userWalletIds)}
@@ -842,19 +915,49 @@ export function TransactionsPage() {
                   <td>{t(`common.status.${tx.status}`, { defaultValue: tx.status })}</td>
                   <td>
                     <div className="transaction-actions">
-                      {tx.status === "COMPLETED" && isSplittable(tx) ? (
-                        <button className="button--ghost button--wide" onClick={() => openSplit(tx)} type="button">
-                          {t("transactions.splitBill")}
+                      {/* First slot, and the only one that is filled on every
+                          completed row: every other action applies to a
+                          subset, so putting them first would leave the
+                          column's leading position empty most of the time. */}
+                      {tx.status === "COMPLETED" ? (
+                        <button
+                          aria-label={t("transactions.downloadPaymentProof")}
+                          className="button--ghost button--round"
+                          disabled={proofActionId === tx.id}
+                          onClick={() => void downloadPaymentProof(tx)}
+                          title={t("transactions.downloadPaymentProof")}
+                          type="button"
+                        >
+                          <Receipt size={16} />
                         </button>
                       ) : (
-                        <span className="button--ghost button--wide transaction-actions__placeholder" aria-hidden="true" />
+                        <span className="button--ghost button--round transaction-actions__placeholder" aria-hidden="true" />
                       )}
                       {tx.status === "COMPLETED" && isFolderEligible(tx) ? (
-                        <button className="button--ghost button--wide" onClick={() => openFolderModal(tx)} type="button">
-                          {t("transactions.addToFolder")}
+                        <button
+                          aria-label={t("transactions.addToFolder")}
+                          className="button--ghost button--round"
+                          onClick={() => openFolderModal(tx)}
+                          title={t("transactions.addToFolder")}
+                          type="button"
+                        >
+                          <Folder size={16} />
                         </button>
                       ) : (
-                        <span className="button--ghost button--wide transaction-actions__placeholder" aria-hidden="true" />
+                        <span className="button--ghost button--round transaction-actions__placeholder" aria-hidden="true" />
+                      )}
+                      {tx.status === "COMPLETED" && isSplittable(tx) ? (
+                        <button
+                          aria-label={t("transactions.splitBill")}
+                          className="button--ghost button--round"
+                          onClick={() => openSplit(tx)}
+                          title={t("transactions.splitBill")}
+                          type="button"
+                        >
+                          <Users size={16} />
+                        </button>
+                      ) : (
+                        <span className="button--ghost button--round transaction-actions__placeholder" aria-hidden="true" />
                       )}
                       {/* Card payments only: nothing else reaches the
                           Analytics donut or a budget, so the button would

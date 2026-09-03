@@ -197,6 +197,62 @@ def test_bulk_transfer_history_groups_rows_by_batch(client, db_session):
     assert batches[0]["batch_reference"] != batches[1]["batch_reference"]
 
 
+def test_bulk_transfer_batch_rows_returns_individual_transactions(client, db_session):
+    sender = _register(client, "bulk-batch-rows@example.com", "+40750999997")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("1000.00"))
+
+    client.post(
+        "/api/v1/payments/transfers/bulk",
+        headers=_auth_header(sender),
+        json={
+            "source_wallet_id": str(source_wallet.id),
+            "currency": "RON",
+            "rows": [
+                {"beneficiary_name": "Ana", "iban": "RO49AAAA1B31007593840001", "amount": "100.00"},
+                {"beneficiary_name": "Bogdan", "iban": "RO49AAAA1B31007593840002", "amount": "50.00"},
+            ],
+        },
+    )
+
+    history = client.get("/api/v1/payments/transfers/bulk/history", headers=_auth_header(sender))
+    batch_reference = history.json()[0]["batch_reference"]
+
+    response = client.get(
+        f"/api/v1/payments/transfers/bulk/history/{batch_reference}", headers=_auth_header(sender)
+    )
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert len(rows) == 2
+    assert {row["amount"] for row in rows} == {"100.00", "50.00"}
+    assert all("Ana" in row["description"] or "Bogdan" in row["description"] for row in rows)
+
+
+def test_bulk_transfer_batch_rows_rejects_other_users_batch(client, db_session):
+    sender = _register(client, "bulk-batch-rows-owner@example.com", "+40750999996")
+    other = _register(client, "bulk-batch-rows-other@example.com", "+40750999995")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("1000.00"))
+
+    client.post(
+        "/api/v1/payments/transfers/bulk",
+        headers=_auth_header(sender),
+        json={
+            "source_wallet_id": str(source_wallet.id),
+            "currency": "RON",
+            "rows": [{"beneficiary_name": "Ana", "iban": "RO49AAAA1B31007593840001", "amount": "100.00"}],
+        },
+    )
+    history = client.get("/api/v1/payments/transfers/bulk/history", headers=_auth_header(sender))
+    batch_reference = history.json()[0]["batch_reference"]
+
+    response = client.get(
+        f"/api/v1/payments/transfers/bulk/history/{batch_reference}", headers=_auth_header(other)
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_bulk_transfer_history_excludes_single_iban_transfers(client, db_session):
     sender = _register(client, "single-not-batch@example.com", "+40750999998")
     source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("500.00"))
@@ -437,3 +493,72 @@ def test_iban_transfer_to_an_easyb_wallet_in_another_currency_is_refused(client,
     db_session.refresh(recipient_wallet)
     assert source_wallet.available_balance == Decimal("500.00")  # nothing left the sender
     assert recipient_wallet.available_balance == Decimal("10.00")
+
+
+def test_bic_is_recorded_in_the_description_for_a_non_iban_account(client, db_session):
+    # Accounts outside the IBAN registry are routed by BIC. There is no
+    # column for it, so the service folds it into the description, which is
+    # what the statement and the payment confirmation both read.
+    sender = _register(client, "bic-sender@example.com", "+40750444441")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("500.00"))
+
+    response = client.post(
+        "/api/v1/payments/transfers/iban",
+        headers=_auth_header(sender),
+        json={
+            "beneficiary_name": "Maria Dinu",
+            "iban": "US1234567890",
+            "bic": "chasus33",
+            "source_wallet_id": str(source_wallet.id),
+            "amount": "25.00",
+            "currency": "RON",
+        },
+    )
+
+    assert response.status_code == 201
+    # Normalised, so a lowercase paste does not end up on the document.
+    assert response.json()["description"] == "Transfer to Maria Dinu - US1234567890 (BIC: CHASUS33)"
+
+
+def test_bic_is_appended_to_a_description_the_user_wrote(client, db_session):
+    sender = _register(client, "bic-desc@example.com", "+40750444442")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("500.00"))
+
+    response = client.post(
+        "/api/v1/payments/transfers/iban",
+        headers=_auth_header(sender),
+        json={
+            "beneficiary_name": "Maria Dinu",
+            "iban": "US1234567890",
+            "bic": "CHASUS33XXX",
+            "source_wallet_id": str(source_wallet.id),
+            "amount": "25.00",
+            "currency": "RON",
+            "description": "Invoice 4471",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["description"] == "Invoice 4471 (BIC: CHASUS33XXX)"
+
+
+def test_a_transfer_without_a_bic_is_unchanged(client, db_session):
+    # The field is optional and additive: existing callers must be untouched.
+    sender = _register(client, "no-bic@example.com", "+40750444443")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("500.00"))
+
+    response = client.post(
+        "/api/v1/payments/transfers/iban",
+        headers=_auth_header(sender),
+        json={
+            "beneficiary_name": "Maria Dinu",
+            "iban": "RO49AAAA1B31007593840000",
+            "source_wallet_id": str(source_wallet.id),
+            "amount": "25.00",
+            "currency": "RON",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["description"] == "Transfer to Maria Dinu - RO49AAAA1B31007593840000"
+    assert "BIC" not in response.json()["description"]

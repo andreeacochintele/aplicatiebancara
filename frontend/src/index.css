@@ -768,6 +768,13 @@ label {
   text-align: right;
 }
 
+/* A hint pointing at a problem rather than explaining the field. Advisory
+   only — these never block the form, so it is deliberately the warning
+   colour and not the error red used for failed submissions. */
+.field-hint--warn {
+  color: var(--color-warning);
+}
+
 .country-select {
   position: relative;
 }
@@ -1596,14 +1603,28 @@ th {
   overflow-x: auto;
 }
 
+/* Four equal icon slots: split bill, add to folder, change category, payment
+   confirmation. All icon-only — the labels live in title/aria-label, which is
+   what lets this column be a fifth of the table instead of a third. Gap is
+   tighter than the old labelled buttons wanted: these read as one cluster of
+   related actions, not four separate controls. */
 .transaction-actions {
   display: grid;
-  /* Third slot is the round change-category button, which is icon-sized
-     rather than label-sized. */
-  grid-template-columns: 140px 140px 36px;
-  gap: 1.5rem;
+  grid-template-columns: repeat(4, 36px);
+  gap: 0.75rem;
   justify-content: end;
   align-items: center;
+}
+
+/* Centres the ACTION header over the buttons instead of over the last one.
+   The button group is packed against the right edge of its cell, so a box of
+   exactly the group's width, right-aligned in the header cell, lines the two
+   up — then the label just centres inside it. Must stay in step with
+   .transaction-actions above: same track count, same gap. */
+.transactions-table__action-label {
+  display: inline-block;
+  width: calc(4 * 36px + 3 * 0.75rem);
+  text-align: center;
 }
 
 /* Icon-only action: a circle, sized independently of .button--wide's
@@ -1618,8 +1639,14 @@ th {
   place-items: center;
 }
 
+/* Block-level flex, not inline-flex: an inline-level box in this cell is
+   shrink-to-fit, and measured 511px wide inside a 208px cell — it simply
+   overflowed and let the cell's own `overflow: hidden` do the cutting. The
+   text span therefore never shrank, so scrollWidth always equalled
+   clientWidth and the "is this truncated?" check below could never fire.
+   As a block, the container fills the cell and the text shrinks for real. */
 .transaction-description {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 0.45rem;
   min-width: 0;
@@ -1629,6 +1656,51 @@ th {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+}
+
+/* Expanding grows the row downward rather than the column sideways, so the
+   rest of the table stays put. align-items moves to the top so the category
+   glyph and the toggle sit on the first line of a wrapped description. */
+.transaction-description--expanded {
+  align-items: flex-start;
+}
+
+.transaction-description--expanded .transaction-description__text {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  /* Descriptions carry loan UUIDs, which are longer than this column is
+     wide and would otherwise overflow the cell instead of wrapping. */
+  overflow-wrap: break-word;
+}
+
+/* Deliberately quiet: it repeats on every long row, so it reads as a hint
+   rather than an action. Resets the accent-filled base `button` styling. */
+.transaction-description__toggle {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--color-text-muted);
+  opacity: 0.7;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.transaction-description__toggle:hover {
+  background: var(--color-surface-raised);
+  border-color: transparent;
+  color: var(--color-text);
+  opacity: 1;
+}
+
+.transaction-description--expanded .transaction-description__toggle svg {
+  transform: rotate(180deg);
 }
 
 /* Keeps the glyph from being pushed out by a long description — the label
@@ -1677,7 +1749,7 @@ th {
   background: var(--color-accent-soft);
 }
 
-/* Same box model as a real .button--ghost.button--wide, just invisible --
+/* Same box model as a real .button--ghost.button--round, just invisible --
    guarantees an empty action slot takes up exactly as much height as a
    real button, so row height never depends on which buttons a row has.
    It's a <span>, not a <button>, so it needs its own border/radius: the
@@ -1698,17 +1770,25 @@ th {
 
 .transactions-table th:nth-child(1),
 .transactions-table td:nth-child(1) {
-  width: 16%;
+  width: 18%;
 }
 
 .transactions-table th:nth-child(2),
 .transactions-table td:nth-child(2) {
-  width: 12%;
+  width: 15%;
 }
 
+/* Roughly half its old 27%: descriptions were the widest column on the page
+   while being the least scannable. The full text is one click away via
+   .transaction-description__toggle, so nothing is lost by cutting it here.
+   Truncated text always reaches the very edge of this column, so the gutter
+   to the amount has to be built from padding on both sides — 2.25rem here
+   plus 2.25rem on the amount. Without it the ellipsis and the expand chevron sit
+   right on top of the number and the two columns read as one block. */
 .transactions-table th:nth-child(3),
 .transactions-table td:nth-child(3) {
-  width: 27%;
+  width: 17%;
+  padding-right: 2.25rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1716,17 +1796,24 @@ th {
 
 .transactions-table th:nth-child(4),
 .transactions-table td:nth-child(4) {
-  width: 11%;
+  width: 16%;
+  padding-left: 2.25rem;
 }
 
+/* Nudged clear of the amount: statuses are short words with a lot of empty
+   cell after them, so without this the column reads as glued to the number
+   on its left. */
 .transactions-table th:nth-child(5),
 .transactions-table td:nth-child(5) {
-  width: 11%;
+  width: 14%;
+  padding-left: 1.75rem;
 }
 
+/* The button group inside is a fixed 180px and cannot shrink, so this column
+   has to stay wide enough to hold it plus its own right padding. */
 .transactions-table th:nth-child(6),
 .transactions-table td:nth-child(6) {
-  width: 23%;
+  width: 20%;
   text-align: right;
   padding-right: 1.75rem;
 }
