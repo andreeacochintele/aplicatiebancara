@@ -852,14 +852,16 @@ export function WalletsPage() {
                   placeholder="MM/YY"
                 />
               </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, width: 120, flex: "0 0 120px" }}>
                 {t("wallets.cardCvv")}
                 <input
                   inputMode="numeric"
-                  autoComplete="off"
+                  autoComplete="new-password"
                   maxLength={3}
                   value={topUpCvv}
                   onChange={(e) => setTopUpCvv(e.target.value.replace(/\D/g, "").slice(0, 3))}
+                  placeholder="•••"
+                  style={{ boxSizing: "border-box", textAlign: "center", letterSpacing: "0.2em", width: "100%" }}
                 />
               </label>
             </div>
