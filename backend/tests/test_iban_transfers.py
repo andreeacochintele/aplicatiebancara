@@ -154,6 +154,71 @@ def test_bulk_transfer_can_save_beneficiaries(client, db_session):
     assert saved.iban == "RO49AAAA1B31007593840009"
 
 
+def test_bulk_transfer_history_groups_rows_by_batch(client, db_session):
+    sender = _register(client, "bulk-history@example.com", "+40750999999")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("1000.00"))
+
+    client.post(
+        "/api/v1/payments/transfers/bulk",
+        headers=_auth_header(sender),
+        json={
+            "source_wallet_id": str(source_wallet.id),
+            "currency": "RON",
+            "rows": [
+                {"beneficiary_name": "Ana", "iban": "RO49AAAA1B31007593840001", "amount": "100.00"},
+                {"beneficiary_name": "Bogdan", "iban": "RO49AAAA1B31007593840002", "amount": "50.00"},
+            ],
+        },
+    )
+    client.post(
+        "/api/v1/payments/transfers/bulk",
+        headers=_auth_header(sender),
+        json={
+            "source_wallet_id": str(source_wallet.id),
+            "currency": "RON",
+            "rows": [
+                {"beneficiary_name": "Costel", "iban": "RO49AAAA1B31007593840003", "amount": "20.00"},
+            ],
+        },
+    )
+
+    response = client.get("/api/v1/payments/transfers/bulk/history", headers=_auth_header(sender))
+
+    assert response.status_code == 200
+    batches = response.json()
+    assert len(batches) == 2
+    # Newest batch first.
+    assert batches[0]["row_count"] == 1
+    assert batches[0]["completed_count"] == 1
+    assert batches[0]["total_amount"] == "20.00"
+    assert batches[1]["row_count"] == 2
+    assert batches[1]["completed_count"] == 2
+    assert batches[1]["total_amount"] == "150.00"
+    assert batches[0]["batch_reference"] != batches[1]["batch_reference"]
+
+
+def test_bulk_transfer_history_excludes_single_iban_transfers(client, db_session):
+    sender = _register(client, "single-not-batch@example.com", "+40750999998")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("500.00"))
+
+    client.post(
+        "/api/v1/payments/transfers/iban",
+        headers=_auth_header(sender),
+        json={
+            "beneficiary_name": "Test",
+            "iban": "RO49AAAA1B31007593840099",
+            "source_wallet_id": str(source_wallet.id),
+            "amount": "10.00",
+            "currency": "RON",
+        },
+    )
+
+    response = client.get("/api/v1/payments/transfers/bulk/history", headers=_auth_header(sender))
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_bulk_transfer_does_not_flag_itself_via_velocity_alone(client, db_session):
     """15 external transfers in one submit, same amount, same shape that
     used to trip HIGH_VELOCITY on the 15th row on its own (14 prior + this

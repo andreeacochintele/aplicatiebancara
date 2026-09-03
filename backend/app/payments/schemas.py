@@ -102,6 +102,17 @@ class BulkTransferResult(BaseModel):
     results: list[BulkTransferRowResult]
 
 
+class BulkTransferBatchSummary(BaseModel):
+    batch_reference: str
+    created_at: datetime
+    currency: str
+    total_amount: Decimal
+    row_count: int
+    completed_count: int
+    pending_review_count: int
+    other_count: int
+
+
 class IbanTransferQuoteCreate(BaseModel):
     source_wallet_id: uuid.UUID
     amount: Decimal

@@ -164,6 +164,7 @@ class TransactionService:
                 currency=source.currency,
                 description=data.description,
                 processed_at=datetime.now(timezone.utc),
+                batch_reference=batch_reference,
             )
         )
 
@@ -221,6 +222,7 @@ class TransactionService:
                 fx_quote_id=quote.id,
                 description=data.description,
                 processed_at=datetime.now(timezone.utc),
+                batch_reference=batch_reference,
             )
         )
         # The quote is consumed by the attempt itself, held or not: the

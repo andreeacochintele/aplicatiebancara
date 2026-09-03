@@ -441,7 +441,17 @@
     "submitting": "Se trimite...",
     "submitFailed": "Lotul nu a putut fi trimis",
     "resultsTitle": "{{succeeded}} reușite, {{failed}} eșuate",
-    "failed": "Eșuat"
+    "failed": "Eșuat",
+    "historyTitle": "Istoric loturi",
+    "loading": "Se încarcă...",
+    "date": "Dată",
+    "rows": "Rânduri",
+    "batchAllCompleted": "Toate finalizate",
+    "batchPendingReview_one": "{{count}} în verificare",
+    "batchPendingReview_few": "{{count}} în verificare",
+    "batchPendingReview_other": "{{count}} în verificare",
+    "batchNeedsAttention": "Necesită atenție",
+    "noHistoryYet": "Niciun lot de plăți trimis încă."
   },
   "businessProfile": {
     "onlyForBusiness": "Profilul companiei este disponibil doar pentru conturi business.",

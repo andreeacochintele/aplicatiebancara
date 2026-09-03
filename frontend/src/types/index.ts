@@ -257,6 +257,17 @@ export interface BulkTransferResult {
   results: BulkTransferRowResult[];
 }
 
+export interface BulkTransferBatchSummary {
+  batch_reference: string;
+  created_at: string;
+  currency: string;
+  total_amount: string;
+  row_count: number;
+  completed_count: number;
+  pending_review_count: number;
+  other_count: number;
+}
+
 export type BillSplitStatus = "OPEN" | "SETTLED" | "CANCELLED";
 export type BillSplitParticipantStatus = "PENDING" | "PAID" | "DECLINED";
 

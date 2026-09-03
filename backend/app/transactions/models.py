@@ -79,6 +79,13 @@ class Transaction(Base):
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     category_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     fraud_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # Set only when this row came from one multi-row submit
+    # (IbanTransferService.create_bulk_transfer) — every row of that same
+    # submit shares this value, letting the Bulk Transfer page list past
+    # batches. Same value as any FraudCase.batch_reference this row's own
+    # screening produced (fraud/models.py), but stored independently since
+    # most rows never create a FraudCase at all. NULL for anything else.
+    batch_reference: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

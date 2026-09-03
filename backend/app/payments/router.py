@@ -14,6 +14,7 @@ from app.payments.schemas import (
     BillSplitCreate,
     BillSplitPay,
     BillSplitPublic,
+    BulkTransferBatchSummary,
     BulkTransferCreate,
     BulkTransferResult,
     IbanTransferCreate,
@@ -78,6 +79,14 @@ def create_bulk_transfer(
     result = IbanTransferService(db).create_bulk_transfer(current_user.id, payload)
     db.commit()
     return result
+
+
+@router.get("/transfers/bulk/history", response_model=list[BulkTransferBatchSummary])
+def list_bulk_transfer_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[BulkTransferBatchSummary]:
+    return IbanTransferService(db).list_bulk_transfer_batches(current_user.id)
 
 
 @router.post("/phone/lookup", response_model=PhoneRecipientPreview)
