@@ -84,6 +84,7 @@
     "businessBatchHistory": "Batch History",
     "businessRecurringTemplates": "Recurring Templates",
     "creditAndLoans": "Credit & Loans",
+    "businessVerification": "Business Verification (KYB)",
     "fraudReview": "Fraud Review",
     "auditLog": "Audit Log",
     "reconciliation": "Reconciliation"
@@ -501,7 +502,31 @@
     "saving": "Saving…",
     "createCompany": "Create company",
     "save": "Save",
-    "saved": "Saved."
+    "saved": "Saved.",
+    "verificationStatus": {
+      "PENDING_VERIFICATION": "Pending verification",
+      "VERIFIED": "Verified",
+      "REJECTED": "Rejected"
+    },
+    "rejectionReasonLabel": "Rejection reason",
+    "documentsTitle": "KYB documents (Know Your Business)",
+    "documentsNote": "To verify the company, upload the documents below. An admin will review them and approve or reject the company.",
+    "documentType": {
+      "REGISTRATION_CERTIFICATE": "Registration certificate (trade registry)",
+      "ARTICLES_OF_ASSOCIATION": "Articles of association",
+      "LEGAL_REPRESENTATIVE_ID": "Legal representative ID",
+      "PROOF_OF_ADDRESS": "Proof of registered address"
+    },
+    "optional": "optional",
+    "uploadDocument": "Upload",
+    "uploading": "Uploading…",
+    "noDocumentYet": "No document uploaded yet.",
+    "documentStatus": {
+      "UPLOADED": "Under review",
+      "APPROVED": "Approved",
+      "REJECTED": "Rejected"
+    },
+    "documentUploadFailed": "The document could not be uploaded."
   },
   "transactions": {
     "bankToUser": "Bank -> user",
@@ -709,6 +734,22 @@
     "creditAndLoans": "Credit & Loans",
     "creditAndLoansDescription": "Review loan and credit card applications, documents and credit scores.",
     "pendingApplications": "pending applications",
+    "or": "or",
+    "businessVerification": {
+      "title": "Business Verification (KYB)",
+      "pendingCount": "{{count}} pending",
+      "noProfiles": "No company profiles yet.",
+      "taxId": "Tax ID",
+      "registrationNumber": "Registration no.",
+      "noDocumentsUploaded": "No documents uploaded yet.",
+      "missingDocuments": "{{count}} required document(s) missing",
+      "verifyCompany": "Verify company",
+      "rejectCompany": "Reject",
+      "rejectionReasonPlaceholder": "Reason for rejection",
+      "rejectionReasonRequired": "A rejection reason is required.",
+      "couldNotReviewDocument": "Could not review the document.",
+      "couldNotDecideProfile": "Could not save the verification decision."
+    },
     "fraudReview": "Fraud Review",
     "fraudReviewDescription": "Investigate held transactions flagged by the fraud engine and decide their outcome.",
     "pendingCases": "pending cases",

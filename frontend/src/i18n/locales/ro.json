@@ -84,6 +84,7 @@
     "businessBatchHistory": "Istoric loturi",
     "businessRecurringTemplates": "Șabloane recurente",
     "creditAndLoans": "Credit și împrumuturi",
+    "businessVerification": "Verificare firme (KYB)",
     "fraudReview": "Verificare fraudă",
     "auditLog": "Jurnal de audit",
     "reconciliation": "Reconciliere"
@@ -503,7 +504,31 @@
     "saving": "Se salvează…",
     "createCompany": "Creează compania",
     "save": "Salvează",
-    "saved": "Salvat."
+    "saved": "Salvat.",
+    "verificationStatus": {
+      "PENDING_VERIFICATION": "În verificare",
+      "VERIFIED": "Verificată",
+      "REJECTED": "Respinsă"
+    },
+    "rejectionReasonLabel": "Motiv respingere",
+    "documentsTitle": "Documente KYB (cunoașterea clientelei)",
+    "documentsNote": "Pentru verificarea firmei, încarcă documentele de mai jos. Un administrator le va analiza și va aproba sau respinge compania.",
+    "documentType": {
+      "REGISTRATION_CERTIFICATE": "Certificat de înregistrare (ONRC)",
+      "ARTICLES_OF_ASSOCIATION": "Act constitutiv",
+      "LEGAL_REPRESENTATIVE_ID": "Act de identitate reprezentant legal",
+      "PROOF_OF_ADDRESS": "Dovadă sediu social"
+    },
+    "optional": "opțional",
+    "uploadDocument": "Încarcă",
+    "uploading": "Se încarcă…",
+    "noDocumentYet": "Niciun document încărcat încă.",
+    "documentStatus": {
+      "UPLOADED": "În analiză",
+      "APPROVED": "Aprobat",
+      "REJECTED": "Respins"
+    },
+    "documentUploadFailed": "Documentul nu a putut fi încărcat."
   },
   "transactions": {
     "bankToUser": "Bancă -> utilizator",
@@ -711,6 +736,22 @@
     "creditAndLoans": "Credit și împrumuturi",
     "creditAndLoansDescription": "Verifică cererile de împrumut și card de credit, documentele și scorurile de credit.",
     "pendingApplications": "cereri în așteptare",
+    "or": "sau",
+    "businessVerification": {
+      "title": "Verificare firme (KYB)",
+      "pendingCount": "{{count}} în așteptare",
+      "noProfiles": "Niciun profil de firmă încă.",
+      "taxId": "Cod fiscal",
+      "registrationNumber": "Nr. de înregistrare",
+      "noDocumentsUploaded": "Niciun document încărcat încă.",
+      "missingDocuments": "Lipsesc {{count}} document(e) obligatorii",
+      "verifyCompany": "Verifică firma",
+      "rejectCompany": "Respinge",
+      "rejectionReasonPlaceholder": "Motivul respingerii",
+      "rejectionReasonRequired": "Motivul respingerii este obligatoriu.",
+      "couldNotReviewDocument": "Documentul nu a putut fi revizuit.",
+      "couldNotDecideProfile": "Decizia de verificare nu a putut fi salvată."
+    },
     "fraudReview": "Verificare fraudă",
     "fraudReviewDescription": "Investighează tranzacțiile reținute semnalate de motorul de fraudă și decide rezultatul.",
     "pendingCases": "cazuri în așteptare",
