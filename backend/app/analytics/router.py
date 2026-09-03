@@ -1,6 +1,7 @@
 """Analytics endpoints, scoped to the authenticated user."""
+import calendar
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from app.analytics.schemas import (
 )
 from app.analytics.service import AnalyticsService
 from app.auth.dependencies import get_current_user
+from app.core.exceptions import ValidationError
 from app.database import get_db
 from app.users.models import User
 
@@ -109,6 +111,8 @@ def get_balance_history(
 @router.get("/insights", response_model=list[AIInsightPublic])
 def get_insights(
     refresh: bool = Query(default=False),
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
     locale: str = Depends(get_locale),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -116,13 +120,31 @@ def get_insights(
     """Lazily regenerates (Azure call + AnalyticsService.spending_recommendations())
     only when this user's cached insights are missing or older than
     ai.personal_finance.insights.INSIGHT_TTL - see that module's docstring.
-    refresh=True (the dashboard's refresh button) bypasses the TTL. A
-    regeneration narrates in the site's current language (X-Locale header,
-    see ai/locale.py) — a cached row keeps whatever language it was
-    generated in until it's regenerated."""
-    result = ai_insights.get_or_generate(db, current_user.id, force=refresh, locale=locale)
+    refresh=True (the dashboard's refresh button) bypasses the TTL.
+
+    year/month (the app-wide month selector, same convention as
+    spending-by-type/spending-by-category) score against the end of that
+    month instead of live now — get_or_generate() detects whether that's
+    still the real current month (TTL-cached, refreshes live) or a closed
+    past month (generated once, cached forever, since its figures can't
+    change). Omit both for the current month.
+
+    A regeneration narrates in the site's current language (X-Locale
+    header, see ai/locale.py) — a cached row keeps whatever language it
+    was generated in until it's regenerated."""
+    as_of = _end_of_month(year, month) if year is not None or month is not None else None
+    result = ai_insights.get_or_generate(db, current_user.id, force=refresh, locale=locale, as_of=as_of)
     db.commit()
     return result
+
+
+def _end_of_month(year: int | None, month: int | None) -> datetime:
+    if (year is None) != (month is None):
+        raise ValidationError("year and month must be provided together")
+    if not 1 <= month <= 12:
+        raise ValidationError("month must be between 1 and 12")
+    days_in_month = calendar.monthrange(year, month)[1]
+    return datetime(year, month, days_in_month, 23, 59, 59, 999999, tzinfo=timezone.utc)
 
 
 @router.post("/insights/{insight_id}/dismiss", status_code=204)

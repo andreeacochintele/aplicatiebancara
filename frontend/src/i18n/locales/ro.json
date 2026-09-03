@@ -955,9 +955,7 @@
     "couldNotLoad": "Analiza ta nu a putut fi încărcată.",
     "tryAgain": "Încearcă din nou",
     "vsAgo": "față de acum {{period}}",
-    "vsMonthStart": "față de 1 ale lunii",
-    "recommendationsCurrentOnly": "Acestea acoperă mereu perioada curentă, nu luna pe care o vezi.",
-    "backToCurrentMonth": "Înapoi la {{month}}"
+    "vsMonthStart": "față de 1 ale lunii"
   },
   "rewards": {
     "oneTime": "O singură dată",

@@ -181,22 +181,36 @@ def _phrase_flag(flag: CategorySpendingFlag, locale: str = "ro") -> str:
     return content
 
 
-def generate_and_store(db: Session, user_id: uuid.UUID, locale: str = "ro") -> list[AIInsight]:
+def _period_key(dt: datetime) -> str:
+    return f"{dt.year:04d}-{dt.month:02d}"
+
+
+def generate_and_store(
+    db: Session, user_id: uuid.UUID, locale: str = "ro", as_of: datetime | None = None
+) -> list[AIInsight]:
     """Always writes at least one row, even when nothing is flagged — a
-    quiet week still needs a fresh created_at so get_or_generate() doesn't
+    quiet period still needs a fresh created_at so get_or_generate() doesn't
     re-check (and re-call Azure) on every request for a user with no
-    notable spending changes. Supersedes (dismisses) whatever the
-    previous batch left active first, so a regeneration replaces it
-    rather than piling new rows on top of stale ones."""
+    notable spending changes. Supersedes (dismisses) whatever the previous
+    batch for this same period_key left active first, so a regeneration
+    replaces it rather than piling new rows on top of stale ones — a
+    different period's already-cached batch is untouched.
+
+    `as_of` (defaults to now) is both the reference point
+    spending_recommendations() scores against AND what decides which
+    period_key this batch is filed under — see get_or_generate()."""
+    target = as_of or datetime.now(timezone.utc)
+    period_key = _period_key(target)
     repository = AIInsightRepository(db)
-    repository.supersede_active_for_user(user_id)
-    flags = tools.get_spending_recommendations(ToolContext(user_id=user_id, db=db))
+    repository.supersede_active_for_user(user_id, period_key)
+    flags = tools.get_spending_recommendations(ToolContext(user_id=user_id, db=db), as_of=target)
 
     if not flags:
         variants = _ALL_CLEAR_MESSAGES.get(locale, _ALL_CLEAR_MESSAGES["ro"])
         insight = repository.add(
             AIInsight(
                 user_id=user_id,
+                period_key=period_key,
                 message=random.choice(variants),
                 category=None,
                 currency=None,
@@ -210,6 +224,7 @@ def generate_and_store(db: Session, user_id: uuid.UUID, locale: str = "ro") -> l
         repository.add(
             AIInsight(
                 user_id=user_id,
+                period_key=period_key,
                 message=_phrase_flag(flag, locale),
                 category=flag.category,
                 currency=flag.currency,
@@ -222,16 +237,46 @@ def generate_and_store(db: Session, user_id: uuid.UUID, locale: str = "ro") -> l
     return created
 
 
-def get_or_generate(db: Session, user_id: uuid.UUID, force: bool = False, locale: str = "ro") -> list[AIInsight]:
+def get_or_generate(
+    db: Session, user_id: uuid.UUID, force: bool = False, locale: str = "ro", as_of: datetime | None = None
+) -> list[AIInsight]:
     """force=True (the Analytics page's refresh button) bypasses the TTL
     and always regenerates, same as a natural TTL expiry would - it does
-    not skip the ledger of what changed, it just triggers early."""
+    not skip the ledger of what changed, it just triggers early. That TTL
+    only applies to the real current month though — a past month's figures
+    never change once the month is closed, so a cached past-month batch is
+    never regenerated automatically just because time passed.
+
+    It IS regenerated if the active list for that period is empty — either
+    nothing was ever generated for it, or the user dismissed every insight
+    from the last batch. Without the second case, dismissing everything in
+    a past month would be a one-way door: no TTL ever brings a closed
+    month's advice back, so the panel would stay permanently empty with no
+    way to see it again. The flags themselves are deterministic (same
+    transactions, same as_of point), so a regeneration here can only ever
+    reproduce the same substance with fresh LLM wording — never new,
+    surprising advice appearing days later, which is the actual cost the
+    permanent-cache design exists to avoid."""
+    now = datetime.now(timezone.utc)
+    target = as_of or now
+    if target > now:
+        target = now  # a future period makes no sense; fall back to now
+    period_key = _period_key(target)
+    is_current_period = period_key == _period_key(now)
+
     repository = AIInsightRepository(db)
-    latest = repository.latest_for_user(user_id)
-    ttl = ALL_CLEAR_TTL if latest is not None and latest.insight_type == "ALL_CLEAR" else INSIGHT_TTL
-    if force or latest is None or _as_aware_utc(latest.created_at) < datetime.now(timezone.utc) - ttl:
-        generate_and_store(db, user_id, locale)
-    return repository.list_active_for_user(user_id)
+    latest = repository.latest_for_user(user_id, period_key)
+
+    if latest is None:
+        generate_and_store(db, user_id, locale, target)
+    elif is_current_period:
+        ttl = ALL_CLEAR_TTL if latest.insight_type == "ALL_CLEAR" else INSIGHT_TTL
+        if force or _as_aware_utc(latest.created_at) < now - ttl:
+            generate_and_store(db, user_id, locale, target)
+    elif force or not repository.list_active_for_user(user_id, period_key, limit=1):
+        generate_and_store(db, user_id, locale, target)
+
+    return repository.list_active_for_user(user_id, period_key)
 
 
 def dismiss(db: Session, user_id: uuid.UUID, insight_id: uuid.UUID) -> None:

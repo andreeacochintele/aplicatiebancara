@@ -51,7 +51,9 @@ def get_spending_by_category(ctx: ToolContext) -> SpendingByTypeResponse:
 
 
 @log_tool_call
-def get_spending_recommendations(ctx: ToolContext) -> list[CategorySpendingFlag]:
+def get_spending_recommendations(
+    ctx: ToolContext, as_of: datetime | None = None
+) -> list[CategorySpendingFlag]:
     """Real per-category spend, unlike get_spending_by_category above —
     reuses AnalyticsService.spending_recommendations(), which groups by
     the paying merchant's own category and only returns categories that
@@ -59,8 +61,9 @@ def get_spending_recommendations(ctx: ToolContext) -> list[CategorySpendingFlag]
     concentration threshold. Used by insights.py to phrase the Analytics
     dashboard's "Spending recommendations" panel; the LLM only phrases
     what this tool already decided to flag, never which categories to
-    flag (CLAUDE.md §12)."""
-    return AnalyticsService(ctx.db).spending_recommendations(ctx.user_id)
+    flag (CLAUDE.md §12). `as_of` scores against a past moment instead of
+    live now — see insights.py's per-period caching."""
+    return AnalyticsService(ctx.db).spending_recommendations(ctx.user_id, as_of)
 
 
 @log_tool_call

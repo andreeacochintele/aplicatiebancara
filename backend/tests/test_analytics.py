@@ -883,3 +883,76 @@ def test_a_recategorised_payment_moves_between_budgets_too(db_session, seeded_us
 
     assert budgets.spent_amount(user.id, "Entertainment", "RON", period_start, period_end) == Decimal("0")
     assert budgets.spent_amount(user.id, "Food", "RON", period_start, period_end) == Decimal("50.00")
+
+
+# ---- spending_recommendations(as_of=...): lets a caller score against a
+# past moment instead of live "now" — see ai/personal_finance/insights.py's
+# per-period caching for a closed month.
+
+
+def test_spending_recommendations_as_of_scores_against_the_given_moment_not_live_now(
+    db_session, seeded_user_with_wallet,
+):
+    from app.merchants.models import Merchant
+
+    user, wallet = seeded_user_with_wallet
+    now = datetime.now(timezone.utc)
+    past = now - timedelta(days=200)
+    cinema = Merchant(name="Cinema City", category="Entertainment", verified=True)
+    db_session.add(cinema)
+    db_session.flush()
+
+    # A clear week-over-week spike, anchored around `past`, not `now`. The
+    # second transaction is a moment before `past` itself (not exactly
+    # `past`) since _category_totals()'s upper bound is exclusive — a
+    # transaction dated exactly at the "as_of" instant would be excluded.
+    _add_transaction(
+        db_session, user, wallet, TransactionType.CARD_PAYMENT, "100.00", TransactionStatus.COMPLETED,
+        past - timedelta(days=10), merchant_id=cinema.id,
+    )
+    _add_transaction(
+        db_session, user, wallet, TransactionType.CARD_PAYMENT, "200.00", TransactionStatus.COMPLETED,
+        past - timedelta(hours=1), merchant_id=cinema.id,
+    )
+
+    # Scored against live "now" (the default), that spike is ~200 days
+    # outside every rolling window, so nothing is flagged.
+    assert AnalyticsService(db_session).spending_recommendations(user.id) == []
+
+    # Scored as_of `past`, the exact same data flags it.
+    flags = AnalyticsService(db_session).spending_recommendations(user.id, as_of=past)
+    entertainment = next(f for f in flags if f.category == "Entertainment")
+    assert "WEEK_OVER_WEEK_INCREASE" in entertainment.reasons
+
+
+# ---- analytics/router.py's _end_of_month(): the app-wide month selector's
+# year/month, converted into the moment spending recommendations should be
+# scored as_of.
+
+
+def test_end_of_month_returns_the_last_instant_of_the_given_month():
+    from app.analytics.router import _end_of_month
+
+    assert _end_of_month(2026, 4) == datetime(2026, 4, 30, 23, 59, 59, 999999, tzinfo=timezone.utc)
+
+
+def test_end_of_month_handles_a_leap_february():
+    from app.analytics.router import _end_of_month
+
+    assert _end_of_month(2028, 2) == datetime(2028, 2, 29, 23, 59, 59, 999999, tzinfo=timezone.utc)
+
+
+def test_end_of_month_requires_year_and_month_together():
+    from app.analytics.router import _end_of_month
+
+    with pytest.raises(ValidationError):
+        _end_of_month(2026, None)
+    with pytest.raises(ValidationError):
+        _end_of_month(None, 4)
+
+
+def test_end_of_month_rejects_an_out_of_range_month():
+    from app.analytics.router import _end_of_month
+
+    with pytest.raises(ValidationError):
+        _end_of_month(2026, 13)

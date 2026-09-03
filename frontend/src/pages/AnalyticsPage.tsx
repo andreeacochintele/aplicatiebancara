@@ -437,9 +437,7 @@ function SavingsMoneyModal({
 
 export function AnalyticsPage() {
   const { t, i18n } = useTranslation();
-  const { query: periodQuery, period, choices, setPeriod, isCurrentMonth } = usePeriod();
-  // choices is newest-first, so the head is always the real current month.
-  const currentMonth = choices[0];
+  const { query: periodQuery, period, isCurrentMonth } = usePeriod();
   const { accessToken, user } = useAuth();
   const isBusiness = user?.user_type === "BUSINESS";
   const [netWorth, setNetWorth] = useState<NetWorthResponse | null>(null);
@@ -486,12 +484,6 @@ export function AnalyticsPage() {
     apiRequest<SavingsGoal[]>("/savings", { token: accessToken })
       .then((data) => !cancelled && setSavingsGoals(data))
       .catch(() => !cancelled && setSavingsGoals([]));
-    // Cache-miss (first load in 24h) can take a while - a real Azure call
-    // per flagged category, see ai/personal_finance/insights.py. Kept as
-    // its own isolated promise so it never blocks the rest of the page.
-    apiRequest<AIInsight[]>("/analytics/insights", { token: accessToken })
-      .then((data) => !cancelled && setAiInsights(data))
-      .catch(() => !cancelled && setAiInsights([]));
 
     return () => {
       cancelled = true;
@@ -499,9 +491,14 @@ export function AnalyticsPage() {
   }, [accessToken, reloadTick, isBusiness]);
 
   // Everything the app-wide month selector actually moves, kept in its own
-  // effect rather than merged into the load above: re-running that block on
-  // every month change would also re-request /analytics/insights, which on a
-  // cache miss is a real Azure call per flagged category.
+  // effect rather than merged into the load above so a month change doesn't
+  // re-request the endpoints that never follow it. /analytics/insights is
+  // still isolated from the rest with its own promise even though it's now
+  // here too: a cache-miss (a month viewed for the first time) is a real
+  // Azure call per flagged category, so it must never block the page's other
+  // period-scoped cards while it's in flight. Every other month it's cached
+  // forever (backend/app/ai/personal_finance/insights.py) - only the real
+  // current month re-checks its short TTL on every load.
   useEffect(() => {
     if (!accessToken) return;
     let cancelled = false;
@@ -517,6 +514,10 @@ export function AnalyticsPage() {
     apiRequest<Budget[]>(`/budgets?${periodQuery}`, { token: accessToken })
       .then((data) => !cancelled && setBudgets(data))
       .catch(() => !cancelled && setBudgets([]));
+    setAiInsights(null);
+    apiRequest<AIInsight[]>(`/analytics/insights?${periodQuery}`, { token: accessToken })
+      .then((data) => !cancelled && setAiInsights(data))
+      .catch(() => !cancelled && setAiInsights([]));
 
     return () => {
       cancelled = true;
@@ -1037,26 +1038,12 @@ export function AnalyticsPage() {
               </button>
             )}
           </div>
-          {/* /analytics/insights takes no year/month: every rule behind it is
-              scored against the real today, and its cache is keyed per user
-              rather than per month. Rather than narrate current-period advice
-              beside a past month's figures, the card says so and offers the
-              way back. */}
-          {!isCurrentMonth ? (
-            <>
-              <p className="easyb-tx-meta">{t("analytics.recommendationsCurrentOnly")}</p>
-              <button
-                type="button"
-                className="easyb-link-btn"
-                style={{ fontSize: 12, marginTop: 4 }}
-                onClick={() => setPeriod(currentMonth.value)}
-              >
-                {t("analytics.backToCurrentMonth", {
-                  month: formatPeriodMonth(currentMonth, i18n.language),
-                })}
-              </button>
-            </>
-          ) : aiInsights === null ? (
+          {/* /analytics/insights now takes year/month (same convention as
+              spending-by-category etc.) and scores against the end of that
+              month instead of always live "now" — a past month's batch is
+              generated once and cached forever, since a closed month's
+              figures can't change (see ai/personal_finance/insights.py). */}
+          {aiInsights === null ? (
             <p className="easyb-tx-meta">{t("analytics.checkingSpending")}</p>
           ) : aiInsights.length > 0 ? (
             aiInsights.map((insight) => (

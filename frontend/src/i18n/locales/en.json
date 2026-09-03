@@ -951,9 +951,7 @@
     "couldNotLoad": "We couldn't load your analytics.",
     "tryAgain": "Try again",
     "vsAgo": "vs {{period}} ago",
-    "vsMonthStart": "since the 1st",
-    "recommendationsCurrentOnly": "These always cover the current period, not the month you're viewing.",
-    "backToCurrentMonth": "Back to {{month}}"
+    "vsMonthStart": "since the 1st"
   },
   "rewards": {
     "oneTime": "One-time",

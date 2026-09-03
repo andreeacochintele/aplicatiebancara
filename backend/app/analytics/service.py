@@ -168,7 +168,9 @@ class AnalyticsService:
             return cache[key]
         return (transaction.description or "")[:60]
 
-    def spending_recommendations(self, user_id: uuid.UUID) -> list[CategorySpendingFlag]:
+    def spending_recommendations(
+        self, user_id: uuid.UUID, as_of: datetime | None = None
+    ) -> list[CategorySpendingFlag]:
         """Pure calculation, no AI — see ai/personal_finance/insights.py for
         the LLM phrasing layer that consumes this list. A category is
         flagged when any comparison below crosses its threshold:
@@ -197,8 +199,15 @@ class AnalyticsService:
         crossed a threshold) doesn't appear in the result at all. By
         design, only increases/concentration are flagged — a category
         dropping to zero spend is never surfaced as a recommendation.
+
+        `as_of` lets a caller ask "what would this have flagged as of this
+        moment" instead of right now — see ai/personal_finance/insights.py's
+        per-period caching, which generates one batch as of the end of each
+        past month a user views (and never regenerates it, since a closed
+        month's figures don't change) rather than always scoring against
+        live "now".
         """
-        now = datetime.now(timezone.utc)
+        now = as_of or datetime.now(timezone.utc)
 
         # Rolling windows rather than calendar boundaries. A calendar week
         # (Monday-to-now) or calendar month (1st-to-now) compares a partial
