@@ -1351,23 +1351,27 @@ export function PaymentsPage() {
               />
             </label>
 
-            <label>
-              {t("payments.invoiceReference")}
-              <input
-                onChange={(event) => setQrForm((current) => ({ ...current, reference: event.target.value }))}
-                placeholder="INV-0042"
-                value={qrForm.reference}
-              />
-            </label>
+            {user?.user_type === "BUSINESS" && (
+              <>
+                <label>
+                  {t("payments.invoiceReference")}
+                  <input
+                    onChange={(event) => setQrForm((current) => ({ ...current, reference: event.target.value }))}
+                    placeholder="INV-0042"
+                    value={qrForm.reference}
+                  />
+                </label>
 
-            <label>
-              {t("payments.invoiceNote")}
-              <input
-                onChange={(event) => setQrForm((current) => ({ ...current, note: event.target.value }))}
-                placeholder={t("payments.optional")}
-                value={qrForm.note}
-              />
-            </label>
+                <label>
+                  {t("payments.invoiceNote")}
+                  <input
+                    onChange={(event) => setQrForm((current) => ({ ...current, note: event.target.value }))}
+                    placeholder={t("payments.optional")}
+                    value={qrForm.note}
+                  />
+                </label>
+              </>
+            )}
 
             <button disabled={qrCreating || !qrForm.destination_wallet_id} type="submit">
               {qrCreating ? t("payments.creating") : t("payments.generateRequest")}
