@@ -15,6 +15,7 @@ import type {
   TransactionFolder,
   Wallet,
 } from "../types";
+import { groupDigits } from "../utils";
 
 const FOLDER_NAME_MAX_LENGTH = 40;
 const FOLDER_DESCRIPTION_MAX_LENGTH = 120;
@@ -54,7 +55,7 @@ function isFolderEligible(transaction: Transaction): boolean {
 
 function formatAmount(transaction: Transaction, userWalletIds: Set<string>): string {
   const sign = isIncomingOnly(transaction, userWalletIds) ? "+" : "-";
-  return `${sign}${transaction.amount} ${transaction.currency}`;
+  return `${sign}${groupDigits(transaction.amount)} ${transaction.currency}`;
 }
 
 function formatTransactionType(

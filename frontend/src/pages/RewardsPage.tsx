@@ -23,6 +23,7 @@ import type {
   RewardBenefit,
   Wallet,
 } from "../types";
+import { formatDecimalAmount } from "../utils";
 
 function formatCardTierLabel(tier: CardTier | null, t: (key: string) => string): string {
   return tier ? tier[0] + tier.slice(1).toLowerCase() : t("rewards.oneTime");
@@ -207,10 +208,7 @@ export function RewardsPage() {
 
   function cardFundingLabel(card: Card): string {
     if (card.type === "CREDIT") {
-      const availableCredit = Number(card.credit_account?.available_credit ?? 0).toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
+      const availableCredit = formatDecimalAmount(Number(card.credit_account?.available_credit ?? 0));
       return t("rewards.availableCreditAmount", { amount: availableCredit, currency: card.credit_account?.currency ?? "RON" });
     }
     return t("rewards.walletCurrency", { currency: effectiveWallet(card)?.currency ?? "unknown" });
