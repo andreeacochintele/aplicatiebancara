@@ -113,6 +113,17 @@ class BulkTransferBatchSummary(BaseModel):
     other_count: int
 
 
+class BulkTransferExtractRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=20_000)
+
+
+class BulkTransferExtractedRow(BaseModel):
+    beneficiary_name: str
+    iban: str
+    amount: str
+    description: str | None
+
+
 class BulkTransferTemplateRowCreate(BaseModel):
     beneficiary_name: str = Field(min_length=1, max_length=255)
     iban: str = Field(min_length=1, max_length=34)

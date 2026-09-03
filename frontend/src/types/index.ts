@@ -244,6 +244,13 @@ export interface ScheduledPayment {
   updated_at: string;
 }
 
+export interface BulkTransferExtractedRow {
+  beneficiary_name: string;
+  iban: string;
+  amount: string;
+  description: string | null;
+}
+
 export interface BulkTransferRowResult {
   beneficiary_name: string;
   iban: string;

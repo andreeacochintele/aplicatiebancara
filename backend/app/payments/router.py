@@ -4,6 +4,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
+from app.ai import bulk_transfer_extraction
+from app.ai.client.azure_foundry_client import AzureFoundryNotConfiguredError
 from app.auth.dependencies import get_current_user
 from app.database import get_db
 from app.fx.schemas import FXQuotePublic
@@ -16,6 +18,8 @@ from app.payments.schemas import (
     BillSplitPublic,
     BulkTransferBatchSummary,
     BulkTransferCreate,
+    BulkTransferExtractedRow,
+    BulkTransferExtractRequest,
     BulkTransferResult,
     BulkTransferTemplateCreate,
     BulkTransferTemplatePublic,
@@ -83,6 +87,23 @@ def create_bulk_transfer(
     result = IbanTransferService(db).create_bulk_transfer(current_user.id, payload)
     db.commit()
     return result
+
+
+@router.post("/transfers/bulk/extract", response_model=list[BulkTransferExtractedRow])
+def extract_bulk_transfer_rows(
+    payload: BulkTransferExtractRequest,
+    current_user: User = Depends(get_current_user),
+) -> list[BulkTransferExtractedRow]:
+    """AI-assisted fallback for the deterministic paste-parser (frontend) —
+    for messy/free-form uploads where the column order isn't the fixed
+    "name, iban, amount, description" shape. Read-only: never touches the
+    database, never moves money. The caller still shows every row in the
+    same editable table for the user to review before submitting."""
+    try:
+        rows = bulk_transfer_extraction.extract_bulk_rows(payload.text)
+    except AzureFoundryNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return [BulkTransferExtractedRow(**row) for row in rows]
 
 
 @router.get("/transfers/bulk/history", response_model=list[BulkTransferBatchSummary])

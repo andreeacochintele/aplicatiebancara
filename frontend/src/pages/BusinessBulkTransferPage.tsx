@@ -1,9 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import * as XLSX from "xlsx";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
-import type { BulkTransferResult, BulkTransferTemplate, ScheduledPaymentFrequency, Wallet } from "../types";
+import type {
+  BulkTransferExtractedRow,
+  BulkTransferResult,
+  BulkTransferTemplate,
+  ScheduledPaymentFrequency,
+  Wallet,
+} from "../types";
 import { walletLabel } from "../utils";
 
 const TEMPLATE_FREQUENCIES: ScheduledPaymentFrequency[] = ["ONCE", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"];
@@ -38,6 +45,23 @@ function parsePastedRows(text: string): BulkRowForm[] {
     .filter((row) => row.beneficiary_name && row.iban && row.amount);
 }
 
+/** Reads an uploaded file into plain text for the paste box — .xlsx/.xls go
+ * through SheetJS and come out as CSV text (first sheet only), everything
+ * else (.csv, .txt) is read as-is. Same downstream path either way: the
+ * user picks "Fill rows from pasted list" (deterministic) or "Extract with
+ * AI" (for messy/unclear layouts) on the resulting text. */
+async function readFileAsText(file: File): Promise<string> {
+  const isSpreadsheet = /\.xlsx?$/i.test(file.name);
+  if (!isSpreadsheet) {
+    return file.text();
+  }
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) return "";
+  return XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheetName]);
+}
+
 export function BusinessBulkTransferPage() {
   const { t } = useTranslation();
   const { user, accessToken } = useAuth();
@@ -58,6 +82,9 @@ export function BusinessBulkTransferPage() {
   const [templateFrequency, setTemplateFrequency] = useState<ScheduledPaymentFrequency>("MONTHLY");
   const [templateNextRunOn, setTemplateNextRunOn] = useState(() => new Date().toISOString().slice(0, 10));
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isBusiness || !accessToken) return;
@@ -98,6 +125,49 @@ export function BusinessBulkTransferPage() {
     if (parsed.length === 0) return;
     setRows(parsed);
     setPasteText("");
+  }
+
+  async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (!file) return;
+    setFileError(null);
+    try {
+      const text = await readFileAsText(file);
+      setPasteText(text);
+    } catch {
+      setFileError(t("businessBulkTransfer.fileReadFailed"));
+    }
+  }
+
+  async function extractWithAi() {
+    if (!accessToken || !pasteText.trim() || extracting) return;
+    setFileError(null);
+    setExtracting(true);
+    try {
+      const extracted = await apiRequest<BulkTransferExtractedRow[]>("/payments/transfers/bulk/extract", {
+        method: "POST",
+        token: accessToken,
+        body: { text: pasteText },
+      });
+      if (extracted.length === 0) {
+        setFileError(t("businessBulkTransfer.extractFoundNothing"));
+        return;
+      }
+      setRows(
+        extracted.map((row) => ({
+          beneficiary_name: row.beneficiary_name,
+          iban: row.iban,
+          amount: row.amount,
+          description: row.description ?? "",
+        })),
+      );
+      setPasteText("");
+    } catch (err) {
+      setFileError(err instanceof ApiError ? err.message : t("businessBulkTransfer.extractFailed"));
+    } finally {
+      setExtracting(false);
+    }
   }
 
   async function submit() {
@@ -194,11 +264,33 @@ export function BusinessBulkTransferPage() {
             style={{ width: "100%", resize: "vertical" }}
           />
         </label>
-        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+        <label className="button--ghost" style={{ display: "inline-block", cursor: "pointer", marginTop: "0.5rem" }}>
+          {t("businessBulkTransfer.uploadFile")}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.txt,.xlsx,.xls"
+            onChange={handleFileUpload}
+            style={{ display: "none" }}
+          />
+        </label>
+        <p style={{ color: "var(--color-text-muted)", fontSize: "0.8rem", margin: "0.35rem 0 0" }}>
+          {t("businessBulkTransfer.uploadFileHint")}
+        </p>
+        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
           <button type="button" className="button--ghost" onClick={applyPaste} disabled={pasteText.trim().length === 0}>
             {t("businessBulkTransfer.applyPaste")}
           </button>
+          <button
+            type="button"
+            className="button--ghost"
+            onClick={extractWithAi}
+            disabled={pasteText.trim().length === 0 || extracting}
+          >
+            {extracting ? t("businessBulkTransfer.extracting") : t("businessBulkTransfer.extractWithAi")}
+          </button>
         </div>
+        {fileError && <p className="status-line status-line--error">{fileError}</p>}
       </div>
 
       <div className="tile">
