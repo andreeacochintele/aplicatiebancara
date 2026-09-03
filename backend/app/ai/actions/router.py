@@ -10,7 +10,7 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.ai.actions.schemas import AgentActionResultPublic
+from app.ai.actions.schemas import AgentActionResultPublic, CreditCardCollateralSelection, WalletCurrencySelection
 from app.ai.actions.service import ActionService
 from app.auth.dependencies import get_current_user
 from app.database import get_db
@@ -46,5 +46,29 @@ def cancel_action(
     db: Session = Depends(get_db),
 ) -> AgentActionResultPublic:
     result = ActionService(db).cancel(current_user.id, action_id)
+    db.commit()
+    return result
+
+
+@router.post("/{action_id}/credit-card-collateral", response_model=AgentActionResultPublic)
+def select_credit_card_collateral(
+    action_id: uuid.UUID,
+    payload: CreditCardCollateralSelection,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentActionResultPublic:
+    result = ActionService(db).select_credit_card_collateral(current_user.id, action_id, payload.wallet_id)
+    db.commit()
+    return result
+
+
+@router.post("/{action_id}/wallet-currency", response_model=AgentActionResultPublic)
+def select_wallet_currency(
+    action_id: uuid.UUID,
+    payload: WalletCurrencySelection,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentActionResultPublic:
+    result = ActionService(db).select_wallet_currency(current_user.id, action_id, payload.currency)
     db.commit()
     return result

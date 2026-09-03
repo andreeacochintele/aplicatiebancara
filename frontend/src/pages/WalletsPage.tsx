@@ -416,7 +416,6 @@ export function WalletsPage() {
       <div className="easyb-card">
         <div className="easyb-section-header">
           <div>
-            <div className="easyb-eyebrow">{t("wallets.yourAccounts")}</div>
             <h2>{t("wallets.title")}</h2>
           </div>
           <div className="easyb-add-account">

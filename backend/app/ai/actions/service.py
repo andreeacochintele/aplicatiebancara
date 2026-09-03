@@ -14,9 +14,11 @@ from sqlalchemy.orm import Session
 
 from app.ai.actions.fraud_screen import screen_transfer
 from app.ai.actions.models import (
+    ACTION_TYPE_CREDIT_CARD_GENERATION,
     ACTION_TYPE_CREDIT_CARD_REPAYMENT,
     ACTION_TYPE_LOAN_PAYMENT,
     ACTION_TYPE_PHONE_TRANSFER,
+    ACTION_TYPE_WALLET_GENERATION,
     AgentAction,
     AgentActionStatus,
 )
@@ -25,13 +27,17 @@ from app.ai.actions.repository import AgentActionRepository
 from app.ai.actions.schemas import (
     AgentActionResultPublic,
     AgentResult,
+    CreditCardGenerationConfirmCard,
     CreditCardRepaymentConfirmCard,
     LoanPaymentConfirmCard,
     PhoneTransferConfirmCard,
+    WalletGenerationConfirmCard,
 )
 from app.ai.observability import log_event
-from app.cards.models import CardStatus, CardType
+from app.cards.models import CardStatus, CardTier, CardType
 from app.cards.repository import CardRepository
+from app.cards.schemas import CardCreate
+from app.cards.service import CardService
 from app.core.exceptions import ConflictError, DomainError, NotFoundError
 from app.credit.models import LoanInstallmentStatus, LoanStatus
 from app.credit.service import CreditService
@@ -41,11 +47,14 @@ from app.transactions.service import TransactionService
 from app.users.repository import UserRepository
 from app.wallets.models import WalletStatus
 from app.wallets.repository import WalletRepository
+from app.wallets.schemas import WalletCreate
+from app.wallets.service import WalletService
 
 MAX_TRANSFER_AMOUNT = Decimal("500.00")
 DRAFT_TTL = timedelta(minutes=5)
 SUPPORTED_CURRENCY = "RON"
 _CENTS = Decimal("0.01")
+WALLET_CURRENCY_OPTIONS = ("RON", "EUR", "USD", "GBP", "CHF", "JPY", "CAD", "AUD", "PLN", "TRY")
 
 
 def _now() -> datetime:
@@ -316,6 +325,101 @@ class ActionService:
             action_card=self._card(action),
         )
 
+    def prepare_credit_card_generation(
+        self,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID | None,
+        tier_raw: str | None,
+        currency_raw: str | None,
+        collateral_reference: str | None = None,
+    ) -> AgentResult:
+        tier = self._parse_card_tier(tier_raw)
+        if tier is None:
+            return AgentResult(reply="Pot genera carduri de credit Regular, Gold sau Platinum. Ce tip vrei?")
+
+        currency = (currency_raw or SUPPORTED_CURRENCY).strip().upper()
+        if currency in ("LEI", "RON."):
+            currency = SUPPORTED_CURRENCY
+        if len(currency) != 3:
+            return AgentResult(reply="Spune-mi moneda pentru card ca un cod de 3 litere, de exemplu RON.")
+
+        limit = CardService.CREDIT_LIMITS[tier]
+        options = self._credit_card_collateral_options(user_id, currency, limit)
+        if not options:
+            return AgentResult(
+                reply=(
+                    f"Nu am gasit un cont {currency} care are cel putin {limit:.2f} {currency} "
+                    "pentru garantia cardului de credit."
+                )
+            )
+        source = None
+        if collateral_reference and str(collateral_reference).strip():
+            resolved = self._resolve_credit_card_collateral(user_id, currency, limit, collateral_reference)
+            if isinstance(resolved, str):
+                return AgentResult(reply=resolved)
+            source = resolved
+
+        self._supersede_open_drafts(conversation_id)
+        action = self.repository.add(
+            AgentAction(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                type=ACTION_TYPE_CREDIT_CARD_GENERATION,
+                status=AgentActionStatus.DRAFT,
+                payload={
+                    "tier": tier.value,
+                    "currency": currency,
+                    "credit_limit": f"{limit:.2f}",
+                    "collateral_wallet_id": str(source.id) if source is not None else None,
+                    "collateral_wallet_label": self._collateral_wallet_label(source) if source is not None else None,
+                    "collateral_options": options,
+                    "card_label": f"{tier.value.title()} credit card",
+                },
+                idempotency_key=uuid.uuid4().hex,
+                expires_at=_now() + DRAFT_TTL,
+            )
+        )
+        self.repository.flush()
+        return AgentResult(
+            reply=(
+                "Am pregatit generarea cardului de credit. Alege garantia, verifica detaliile "
+                "si apasa Accept ca sa il creez."
+            ),
+            action_card=self._card(action),
+        )
+
+    def prepare_wallet_generation(
+        self,
+        user_id: uuid.UUID,
+        conversation_id: uuid.UUID | None,
+        currency_raw: str | None,
+    ) -> AgentResult:
+        currency = self._parse_wallet_currency(currency_raw)
+        self._supersede_open_drafts(conversation_id)
+        action = self.repository.add(
+            AgentAction(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                type=ACTION_TYPE_WALLET_GENERATION,
+                status=AgentActionStatus.DRAFT,
+                payload={
+                    "currency": currency,
+                    "wallet_label": f"{currency} current account" if currency else "New current account",
+                    "currency_options": [
+                        {"currency": option, "label": option}
+                        for option in WALLET_CURRENCY_OPTIONS
+                    ],
+                },
+                idempotency_key=uuid.uuid4().hex,
+                expires_at=_now() + DRAFT_TTL,
+            )
+        )
+        self.repository.flush()
+        return AgentResult(
+            reply="Alege moneda pentru contul curent, apoi apasa Accept ca sa il creez.",
+            action_card=self._card(action),
+        )
+
     # ---- confirm / cancel / read ----
 
     def confirm(self, user_id: uuid.UUID, action_id: uuid.UUID) -> AgentActionResultPublic:
@@ -339,6 +443,10 @@ class ActionService:
             return self._confirm_loan_payment(action)
         if action.type == ACTION_TYPE_CREDIT_CARD_REPAYMENT:
             return self._confirm_credit_card_repayment(action)
+        if action.type == ACTION_TYPE_CREDIT_CARD_GENERATION:
+            return self._confirm_credit_card_generation(action)
+        if action.type == ACTION_TYPE_WALLET_GENERATION:
+            return self._confirm_wallet_generation(action)
         return self._fail(action, "UNSUPPORTED_ACTION", "Tipul actiunii nu mai este disponibil.")
 
     def _confirm_phone_transfer(self, action: AgentAction) -> AgentActionResultPublic:
@@ -383,7 +491,7 @@ class ActionService:
                     source_wallet_id=source.id,
                     destination_wallet_id=destination.id,
                     amount=amount,
-                    description=f"Transfer către {beneficiary.name} (asistent Nova)",
+                    description=f"Transfer către {beneficiary.name} (asistent Bumble-B)",
                 ),
             )
         except DomainError as exc:
@@ -455,6 +563,57 @@ class ActionService:
         log_event("agent_action_executed", action_id=str(action.id), transaction_id=str(transaction.id))
         return self._public(action)
 
+    def _confirm_credit_card_generation(self, action: AgentAction) -> AgentActionResultPublic:
+        action.status = AgentActionStatus.CONFIRMED
+        action.confirmed_at = _now()
+        self.repository.flush()
+        payload = dict(action.payload)
+        if not payload.get("collateral_wallet_id"):
+            return self._fail(action, "COLLATERAL_REQUIRED", "Alege garantia inainte sa confirmi cardul.")
+        try:
+            card = CardService(self.db).create_card(
+                action.user_id,
+                CardCreate(
+                    type=CardType.CREDIT,
+                    tier=CardTier(payload["tier"]),
+                    currency=payload["currency"],
+                    collateral_wallet_id=uuid.UUID(payload["collateral_wallet_id"]),
+                    collateral_amount=Decimal(payload["credit_limit"]),
+                ),
+                admin_approved=False,
+            )
+        except DomainError as exc:
+            return self._fail(action, "CREDIT_CARD_GENERATION_FAILED", str(exc))
+
+        payload["card_label"] = f"Credit **** {card.last_four}"
+        action.payload = payload
+        action.status = AgentActionStatus.EXECUTED
+        action.executed_at = _now()
+        self.repository.flush()
+        log_event("agent_action_executed", action_id=str(action.id), card_id=str(card.id))
+        return self._public(action)
+
+    def _confirm_wallet_generation(self, action: AgentAction) -> AgentActionResultPublic:
+        action.status = AgentActionStatus.CONFIRMED
+        action.confirmed_at = _now()
+        self.repository.flush()
+        payload = dict(action.payload)
+        currency = payload.get("currency")
+        if not currency:
+            return self._fail(action, "CURRENCY_REQUIRED", "Alege moneda inainte sa confirmi contul.")
+        try:
+            wallet = WalletService(self.db).create_wallet(action.user_id, WalletCreate(currency=currency))
+        except DomainError as exc:
+            return self._fail(action, "WALLET_GENERATION_FAILED", str(exc))
+
+        payload["wallet_label"] = f"{wallet.currency} current account"
+        action.payload = payload
+        action.status = AgentActionStatus.EXECUTED
+        action.executed_at = _now()
+        self.repository.flush()
+        log_event("agent_action_executed", action_id=str(action.id), wallet_id=str(wallet.id))
+        return self._public(action)
+
     def cancel(self, user_id: uuid.UUID, action_id: uuid.UUID) -> AgentActionResultPublic:
         action = self._get_owned(user_id, action_id)
         if action.status == AgentActionStatus.CANCELLED:
@@ -462,6 +621,74 @@ class ActionService:
         if action.status != AgentActionStatus.DRAFT:
             raise ConflictError(f"Acțiunea este {action.status.value.lower()} și nu poate fi anulată.")
         action.status = AgentActionStatus.CANCELLED
+        self.repository.flush()
+        return self._public(action)
+
+    def select_credit_card_collateral(
+        self,
+        user_id: uuid.UUID,
+        action_id: uuid.UUID,
+        wallet_id: uuid.UUID,
+    ) -> AgentActionResultPublic:
+        action = self._get_owned(user_id, action_id)
+        if action.type != ACTION_TYPE_CREDIT_CARD_GENERATION:
+            raise ConflictError("Actiunea nu permite alegerea garantiei.")
+        if action.status != AgentActionStatus.DRAFT:
+            raise ConflictError(f"Actiunea este {action.status.value.lower()} si nu mai poate fi modificata.")
+        if _as_aware_utc(action.expires_at) < _now():
+            action.status = AgentActionStatus.EXPIRED
+            self.repository.flush()
+            raise ConflictError("Draftul a expirat. Cere cardul din nou.")
+
+        payload = dict(action.payload)
+        amount = Decimal(payload["credit_limit"])
+        currency = payload["currency"]
+        wallet = self.wallets.get_by_id(wallet_id)
+        if (
+            wallet is None
+            or wallet.user_id != user_id
+            or wallet.status != WalletStatus.ACTIVE
+            or wallet.currency != currency
+            or wallet.available_balance < amount
+        ):
+            raise ConflictError("Garantia aleasa nu mai este disponibila.")
+
+        option_ids = {str(option["wallet_id"]) for option in payload.get("collateral_options", [])}
+        if str(wallet.id) not in option_ids:
+            raise ConflictError("Alege una dintre garantiile propuse.")
+
+        payload["collateral_wallet_id"] = str(wallet.id)
+        payload["collateral_wallet_label"] = self._collateral_wallet_label(wallet)
+        action.payload = payload
+        self.repository.flush()
+        return self._public(action)
+
+    def select_wallet_currency(
+        self,
+        user_id: uuid.UUID,
+        action_id: uuid.UUID,
+        currency_raw: str,
+    ) -> AgentActionResultPublic:
+        action = self._get_owned(user_id, action_id)
+        if action.type != ACTION_TYPE_WALLET_GENERATION:
+            raise ConflictError("Actiunea nu permite alegerea monedei.")
+        if action.status != AgentActionStatus.DRAFT:
+            raise ConflictError(f"Actiunea este {action.status.value.lower()} si nu mai poate fi modificata.")
+        if _as_aware_utc(action.expires_at) < _now():
+            action.status = AgentActionStatus.EXPIRED
+            self.repository.flush()
+            raise ConflictError("Draftul a expirat. Cere contul din nou.")
+
+        currency = self._parse_wallet_currency(currency_raw)
+        if currency is None:
+            raise ConflictError("Alege una dintre monedele propuse.")
+        payload = dict(action.payload)
+        option_currencies = {option["currency"] for option in payload.get("currency_options", [])}
+        if currency not in option_currencies:
+            raise ConflictError("Alege una dintre monedele propuse.")
+        payload["currency"] = currency
+        payload["wallet_label"] = f"{currency} current account"
+        action.payload = payload
         self.repository.flush()
         return self._public(action)
 
@@ -549,8 +776,132 @@ class ActionService:
             return f"Sold insuficient: ai {wallet.available_balance} {currency}, iar plata este de {amount} {currency}."
         return wallet
 
+    def _parse_card_tier(self, tier_raw: str | None) -> CardTier | None:
+        text = (tier_raw or "REGULAR").strip().upper()
+        aliases = {
+            "STANDARD": "REGULAR",
+            "BASIC": "REGULAR",
+            "NORMAL": "REGULAR",
+        }
+        try:
+            return CardTier(aliases.get(text, text))
+        except ValueError:
+            return None
+
+    def _parse_wallet_currency(self, currency_raw: str | None) -> str | None:
+        if currency_raw is None:
+            return None
+        currency = str(currency_raw).strip().upper()
+        if currency in ("LEI", "RON."):
+            currency = SUPPORTED_CURRENCY
+        return currency if currency in WALLET_CURRENCY_OPTIONS else None
+
+    def _credit_card_collateral_options(self, user_id: uuid.UUID, currency: str, amount: Decimal) -> list[dict]:
+        eligible_wallets = [
+            wallet
+            for wallet in self.wallets.list_for_user(user_id)
+            if wallet.status == WalletStatus.ACTIVE
+            and wallet.currency == currency
+            and wallet.available_balance >= amount
+        ]
+        debit_cards_by_wallet_id: dict[uuid.UUID, list] = {}
+        for card in self.cards.list_for_user(user_id):
+            if card.type != CardType.DEBIT or card.status != CardStatus.ACTIVE or card.default_wallet_id is None:
+                continue
+            debit_cards_by_wallet_id.setdefault(card.default_wallet_id, []).append(card)
+
+        options = []
+        for wallet in eligible_wallets:
+            options.append(
+                {
+                    "wallet_id": str(wallet.id),
+                    "kind": "current_account",
+                    "label": self._collateral_wallet_label(wallet),
+                }
+            )
+            for card in debit_cards_by_wallet_id.get(wallet.id, []):
+                options.append(
+                    {
+                        "wallet_id": str(wallet.id),
+                        "kind": "debit_card",
+                        "label": f"Debit card **** {card.last_four} - {self._collateral_wallet_label(wallet)}",
+                    }
+                )
+        return options
+
+    def _resolve_credit_card_collateral(
+        self,
+        user_id: uuid.UUID,
+        currency: str,
+        amount: Decimal,
+        reference: str | None,
+    ):
+        eligible_wallets = [
+            wallet
+            for wallet in self.wallets.list_for_user(user_id)
+            if wallet.status == WalletStatus.ACTIVE
+            and wallet.currency == currency
+            and wallet.available_balance >= amount
+        ]
+        if not eligible_wallets:
+            return (
+                f"Nu am gasit un cont {currency} care are cel putin {amount:.2f} {currency} "
+                "pentru garantia cardului de credit."
+            )
+
+        debit_cards_by_wallet_id: dict[uuid.UUID, list] = {}
+        for card in self.cards.list_for_user(user_id):
+            if card.type != CardType.DEBIT or card.status != CardStatus.ACTIVE or card.default_wallet_id is None:
+                continue
+            debit_cards_by_wallet_id.setdefault(card.default_wallet_id, []).append(card)
+
+        if reference is None or not str(reference).strip():
+            options = []
+            for wallet in eligible_wallets:
+                options.append(self._collateral_wallet_label(wallet))
+                for card in debit_cards_by_wallet_id.get(wallet.id, []):
+                    options.append(f"debit card **** {card.last_four} ({self._collateral_wallet_label(wallet)})")
+            return "Alege garantia pentru cardul de credit: " + "; ".join(options) + "."
+
+        text = str(reference).strip().lower()
+        digits = "".join(ch for ch in text if ch.isdigit())
+        matched_wallets = []
+        for wallet in eligible_wallets:
+            wallet_label = self._collateral_wallet_label(wallet).lower()
+            iban_tail = wallet.iban[-4:].lower() if wallet.iban else ""
+            if wallet.nickname and wallet.nickname.lower() in text:
+                matched_wallets.append(wallet)
+                continue
+            if wallet_label in text or (iban_tail and iban_tail in text):
+                matched_wallets.append(wallet)
+                continue
+            if wallet.is_main and any(term in text for term in ("main", "principal", "current account", "cont curent")):
+                matched_wallets.append(wallet)
+
+        for wallet_id, cards in debit_cards_by_wallet_id.items():
+            if all(wallet.id != wallet_id for wallet in eligible_wallets):
+                continue
+            for card in cards:
+                if digits and card.last_four == digits[-4:]:
+                    wallet = self.wallets.get_by_id(wallet_id)
+                    if wallet is not None:
+                        matched_wallets.append(wallet)
+
+        unique_matches = list({wallet.id: wallet for wallet in matched_wallets}.values())
+        if len(unique_matches) == 1:
+            return unique_matches[0]
+        if len(unique_matches) > 1:
+            options = "; ".join(self._collateral_wallet_label(wallet) for wallet in unique_matches)
+            return f"Am gasit mai multe garantii posibile: {options}. Spune cardul dupa ultimele 4 cifre sau contul exact."
+        return "Nu am recunoscut garantia. Spune ultimele 4 cifre ale cardului de debit sau numele/IBAN-ul contului curent."
+
     def _wallet_label(self, wallet) -> str:
         return f"{wallet.currency} - sold {wallet.available_balance}"
+
+    def _collateral_wallet_label(self, wallet) -> str:
+        name = wallet.nickname or ("main account" if wallet.is_main else "current account")
+        iban_tail = wallet.iban[-4:] if wallet.iban else "----"
+        return f"{name} {wallet.currency} IBAN ****{iban_tail} - available {wallet.available_balance}"
 
     def _fail(self, action: AgentAction, code: str, detail: str) -> AgentActionResultPublic:
         action.status = AgentActionStatus.FAILED
@@ -581,6 +932,26 @@ class ActionService:
                 currency=p["currency"],
                 source_wallet_label=p["source_wallet_label"],
                 balance_due=p["balance_due"],
+                expires_at=action.expires_at,
+            )
+        if action.type == ACTION_TYPE_CREDIT_CARD_GENERATION:
+            return CreditCardGenerationConfirmCard(
+                action_id=action.id,
+                card_label=p["card_label"],
+                tier=p["tier"],
+                currency=p["currency"],
+                credit_limit=p["credit_limit"],
+                collateral_wallet_id=p.get("collateral_wallet_id"),
+                collateral_wallet_label=p.get("collateral_wallet_label"),
+                collateral_options=p.get("collateral_options", []),
+                expires_at=action.expires_at,
+            )
+        if action.type == ACTION_TYPE_WALLET_GENERATION:
+            return WalletGenerationConfirmCard(
+                action_id=action.id,
+                wallet_label=p["wallet_label"],
+                currency=p.get("currency"),
+                currency_options=p.get("currency_options", []),
                 expires_at=action.expires_at,
             )
         return PhoneTransferConfirmCard(
