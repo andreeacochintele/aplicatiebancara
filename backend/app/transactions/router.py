@@ -3,10 +3,12 @@ deterministic internal-transfer flow (architecture.md's Phase 1 end-to-end goal)
 import uuid
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.database import get_db
+from app.transactions.payment_proof import PaymentProofService
 from app.transactions.schemas import (
     CardPaymentCreate,
     CardTopUpCreate,
@@ -49,6 +51,20 @@ def get_transaction(
     db: Session = Depends(get_db),
 ) -> TransactionPublic:
     return TransactionService(db).get_public_for_user(current_user.id, transaction_id)
+
+
+@router.get("/{transaction_id}/payment-proof")
+def download_payment_proof(
+    transaction_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    content, filename = PaymentProofService(db).generate(current_user.id, transaction_id)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.patch("/{transaction_id}/category", response_model=TransactionPublic)
