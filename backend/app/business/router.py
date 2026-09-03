@@ -8,12 +8,26 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_business
-from app.business.schemas import BusinessProfileCreate, BusinessProfilePublic, BusinessProfileUpdate
+from app.business import anaf_client
+from app.business.schemas import (
+    BusinessProfileCreate,
+    BusinessProfilePublic,
+    BusinessProfileUpdate,
+    CuiLookupResult,
+)
 from app.business.service import BusinessProfileService
 from app.database import get_db
 from app.users.models import User
 
 router = APIRouter(prefix="/business", tags=["business"])
+
+
+@router.get("/lookup-cui/{cui}", response_model=CuiLookupResult)
+def lookup_cui(
+    cui: str,
+    current_user: User = Depends(require_business),
+):
+    return anaf_client.lookup_cui(cui)
 
 
 @router.get("/profile", response_model=BusinessProfilePublic | None)
