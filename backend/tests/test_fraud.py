@@ -282,6 +282,51 @@ def test_evaluate_transaction_leaves_batch_reference_null_when_not_given(db_sess
     assert decision.case.batch_reference is None
 
 
+def test_velocity_excludes_batch_sibling_ids_from_the_count(db_session, seeded_user):
+    """Same 14-prior-plus-this-one shape that blocks alone
+    (test_extreme_velocity_burst_alone_crosses_threshold_without_a_second_flag)
+    — but when all 14 prior transactions are the caller's own declared batch
+    siblings (IbanTransferService.create_bulk_transfer's own earlier rows),
+    none of them should count toward this one's velocity."""
+    wallet = _wallet(db_session, seeded_user.id)
+    daytime = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+    sibling_ids = {
+        _completed_card_payment(db_session, seeded_user.id, Decimal("10.00"), created_at=daytime).id
+        for _ in range(14)
+    }
+    transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("10.00"), created_at=daytime)
+
+    decision = FraudService(db_session).evaluate_transaction(
+        transaction, wallet, batch_sibling_ids=frozenset(sibling_ids)
+    )
+
+    assert decision.blocked is False
+    assert decision.score == Decimal("0")
+
+
+def test_velocity_still_counts_activity_outside_the_declared_batch(db_session, seeded_user):
+    """10 batch siblings (excluded) plus 4 unrelated transactions (not
+    excluded) still add up to a real velocity_count of 4 — the minimum
+    trigger shape from test_high_velocity_flags_five_transactions_in_five_minutes
+    (4 prior + this one = 5) — proving the exclusion is scoped to the given
+    ids only, not a blanket velocity bypass."""
+    wallet = _wallet(db_session, seeded_user.id)
+    daytime = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+    sibling_ids = {
+        _completed_card_payment(db_session, seeded_user.id, Decimal("10.00"), created_at=daytime).id
+        for _ in range(10)
+    }
+    for _ in range(4):
+        _completed_card_payment(db_session, seeded_user.id, Decimal("10.00"), created_at=daytime)
+    transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("10.00"), created_at=daytime)
+
+    decision = FraudService(db_session).evaluate_transaction(
+        transaction, wallet, batch_sibling_ids=frozenset(sibling_ids)
+    )
+
+    assert decision.score == Decimal("30")
+
+
 def test_reward_abuse_pattern_flags_three_near_identical_payments(db_session, seeded_user):
     wallet = _wallet(db_session, seeded_user.id)
     merchant = _merchant(db_session)

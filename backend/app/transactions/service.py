@@ -79,6 +79,7 @@ class TransactionService:
         *,
         screen_for_fraud: bool = True,
         batch_reference: str | None = None,
+        batch_sibling_ids: frozenset[uuid.UUID] | None = None,
     ) -> Transaction:
         """`screen_for_fraud` defaults to True so any new caller is covered by
         default. It's turned off only for settlement flows that immediately
@@ -89,10 +90,11 @@ class TransactionService:
         flows are user-to-user settlements of an amount both sides already
         agreed on, so screening them is also the weaker case.
 
-        `batch_reference` is passed straight through to FraudService, tagging
-        any case this transfer's screening creates as belonging to a
-        multi-row bulk submit (see IbanTransferService.create_bulk_transfer) —
-        it never affects screening itself."""
+        `batch_reference`/`batch_sibling_ids` are passed straight through to
+        FraudService (see its docstrings) — tagging any case this transfer's
+        screening creates as belonging to a multi-row bulk submit, and
+        excluding the batch's own earlier rows from this one's velocity
+        count. Neither affects screening decisions beyond that."""
         if data.amount <= 0:
             raise ValidationError("Transfer amount must be positive")
 
@@ -104,10 +106,22 @@ class TransactionService:
 
         if source.currency == destination.currency:
             return self._execute_same_currency_transfer(
-                initiator_user_id, source, destination, data, screen_for_fraud, batch_reference=batch_reference
+                initiator_user_id,
+                source,
+                destination,
+                data,
+                screen_for_fraud,
+                batch_reference=batch_reference,
+                batch_sibling_ids=batch_sibling_ids,
             )
         return self._execute_fx_transfer(
-            initiator_user_id, source, destination, data, screen_for_fraud, batch_reference=batch_reference
+            initiator_user_id,
+            source,
+            destination,
+            data,
+            screen_for_fraud,
+            batch_reference=batch_reference,
+            batch_sibling_ids=batch_sibling_ids,
         )
 
     def _lock_wallet_pair(
@@ -134,6 +148,7 @@ class TransactionService:
         screen_for_fraud: bool = True,
         *,
         batch_reference: str | None = None,
+        batch_sibling_ids: frozenset[uuid.UUID] | None = None,
     ) -> Transaction:
         if source.available_balance < data.amount:
             raise ConflictError("Insufficient available balance")
@@ -158,7 +173,11 @@ class TransactionService:
         # destination is credited later, by FraudService.approve().
         if (
             screen_for_fraud
-            and FraudService(self.db).evaluate_transaction(transaction, source, batch_reference=batch_reference).blocked
+            and FraudService(self.db)
+            .evaluate_transaction(
+                transaction, source, batch_reference=batch_reference, batch_sibling_ids=batch_sibling_ids
+            )
+            .blocked
         ):
             return transaction
 
@@ -174,6 +193,7 @@ class TransactionService:
         screen_for_fraud: bool = True,
         *,
         batch_reference: str | None = None,
+        batch_sibling_ids: frozenset[uuid.UUID] | None = None,
     ) -> Transaction:
         if data.fx_quote_id is None:
             raise ValidationError("Cross-currency transfers require an fx_quote_id — request one via POST /fx/quote")
@@ -210,7 +230,11 @@ class TransactionService:
         # transfer while this one sits under review.
         if (
             screen_for_fraud
-            and FraudService(self.db).evaluate_transaction(transaction, source, batch_reference=batch_reference).blocked
+            and FraudService(self.db)
+            .evaluate_transaction(
+                transaction, source, batch_reference=batch_reference, batch_sibling_ids=batch_sibling_ids
+            )
+            .blocked
         ):
             self.fx.mark_accepted(quote)
             return transaction

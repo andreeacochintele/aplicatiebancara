@@ -175,7 +175,12 @@ class IbanTransferService:
         return quote
 
     def create_iban_transfer(
-        self, initiator_user_id: uuid.UUID, data: IbanTransferCreate, *, batch_reference: str | None = None
+        self,
+        initiator_user_id: uuid.UUID,
+        data: IbanTransferCreate,
+        *,
+        batch_reference: str | None = None,
+        batch_sibling_ids: frozenset[uuid.UUID] | None = None,
     ) -> Transaction:
         source = self._get_owned_source_wallet(initiator_user_id, data.source_wallet_id)
 
@@ -230,6 +235,7 @@ class IbanTransferService:
                     description=description,
                 ),
                 batch_reference=batch_reference,
+                batch_sibling_ids=batch_sibling_ids,
             )
             if data.save_beneficiary:
                 self.beneficiaries.add(
@@ -265,7 +271,9 @@ class IbanTransferService:
         # A blocked transfer is HOLD'd and left PENDING_REVIEW by
         # FraudService; there's no destination wallet here, so approving it
         # later is just the DEBIT that FraudService.approve() already writes.
-        if not FraudService(self.db).evaluate_transaction(transaction, source, batch_reference=batch_reference).blocked:
+        if not FraudService(self.db).evaluate_transaction(
+            transaction, source, batch_reference=batch_reference, batch_sibling_ids=batch_sibling_ids
+        ).blocked:
             source.available_balance -= debit_amount
             self.transactions.repository.add_ledger_entry(
                 WalletLedgerEntry(
@@ -312,10 +320,17 @@ class IbanTransferService:
         thing it does is tag whichever FraudCase(s) this batch's own
         screening creates, so the admin Fraud Review page can group and
         decide them together instead of one unrelated-looking case per row.
-        It never affects screening itself."""
+
+        Each row also gets the ids of every transaction this same call
+        already created (batch_sibling_ids) — FraudService excludes those
+        from HIGH_VELOCITY's count, so a batch's own rows don't rack up
+        velocity against each other. A normal-sized payroll run no longer
+        flags itself just for having several rows; a genuinely oversized
+        amount, or unrelated activity around it, still can."""
         currency = data.currency.upper()
         use_savepoint = not is_supabase_session(self.db)
         batch_reference = str(uuid.uuid4())
+        batch_transaction_ids: set[uuid.UUID] = set()
         results: list[BulkTransferRowResult] = []
         for row in data.rows:
             row_data = IbanTransferCreate(
@@ -331,11 +346,17 @@ class IbanTransferService:
                 if use_savepoint:
                     with self.db.begin_nested():
                         transaction = self.create_iban_transfer(
-                            initiator_user_id, row_data, batch_reference=batch_reference
+                            initiator_user_id,
+                            row_data,
+                            batch_reference=batch_reference,
+                            batch_sibling_ids=frozenset(batch_transaction_ids),
                         )
                 else:
                     transaction = self.create_iban_transfer(
-                        initiator_user_id, row_data, batch_reference=batch_reference
+                        initiator_user_id,
+                        row_data,
+                        batch_reference=batch_reference,
+                        batch_sibling_ids=frozenset(batch_transaction_ids),
                     )
             except (ValidationError, ConflictError, NotFoundError) as exc:
                 results.append(
@@ -347,6 +368,7 @@ class IbanTransferService:
                     )
                 )
                 continue
+            batch_transaction_ids.add(transaction.id)
             results.append(
                 BulkTransferRowResult(
                     beneficiary_name=row.beneficiary_name,
