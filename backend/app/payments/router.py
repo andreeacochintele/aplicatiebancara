@@ -24,6 +24,7 @@ from app.payments.schemas import (
     BulkTransferTemplateCreate,
     BulkTransferTemplatePublic,
     BulkTransferTemplateStatusUpdate,
+    BulkTransferTemplateUpdate,
     IbanTransferCreate,
     IbanTransferQuoteCreate,
     PaymentRequestCreate,
@@ -144,6 +145,19 @@ def list_bulk_transfer_templates(
 ) -> list[BulkTransferTemplatePublic]:
     service = BulkTransferTemplateService(db)
     return [service.to_public(template) for template in service.list_templates(current_user.id)]
+
+
+@router.put("/transfers/bulk/templates/{template_id}", response_model=BulkTransferTemplatePublic)
+def update_bulk_transfer_template(
+    template_id: uuid.UUID,
+    payload: BulkTransferTemplateUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BulkTransferTemplatePublic:
+    service = BulkTransferTemplateService(db)
+    template = service.update_template(current_user.id, template_id, payload)
+    db.commit()
+    return service.to_public(template)
 
 
 @router.patch("/transfers/bulk/templates/{template_id}/status", response_model=BulkTransferTemplatePublic)

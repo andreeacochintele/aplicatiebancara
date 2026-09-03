@@ -69,6 +69,77 @@ def test_create_bulk_transfer_template(client, db_session):
     assert body["rows"][0]["beneficiary_name"] == "Ana Ionescu"
 
 
+def test_update_template_replaces_name_frequency_and_rows(client, db_session):
+    owner = _register(client, "template-editor@example.com", "+40751100010")
+    wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("5000.00"))
+    created = client.post(
+        "/api/v1/payments/transfers/bulk/templates",
+        headers=_auth_header(owner),
+        json=_payload(wallet),
+    ).json()
+
+    response = client.put(
+        f"/api/v1/payments/transfers/bulk/templates/{created['id']}",
+        headers=_auth_header(owner),
+        json={
+            "name": "Salarii lunare - actualizat",
+            "frequency": ScheduledPaymentFrequency.WEEKLY,
+            "next_run_on": "2026-02-07",
+            "rows": [
+                {"beneficiary_name": "Costel Enache", "iban": "RO49AAAA1B31007593840003", "amount": "750.00"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "Salarii lunare - actualizat"
+    assert body["frequency"] == ScheduledPaymentFrequency.WEEKLY
+    assert body["next_run_on"] == "2026-02-07"
+    assert len(body["rows"]) == 1
+    assert body["rows"][0]["beneficiary_name"] == "Costel Enache"
+
+
+def test_update_template_without_rows_keeps_existing_rows(client, db_session):
+    owner = _register(client, "template-editor-partial@example.com", "+40751100011")
+    wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("5000.00"))
+    created = client.post(
+        "/api/v1/payments/transfers/bulk/templates",
+        headers=_auth_header(owner),
+        json=_payload(wallet),
+    ).json()
+
+    response = client.put(
+        f"/api/v1/payments/transfers/bulk/templates/{created['id']}",
+        headers=_auth_header(owner),
+        json={"name": "Doar numele s-a schimbat"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "Doar numele s-a schimbat"
+    assert len(body["rows"]) == 2
+
+
+def test_update_template_rejects_another_owners_template(client, db_session):
+    owner = _register(client, "template-owner-locked@example.com", "+40751100012")
+    other = _register(client, "template-owner-other@example.com", "+40751100013")
+    wallet = _create_wallet(db_session, owner["user"]["id"], "RON", Decimal("5000.00"))
+    created = client.post(
+        "/api/v1/payments/transfers/bulk/templates",
+        headers=_auth_header(owner),
+        json=_payload(wallet),
+    ).json()
+
+    response = client.put(
+        f"/api/v1/payments/transfers/bulk/templates/{created['id']}",
+        headers=_auth_header(other),
+        json={"name": "Nu ar trebui sa mearga"},
+    )
+
+    assert response.status_code == 404
+
+
 def test_create_template_rejects_currency_mismatch(client, db_session):
     owner = _register(client, "template-mismatch@example.com", "+40751100002")
     wallet = _create_wallet(db_session, owner["user"]["id"], "EUR", Decimal("5000.00"))
