@@ -440,7 +440,16 @@
     "submitting": "Sending...",
     "submitFailed": "Could not send the batch",
     "resultsTitle": "{{succeeded}} succeeded, {{failed}} failed",
-    "failed": "Failed"
+    "failed": "Failed",
+    "historyTitle": "Batch history",
+    "loading": "Loading...",
+    "date": "Date",
+    "rows": "Rows",
+    "batchAllCompleted": "All completed",
+    "batchPendingReview_one": "{{count}} under review",
+    "batchPendingReview_other": "{{count}} under review",
+    "batchNeedsAttention": "Needs attention",
+    "noHistoryYet": "No bulk transfers sent yet."
   },
   "businessProfile": {
     "onlyForBusiness": "The company profile is only available to business accounts.",

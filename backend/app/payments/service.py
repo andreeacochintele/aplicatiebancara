@@ -39,6 +39,7 @@ from app.payments.schemas import (
     BillSplitParticipantCreate,
     BillSplitPay,
     BillSplitPublic,
+    BulkTransferBatchSummary,
     BulkTransferCreate,
     BulkTransferResult,
     BulkTransferRowResult,
@@ -264,6 +265,7 @@ class IbanTransferService:
                 fx_quote_id=quote.id if quote is not None else None,
                 description=description,
                 processed_at=datetime.now(timezone.utc),
+                batch_reference=batch_reference,
             )
         )
         # Money leaving the bank entirely, so this gets the same fraud seam
@@ -381,6 +383,43 @@ class IbanTransferService:
 
         succeeded = sum(1 for row in results if row.transaction_id is not None)
         return BulkTransferResult(succeeded=succeeded, failed=len(results) - succeeded, results=results)
+
+    def list_bulk_transfer_batches(self, initiator_user_id: uuid.UUID) -> list[BulkTransferBatchSummary]:
+        """Groups this user's own past bulk-transfer rows
+        (Transaction.batch_reference, set only by create_bulk_transfer) into
+        one summary per batch, newest first. Sourced from the same
+        list_for_user window every other read in this module uses — deep
+        history beyond that isn't in scope for a summary list."""
+        transactions = [
+            transaction
+            for transaction in self.transactions.repository.list_for_user(initiator_user_id, limit=300)
+            if transaction.batch_reference is not None and transaction.initiator_user_id == initiator_user_id
+        ]
+        grouped: dict[str, list[Transaction]] = {}
+        for transaction in transactions:
+            grouped.setdefault(transaction.batch_reference, []).append(transaction)
+
+        summaries: list[BulkTransferBatchSummary] = []
+        for reference, rows in grouped.items():
+            earliest = min(row.created_at for row in rows)
+            summaries.append(
+                BulkTransferBatchSummary(
+                    batch_reference=reference,
+                    created_at=earliest,
+                    currency=rows[0].currency,
+                    total_amount=sum((row.amount for row in rows), Decimal("0")),
+                    row_count=len(rows),
+                    completed_count=sum(1 for row in rows if row.status == TransactionStatus.COMPLETED),
+                    pending_review_count=sum(1 for row in rows if row.status == TransactionStatus.PENDING_REVIEW),
+                    other_count=sum(
+                        1
+                        for row in rows
+                        if row.status not in (TransactionStatus.COMPLETED, TransactionStatus.PENDING_REVIEW)
+                    ),
+                )
+            )
+        summaries.sort(key=lambda summary: summary.created_at, reverse=True)
+        return summaries
 
     def _get_owned_source_wallet(self, initiator_user_id: uuid.UUID, wallet_id: uuid.UUID) -> Wallet:
         source = self.wallets.get_by_id(wallet_id)
