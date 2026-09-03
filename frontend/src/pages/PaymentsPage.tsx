@@ -6,6 +6,7 @@ import { useSearchParams } from "react-router-dom";
 import { ApiError, apiRequest } from "../api/apiClient";
 import { QrCode } from "../components/QrCode";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
+import { checkIban, isValidBic, needsBic, normaliseBic, normaliseIban } from "../features/payments/iban";
 import { downloadQrPng } from "../features/payments/qrImage";
 import { useAuth } from "../hooks/useAuth";
 import type {
@@ -27,6 +28,10 @@ type PaymentTab = "transfer" | "phone" | "qr" | "scheduled" | "folders";
 interface TransferFormState {
   beneficiary: string;
   iban: string;
+  /** Only used when the account is not an IBAN, which is the case that needs
+   *  a BIC to be routable. Kept in the form rather than the API payload:
+   *  there is no BIC column, so it rides along in the description. */
+  bic: string;
   source_wallet_id: string;
   amount: string;
   currency: string;
@@ -93,6 +98,7 @@ function dateInputValue(offsetDays: number): string {
 const EMPTY_TRANSFER_FORM: TransferFormState = {
   beneficiary: "",
   iban: "",
+  bic: "",
   source_wallet_id: "",
   amount: "",
   currency: "RON",
@@ -412,6 +418,14 @@ export function PaymentsPage() {
     }
   }
 
+  // Advisory checks on the account the user typed. `showBicField` is
+  // deliberately narrower than "the IBAN failed": a mistyped IBAN should send
+  // the user back to the number, not off looking for a BIC.
+  const ibanCheck = checkIban(form.iban);
+  const showBicField = needsBic(ibanCheck);
+  const transferBic = showBicField ? normaliseBic(form.bic) : "";
+  const bicMalformed = transferBic !== "" && !isValidBic(transferBic);
+
   async function handleIbanTransfer(event: FormEvent) {
     event.preventDefault();
     if (!accessToken) return;
@@ -430,6 +444,7 @@ export function PaymentsPage() {
     const payload = {
       beneficiary_name: form.beneficiary.trim(),
       iban: form.iban.trim(),
+      bic: transferBic || undefined,
       source_wallet_id: form.source_wallet_id,
       amount: needsFxQuote && transferQuote ? transferQuote.target_amount : form.amount,
       currency: form.currency,
@@ -957,7 +972,42 @@ export function PaymentsPage() {
                 placeholder="RO49 AAAA 1B31 0075 9384 0000"
                 value={form.iban}
               />
+              {ibanCheck.status === "bad-checksum" && (
+                <span className="field-hint field-hint--warn">{t("payments.ibanBadChecksum")}</span>
+              )}
+              {ibanCheck.status === "bad-length" && (
+                <span className="field-hint field-hint--warn">
+                  {t("payments.ibanBadLength", {
+                    country: normaliseIban(form.iban).slice(0, 2),
+                    expected: ibanCheck.expected,
+                    actual: normaliseIban(form.iban).length,
+                  })}
+                </span>
+              )}
             </label>
+
+            {/* Not an IBAN — either a country that does not issue them or a
+                plain account number. Those need a BIC to be routable, so the
+                field only appears here rather than cluttering every SEPA
+                transfer. */}
+            {showBicField && (
+              <label>
+                {t("payments.bic")}
+                <input
+                  autoComplete="off"
+                  maxLength={11}
+                  onChange={(event) => {
+                    setForm((current) => ({ ...current, bic: event.target.value }));
+                    clearTransferQuote();
+                  }}
+                  placeholder="CHASUS33"
+                  value={form.bic}
+                />
+                <span className={bicMalformed ? "field-hint field-hint--warn" : "field-hint"}>
+                  {bicMalformed ? t("payments.bicMalformed") : t("payments.bicHint")}
+                </span>
+              </label>
+            )}
 
             <div className="amount-row">
               <label>

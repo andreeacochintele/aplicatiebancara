@@ -768,6 +768,13 @@ label {
   text-align: right;
 }
 
+/* A hint pointing at a problem rather than explaining the field. Advisory
+   only — these never block the form, so it is deliberately the warning
+   colour and not the error red used for failed submissions. */
+.field-hint--warn {
+  color: var(--color-warning);
+}
+
 .country-select {
   position: relative;
 }
