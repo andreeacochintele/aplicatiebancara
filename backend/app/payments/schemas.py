@@ -155,6 +155,15 @@ class BulkTransferTemplateStatusUpdate(BaseModel):
     status: ScheduledPaymentStatus
 
 
+class BulkTransferTemplateUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    frequency: ScheduledPaymentFrequency | None = None
+    next_run_on: date | None = None
+    # When provided, replaces every existing row - editing individual rows
+    # in place isn't worth the extra complexity for a saved-batch template.
+    rows: list[BulkTransferTemplateRowCreate] | None = Field(default=None, min_length=1, max_length=200)
+
+
 class BulkTransferTemplateRowPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

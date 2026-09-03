@@ -487,6 +487,13 @@ class BulkTransferTemplateRepository:
         self.db.flush()
         return row
 
+    def delete_row(self, row: BulkTransferTemplateRow) -> None:
+        if is_supabase_session(self.db):
+            self.db.delete(row)
+            return
+        self.db.delete(row)
+        self.db.flush()
+
     def list_rows_for_template(self, template_id: uuid.UUID) -> list[BulkTransferTemplateRow]:
         if is_supabase_session(self.db):
             return self.db.fetch_many(

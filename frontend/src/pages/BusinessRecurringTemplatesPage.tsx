@@ -3,7 +3,16 @@ import { useTranslation } from "react-i18next";
 
 import { apiRequest, ApiError } from "../api/apiClient";
 import { useAuth } from "../hooks/useAuth";
-import type { BulkTransferResult, BulkTransferTemplate } from "../types";
+import type { BulkTransferResult, BulkTransferTemplate, ScheduledPaymentFrequency } from "../types";
+
+const TEMPLATE_FREQUENCIES: ScheduledPaymentFrequency[] = ["ONCE", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"];
+
+interface EditRowDraft {
+  beneficiary_name: string;
+  iban: string;
+  amount: string;
+  description: string;
+}
 
 export function BusinessRecurringTemplatesPage() {
   const { t } = useTranslation();
@@ -16,6 +25,12 @@ export function BusinessRecurringTemplatesPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BulkTransferResult | null>(null);
   const [expandedTemplateId, setExpandedTemplateId] = useState<string | null>(null);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editFrequency, setEditFrequency] = useState<ScheduledPaymentFrequency>("MONTHLY");
+  const [editNextRunOn, setEditNextRunOn] = useState("");
+  const [editRows, setEditRows] = useState<EditRowDraft[]>([]);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   async function loadTemplates(token: string) {
     setTemplatesLoading(true);
@@ -75,6 +90,75 @@ export function BusinessRecurringTemplatesPage() {
       setError(err instanceof ApiError ? err.message : t("businessBulkTransfer.templateStatusFailed"));
     } finally {
       setTemplateActionId(null);
+    }
+  }
+
+  function startEdit(template: BulkTransferTemplate) {
+    setEditingTemplateId(template.id);
+    setExpandedTemplateId(template.id);
+    setEditName(template.name);
+    setEditFrequency(template.frequency);
+    setEditNextRunOn(template.next_run_on);
+    setEditRows(
+      template.rows.map((row) => ({
+        beneficiary_name: row.beneficiary_name,
+        iban: row.iban,
+        amount: row.amount,
+        description: row.description ?? "",
+      })),
+    );
+    setError(null);
+  }
+
+  function cancelEdit() {
+    setEditingTemplateId(null);
+  }
+
+  function updateEditRow(index: number, field: keyof EditRowDraft, value: string) {
+    setEditRows((current) => current.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+  }
+
+  function addEditRow() {
+    setEditRows((current) => [...current, { beneficiary_name: "", iban: "", amount: "", description: "" }]);
+  }
+
+  function removeEditRow(index: number) {
+    setEditRows((current) => current.filter((_, i) => i !== index));
+  }
+
+  async function saveEdit(templateId: string) {
+    if (!accessToken || savingEdit) return;
+    const rows = editRows
+      .filter((row) => row.beneficiary_name.trim() && row.iban.trim() && row.amount.trim())
+      .map((row) => ({
+        beneficiary_name: row.beneficiary_name.trim(),
+        iban: row.iban.trim(),
+        amount: row.amount.trim(),
+        description: row.description.trim() || null,
+      }));
+    if (rows.length === 0) {
+      setError(t("businessBulkTransfer.templateNeedsAtLeastOneRow"));
+      return;
+    }
+    setSavingEdit(true);
+    setError(null);
+    try {
+      await apiRequest<BulkTransferTemplate>(`/payments/transfers/bulk/templates/${templateId}`, {
+        method: "PUT",
+        token: accessToken,
+        body: {
+          name: editName.trim(),
+          frequency: editFrequency,
+          next_run_on: editNextRunOn,
+          rows,
+        },
+      });
+      setEditingTemplateId(null);
+      void loadTemplates(accessToken);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("businessBulkTransfer.templateEditFailed"));
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -157,6 +241,17 @@ export function BusinessRecurringTemplatesPage() {
                         {template.status !== "CANCELLED" && (
                           <button
                             type="button"
+                            className="button--ghost"
+                            onClick={() => (editingTemplateId === template.id ? cancelEdit() : startEdit(template))}
+                          >
+                            {editingTemplateId === template.id
+                              ? t("businessBulkTransfer.cancelEdit")
+                              : t("businessBulkTransfer.editTemplate")}
+                          </button>
+                        )}
+                        {template.status !== "CANCELLED" && (
+                          <button
+                            type="button"
                             className="button--danger"
                             onClick={() => updateTemplateStatus(template, "CANCELLED")}
                             disabled={templateActionId === template.id}
@@ -167,7 +262,115 @@ export function BusinessRecurringTemplatesPage() {
                       </div>
                     </td>
                   </tr>
-                  {isExpanded && (
+                  {isExpanded && editingTemplateId === template.id && (
+                    <tr>
+                      <td colSpan={6}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr)",
+                              gap: "0.5rem",
+                            }}
+                          >
+                            <label>
+                              {t("businessBulkTransfer.templateName")}
+                              <input value={editName} onChange={(e) => setEditName(e.target.value)} />
+                            </label>
+                            <label>
+                              {t("payments.frequency")}
+                              <select
+                                value={editFrequency}
+                                onChange={(e) => setEditFrequency(e.target.value as ScheduledPaymentFrequency)}
+                              >
+                                {TEMPLATE_FREQUENCIES.map((frequency) => (
+                                  <option key={frequency} value={frequency}>
+                                    {t(`payments.frequencyOption.${frequency}`)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              {t("payments.nextRun")}
+                              <input
+                                type="date"
+                                value={editNextRunOn}
+                                onChange={(e) => setEditNextRunOn(e.target.value)}
+                              />
+                            </label>
+                          </div>
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>{t("businessBulkTransfer.beneficiaryName")}</th>
+                                <th>{t("businessBulkTransfer.iban")}</th>
+                                <th style={{ textAlign: "right" }}>{t("businessBulkTransfer.amount")}</th>
+                                <th>{t("businessBulkTransfer.description")}</th>
+                                <th />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {editRows.map((row, index) => (
+                                <tr key={index}>
+                                  <td>
+                                    <input
+                                      value={row.beneficiary_name}
+                                      onChange={(e) => updateEditRow(index, "beneficiary_name", e.target.value)}
+                                    />
+                                  </td>
+                                  <td>
+                                    <input value={row.iban} onChange={(e) => updateEditRow(index, "iban", e.target.value)} />
+                                  </td>
+                                  <td>
+                                    <input
+                                      type="number"
+                                      min="0.01"
+                                      step="0.01"
+                                      style={{ textAlign: "right" }}
+                                      value={row.amount}
+                                      onChange={(e) => updateEditRow(index, "amount", e.target.value)}
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      value={row.description}
+                                      onChange={(e) => updateEditRow(index, "description", e.target.value)}
+                                    />
+                                  </td>
+                                  <td>
+                                    <button
+                                      type="button"
+                                      className="button--danger"
+                                      onClick={() => removeEditRow(index)}
+                                      disabled={editRows.length === 1}
+                                    >
+                                      {t("businessBulkTransfer.removeRow")}
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <button type="button" className="button--ghost" onClick={addEditRow}>
+                              {t("businessBulkTransfer.addRow")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => saveEdit(template.id)}
+                              disabled={savingEdit || !editName.trim() || !editNextRunOn}
+                            >
+                              {savingEdit ? t("businessBulkTransfer.submitting") : t("businessBulkTransfer.saveTemplate")}
+                            </button>
+                            <button type="button" className="button--ghost" onClick={cancelEdit}>
+                              {t("businessBulkTransfer.cancelEdit")}
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {isExpanded && editingTemplateId !== template.id && (
                     <tr>
                       <td colSpan={6}>
                         <table>

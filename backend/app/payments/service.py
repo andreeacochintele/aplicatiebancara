@@ -52,6 +52,7 @@ from app.payments.schemas import (
     BulkTransferTemplateCreate,
     BulkTransferTemplatePublic,
     BulkTransferTemplateRowPublic,
+    BulkTransferTemplateUpdate,
     IbanTransferCreate,
     IbanTransferQuoteCreate,
     PaymentRequestCreate,
@@ -1152,6 +1153,33 @@ class BulkTransferTemplateService:
         if status not in allowed:
             raise ConflictError(f"Cannot move a {template.status.value} template to {status.value}")
         template.status = status
+        template.updated_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return template
+
+    def update_template(
+        self, owner_user_id: uuid.UUID, template_id: uuid.UUID, data: BulkTransferTemplateUpdate
+    ) -> BulkTransferTemplate:
+        template = self._get_owned_template(owner_user_id, template_id)
+        if data.name is not None:
+            template.name = data.name
+        if data.frequency is not None:
+            template.frequency = data.frequency
+        if data.next_run_on is not None:
+            template.next_run_on = data.next_run_on
+        if data.rows is not None:
+            for row in self.repository.list_rows_for_template(template.id):
+                self.repository.delete_row(row)
+            for row in data.rows:
+                self.repository.add_row(
+                    BulkTransferTemplateRow(
+                        template_id=template.id,
+                        beneficiary_name=row.beneficiary_name,
+                        iban=row.iban,
+                        amount=row.amount,
+                        description=row.description,
+                    )
+                )
         template.updated_at = datetime.now(timezone.utc)
         self.db.flush()
         return template
