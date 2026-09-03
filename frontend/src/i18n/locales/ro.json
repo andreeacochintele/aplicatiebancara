@@ -455,6 +455,7 @@
     "failed": "Eșuat",
     "historyTitle": "Istoric loturi",
     "loading": "Se încarcă...",
+    "batchId": "ID lot",
     "date": "Dată",
     "rows": "Rânduri",
     "batchAllCompleted": "Toate finalizate",

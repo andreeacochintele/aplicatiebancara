@@ -48,6 +48,7 @@ export function BusinessBatchHistoryPage() {
         <table>
           <thead>
             <tr>
+              <th>{t("businessBulkTransfer.batchId")}</th>
               <th>{t("businessBulkTransfer.date")}</th>
               <th>{t("businessBulkTransfer.rows")}</th>
               <th style={{ textAlign: "right" }}>{t("businessBulkTransfer.amount")}</th>
@@ -57,6 +58,9 @@ export function BusinessBatchHistoryPage() {
           <tbody>
             {history.map((batch) => (
               <tr key={batch.batch_reference}>
+                <td>
+                  <code title={batch.batch_reference}>{batch.batch_reference.slice(0, 8)}</code>
+                </td>
                 <td>{new Date(batch.created_at).toLocaleString()}</td>
                 <td>{batch.row_count}</td>
                 <td style={{ textAlign: "right" }}>
@@ -77,7 +81,7 @@ export function BusinessBatchHistoryPage() {
             ))}
             {!historyLoading && history.length === 0 && (
               <tr>
-                <td colSpan={4}>{t("businessBulkTransfer.noHistoryYet")}</td>
+                <td colSpan={5}>{t("businessBulkTransfer.noHistoryYet")}</td>
               </tr>
             )}
           </tbody>
