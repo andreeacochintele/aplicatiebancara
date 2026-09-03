@@ -25,6 +25,14 @@ interface ProfileFormState {
   business_category: string;
 }
 
+interface CuiLookupResult {
+  cui: string;
+  company_name: string;
+  registration_number: string | null;
+  address: string | null;
+  is_active: boolean;
+}
+
 const EMPTY_FORM: ProfileFormState = {
   company_name: "",
   representative_name: "",
@@ -53,6 +61,10 @@ export function BusinessProfilePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [cuiQuery, setCuiQuery] = useState("");
+  const [cuiLookupBusy, setCuiLookupBusy] = useState(false);
+  const [cuiLookupError, setCuiLookupError] = useState<string | null>(null);
+  const [cuiLookupInactive, setCuiLookupInactive] = useState(false);
 
   const isBusiness = user?.user_type === "BUSINESS";
   const isNew = selectedId === null;
@@ -108,6 +120,31 @@ export function BusinessProfilePage() {
       await loadProfiles();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("businessProfile.couldNotSwitchCompany"));
+    }
+  }
+
+  async function lookupCui() {
+    if (!accessToken || !cuiQuery.trim() || cuiLookupBusy) return;
+    setCuiLookupBusy(true);
+    setCuiLookupError(null);
+    setCuiLookupInactive(false);
+    try {
+      const result = await apiRequest<CuiLookupResult>(
+        `/business/lookup-cui/${encodeURIComponent(cuiQuery.trim())}`,
+        { token: accessToken },
+      );
+      setForm((prev) => ({
+        ...prev,
+        company_name: result.company_name || prev.company_name,
+        registration_number: result.registration_number ?? prev.registration_number,
+        tax_id: result.cui,
+      }));
+      setCuiLookupInactive(!result.is_active);
+      setSaved(false);
+    } catch (err) {
+      setCuiLookupError(err instanceof ApiError ? err.message : t("businessProfile.cuiLookupFailed"));
+    } finally {
+      setCuiLookupBusy(false);
     }
   }
 
@@ -204,6 +241,38 @@ export function BusinessProfilePage() {
         <p style={{ color: "var(--color-text-muted)", fontSize: "0.9rem" }}>
           {t("businessProfile.activeCompanyNote")}
         </p>
+        <div
+          style={{
+            display: "flex",
+            gap: "0.5rem",
+            alignItems: "flex-end",
+            marginTop: "0.5rem",
+            padding: "0.75rem",
+            borderRadius: 8,
+            border: "1px solid var(--color-divider)",
+          }}
+        >
+          <label style={{ flex: 1 }}>
+            {t("businessProfile.cuiLookupLabel")}
+            <input
+              type="text"
+              value={cuiQuery}
+              onChange={(e) => setCuiQuery(e.target.value)}
+              placeholder="RO12345678"
+            />
+          </label>
+          <button type="button" onClick={lookupCui} disabled={cuiLookupBusy || !cuiQuery.trim()}>
+            {cuiLookupBusy ? t("businessProfile.cuiLookupBusy") : t("businessProfile.cuiLookupButton")}
+          </button>
+        </div>
+        {cuiLookupError && (
+          <p role="alert" style={{ color: "var(--color-negative)", fontSize: "0.9rem" }}>
+            {cuiLookupError}
+          </p>
+        )}
+        {cuiLookupInactive && (
+          <p style={{ color: "var(--color-warning)", fontSize: "0.9rem" }}>{t("businessProfile.cuiLookupInactive")}</p>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
           <label>
             {t("businessProfile.companyName")}

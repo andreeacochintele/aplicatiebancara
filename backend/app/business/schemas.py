@@ -21,6 +21,14 @@ class BusinessProfileUpdate(BaseModel):
     business_category: str | None = None
 
 
+class CuiLookupResult(BaseModel):
+    cui: str
+    company_name: str
+    registration_number: str | None
+    address: str | None
+    is_active: bool
+
+
 class BusinessProfilePublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
