@@ -1,9 +1,12 @@
+import { Download } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 
 import { ApiError, apiRequest } from "../api/apiClient";
+import { QrCode } from "../components/QrCode";
 import { BILL_SPLIT_CHANGED_EVENT } from "../events";
+import { downloadQrPng } from "../features/payments/qrImage";
 import { useAuth } from "../hooks/useAuth";
 import type {
   Beneficiary,
@@ -1348,7 +1351,7 @@ export function PaymentsPage() {
 
             {qrRequest && (
               <div className="qr-result">
-                <div className="qr-code" aria-label={t("payments.generatedQrPreview")} />
+                <QrCode className="qr-code" value={qrRequest.id} label={t("payments.generatedQrPreview")} />
                 <div className="qr-result__details">
                   <span className="eyebrow">{t("payments.requestId")}</span>
                   <code>{qrRequest.id}</code>
@@ -1360,6 +1363,15 @@ export function PaymentsPage() {
                     })}
                   </span>
                 </div>
+                <button
+                  type="button"
+                  className="button--ghost qr-result__download"
+                  onClick={() => downloadQrPng(qrRequest.id, `payment-request-${qrRequest.id}.png`)}
+                  title={t("payments.downloadQr")}
+                >
+                  <Download size={14} aria-hidden="true" />
+                  {t("payments.downloadQr")}
+                </button>
               </div>
             )}
           </form>

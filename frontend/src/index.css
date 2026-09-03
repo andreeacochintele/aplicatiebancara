@@ -4706,7 +4706,8 @@ th {
 
 .qr-result {
   display: grid;
-  grid-template-columns: 116px minmax(0, 1fr);
+  /* Symbol, then details, then the save action pinned to the far edge. */
+  grid-template-columns: 116px minmax(0, 1fr) auto;
   gap: 0.9rem;
   align-items: center;
   padding: 0.8rem;
@@ -4715,19 +4716,22 @@ th {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.qr-result__download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+/* Holds the real symbol rendered by <QrCode>. The gradients that used to draw
+   a decorative chequerboard here are gone; the element is now just the frame,
+   and the symbol brings its own quiet zone. */
 .qr-code {
   width: 108px;
   aspect-ratio: 1;
-  border: 8px solid #f7f4ff;
+  border: 8px solid #ffffff;
   border-radius: var(--radius-sm);
-  background-color: #101322;
-  background-image:
-    linear-gradient(45deg, #f7f4ff 25%, transparent 25%),
-    linear-gradient(-45deg, #f7f4ff 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #f7f4ff 75%),
-    linear-gradient(-45deg, transparent 75%, #f7f4ff 75%);
-  background-position: 0 0, 0 9px, 9px -9px, -9px 0;
-  background-size: 18px 18px;
+  background-color: #ffffff;
 }
 
 .qr-result__details,
@@ -5041,6 +5045,17 @@ th {
 
   .qr-grid {
     grid-template-columns: 1fr;
+  }
+
+  /* Too narrow for three columns: the save action drops under the details,
+     the same way .beneficiary-actions does just below. */
+  .qr-result {
+    grid-template-columns: 116px minmax(0, 1fr);
+  }
+
+  .qr-result__download {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .beneficiary-row {

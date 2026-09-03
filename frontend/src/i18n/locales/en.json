@@ -1275,6 +1275,7 @@
     "creating": "Creating...",
     "generateRequest": "Generate request",
     "generatedQrPreview": "Generated QR payment request preview",
+    "downloadQr": "Download",
     "requestId": "Request id",
     "openAmount": "Open amount",
     "expiresAt": "{{amount}} {{currency}} - expires {{time}}",
