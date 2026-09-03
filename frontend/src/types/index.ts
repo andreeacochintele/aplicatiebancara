@@ -911,7 +911,30 @@ export interface PhoneTransferConfirmCard {
   expires_at: string;
 }
 
-export type ActionCard = PhoneTransferConfirmCard;
+export interface LoanPaymentConfirmCard {
+  kind: "loan_payment_confirm";
+  action_id: string;
+  title: string;
+  amount: string;
+  currency: string;
+  source_wallet_label: string;
+  outstanding_principal: string;
+  next_payment_date: string | null;
+  expires_at: string;
+}
+
+export interface CreditCardRepaymentConfirmCard {
+  kind: "credit_card_repayment_confirm";
+  action_id: string;
+  card_label: string;
+  amount: string;
+  currency: string;
+  source_wallet_label: string;
+  balance_due: string;
+  expires_at: string;
+}
+
+export type ActionCard = PhoneTransferConfirmCard | LoanPaymentConfirmCard | CreditCardRepaymentConfirmCard;
 
 // Outcome of POST /ai/actions/{id}/confirm|cancel and the GET poll.
 export interface AgentActionResult {

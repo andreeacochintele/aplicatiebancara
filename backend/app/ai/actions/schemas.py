@@ -9,9 +9,9 @@ here and a matching React component, not letting the model emit arbitrary UI.
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.ai.actions.models import AgentActionStatus
 
@@ -29,7 +29,33 @@ class PhoneTransferConfirmCard(BaseModel):
 
 # Closed union — extend with `Annotated[X | Y, Field(discriminator="kind")]`
 # once there's a second member.
-ActionCard = PhoneTransferConfirmCard
+class LoanPaymentConfirmCard(BaseModel):
+    kind: Literal["loan_payment_confirm"] = "loan_payment_confirm"
+    action_id: uuid.UUID
+    title: str
+    amount: str
+    currency: str
+    source_wallet_label: str
+    outstanding_principal: str
+    next_payment_date: str | None = None
+    expires_at: datetime
+
+
+class CreditCardRepaymentConfirmCard(BaseModel):
+    kind: Literal["credit_card_repayment_confirm"] = "credit_card_repayment_confirm"
+    action_id: uuid.UUID
+    card_label: str
+    amount: str
+    currency: str
+    source_wallet_label: str
+    balance_due: str
+    expires_at: datetime
+
+
+ActionCard = Annotated[
+    PhoneTransferConfirmCard | LoanPaymentConfirmCard | CreditCardRepaymentConfirmCard,
+    Field(discriminator="kind"),
+]
 
 
 class DownloadAttachment(BaseModel):

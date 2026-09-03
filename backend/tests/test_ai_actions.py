@@ -13,6 +13,12 @@ from app.ai.actions.recipient_resolver import match_beneficiaries, normalize
 from app.ai.actions.service import ActionService
 from app.ai.orchestrator.intent import IntentCategory, _SYSTEM_PROMPT
 from app.core.exceptions import ConflictError, NotFoundError
+from app.cards.models import CardType
+from app.cards.schemas import CardCreate
+from app.cards.service import CardService
+from app.credit.models import CreditApplicationStatus, LoanPayment, LoanPaymentType, LoanProductType
+from app.credit.schemas import CreditApplicationCreate, CreditApplicationDecision
+from app.credit.service import CreditService
 from app.payments.models import Beneficiary
 from app.payments.repository import BeneficiaryRepository
 from app.users.schemas import UserCreate
@@ -355,6 +361,89 @@ def _unblocked():
     return ScreenResult(blocked=False, reasons=[])
 
 
+def _seed_active_loan(db_session, user_id):
+    service = CreditService(db_session)
+    application = service.create_application(
+        user_id,
+        CreditApplicationCreate(
+            type="PERSONAL_LOAN",
+            loan_product_type=LoanProductType.PERSONAL_LOAN,
+            requested_amount=Decimal("1200.00"),
+            currency="RON",
+            requested_term_months=6,
+        ),
+    )
+    service.decide_application(
+        application.id,
+        CreditApplicationDecision(status=CreditApplicationStatus.APPROVED),
+        admin_id=user_id,
+    )
+    loan = service.repository.get_loan_by_application(application.id)
+    assert loan is not None
+    return loan
+
+
+def test_prepare_and_confirm_regular_loan_payment(db_session, sender):
+    user, wallet = sender
+    loan = _seed_active_loan(db_session, user.id)
+    wallet.available_balance = Decimal("2000.00")
+    db_session.flush()
+
+    draft = ActionService(db_session).prepare_loan_payment(user.id, None, None, "regular_installment")
+
+    assert draft.action_card is not None
+    assert draft.action_card.kind == "loan_payment_confirm"
+    result = ActionService(db_session).confirm(user.id, draft.action_card.action_id)
+
+    assert result.status == AgentActionStatus.EXECUTED
+    db_session.refresh(wallet)
+    db_session.refresh(loan)
+    payment = db_session.query(LoanPayment).filter(LoanPayment.loan_id == loan.id).one()
+    assert payment.payment_type == LoanPaymentType.REGULAR
+    assert wallet.available_balance == Decimal("2000.00") - payment.amount
+
+
+def test_prepare_and_confirm_early_loan_repayment_is_idempotent(db_session, sender):
+    user, wallet = sender
+    loan = _seed_active_loan(db_session, user.id)
+    wallet.available_balance = Decimal("2000.00")
+    original_balance = wallet.available_balance
+    db_session.flush()
+
+    draft = ActionService(db_session).prepare_loan_payment(user.id, None, "100", "early_repayment")
+    action_id = draft.action_card.action_id
+
+    first = ActionService(db_session).confirm(user.id, action_id)
+    second = ActionService(db_session).confirm(user.id, action_id)
+
+    assert first.result_transaction_id == second.result_transaction_id
+    db_session.refresh(wallet)
+    db_session.refresh(loan)
+    assert wallet.available_balance == original_balance - Decimal("100.00")
+    assert loan.outstanding_principal == Decimal("1100.00")
+
+
+def test_prepare_and_confirm_credit_card_repayment(db_session, sender):
+    user, wallet = sender
+    card = CardService(db_session).create_card(user.id, CardCreate(type=CardType.CREDIT, currency="RON"))
+    assert card.credit_account is not None
+    card.credit_account.used_amount = Decimal("250.00")
+    wallet.available_balance = Decimal("1000.00")
+    db_session.flush()
+
+    draft = ActionService(db_session).prepare_credit_card_repayment(user.id, None, "75", card.last_four)
+
+    assert draft.action_card is not None
+    assert draft.action_card.kind == "credit_card_repayment_confirm"
+    result = ActionService(db_session).confirm(user.id, draft.action_card.action_id)
+
+    assert result.status == AgentActionStatus.EXECUTED
+    db_session.refresh(wallet)
+    db_session.refresh(card.credit_account)
+    assert wallet.available_balance == Decimal("925.00")
+    assert card.credit_account.used_amount == Decimal("175.00")
+
+
 # ---- HTTP: confirm / cancel endpoints ----
 
 
@@ -424,10 +513,40 @@ def test_cancel_endpoint_then_confirm_conflicts(client, db_session, monkeypatch)
 @pytest.mark.parametrize(
     "raw, expected",
     [
-        ('{"amount": 150, "currency": "RON", "recipient_name": "Alex"}', {"amount": "150", "currency": "RON", "recipient_name": "Alex"}),
-        ('```json\n{"amount": 50, "currency": "RON", "recipient_name": "Maria"}\n```', {"amount": "50", "currency": "RON", "recipient_name": "Maria"}),
+        (
+            '{"amount": 150, "currency": "RON", "recipient_name": "Alex"}',
+            {
+                "action_type": None,
+                "amount": "150",
+                "currency": "RON",
+                "recipient_name": "Alex",
+                "loan_payment_mode": None,
+                "card_last_four": None,
+            },
+        ),
+        (
+            '```json\n{"amount": 50, "currency": "RON", "recipient_name": "Maria"}\n```',
+            {
+                "action_type": None,
+                "amount": "50",
+                "currency": "RON",
+                "recipient_name": "Maria",
+                "loan_payment_mode": None,
+                "card_last_four": None,
+            },
+        ),
         ("not json at all", {}),
-        ('{"amount": null, "currency": "RON", "recipient_name": null}', {"amount": None, "currency": "RON", "recipient_name": None}),
+        (
+            '{"amount": null, "currency": "RON", "recipient_name": null}',
+            {
+                "action_type": None,
+                "amount": None,
+                "currency": "RON",
+                "recipient_name": None,
+                "loan_payment_mode": None,
+                "card_last_four": None,
+            },
+        ),
     ],
 )
 def test_agent_parse_handles_fences_nulls_and_garbage(raw, expected):
