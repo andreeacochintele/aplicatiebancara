@@ -67,6 +67,7 @@ export function FraudReviewSection() {
   const [details, setDetails] = useState<Record<string, FraudCaseDetail>>({});
   const [expandedCaseId, setExpandedCaseId] = useState<string | null>(null);
   const [decisionCaseId, setDecisionCaseId] = useState<string | null>(null);
+  const [batchDecisionReference, setBatchDecisionReference] = useState<string | null>(null);
   const [investigationCaseId, setInvestigationCaseId] = useState<string | null>(null);
   const [activationCaseId, setActivationCaseId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -144,6 +145,38 @@ export function FraudReviewSection() {
     }
   }
 
+  async function decideBatch(batchReference: string, action: "APPROVE" | "REJECT") {
+    if (!accessToken || batchDecisionReference) return;
+    const caseIds = cases.filter((item) => item.batch_reference === batchReference).map((item) => item.id);
+    if (caseIds.length === 0) return;
+    setBatchDecisionReference(batchReference);
+    setError(null);
+    try {
+      for (const caseId of caseIds) {
+        await apiRequest<FraudCaseDetail>(`/fraud/cases/${caseId}/decision`, {
+          method: "POST",
+          token: accessToken,
+          body: { action },
+        });
+      }
+      setCases((current) => current.filter((item) => item.batch_reference !== batchReference));
+      setDetails((current) => {
+        const next = { ...current };
+        for (const caseId of caseIds) delete next[caseId];
+        return next;
+      });
+      if (expandedCaseId && caseIds.includes(expandedCaseId)) setExpandedCaseId(null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        logout();
+        return;
+      }
+      setError(err instanceof ApiError ? err.message : t("admin.couldNotRecordDecision"));
+    } finally {
+      setBatchDecisionReference(null);
+    }
+  }
+
   async function investigate(caseId: string) {
     if (!accessToken || investigationCaseId) return;
     setInvestigationCaseId(caseId);
@@ -211,67 +244,50 @@ export function FraudReviewSection() {
             </tr>
           </thead>
           <tbody>
-            {cases.map((fraudCase) => {
-              const detail = details[fraudCase.id];
-              const isExpanded = expandedCaseId === fraudCase.id;
-              return (
-                <Fragment key={fraudCase.id}>
-                  <tr>
-                    <td>{fraudCase.transaction_id.slice(0, 8)}</td>
-                    <td>{formatMoney(fraudCase.hold_amount, fraudCase.hold_currency)}</td>
-                    <td>{fraudCase.risk_score}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
-                        {fraudCase.flag_codes.map((code) => (
-                          <span key={code} className="tag tag--outline">
-                            {formatFlagCode(code)}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td>{new Date(fraudCase.created_at).toLocaleString()}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                        <button type="button" className="button--ghost" onClick={() => toggleExpand(fraudCase.id)}>
-                          {isExpanded ? t("admin.hide") : t("admin.details")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => decide(fraudCase.id, "APPROVE")}
-                          disabled={decisionCaseId === fraudCase.id}
-                        >
-                          {t("admin.approve")}
-                        </button>
-                        <button
-                          type="button"
-                          className="button--ghost"
-                          onClick={() => decide(fraudCase.id, "REJECT")}
-                          disabled={decisionCaseId === fraudCase.id}
-                        >
-                          {t("admin.reject")}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <tr>
-                      <td colSpan={6}>
-                        {!detail && <div className="card-empty">{t("admin.loadingDetails")}</div>}
-                        {detail && (
-                          <FraudCaseEvidence
-                            detail={detail}
-                            isInvestigating={investigationCaseId === fraudCase.id}
-                            onInvestigate={() => investigate(fraudCase.id)}
-                            isActivatingCard={activationCaseId === fraudCase.id}
-                            onActivateCard={() => activateCard(fraudCase.id)}
-                          />
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              );
-            })}
+            {(() => {
+              const renderedBatches = new Set<string>();
+              return cases.map((fraudCase) => {
+                if (fraudCase.batch_reference) {
+                  if (renderedBatches.has(fraudCase.batch_reference)) return null;
+                  renderedBatches.add(fraudCase.batch_reference);
+                  const group = cases.filter((item) => item.batch_reference === fraudCase.batch_reference);
+                  return (
+                    <BatchGroup
+                      key={fraudCase.batch_reference}
+                      batchReference={fraudCase.batch_reference}
+                      group={group}
+                      details={details}
+                      expandedCaseId={expandedCaseId}
+                      onToggleExpand={toggleExpand}
+                      onDecide={decide}
+                      decisionCaseId={decisionCaseId}
+                      onDecideBatch={decideBatch}
+                      isDecidingBatch={batchDecisionReference === fraudCase.batch_reference}
+                      investigationCaseId={investigationCaseId}
+                      onInvestigate={investigate}
+                      activationCaseId={activationCaseId}
+                      onActivateCard={activateCard}
+                    />
+                  );
+                }
+                return (
+                  <CaseRow
+                    key={fraudCase.id}
+                    fraudCase={fraudCase}
+                    detail={details[fraudCase.id]}
+                    isExpanded={expandedCaseId === fraudCase.id}
+                    onToggleExpand={() => toggleExpand(fraudCase.id)}
+                    onApprove={() => decide(fraudCase.id, "APPROVE")}
+                    onReject={() => decide(fraudCase.id, "REJECT")}
+                    isDeciding={decisionCaseId === fraudCase.id}
+                    isInvestigating={investigationCaseId === fraudCase.id}
+                    onInvestigate={() => investigate(fraudCase.id)}
+                    isActivatingCard={activationCaseId === fraudCase.id}
+                    onActivateCard={() => activateCard(fraudCase.id)}
+                  />
+                );
+              });
+            })()}
             {cases.length === 0 && (
               <tr>
                 <td colSpan={6}>{t("admin.noFraudCasesPending")}</td>
@@ -281,6 +297,168 @@ export function FraudReviewSection() {
         </table>
       )}
     </div>
+  );
+}
+
+function CaseRow({
+  fraudCase,
+  detail,
+  isExpanded,
+  onToggleExpand,
+  onApprove,
+  onReject,
+  isDeciding,
+  isInvestigating,
+  onInvestigate,
+  isActivatingCard,
+  onActivateCard,
+}: {
+  fraudCase: FraudCaseSummary;
+  detail: FraudCaseDetail | undefined;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onApprove: () => void;
+  onReject: () => void;
+  isDeciding: boolean;
+  isInvestigating: boolean;
+  onInvestigate: () => void;
+  isActivatingCard: boolean;
+  onActivateCard: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Fragment>
+      <tr>
+        <td>{fraudCase.transaction_id.slice(0, 8)}</td>
+        <td>{formatMoney(fraudCase.hold_amount, fraudCase.hold_currency)}</td>
+        <td>{fraudCase.risk_score}</td>
+        <td>
+          <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap" }}>
+            {fraudCase.flag_codes.map((code) => (
+              <span key={code} className="tag tag--outline">
+                {formatFlagCode(code)}
+              </span>
+            ))}
+          </div>
+        </td>
+        <td>{new Date(fraudCase.created_at).toLocaleString()}</td>
+        <td>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button type="button" className="button--ghost" onClick={onToggleExpand}>
+              {isExpanded ? t("admin.hide") : t("admin.details")}
+            </button>
+            <button type="button" onClick={onApprove} disabled={isDeciding}>
+              {t("admin.approve")}
+            </button>
+            <button type="button" className="button--ghost" onClick={onReject} disabled={isDeciding}>
+              {t("admin.reject")}
+            </button>
+          </div>
+        </td>
+      </tr>
+      {isExpanded && (
+        <tr>
+          <td colSpan={6}>
+            {!detail && <div className="card-empty">{t("admin.loadingDetails")}</div>}
+            {detail && (
+              <FraudCaseEvidence
+                detail={detail}
+                isInvestigating={isInvestigating}
+                onInvestigate={onInvestigate}
+                isActivatingCard={isActivatingCard}
+                onActivateCard={onActivateCard}
+              />
+            )}
+          </td>
+        </tr>
+      )}
+    </Fragment>
+  );
+}
+
+function BatchGroup({
+  batchReference,
+  group,
+  details,
+  expandedCaseId,
+  onToggleExpand,
+  onDecide,
+  decisionCaseId,
+  onDecideBatch,
+  isDecidingBatch,
+  investigationCaseId,
+  onInvestigate,
+  activationCaseId,
+  onActivateCard,
+}: {
+  batchReference: string;
+  group: FraudCaseSummary[];
+  details: Record<string, FraudCaseDetail>;
+  expandedCaseId: string | null;
+  onToggleExpand: (caseId: string) => void;
+  onDecide: (caseId: string, action: "APPROVE" | "REJECT") => void;
+  decisionCaseId: string | null;
+  onDecideBatch: (batchReference: string, action: "APPROVE" | "REJECT") => void;
+  isDecidingBatch: boolean;
+  investigationCaseId: string | null;
+  onInvestigate: (caseId: string) => void;
+  activationCaseId: string | null;
+  onActivateCard: (caseId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const totalsByCurrency = new Map<string, number>();
+  for (const item of group) {
+    totalsByCurrency.set(
+      item.hold_currency,
+      (totalsByCurrency.get(item.hold_currency) ?? 0) + Number(item.hold_amount),
+    );
+  }
+
+  return (
+    <Fragment>
+      <tr className="fraud-batch-header-row">
+        <td colSpan={3}>
+          <span className="eyebrow">{t("admin.batchOfCases", { count: group.length })}</span>
+        </td>
+        <td>
+          {Array.from(totalsByCurrency.entries())
+            .map(([currency, total]) => formatMoney(total.toFixed(2), currency))
+            .join(" · ")}
+        </td>
+        <td />
+        <td>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button type="button" onClick={() => onDecideBatch(batchReference, "APPROVE")} disabled={isDecidingBatch}>
+              {t("admin.approveBatch")}
+            </button>
+            <button
+              type="button"
+              className="button--ghost"
+              onClick={() => onDecideBatch(batchReference, "REJECT")}
+              disabled={isDecidingBatch}
+            >
+              {t("admin.rejectBatch")}
+            </button>
+          </div>
+        </td>
+      </tr>
+      {group.map((fraudCase) => (
+        <CaseRow
+          key={fraudCase.id}
+          fraudCase={fraudCase}
+          detail={details[fraudCase.id]}
+          isExpanded={expandedCaseId === fraudCase.id}
+          onToggleExpand={() => onToggleExpand(fraudCase.id)}
+          onApprove={() => onDecide(fraudCase.id, "APPROVE")}
+          onReject={() => onDecide(fraudCase.id, "REJECT")}
+          isDeciding={decisionCaseId === fraudCase.id || isDecidingBatch}
+          isInvestigating={investigationCaseId === fraudCase.id}
+          onInvestigate={() => onInvestigate(fraudCase.id)}
+          isActivatingCard={activationCaseId === fraudCase.id}
+          onActivateCard={() => onActivateCard(fraudCase.id)}
+        />
+      ))}
+    </Fragment>
   );
 }
 

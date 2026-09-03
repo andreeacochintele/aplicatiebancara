@@ -340,7 +340,9 @@ class FraudService:
         self.cards = CardRepository(db)
         self.merchants = MerchantRepository(db)
 
-    def evaluate_transaction(self, transaction: Transaction, wallet: Wallet) -> FraudDecision:
+    def evaluate_transaction(
+        self, transaction: Transaction, wallet: Wallet, *, batch_reference: str | None = None
+    ) -> FraudDecision:
         if transaction.type not in SCREENED_TRANSACTION_TYPES:
             # Deliberately leaves fraud_score NULL rather than writing 0:
             # "never screened" and "screened and came back clean" are
@@ -372,7 +374,7 @@ class FraudService:
         if not flags or score < FRAUD_SCORE_THRESHOLD:
             return FraudDecision(blocked=False, score=score, case=None)
 
-        case = self._hold_and_create_case(transaction, wallet, score, flags)
+        case = self._hold_and_create_case(transaction, wallet, score, flags, batch_reference=batch_reference)
         return FraudDecision(blocked=True, score=score, case=case)
 
     def get_recent_activity(
@@ -1109,7 +1111,13 @@ class FraudService:
         )
 
     def _hold_and_create_case(
-        self, transaction: Transaction, wallet: Wallet, score: Decimal, flags: list[FlagHit]
+        self,
+        transaction: Transaction,
+        wallet: Wallet,
+        score: Decimal,
+        flags: list[FlagHit],
+        *,
+        batch_reference: str | None = None,
     ) -> FraudCase:
         # The hold is always the SOURCE side: on a cross-currency transfer
         # `transaction.amount` is what the recipient would receive in their
@@ -1137,6 +1145,7 @@ class FraudService:
                 user_id=transaction.initiator_user_id,
                 risk_score=score,
                 hold_amount=hold_amount,
+                batch_reference=batch_reference,
             )
         )
         for code, points, description in flags:
@@ -1329,6 +1338,7 @@ class FraudService:
             hold_currency=_screened_currency(transaction),
             created_at=case.created_at,
             flag_codes=[flag.code for flag in flags],
+            batch_reference=case.batch_reference,
             decided_by_admin_id=case.decided_by_admin_id,
             decided_at=case.decided_at,
             flags=[FraudFlagPublic(id=f.id, code=f.code, points=f.points, description=f.description) for f in flags],
@@ -1363,4 +1373,5 @@ class FraudService:
             hold_currency=_screened_currency(transaction) if transaction is not None else "RON",
             created_at=case.created_at,
             flag_codes=[flag.code for flag in flags],
+            batch_reference=case.batch_reference,
         )

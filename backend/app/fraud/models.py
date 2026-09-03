@@ -54,6 +54,12 @@ class FraudCase(Base):
     )
     hold_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Set only when this case's transaction came from one multi-row submit
+    # (currently: IbanTransferService.create_bulk_transfer) — every row of
+    # that same submit shares this value, so the admin UI can group and
+    # decide them together instead of one unrelated-looking case at a time.
+    # NULL for a normal, single transfer/payment.
+    batch_reference: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     decided_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True

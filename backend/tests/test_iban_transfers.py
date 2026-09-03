@@ -1,6 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
+from app.fraud.models import FraudCase
 from app.fx.models import FXQuote, FXQuoteStatus
 from app.payments.models import Beneficiary
 from app.transactions.models import LedgerEntryType, TransactionStatus, WalletLedgerEntry
@@ -151,6 +152,45 @@ def test_bulk_transfer_can_save_beneficiaries(client, db_session):
     saved = db_session.query(Beneficiary).filter_by(owner_user_id=UUID(sender["user"]["id"])).one()
     assert saved.name == "Diana Marin"
     assert saved.iban == "RO49AAAA1B31007593840009"
+
+
+def test_bulk_transfer_tags_the_fraud_case_it_creates_with_a_shared_batch_reference(client, db_session):
+    """15 external transfers from a fresh wallet in one bulk submit: the
+    first 14 complete normally, and the 15th trips HIGH_VELOCITY on its own
+    (14 prior + this one = 15, same trigger shape as
+    test_extreme_velocity_burst_alone_crosses_threshold_without_a_second_flag)
+    — proving the batch's own rows count toward each other's velocity
+    history, and that whichever case comes out of it is tagged for the Fraud
+    Review page to group."""
+    sender = _register(client, "bulk-fraud@example.com", "+40750777777")
+    source_wallet = _create_wallet(db_session, sender["user"]["id"], "RON", Decimal("10000.00"))
+
+    response = client.post(
+        "/api/v1/payments/transfers/bulk",
+        headers=_auth_header(sender),
+        json={
+            "source_wallet_id": str(source_wallet.id),
+            "currency": "RON",
+            "rows": [
+                {"beneficiary_name": f"Payee {i}", "iban": f"RO49AAAA1B310075938400{i:02d}", "amount": "10.00"}
+                for i in range(15)
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    # The 15th row's own timing tips it into HIGH_VELOCITY (proven trigger
+    # shape above); UNUSUAL_TIME may or may not also fire depending on the
+    # wall-clock hour the suite happens to run at, so this doesn't assert an
+    # exact per-row status sequence — only that at least the 15th row landed
+    # under review, and that whichever case(s) that produced share one tag.
+    assert body["results"][-1]["status"] == TransactionStatus.PENDING_REVIEW
+
+    cases = db_session.query(FraudCase).filter_by(user_id=UUID(sender["user"]["id"])).all()
+    assert len(cases) >= 1
+    assert len({case.batch_reference for case in cases}) == 1
+    assert cases[0].batch_reference is not None
 
 
 def test_iban_transfer_can_save_beneficiary(client, db_session):

@@ -3585,6 +3585,11 @@ th {
   color: var(--color-text-muted);
 }
 
+.fraud-batch-header-row td {
+  background: var(--color-accent-soft);
+  border-bottom: 1px solid var(--color-divider);
+}
+
 .fraud-detail-panel {
   display: flex;
   flex-direction: column;

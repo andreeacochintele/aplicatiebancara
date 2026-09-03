@@ -174,7 +174,9 @@ class IbanTransferService:
             raise ValidationError("Could not produce an FX quote for this target amount")
         return quote
 
-    def create_iban_transfer(self, initiator_user_id: uuid.UUID, data: IbanTransferCreate) -> Transaction:
+    def create_iban_transfer(
+        self, initiator_user_id: uuid.UUID, data: IbanTransferCreate, *, batch_reference: str | None = None
+    ) -> Transaction:
         source = self._get_owned_source_wallet(initiator_user_id, data.source_wallet_id)
 
         currency = data.currency.upper()
@@ -227,6 +229,7 @@ class IbanTransferService:
                     fx_quote_id=data.fx_quote_id,
                     description=description,
                 ),
+                batch_reference=batch_reference,
             )
             if data.save_beneficiary:
                 self.beneficiaries.add(
@@ -262,7 +265,7 @@ class IbanTransferService:
         # A blocked transfer is HOLD'd and left PENDING_REVIEW by
         # FraudService; there's no destination wallet here, so approving it
         # later is just the DEBIT that FraudService.approve() already writes.
-        if not FraudService(self.db).evaluate_transaction(transaction, source).blocked:
+        if not FraudService(self.db).evaluate_transaction(transaction, source, batch_reference=batch_reference).blocked:
             source.available_balance -= debit_amount
             self.transactions.repository.add_ledger_entry(
                 WalletLedgerEntry(
@@ -303,9 +306,16 @@ class IbanTransferService:
         out of scope. Each row gets its own savepoint (skipped on the
         Supabase REST backend, which has no local transaction to nest — same
         reasoning as MerchantService.sync_purchases_from_transactions) so a
-        failed row's partial state can't leak into the next one."""
+        failed row's partial state can't leak into the next one.
+
+        Every row shares one batch_reference, generated here — the only
+        thing it does is tag whichever FraudCase(s) this batch's own
+        screening creates, so the admin Fraud Review page can group and
+        decide them together instead of one unrelated-looking case per row.
+        It never affects screening itself."""
         currency = data.currency.upper()
         use_savepoint = not is_supabase_session(self.db)
+        batch_reference = str(uuid.uuid4())
         results: list[BulkTransferRowResult] = []
         for row in data.rows:
             row_data = IbanTransferCreate(
@@ -320,9 +330,13 @@ class IbanTransferService:
             try:
                 if use_savepoint:
                     with self.db.begin_nested():
-                        transaction = self.create_iban_transfer(initiator_user_id, row_data)
+                        transaction = self.create_iban_transfer(
+                            initiator_user_id, row_data, batch_reference=batch_reference
+                        )
                 else:
-                    transaction = self.create_iban_transfer(initiator_user_id, row_data)
+                    transaction = self.create_iban_transfer(
+                        initiator_user_id, row_data, batch_reference=batch_reference
+                    )
             except (ValidationError, ConflictError, NotFoundError) as exc:
                 results.append(
                     BulkTransferRowResult(

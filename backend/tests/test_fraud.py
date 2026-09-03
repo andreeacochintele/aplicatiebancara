@@ -254,6 +254,34 @@ def test_high_velocity_flags_five_transactions_in_five_minutes(db_session, seede
     assert decision.score == Decimal("30")
 
 
+def test_evaluate_transaction_tags_the_created_case_with_the_given_batch_reference(db_session, seeded_user):
+    # Same shape as test_extreme_velocity_burst_alone_crosses_threshold_...:
+    # 14 prior + this one = 15, crossing the threshold on HIGH_VELOCITY alone.
+    wallet = _wallet(db_session, seeded_user.id)
+    daytime = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+    for _ in range(14):
+        _completed_card_payment(db_session, seeded_user.id, Decimal("10.00"), created_at=daytime)
+    transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("10.00"), created_at=daytime)
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet, batch_reference="batch-abc")
+
+    assert decision.blocked is True
+    assert decision.case.batch_reference == "batch-abc"
+
+
+def test_evaluate_transaction_leaves_batch_reference_null_when_not_given(db_session, seeded_user):
+    wallet = _wallet(db_session, seeded_user.id)
+    daytime = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+    for _ in range(14):
+        _completed_card_payment(db_session, seeded_user.id, Decimal("10.00"), created_at=daytime)
+    transaction = _pending_transaction(seeded_user.id, wallet.id, Decimal("10.00"), created_at=daytime)
+
+    decision = FraudService(db_session).evaluate_transaction(transaction, wallet)
+
+    assert decision.blocked is True
+    assert decision.case.batch_reference is None
+
+
 def test_reward_abuse_pattern_flags_three_near_identical_payments(db_session, seeded_user):
     wallet = _wallet(db_session, seeded_user.id)
     merchant = _merchant(db_session)

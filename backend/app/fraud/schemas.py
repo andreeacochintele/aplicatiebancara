@@ -27,6 +27,7 @@ class FraudCaseSummary(BaseModel):
     hold_currency: str
     created_at: datetime
     flag_codes: list[FraudFlagCode]
+    batch_reference: str | None = None
 
 
 class FraudRiskLevel(str, enum.Enum):
