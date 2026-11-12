@@ -12,6 +12,7 @@ import logging
 import uuid
 from datetime import datetime
 
+import anthropic
 from fastapi import APIRouter, Depends, HTTPException, status
 from openai import APIError
 from sqlalchemy.orm import Session
@@ -48,11 +49,11 @@ def chat(
         return response
     except AzureFoundryNotConfiguredError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
-    except APIError as exc:
+    except (APIError, anthropic.APIError) as exc:
         # Credentials configured but the call itself failed (wrong deployment
-        # name, auth rejected, rate limited, Azure-side outage, ...) — don't
-        # leak Azure's raw error/endpoint details to the client.
-        logger.exception("Azure AI Foundry request failed")
+        # name, auth rejected, rate limited, provider-side outage, ...) — don't
+        # leak the provider's raw error/endpoint details to the client.
+        logger.exception("AI provider request failed")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The AI assistant is temporarily unavailable. Please try again later.",

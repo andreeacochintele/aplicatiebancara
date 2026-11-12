@@ -15,6 +15,8 @@ python-multipart==0.0.32
 # in requirements-dev.txt; declared explicitly because app code imports it.
 httpx==0.28.1
 openai==1.109.1
+# Claude provider (used when ANTHROPIC_API_KEY is set); depends on httpx2, not httpx
+anthropic==2.8.0
 fpdf2==2.8.4
 openpyxl==3.1.5
 # identity-document MRZ reading (backend/app/users/mrz_reader.py): template

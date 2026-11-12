@@ -86,11 +86,11 @@ Use the existing project stack:
 AI provider constraint:
 
 ```text
-Azure AI Foundry
-GPT-5-mini only
+Anthropic Claude (ANTHROPIC_MODEL, default claude-sonnet-5-5) when ANTHROPIC_API_KEY is set
+otherwise Azure AI Foundry GPT-5-mini
 ```
 
-Do not add other LLM providers or model-routing systems.
+Both providers live only in the shared AI client. Do not add other LLM providers or model-routing systems.
 
 ---
 
@@ -224,11 +224,11 @@ Example: if wallets already use `router -> service -> repository`, new wallet fu
 
 # 11. AI implementation rules
 
-Only GPT-5-mini through Azure AI Foundry is available.
+Claude via the Anthropic API (when `ANTHROPIC_API_KEY` is set) or GPT-5-mini through Azure AI Foundry are the only providers.
 
 Use the central/shared AI client.
 
-Never hardcode Azure credentials.
+Never hardcode Anthropic or Azure credentials.
 
 AI configuration must use environment variables.
 
