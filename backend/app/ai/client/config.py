@@ -1,8 +1,10 @@
-"""Azure AI Foundry configuration.
+"""AI provider configuration.
 
-GPT-5-mini deployed on Azure AI Foundry is the ONLY model this application is
-allowed to talk to. Do not add settings for other providers (OpenAI direct,
-Anthropic, Gemini, local models) — see backend/app/ai/README.md.
+Two providers are supported, chosen by which credentials are set:
+- Anthropic (Claude) — used whenever ANTHROPIC_API_KEY is set. ANTHROPIC_MODEL
+  defaults to claude-sonnet-5-5.
+- Azure AI Foundry (GPT-5-mini) — the fallback when no Anthropic key is set.
+Do not add other providers — see backend/app/ai/README.md.
 
 All values are optional so the app boots without them configured; the client
 only raises when an agent actually tries to call the model.
@@ -24,6 +26,8 @@ class AzureAIFoundrySettings(BaseSettings):
     AZURE_OPENAI_ENDPOINT: str | None = None
     AZURE_OPENAI_API_KEY: str | None = None
     AZURE_OPENAI_DEPLOYMENT_NAME: str | None = None
+    ANTHROPIC_API_KEY: str | None = None
+    ANTHROPIC_MODEL: str = "claude-sonnet-5-5"
 
     @property
     def is_configured(self) -> bool:

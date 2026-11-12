@@ -30,7 +30,7 @@ Main stack:
 - Migrations: Alembic
 - Database: PostgreSQL
 - Infrastructure: Docker / Docker Compose
-- AI: Azure AI Foundry, GPT-5-mini only
+- AI: Anthropic Claude (Sonnet 5.5) when `ANTHROPIC_API_KEY` is set, otherwise Azure AI Foundry GPT-5-mini — both behind the one shared client
 
 The project architecture is documented in:
 

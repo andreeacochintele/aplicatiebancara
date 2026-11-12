@@ -16,16 +16,18 @@ carries authority. Follow-up not in this pass: routing agent transfers
 through the full fraud engine (its HOLD/approve path is card-payment-only
 today).
 
-## Constraint: single model, single provider
+## Constraint: two providers, one shared client
 
-The only LLM available to this project is **GPT-5-mini deployed on Azure AI
-Foundry**. Do not add:
+The LLM is **Claude via the Anthropic API** (`ANTHROPIC_MODEL`, default
+`claude-sonnet-5-5`) when `ANTHROPIC_API_KEY` is set, otherwise **GPT-5-mini
+deployed on Azure AI Foundry**. The shared client picks one per process from
+the configured keys and returns the same response shape either way. Do not add:
 
 - direct OpenAI API integrations
-- Anthropic, Gemini, or local-model integrations
-- fallback models or multi-model routing
+- Gemini or local-model integrations
+- per-request multi-model routing
 - model comparison logic
-- dependencies for AI providers other than Azure OpenAI/Azure AI Foundry
+- dependencies for AI providers other than Anthropic and Azure OpenAI/Azure AI Foundry
 
 All future agents call [`ai/client/azure_foundry_client.py`](client/azure_foundry_client.py)
 — never instantiate a model client directly in an agent.

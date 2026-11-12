@@ -10,7 +10,7 @@ Core banking, payments, cards, credit, rewards, notifications, analytics, onboar
 - **Backend:** Python, FastAPI, SQLAlchemy, Alembic
 - **Database:** PostgreSQL
 - **Infra:** Docker / Docker Compose
-- **AI:** Azure AI Foundry, GPT-5-mini only — see [backend/app/ai/README.md](backend/app/ai/README.md)
+- **AI:** Anthropic Claude (Sonnet 5.5) when `ANTHROPIC_API_KEY` is set, otherwise Azure AI Foundry GPT-5-mini — see [backend/app/ai/README.md](backend/app/ai/README.md)
 
 ## Repository structure
 
@@ -174,10 +174,10 @@ Suggested branch naming: `feature/<dev-area>/<short-description>`, e.g. `feature
 
 ## How the Azure AI Foundry (GPT-5-mini) integration is wired
 
-1. Set the four `AZURE_OPENAI_*` variables in `.env` (see `.env.example`) to actually run the AI agents; the app boots and everything else works without them.
+1. Set `ANTHROPIC_API_KEY` in `.env` to run the AI agents on Claude (`ANTHROPIC_MODEL` defaults to `claude-sonnet-5-5`), or leave it empty and set the `AZURE_OPENAI_*` variables to use GPT-5-mini on Azure (see `.env.example`); the app boots and everything else works without either.
 2. Every agent (Orchestrator, Personal Finance, Credit, Support, Actions, Fraud Investigation) calls `backend/app/ai/client/azure_foundry_client.py`'s `get_azure_foundry_client()` — never instantiates its own model client.
 3. Agents only reach data through **tools** in each agent's own `tools.py`, and tools only call backend **services** — never the database directly (`Agent → Tool → Backend Service → Database`).
 4. Financial write actions stay two-step: an agent creates a draft (e.g. the Actions agent's phone/name-transfer draft); only the backend executes the real operation, after explicit user confirmation in the UI.
-5. Do not add other model providers or fallback logic — GPT-5-mini on Azure AI Foundry is the only supported deployment.
+5. Do not add other model providers or routing logic — Claude (Anthropic API) and GPT-5-mini (Azure AI Foundry) are the only supported providers, selected by which key is set.
 
 See [backend/app/ai/README.md](backend/app/ai/README.md) for the full architecture, guardrails, and how to watch a chat request's orchestration live via the logs.
